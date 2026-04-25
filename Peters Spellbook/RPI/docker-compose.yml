@@ -116,6 +116,8 @@ services:
       - notes_data:/data
     ports:
       - "192.168.1.10:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
+    expose:
+      - "3002"                      # internal Docker network access for nginx
     networks:
       - internal
 
