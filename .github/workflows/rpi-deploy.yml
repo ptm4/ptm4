@@ -1,0 +1,66 @@
+#rpi-deploy-yml
+name: Deploy RPI Stack
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Peters Spellbook/RPI/docker-compose.yml"
+      - "Peters Spellbook/RPI/webapp/**"
+      - "Peters Spellbook/RPI/nginx-wg.conf"
+      - "Peters Spellbook/RPI/notes-app/**"
+  workflow_dispatch:   # allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    runs-on: self-hosted   # runner registered on the Pi
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose file
+        run: |
+          cp "Peters Spellbook/RPI/docker-compose.yml" /srv/docker/compose/docker-compose.yml
+
+      - name: Copy webapp and nginx config
+        run: |
+          mkdir -p /srv/docker/compose/webapp
+          cp -r "Peters Spellbook/RPI/webapp/." /srv/docker/compose/webapp/
+          cp "Peters Spellbook/RPI/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
+
+      - name: Copy notes-app
+        run: |
+          mkdir -p /srv/docker/compose/notes-app/api
+          mkdir -p /srv/docker/compose/notes-app/web
+          cp -r "Peters Spellbook/RPI/notes-app/api/." /srv/docker/compose/notes-app/api/
+          cp -r "Peters Spellbook/RPI/notes-app/web/." /srv/docker/compose/notes-app/web/
+
+      - name: Pull latest images
+        working-directory: /srv/docker/compose
+        run: docker compose pull
+
+      - name: Bring stack up
+        working-directory: /srv/docker/compose
+        run: docker compose up -d --remove-orphans
+
+      - name: Restart webapp to pick up code changes
+        working-directory: /srv/docker/compose
+        run: docker compose restart webapp
+
+      - name: Build and restart notes-api
+        working-directory: /srv/docker/compose
+        run: |
+          docker compose build notes-api
+          docker compose up -d notes-api
+
+      - name: Startup logs
+        if: always()
+        working-directory: /srv/docker/compose
+        run: |
+          sleep 8
+          mkdir -p /mnt/noblenumbat-fs/ptm/logging
+          LOGFILE="/mnt/noblenumbat-fs/ptm/logging/deploy-$(date +%Y%m%d-%H%M%S).log"
+          docker compose logs --tail=200 --no-color 2>&1 | tee "$LOGFILE"
+          echo "Saved to $LOGFILE"

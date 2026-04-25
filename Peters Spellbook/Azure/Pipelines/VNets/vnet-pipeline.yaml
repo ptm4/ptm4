@@ -1,0 +1,71 @@
+﻿trigger: none
+
+parameters:
+  - name: configPath
+    displayName: "Path to vnet-config.xlsx (relative to repo root)"
+    type: string
+    default: "PowerShell/Peters Spellbook/Azure/Pipelines/VNets/vnet-config.xlsx"
+
+  - name: scriptPath
+    displayName: "Path to deploy-vnet.ps1 (relative to repo root)"
+    type: string
+    default: "PowerShell/Peters Spellbook/Azure/Pipelines/VNets/deploy-vnet.ps1"
+
+pool:
+  name: Infra-Pool
+  demands:
+    - Agent.Name -equals vm-infra-pool2
+
+stages:
+
+  - stage: Validate
+    displayName: "Validate Excel Config"
+    jobs:
+      - job: ValidateConfig
+        steps:
+          - checkout: self
+          - task: AzureCLI@2
+            displayName: "Validate Excel and Azure resources"
+            inputs:
+              azureSubscription: 'sub-JLB-Prod-Modern(24b5efbb-f6e2-4552-8fea-bfbbae97c64a)'
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                if (-not (Test-Path "$env:CONFIG_PATH")) {
+                  Write-Host "[FAIL] Excel config not found: $env:CONFIG_PATH"
+                  exit 1
+                }
+                Import-Module ImportExcel
+                $rows = Import-Excel -Path "$env:CONFIG_PATH"
+                $rows = $rows | Where-Object { -not [string]::IsNullOrWhiteSpace(($_.VNetName -as [string])) }
+                if ($rows.Count -eq 0) {
+                  Write-Host "[FAIL] No valid rows found in Excel"
+                  exit 1
+                }
+                Write-Host "[OK] Excel found with $($rows.Count) valid subnet row(s)"
+            env:
+              CONFIG_PATH: "$(Build.SourcesDirectory)/${{ parameters.configPath }}"
+
+  - stage: Deploy
+    displayName: "Deploy VNet Infrastructure"
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: DeployVNet
+        displayName: "Deploy VNets, Subnets, vHub Links, and Bastion Peerings"
+        environment: "infra-prod"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: "Run deploy-vnet.ps1"
+                  inputs:
+                    azureSubscription: 'sub-JLB-Prod-Modern(24b5efbb-f6e2-4552-8fea-bfbbae97c64a)'
+                    scriptType: 'pscore'
+                    scriptLocation: 'scriptPath'
+                    scriptPath: '$(Build.SourcesDirectory)/${{ parameters.scriptPath }}'
+                  env:
+                    CONFIG_PATH: "$(Build.SourcesDirectory)/${{ parameters.configPath }}"

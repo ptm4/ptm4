@@ -1,0 +1,6 @@
+﻿subscription_id     = "c3d4e5f6-3333-4000-8000-333333333333"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-JLB-Test-Modern-Network-Spoke"
+location            = "eastus2"
+vm_name             = "vm-test-modern"
+subnet_id           = "/subscriptions/c3d4e5f6-3333-4000-8000-333333333333/resourceGroups/rg-JLB-Test-Modern-Network-Spoke/providers/Microsoft.Network/virtualNetworks/vnet-JLB-Test-Modern-Network-Spoke/subnets/snet-JLB-Test-Modern-Default"

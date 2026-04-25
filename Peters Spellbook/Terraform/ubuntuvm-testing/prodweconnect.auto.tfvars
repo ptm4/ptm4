@@ -1,0 +1,6 @@
+﻿subscription_id     = "64c6a0fb-fb91-49bc-a66b-1c361eb0a868"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-weconnect-prod"
+location            = "eastus2"
+vm_name             = "vm-prod-weconnect"
+subnet_id           = "/subscriptions/64c6a0fb-fb91-49bc-a66b-1c361eb0a868/resourceGroups/rg-weconnect-prod/providers/Microsoft.Network/virtualNetworks/vnet-weconnect-prod/subnets/snet-stapp"

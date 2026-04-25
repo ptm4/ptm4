@@ -1,0 +1,107 @@
+﻿trigger: none
+
+parameters:
+- name: tfconfig
+  type: string
+  default: "PowerShell/Peters Spellbook/Terraform/wp-jammylab"
+
+stages:
+- stage: TerraformDeployment
+  displayName: 'Terraform Deploy'
+  jobs:
+
+  - job: Plan
+    displayName: 'Terraform Plan'
+    pool:
+      name: 'Infra-Pool'
+      demands:
+        - Agent.Name -equals vm-infra-pool2
+    steps:
+
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{ parameters.tfconfig }}'
+        backendAzureRmUseEnvironmentVariablesForAuthentication: false
+        backendAzureRmUseEntraIdForAuthentication: true
+        backendServiceArm: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'
+        backendAzureRmResourceGroupName: 'rg-JLB-Hub-Terraform'
+        backendAzureRmStorageAccountName: 'jlbstorage'
+        backendAzureRmContainerName: 'terraform'
+        backendAzureRmKey: 'cae/terraform.tfstate'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{ parameters.tfconfig }}'
+        commandOptions: '-out=$(System.DefaultWorkingDirectory)/tfplan'
+        environmentServiceNameAzureRM: 'sub-JLB-Test-IT(b2c3d4e5-2222-4000-8000-222222222222)'
+
+    - publish: '$(System.DefaultWorkingDirectory)/tfplan'
+      artifact: tfplan
+
+  - job: WaitForApproval
+    displayName: 'Manual Approval'
+    dependsOn: Plan
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      timeoutInMinutes: 60
+      inputs:
+        notifyUsers: 'nnumbat@jammylab.com'
+        instructions: 'Review Terraform plan output before approving apply. Reject to cancel.'
+        onTimeout: 'reject'
+
+  - job: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: WaitForApproval
+    pool:
+      name: 'Infra-Pool'
+      demands:
+        - Agent.Name -equals vm-infra-pool2
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{ parameters.tfconfig }}'
+        backendAzureRmUseEnvironmentVariablesForAuthentication: false
+        backendAzureRmUseEntraIdForAuthentication: true
+        backendServiceArm: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'
+        backendAzureRmResourceGroupName: 'rg-JLB-Hub-Terraform'
+        backendAzureRmStorageAccountName: 'jlbstorage'
+        backendAzureRmContainerName: 'terraform'
+        backendAzureRmKey: 'cae/terraform.tfstate'
+
+    - download: current
+      artifact: tfplan
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/${{ parameters.tfconfig }}'
+        commandOptions: '$(Pipeline.Workspace)/tfplan/tfplan'
+        environmentServiceNameAzureRM: 'sub-JLB-Test-IT(b2c3d4e5-2222-4000-8000-222222222222)'

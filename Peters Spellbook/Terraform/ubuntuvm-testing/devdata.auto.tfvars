@@ -1,0 +1,6 @@
+﻿subscription_id     = "698a1ef1-a61f-4598-b28b-f1fb73c39e51"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-network-dev"
+location            = "eastus2"
+vm_name             = "vm-dev-data"
+subnet_id           = "/subscriptions/698a1ef1-a61f-4598-b28b-f1fb73c39e51/resourceGroups/rg-network-dev/providers/Microsoft.Network/virtualNetworks/vnet-spoke-dev-eus2/subnets/snet-spoke-dev"

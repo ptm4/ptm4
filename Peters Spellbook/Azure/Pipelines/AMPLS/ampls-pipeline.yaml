@@ -1,0 +1,169 @@
+﻿trigger: none
+
+parameters:
+
+  - name: subscriptionId
+    displayName: "Target Subscription ID"
+    type: string
+    default: ""
+
+  - name: resourceGroup
+    displayName: "Resource Group Name"
+    type: string
+    default: ""
+
+  - name: amplsName
+    displayName: "AMPLS Name"
+    type: string
+    default: ""
+
+  - name: amplsQueryAccessMode
+    displayName: "AMPLS Query Access Mode"
+    type: string
+    default: "Open"
+    values:
+      - Open
+      - PrivateOnly
+
+  - name: amplsIngestionAccessMode
+    displayName: "AMPLS Ingestion Access Mode"
+    type: string
+    default: "Open"
+    values:
+      - Open
+      - PrivateOnly
+
+  - name: peName
+    displayName: "Private Endpoint Name"
+    type: string
+    default: ""
+
+  - name: peVnetResourceGroup
+    displayName: "PE VNet Resource Group"
+    type: string
+    default: ""
+
+  - name: peVnetName
+    displayName: "PE VNet Name"
+    type: string
+    default: ""
+
+  - name: peSubnetName
+    displayName: "PE Subnet Name"
+    type: string
+    default: ""
+
+  - name: lawNames
+    displayName: "Log Analytics Workspace Names (space-separated, optional)"
+    type: string
+    default: "none"
+
+  - name: lawResourceGroup
+    displayName: "Log Analytics Workspaces Resource Group (optional)"
+    type: string
+    default: "none"
+
+  - name: dceNames
+    displayName: "Data Collection Endpoint Names (space-separated, optional)"
+    type: string
+    default: "none"
+
+  - name: dceResourceGroup
+    displayName: "Data Collection Endpoints Resource Group (optional)"
+    type: string
+    default: "none"
+
+  - name: appInsightsNames
+    displayName: "Application Insights Names (space-separated, optional)"
+    type: string
+    default: "none"
+
+  - name: appInsightsResourceGroup
+    displayName: "Application Insights Resource Group (optional)"
+    type: string
+    default: "none"
+
+  - name: scriptPath
+    displayName: "Path to deploy-ampls.ps1 (relative to repo root)"
+    type: string
+    default: "PowerShell/Peter's Spellbook/Azure/Pipelines/AMPLS/deploy-ampls.ps1"
+
+pool:
+  name: Infra-Pool
+
+stages:
+
+  - stage: Validate
+    displayName: "Validate Parameters"
+    jobs:
+      - job: ValidateParams
+        steps:
+          - task: AzureCLI@2
+            displayName: "Validate required parameters and Azure resources"
+            inputs:
+              azureSubscription: 'sub-JLB-Test-IT(b2c3d4e5-2222-4000-8000-222222222222)'
+              scriptType: 'pscore'
+              scriptLocation: 'inlineScript'
+              inlineScript: |
+                $errors = 0
+                $required = @{
+                  subscriptionId      = "${{ parameters.subscriptionId }}"
+                  resourceGroup       = "${{ parameters.resourceGroup }}"
+                  amplsName           = "${{ parameters.amplsName }}"
+                  peName              = "${{ parameters.peName }}"
+                  peVnetResourceGroup = "${{ parameters.peVnetResourceGroup }}"
+                  peVnetName          = "${{ parameters.peVnetName }}"
+                  peSubnetName        = "${{ parameters.peSubnetName }}"
+                }
+                foreach ($key in $required.Keys) {
+                  if ([string]::IsNullOrWhiteSpace($required[$key])) {
+                    Write-Host "[FAIL] $key is required"
+                    $errors++
+                  } else {
+                    Write-Host "[OK]   $key = $($required[$key])"
+                  }
+                }
+                if ($errors -gt 0) { exit 1 }
+                
+                az account set --subscription "${{ parameters.subscriptionId }}"
+                az network vnet show --name "${{ parameters.peVnetName }}" --resource-group "${{ parameters.peVnetResourceGroup }}" --query name -o tsv
+                az network vnet subnet show --name "${{ parameters.peSubnetName }}" --vnet-name "${{ parameters.peVnetName }}" --resource-group "${{ parameters.peVnetResourceGroup }}" --query name -o tsv
+                Write-Host "Validation passed."
+
+  - stage: Deploy
+    displayName: "Deploy AMPLS Infrastructure"
+    dependsOn: Validate
+    condition: succeeded()
+    jobs:
+      - deployment: DeployAMPLS
+        displayName: "Deploy AMPLS, PE, DNS, and Linked Resources"
+        environment: "infra-prod"
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: "Run deploy-ampls.ps1"
+                  inputs:
+                    azureSubscription: 'sub-JLB-Test-IT(b2c3d4e5-2222-4000-8000-222222222222)'
+                    scriptType: 'pscore'
+                    scriptLocation: 'scriptPath'
+                    scriptPath: '$(Build.SourcesDirectory)/${{ parameters.scriptPath }}'
+                  env:
+                    SUBSCRIPTION_ID:              "${{ parameters.subscriptionId }}"
+                    RESOURCE_GROUP:               "${{ parameters.resourceGroup }}"
+                    AMPLS_NAME:                   "${{ parameters.amplsName }}"
+                    AMPLS_QUERY_ACCESS_MODE:      "${{ parameters.amplsQueryAccessMode }}"
+                    AMPLS_INGESTION_ACCESS_MODE:  "${{ parameters.amplsIngestionAccessMode }}"
+                    PE_NAME:                      "${{ parameters.peName }}"
+                    PE_VNET_RG:                   "${{ parameters.peVnetResourceGroup }}"
+                    PE_VNET_NAME:                 "${{ parameters.peVnetName }}"
+                    PE_SUBNET_NAME:               "${{ parameters.peSubnetName }}"
+                    LAW_NAMES:                    "${{ parameters.lawNames }}"
+                    LAW_RG:                       "${{ parameters.lawResourceGroup }}"
+                    DCE_NAMES:                    "${{ parameters.dceNames }}"
+                    DCE_RG:                       "${{ parameters.dceResourceGroup }}"
+                    APPINSIGHTS_NAMES:            "${{ parameters.appInsightsNames }}"
+                    APPINSIGHTS_RG:               "${{ parameters.appInsightsResourceGroup }}"

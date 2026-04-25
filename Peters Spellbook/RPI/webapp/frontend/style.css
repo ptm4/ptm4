@@ -1,0 +1,107 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --border: #2a2d3a;
+  --accent: #4f8ef7;
+  --green: #4caf7d;
+  --red: #e05c5c;
+  --text: #e2e4ed;
+  --muted: #7a7f99;
+  --radius: 8px;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  min-height: 100vh;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 20px;
+  margin-bottom: 36px;
+}
+
+.header-left { display: flex; align-items: baseline; gap: 14px; }
+header h1 { font-size: 20px; font-weight: 600; }
+.badge-host {
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.health-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background 0.3s;
+}
+.health-dot.health-up   { background: var(--green); }
+.health-dot.health-down { background: var(--red); }
+
+/* Cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: border-color 0.15s;
+}
+.card:hover { border-color: #3a3d4a; }
+.card-placeholder { border-style: dashed; opacity: 0.6; }
+
+.card-icon { font-size: 24px; }
+.card-body h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.card-body p  { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.card-body code {
+  font-family: monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.card-link {
+  margin-top: auto;
+  align-self: flex-start;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.card-link:hover { text-decoration: underline; }
+
+footer {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+  font-family: monospace;
+}

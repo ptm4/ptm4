@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Notes</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Sidebar -->
+    <nav id="sidebar">
+      <div id="sidebar-header">
+        <span id="app-title">Notes</span>
+        <button id="btn-sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+      </div>
+
+      <div id="notebooks-section">
+        <div class="section-head">
+          <span>NOTEBOOKS</span>
+          <button id="btn-new-notebook" title="New notebook">+</button>
+        </div>
+        <ul id="notebook-list"></ul>
+      </div>
+
+      <div id="pages-section">
+        <div class="section-head">
+          <span id="pages-label">PAGES</span>
+          <button id="btn-new-page" title="New page" disabled>+</button>
+        </div>
+        <ul id="page-list"></ul>
+      </div>
+
+      <div id="sync-bar">
+        <span id="sync-status">&#9679; offline</span>
+        <button id="btn-sync" disabled>Sync</button>
+      </div>
+    </nav>
+
+    <!-- Editor pane -->
+    <main id="editor-pane">
+      <div id="editor-toolbar">
+        <button data-cmd="bold"           title="Bold"><b>B</b></button>
+        <button data-cmd="italic"         title="Italic"><i>I</i></button>
+        <button data-cmd="strike"         title="Strikethrough"><s>S</s></button>
+        <div class="tb-sep"></div>
+        <button data-cmd="h1"             title="Heading 1">H1</button>
+        <button data-cmd="h2"             title="Heading 2">H2</button>
+        <button data-cmd="h3"             title="Heading 3">H3</button>
+        <div class="tb-sep"></div>
+        <button data-cmd="bulletList"     title="Bullet list">&#8226; List</button>
+        <button data-cmd="orderedList"    title="Numbered list">1. List</button>
+        <button data-cmd="taskList"       title="Task list">&#9744; Tasks</button>
+        <div class="tb-sep"></div>
+        <button data-cmd="blockquote"     title="Quote">&#10077;</button>
+        <button data-cmd="codeBlock"      title="Code block">&lt;/&gt;</button>
+        <button data-cmd="horizontalRule" title="Divider">&#8212;</button>
+        <div class="tb-sep"></div>
+        <button data-cmd="undo"           title="Undo">&#8630;</button>
+        <button data-cmd="redo"           title="Redo">&#8631;</button>
+      </div>
+
+      <div id="page-title-wrap">
+        <input id="page-title-input" type="text" placeholder="Page title" disabled />
+      </div>
+
+      <div id="editor-content"></div>
+
+      <div id="editor-placeholder">
+        <p>Select or create a page to start writing.</p>
+      </div>
+    </main>
+
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

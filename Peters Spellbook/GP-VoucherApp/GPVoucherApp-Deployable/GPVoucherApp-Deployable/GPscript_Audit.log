@@ -1,0 +1,4 @@
+﻿2025-10-06 17:25:14 [nnumbat] Starting update for 1 vouchers using SQL Auth (User=sup\a-nnumbat).
+2025-10-06 17:25:18 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."
+2025-10-06 17:25:29 [nnumbat] Starting update for 1 vouchers using SQL Auth (User=sup\sa).
+2025-10-06 17:25:33 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."

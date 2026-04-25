@@ -1,0 +1,119 @@
+﻿trigger: none
+
+parameters:
+- name: site_name
+  type: string
+  displayName: 'AFD Site Name (must match the deployments/ folder name, e.g. weconnect-qa)'
+  default: 'example-site'
+
+variables:
+  workingDirectory: '$(System.DefaultWorkingDirectory)/PowerShell/Peters Spellbook/Terraform/AFD/deployments/${{ parameters.site_name }}'
+
+stages:
+- stage: TerraformDeployment
+  displayName: 'AFD Deploy — ${{ parameters.site_name }}'
+  jobs:
+
+  # ────────────────────────────────────────────────────────────────────────────
+  - job: Plan
+    displayName: 'Terraform Plan'
+    pool:
+      name: 'Infra-Pool'
+      demands:
+        - Agent.Name -equals vm-infra-pool2
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workingDirectory)'
+        backendAzureRmUseEnvironmentVariablesForAuthentication: false
+        backendAzureRmUseEntraIdForAuthentication: true
+        backendServiceArm: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'
+        backendAzureRmResourceGroupName: 'rg-JLB-Hub-Terraform'
+        backendAzureRmStorageAccountName: 'jlbstorage'
+        backendAzureRmContainerName: 'terraform'
+        backendAzureRmKey: 'afd/${{ parameters.site_name }}.tfstate'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Plan'
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(workingDirectory)'
+        commandOptions: '-out=$(System.DefaultWorkingDirectory)/tfplan'
+        environmentServiceNameAzureRM: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'
+
+    - publish: '$(System.DefaultWorkingDirectory)/tfplan'
+      artifact: tfplan
+
+  # ────────────────────────────────────────────────────────────────────────────
+  - job: WaitForApproval
+    displayName: 'Manual Approval'
+    dependsOn: Plan
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      timeoutInMinutes: 60
+      inputs:
+        notifyUsers: 'nnumbat@jammylab.com'
+        instructions: |
+          Review the Terraform plan for AFD site: ${{ parameters.site_name }}
+
+          Deployment folder : PowerShell/Peters Spellbook/Terraform/AFD/deployments/${{ parameters.site_name }}
+          State key         : afd/${{ parameters.site_name }}.tfstate
+
+          Approve to apply, Reject to cancel.
+        onTimeout: 'reject'
+
+  # ────────────────────────────────────────────────────────────────────────────
+  - job: Apply
+    displayName: 'Terraform Apply'
+    dependsOn: WaitForApproval
+    pool:
+      name: 'Infra-Pool'
+      demands:
+        - Agent.Name -equals vm-infra-pool2
+    steps:
+
+    - checkout: self
+
+    - task: TerraformInstaller@1
+      displayName: 'Install Terraform'
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Init'
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(workingDirectory)'
+        backendAzureRmUseEnvironmentVariablesForAuthentication: false
+        backendAzureRmUseEntraIdForAuthentication: true
+        backendServiceArm: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'
+        backendAzureRmResourceGroupName: 'rg-JLB-Hub-Terraform'
+        backendAzureRmStorageAccountName: 'jlbstorage'
+        backendAzureRmContainerName: 'terraform'
+        backendAzureRmKey: 'afd/${{ parameters.site_name }}.tfstate'
+
+    - download: current
+      artifact: tfplan
+
+    - task: TerraformTaskV4@4
+      displayName: 'Terraform Apply'
+      inputs:
+        provider: 'azurerm'
+        command: 'apply'
+        workingDirectory: '$(workingDirectory)'
+        commandOptions: '$(Pipeline.Workspace)/tfplan/tfplan'
+        environmentServiceNameAzureRM: 'sub-JLB-hub(a1b2c3d4-1111-4000-8000-111111111111)'

@@ -1,0 +1,39 @@
+﻿2025-09-09 15:55:05 [nnumbat] Voucher [V8888888882550765] added to list.
+2025-09-09 15:55:35 [nnumbat] Starting update for 1 vouchers using SQL Auth (User=sa).
+2025-09-09 15:55:51 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: Named Pipes Provider, error: 40 - Could not open a connection to SQL Server)"
+2025-09-10 13:26:11 [nnumbat] Voucher [V8888888882550765] added to list.
+2025-09-10 13:26:15 [nnumbat] Voucher [V8888888882528226] added to list.
+2025-09-10 13:26:26 [nnumbat] Starting update for 2 vouchers using Windows Authentication.
+2025-09-10 13:26:41 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: Named Pipes Provider, error: 40 - Could not open a connection to SQL Server)"
+2025-09-10 13:27:00 [nnumbat] Starting update for 2 vouchers using SQL Auth (User=sa).
+2025-09-10 13:27:15 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: Named Pipes Provider, error: 40 - Could not open a connection to SQL Server)"
+2025-09-10 13:36:23 [nnumbat] Starting update for 2 vouchers using Windows Authentication.
+2025-09-10 13:36:38 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: Named Pipes Provider, error: 40 - Could not open a connection to SQL Server)"
+2025-09-10 13:37:19 [nnumbat] Starting update for 2 vouchers using Windows Authentication.
+2025-09-10 13:37:34 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "A network-related or instance-specific error occurred while establishing a connection to SQL Server. The server was not found or was not accessible. Verify that the instance name is correct and that SQL Server is configured to allow remote connections. (provider: Named Pipes Provider, error: 40 - Could not open a connection to SQL Server)"
+2025-09-10 13:52:15 [nnumbat] Voucher [V8888888882550765] added to list.
+2025-09-10 13:52:18 [nnumbat] Voucher [V8888888882528226] added to list.
+2025-09-10 13:52:20 [nnumbat] Starting update for 2 vouchers using Windows Authentication.
+2025-09-10 13:52:23 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."
+2025-09-10 13:54:05 [nnumbat] Voucher [V8888888882550765] added to list.
+2025-09-10 13:54:07 [nnumbat] Voucher [V8888888882528226] added to list.
+2025-09-10 13:54:10 [nnumbat] Starting update for 2 vouchers using Windows Authentication.
+2025-09-10 13:54:12 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."
+2025-09-10 14:01:36 [nnumbat] Voucher [V8888888882550765] added to list.
+2025-09-10 14:01:40 [nnumbat] Voucher [V8888888882528226] added to list.
+2025-09-12 10:48:45 [nnumbat] Voucher [f] added to list.
+2025-09-12 10:48:46 [nnumbat] Voucher [ff] added to list.
+2025-09-12 10:48:47 [nnumbat] Voucher [ff] added to list.
+2025-09-12 10:48:49 [nnumbat] Voucher [ff] added to list.
+2025-09-12 10:48:55 [nnumbat] Voucher [f] added to list.
+2025-09-12 10:49:05 [nnumbat] Voucher [ffdsf] added to list.
+2025-09-12 10:49:24 [nnumbat] Voucher [ffdsf] removed from list.
+2025-09-12 10:49:25 [nnumbat] Voucher [ff] removed from list.
+2025-09-12 10:49:26 [nnumbat] Voucher [ff] removed from list.
+2025-09-12 10:49:27 [nnumbat] Voucher [f] removed from list.
+2025-09-12 10:49:28 [nnumbat] Voucher [ff] removed from list.
+2025-09-12 10:49:29 [nnumbat] Voucher [f] removed from list.
+2025-09-12 11:26:41 [nnumbat] Starting update for 8 vouchers using Windows Authentication.
+2025-09-12 11:26:42 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."
+2025-09-12 11:29:05 [nnumbat] Starting update for 8 vouchers using Windows Authentication.
+2025-09-12 11:29:06 [nnumbat] ERROR: Exception calling "Open" with "0" argument(s): "The target principal name is incorrect.  Cannot generate SSPI context."

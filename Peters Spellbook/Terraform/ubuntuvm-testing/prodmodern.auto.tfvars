@@ -1,0 +1,6 @@
+﻿subscription_id     = "24b5efbb-f6e2-4552-8fea-bfbbae97c64a"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-JLB-Prod-Modern-Network-Spoke"
+location            = "eastus2"
+vm_name             = "vm-prod-modern"
+subnet_id           = "/subscriptions/24b5efbb-f6e2-4552-8fea-bfbbae97c64a/resourceGroups/rg-JLB-Prod-Modern-Network-Spoke/providers/Microsoft.Network/virtualNetworks/vnet-JLB-Prod-Modern-Network-Spoke/subnets/snet-JLB-Prod-Modern-Default"

@@ -1,0 +1,6 @@
+﻿subscription_id     = "d4e5f6a7-4444-4000-8000-444444444444"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-network-test"
+location            = "eastus2"
+vm_name             = "vm-test-data"
+subnet_id           = "/subscriptions/d4e5f6a7-4444-4000-8000-444444444444/resourceGroups/rg-network-test/providers/Microsoft.Network/virtualNetworks/vnet-spoke-test-eus2/subnets/snet-spoke-test"

@@ -1,0 +1,6 @@
+﻿subscription_id     = "1252673f-fe11-43ae-8821-3695c6cf5947"
+tenant_id           = "e5f6a7b8-5555-4000-8000-555555555555"
+resource_group_name = "rg-JLB-Prod-DATA_PowerBI-Gateway"
+location            = "eastus2"
+vm_name             = "vm-prod-data-powerbi"
+subnet_id           = "/subscriptions/1252673f-fe11-43ae-8821-3695c6cf5947/resourceGroups/rg-JLB-Prod-DATA_PowerBI-Gateway/providers/Microsoft.Network/virtualNetworks/VM-JLB-Prod-DATA-PowerBI-Gateway-vnet/subnets/snet-JLB-Prod-DATA-PowerBI-Gateway"

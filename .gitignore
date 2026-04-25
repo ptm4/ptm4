@@ -1,0 +1,52 @@
+# ── Rust / Cargo ──────────────────────────────────────────────────────────────
+target/
+**/*.rs.bk
+Cargo.lock          # only ignore for libraries; binaries should keep it — but fine for mono-repo
+
+# ── Node / npm ────────────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+dist/
+.cache/
+
+# ── Tauri build outputs ───────────────────────────────────────────────────────
+src-tauri/target/
+*.pdb
+
+# ── SQLite databases (runtime data, not source) ───────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── Secrets / environment ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ── OS clutter ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor / IDE ──────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.user
+
+# ── Certificates (never commit private keys) ──────────────────────────────────
+*.pem
+*.key
+*.crt
+!**/.gitkeep
+
+# ── Docker runtime state ──────────────────────────────────────────────────────
+bitwarden-db/
+vaultwarden-data/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/

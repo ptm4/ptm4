@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PTMonitor</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="widget">
+    <div id="header" data-tauri-drag-region>
+      <span id="title">PTMONITOR</span>
+      <div id="header-controls">
+        <button id="btn-gear" title="Settings">&#9881;</button>
+        <button id="btn-min"  title="Minimise">&#8722;</button>
+        <button id="btn-close" title="Quit">&#10005;</button>
+        <span id="status-dot"></span>
+      </div>
+    </div>
+
+    <!-- Settings overlay -->
+    <div id="settings-panel" class="hidden">
+      <div class="settings-title">SETTINGS</div>
+
+      <div class="setting-row">
+        <span class="setting-label">Launch on Startup</span>
+        <label class="toggle"><input type="checkbox" id="set-startup"><span class="slider"></span></label>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">Start Hidden</span>
+        <label class="toggle"><input type="checkbox" id="set-start-hidden"><span class="slider"></span></label>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">Click-Through</span>
+        <label class="toggle"><input type="checkbox" id="set-click-through"><span class="slider"></span></label>
+      </div>
+
+      <div class="setting-divider"></div>
+
+      <div class="setting-label" style="margin-bottom:6px">Opacity</div>
+      <div id="opacity-btns">
+        <button class="op-btn" data-op="1">100%</button>
+        <button class="op-btn" data-op="0.75">75%</button>
+        <button class="op-btn" data-op="0.5">50%</button>
+        <button class="op-btn" data-op="0.25">25%</button>
+      </div>
+    </div>
+
+    <div id="stats">
+      <div class="stat-row" id="row-cpu">
+        <span class="label">CPU</span>
+        <div class="bar-wrap"><div class="bar cpu" id="bar-cpu"></div></div>
+        <span class="value" id="val-cpu">—</span>
+      </div>
+
+      <div class="stat-row" id="row-ram">
+        <span class="label">RAM</span>
+        <div class="bar-wrap"><div class="bar ram" id="bar-ram"></div></div>
+        <span class="value" id="val-ram">—</span>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="stat-row" id="row-gpu">
+        <span class="label">GPU</span>
+        <div class="bar-wrap"><div class="bar gpu" id="bar-gpu"></div></div>
+        <span class="value" id="val-gpu">—</span>
+      </div>
+
+      <div id="disk-rows"></div>
+
+      <div class="section-label">NETWORK</div>
+
+      <div class="stat-row">
+        <span class="label">&#8595; DOWN</span>
+        <div class="bar-wrap"><div class="bar net" id="bar-rx"></div></div>
+        <span class="value" id="val-rx">—</span>
+      </div>
+
+      <div class="stat-row">
+        <span class="label">&#8593; UP</span>
+        <div class="bar-wrap"><div class="bar net-up" id="bar-tx"></div></div>
+        <span class="value" id="val-tx">—</span>
+      </div>
+    </div>
+
+    <div id="footer" data-tauri-drag-region>
+      <span id="uptime-label">—</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+﻿trigger: none
+
+parameters:
+  - name: wpRoot
+    type: string
+    default: 'PowerShell/Peters Spellbook/Terraform/wp-jammylab'
+  - name: acrServiceConnection
+    type: string
+    displayName: 'ACR service connection name'
+    default: 'acrwpjammylabeus2'
+
+variables:
+  imageRepository: 'wp-jammylab'
+
+pool:
+  name: 'Infra-Pool'
+  demands:
+    - Agent.Name -equals vm-infra-pool2
+
+steps:
+  - checkout: self
+    displayName: 'Checkout'
+
+  - task: Docker@2
+    displayName: 'Build and push image'
+    inputs:
+      containerRegistry: '${{ parameters.acrServiceConnection }}'
+      repository: '$(imageRepository)'
+      command: 'buildAndPush'
+      Dockerfile: '$(System.DefaultWorkingDirectory)/${{ parameters.wpRoot }}/docker/Dockerfile'
+      buildContext: '$(System.DefaultWorkingDirectory)/${{ parameters.wpRoot }}'
+      tags: |
+        $(Build.BuildId)
+        latest
