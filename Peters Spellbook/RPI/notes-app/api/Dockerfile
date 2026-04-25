@@ -1,4 +1,4 @@
-FROM node:lts-alpine
+FROM node:20-alpine
 
 # better-sqlite3 is a native module — needs build tools
 RUN apk add --no-cache python3 make g++
