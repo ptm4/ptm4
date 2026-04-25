@@ -55,6 +55,10 @@ jobs:
           docker compose build notes-api
           docker compose up -d notes-api
 
+      - name: Restart nginx to pick up config changes
+        working-directory: /srv/docker/compose
+        run: docker compose restart nginx-webapp
+
       - name: Startup logs
         if: always()
         working-directory: /srv/docker/compose
