@@ -8,7 +8,6 @@ parameters:
 
 variables:
   workingDirectory: '$(System.DefaultWorkingDirectory)/PowerShell/Peters Spellbook/Terraform/AFD/deployments/${{ parameters.site_name }}'
-  approvalEmail: '$(APPROVAL_EMAIL)'
 
 stages:
 - stage: TerraformDeployment
