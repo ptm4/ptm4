@@ -8,6 +8,7 @@ parameters:
 
 variables:
   workingDirectory: '$(System.DefaultWorkingDirectory)/PowerShell/Peters Spellbook/Terraform/AFD/deployments/${{ parameters.site_name }}'
+  approvalEmail: '$(APPROVAL_EMAIL)'
 
 stages:
 - stage: TerraformDeployment
@@ -65,7 +66,7 @@ stages:
     - task: ManualValidation@1
       timeoutInMinutes: 60
       inputs:
-        notifyUsers: 'nnumbat@jammylab.com'
+        notifyUsers: $(approvalEmail)
         instructions: |
           Review the Terraform plan for AFD site: ${{ parameters.site_name }}
 

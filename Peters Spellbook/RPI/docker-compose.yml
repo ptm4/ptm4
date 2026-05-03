@@ -14,7 +14,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     ports:
-      - "192.168.1.10:445:445"  # Bind to rpi
+      - "${RPI_IP}:445:445"
     environment:
       - USERID=1000
       - GROUPID=1003
@@ -115,7 +115,7 @@ services:
       - ./notes-app/api/index.js:/app/index.js:ro
       - notes_data:/data
     ports:
-      - "192.168.1.10:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
+      - "${RPI_IP}:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
     expose:
       - "3002"                      # internal Docker network access for nginx
     networks:
@@ -141,7 +141,7 @@ services:
     restart: unless-stopped
     logging: *default-logging
     ports:
-      - "192.168.1.10:8443:443"
+      - "${RPI_IP}:8443:443"
     volumes:
       - /srv/fs-merged/ptm/certs/webapp.rpi.lan.pem:/etc/ssl/certs/webapp.crt:ro
       - /srv/fs-merged/ptm/certs/webapp.rpi.lan-key.pem:/etc/ssl/private/webapp.key:ro

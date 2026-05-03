@@ -116,7 +116,6 @@ variable "vnet_sql_resource_group_name" {
 variable "mysql_admin_password" {
   type      = string
   sensitive = true
-  default   = "Bu88le-Wr4p24"
 }
 
 # CONTAINER APP ENVIRONMENT

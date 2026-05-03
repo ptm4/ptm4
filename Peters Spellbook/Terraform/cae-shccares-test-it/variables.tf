@@ -100,6 +100,6 @@ variable "log_analytics_workspace_resource_group" {
   default = "rg-JLB-Test-IT-WordPress"
 }
 variable "mysql_admin_password" {
+  type      = string
   sensitive = true
-  default = "Bu88le-Wr4p24"
 }
