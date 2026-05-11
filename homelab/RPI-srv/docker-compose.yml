@@ -113,6 +113,7 @@ services:
       PORT: 3002
     volumes:
       - ./notes-app/api/index.js:/app/index.js:ro
+      - ./notes-app/web:/web:ro
       - notes_data:/data
     ports:
       - "${RPI_IP}:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
