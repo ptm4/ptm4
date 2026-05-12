@@ -7,43 +7,29 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div class="header-left">
-        <h1>webapp.rpi.lan</h1>
-        <span class="badge-host">rpi · 192.168.1.10</span>
-      </div>
-      <span id="healthDot" class="health-dot" title="API health"></span>
-    </header>
+  <div class="layout">
 
-    <section class="cards">
-
-      <!-- ── Add your feature cards below ────────────────────────────────── -->
-      <!--
-        Card template:
-        <div class="card">
-          <div class="card-icon">⚙️</div>
-          <div class="card-body">
-            <h2>Feature Name</h2>
-            <p>Short description of what this does.</p>
-          </div>
-          <a href="/your-page.html" class="card-link">Open →</a>
-        </div>
-      -->
-
-      <div class="card card-placeholder">
-        <div class="card-icon">🧱</div>
-        <div class="card-body">
-          <h2>Framework Ready</h2>
-          <p>Add routes to <code>backend/index.js</code> and cards here to build out your app.</p>
-        </div>
+    <!-- Sidebar navigation -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        <span class="logo-text">rpi.lan</span>
+        <span id="healthDot" class="health-dot" title="API health"></span>
       </div>
 
-    </section>
+      <ul class="nav-links">
+        <li><a href="#home"     class="nav-link" data-route="home">Home</a></li>
+        <li><a href="#security" class="nav-link" data-route="security">Security</a></li>
+        <li class="nav-placeholder"><span>Notes</span><span class="nav-badge">soon</span></li>
+      </ul>
 
-    <footer>
-      <span id="uptimeEl">—</span>
-    </footer>
+      <div class="sidebar-footer">
+        <span id="uptimeEl" class="uptime-text">—</span>
+      </div>
+    </nav>
+
+    <!-- Main content area — router renders here -->
+    <main id="view" class="view"></main>
+
   </div>
 
   <script src="app.js"></script>
