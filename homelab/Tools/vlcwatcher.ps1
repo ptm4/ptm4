@@ -56,7 +56,7 @@ param(
     [string]$Preset,
 
     [Alias('q')]
-    [string]$Quality = 'best',
+    [string]$Quality = 'best,1440p60,1440p,1080p60,1080p,720p60,720p,worst',
 
     [string]$VlcPath = 'C:\Program Files\VideoLAN\VLC\vlc.exe',
 
@@ -114,7 +114,7 @@ function Start-Stream {
     }
 
     # Launch each stream in its own process so multiple channels run in parallel
-    Start-Process -FilePath 'streamlink' -ArgumentList $streamlinkArgs -WindowStyle Minimized | Out-Null
+    Start-Process -FilePath 'streamlink' -ArgumentList $streamlinkArgs -WindowStyle Hidden | Out-Null
 }
 
 # -------------------------------------------------------------------
