@@ -31,7 +31,8 @@ app.get('/api/health', (req, res) => {
 
 // ── ADD YOUR ROUTES HERE ──────────────────────────────────────────────────────
 
-
+const reportsRouter = require('./routes/reports');
+app.use('/api/reports', reportsRouter);
 
 // ─────────────────────────────────────────────────────────────────────────────
 

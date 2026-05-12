@@ -131,6 +131,7 @@ services:
     command: sh -c "npm install --omit=dev && node index.js"
     volumes:
       - ./webapp:/app
+      - /mnt/noblenumbat-fs/ptm/security-reports:/reports:ro
     expose:
       - "3000"
     networks:
