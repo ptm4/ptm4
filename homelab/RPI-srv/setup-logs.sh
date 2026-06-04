@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Run once on the Pi to set up persistent log streaming to the Samba share.
-# Logs will be accessible at \\192.168.1.10\ptm\logging (\\rpi.lan\ptm\logging)
+# Run once on the Pi to set up persistent log streaming to the opti file server.
+# Logs will be accessible at \\opti\fs\ptm\logging
 # Usage: sudo bash setup-logs.sh
 
 set -euo pipefail
 
 COMPOSE_FILE="/srv/docker/compose/docker-compose.yml"
-LOG_DIR="/mnt/noblenumbat-fs/ptm/logging"
+LOG_DIR="/mnt/opti-fs/ptm/logging"
 SERVICE="docker-stack-logs"
 
 mkdir -p "$LOG_DIR"
@@ -60,5 +60,5 @@ echo "  Live logs : ${LOG_DIR}/stack.log"
 echo "  Deploy logs: ${LOG_DIR}/deploy-*.log"
 echo "  Max disk   : ~150 MB total before rotation kicks in"
 echo ""
-echo "  Windows path: \\\\192.168.1.10\\ptm\\logging\\"
+echo "  Windows path: \\\\opti\\fs\\ptm\\logging\\"
 echo "  From Pi:  tail -f ${LOG_DIR}/stack.log"
