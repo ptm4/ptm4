@@ -59,7 +59,7 @@ jobs:
         working-directory: /srv/docker/compose
         run: docker compose restart nginx-webapp
 
-      - name: Startup logs
+
         if: always()
         working-directory: /srv/docker/compose
         run: |
