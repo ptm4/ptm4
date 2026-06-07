@@ -21,20 +21,20 @@ jobs:
 
       - name: Copy compose file
         run: |
-          cp "homelab/RPI-srv/docker-compose.yml" /srv/docker/compose/docker-compose.yml
+          cp "opti/ptm/repo/ptm4/homelab/RPI-srv/docker-compose.yml" /srv/docker/compose/docker-compose.yml
 
       - name: Copy webapp and nginx config
         run: |
           mkdir -p /srv/docker/compose/webapp
-          cp -r "homelab/RPI-srv/webapp/." /srv/docker/compose/webapp/
-          cp "homelab/RPI-srv/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
+          cp -r "opti/ptm/repo/ptm4/homelab/RPI-srv/webapp/." /srv/docker/compose/webapp/
+          cp "opti/ptm/repo/ptm4/homelab/RPI-srv/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
       - name: Copy notes-app
         run: |
           mkdir -p /srv/docker/compose/notes-app/api
           mkdir -p /srv/docker/compose/notes-app/web
-          cp -r "homelab/RPI-srv/notes-app/api/." /srv/docker/compose/notes-app/api/
-          cp -r "homelab/RPI-srv/notes-app/web/." /srv/docker/compose/notes-app/web/
+          cp -r "opti/ptm/repo/ptm4/homelab/RPI-srv/notes-app/api/." /srv/docker/compose/notes-app/api/
+          cp -r "opti/ptm/repo/ptm4/homelab/RPI-srv/notes-app/web/." /srv/docker/compose/notes-app/web/
 
       - name: Pull latest images
         working-directory: /srv/docker/compose
