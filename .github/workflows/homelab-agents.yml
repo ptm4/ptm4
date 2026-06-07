@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Install Python deps
-        run: python3 -m pip install --user --quiet --break-system-packages requests demoparser2
+        run: python3 -m pip install --user --quiet --break-system-packages requests "demoparser2==0.41.3"
 
       - name: Run agents (state-gated)
         env:
