@@ -5,10 +5,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "$GITHUB_WORKSPACE/homelab/RPI-srv/docker-compose.yml"
-      - "$GITHUB_WORKSPACE/homelab/RPI-srv/webapp/**"
-      - "$GITHUB_WORKSPACE/homelab/RPI-srv/nginx-wg.conf"
-      - "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/**"
+      - "homelab/RPI-srv/docker-compose.yml"
+      - "homelab/RPI-srv/webapp/**"
+      - "homelab/RPI-srv/nginx-wg.conf"
+      - "homelab/RPI-srv/notes-app/**"
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
 jobs:
@@ -22,6 +22,7 @@ jobs:
 
       - name: Copy compose file
         run: |
+          mkdir -p /srv/docker/compose
           cp "$GITHUB_WORKSPACE/homelab/RPI-srv/docker-compose.yml" /srv/docker/compose/docker-compose.yml
 
       - name: Copy webapp and nginx config
