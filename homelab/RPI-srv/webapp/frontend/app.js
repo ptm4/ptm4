@@ -194,6 +194,28 @@ async function renderLeetify(view) {
             <td>${verdict}</td></tr>`;
   }).join('');
 
+  // Positional breakdown (only present when demo parsing ran on opti).
+  const positions = d.positions || {};
+  const posMaps = Object.keys(positions);
+  const posHtml = posMaps.length ? `
+    <h3 class="detail-section-title">Positional breakdown — where you die</h3>
+    <div class="pos-grid">
+      ${posMaps.map(mp => {
+        const p = positions[mp];
+        const rows = (p.hotspots || []).map(h =>
+          `<tr><td>${escHtml(h.area)}</td><td>${escHtml(h.side)}</td><td>${h.count}</td><td>${h.pct}%</td></tr>`
+        ).join('');
+        return `<div class="pos-card">
+          <div class="pos-card-head">${escHtml(mp)} — ${p.deaths} deaths
+            <span class="pos-split">CT ${p.ct_deaths} / T ${p.t_deaths}</span></div>
+          <table class="detail-table"><thead><tr><th>Area</th><th>Side</th><th>Deaths</th><th>%</th></tr></thead>
+            <tbody>${rows}</tbody></table>
+        </div>`;
+      }).join('')}
+    </div>
+    <p class="sec-empty-hint">Reposition advice for each hotspot is in the coaching review below.</p>
+  ` : '';
+
   const logHtml = d.log
     ? (typeof marked !== 'undefined' ? marked.parse(d.log) : `<pre>${escHtml(d.log)}</pre>`)
     : '';
@@ -207,6 +229,7 @@ async function renderLeetify(view) {
         <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
         <tbody>${mapRows}</tbody>
       </table>` : ''}
+    ${posHtml}
     <div class="agent-report-body" style="margin-top:20px">${logHtml}</div>
   `;
 }

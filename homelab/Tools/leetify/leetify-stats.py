@@ -24,7 +24,10 @@ from datetime import datetime, timezone
 
 # Shared dated-report writer lives in Tools/homelab/. Add it to the path.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "homelab"))
-from _report import write_report, now_iso  # noqa: E402
+from _report import write_report, now_iso, agent_logs_dir  # noqa: E402
+# Positional (demo-parsing) analysis lives alongside this file.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import demo_positions  # noqa: E402
 
 BASE_URL = "https://api-public.cs-prod.leetify.com"
 MATCH_COUNT = 25
@@ -246,8 +249,12 @@ def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None):
     return "\n".join(L)
 
 
-def llm_review(digest):
-    """Optional: send the digest to Claude for a coaching narrative. Returns text or None."""
+def llm_review(digest, positions_digest=None):
+    """Optional: send the digest to Claude for a coaching narrative. Returns text or None.
+
+    When positions_digest (per-map death hotspots from demo parsing) is provided, the
+    prompt additionally asks for concrete where-to-reposition advice per hotspot.
+    """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
@@ -260,6 +267,15 @@ def llm_review(digest):
         "CT vs T split. Use short markdown sections. Be direct and actionable.\n\n"
         f"DATA:\n{digest}"
     )
+    if positions_digest:
+        prompt += (
+            "\n\nDEATH HOTSPOTS (per map, from demo parsing — area, % of deaths, side):\n"
+            f"{positions_digest}\n\n"
+            "Add a final markdown section '## Positional fixes'. For each map's top death "
+            "hotspots, name the SPECIFIC spot/angle the player is dying at and exactly where to "
+            "reposition or how to play it instead (safer angle, off-angle, default position, "
+            "trade setup, or utility to use first). Use your CS2 map knowledge of callouts."
+        )
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -312,11 +328,23 @@ def analyze(profile, matches, steam_id):
     dim = dimension_review(profile)
     findings, recs = build_findings(profile, dim, stats)
 
+    # Positional "where you die" analysis (heavy, opt-in: LEETIFY_PARSE_DEMOS=1).
+    positions = {}
+    if os.environ.get("LEETIFY_PARSE_DEMOS") in ("1", "true", "yes"):
+        try:
+            positions = demo_positions.analyze_positions(
+                matches, steam_id, heatmap_dir=agent_logs_dir())
+        except Exception as e:
+            print(f"positional analysis skipped: {e}", file=sys.stderr)
+
+    positions_digest = demo_positions.hotspots_digest(positions) if positions else None
     digest = build_digest(name, profile, maps, dim, stats)
-    ai = llm_review(digest)
+    ai = llm_review(digest, positions_digest=positions_digest)
 
     status = "warn" if findings else "ok"
     log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai)
+    if positions:
+        log += "\n\n---\n\n" + demo_positions.positions_markdown(positions)
 
     return {
         "tool": "leetify-stats",
@@ -329,6 +357,7 @@ def analyze(profile, matches, steam_id):
         "steam64_id": str(steam_id),
         "maps": maps,
         "dimensions": dim["dims"],
+        "positions": positions,
         "ai_review": bool(ai),
         # keep raw blobs for the page / future use
         "profile": profile,

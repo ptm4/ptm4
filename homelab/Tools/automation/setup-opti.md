@@ -112,3 +112,27 @@ ls -la "$HL_AGENT_LOGS_DIR"
 # dispatcher
 curl -s -H "Authorization: Bearer $HL_DISPATCH_TOKEN" http://192.168.1.11:9099/state | jq
 ```
+
+## 6. Leetify positional analysis (optional, heavy)
+
+The Leetify agent (`Tools/leetify/leetify-stats.py`) always produces the heuristic +
+Claude review. To additionally parse Valve demos for real "where you die" hotspots and
+per-spot reposition advice, install the parser and flip the env flag:
+
+```bash
+# demoparser2 needs Python >= 3.11. awpy + matplotlib are optional (heatmap PNGs).
+python3 -m pip install --user demoparser2
+python3 -m pip install --user awpy matplotlib   # optional, for heatmaps
+
+# enable in /etc/hl-agents.env
+ANTHROPIC_API_KEY=sk-ant-...          # required for the AI reposition narrative
+LEETIFY_PARSE_DEMOS=1                  # turn the demo pipeline on (default off)
+# LEETIFY_DEMO_MAX=6                   # matches to parse per run (default 6)
+# HL_DEMO_CACHE_DIR=...                # demo cache (default <agent-logs>/.demos)
+```
+
+Each run downloads + parses up to `LEETIFY_DEMO_MAX` recent `de_*` demos (tens of MB +
+seconds–minutes each), caches them by match id, and writes hotspots into
+`leetify-latest.json` (`positions`) plus a "Positional breakdown" section in the report.
+If `demoparser2` is missing or `LEETIFY_PARSE_DEMOS` is unset, the step is skipped and the
+normal review is unaffected.
