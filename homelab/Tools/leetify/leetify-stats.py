@@ -291,7 +291,13 @@ def llm_review(digest, positions_digest=None):
             },
             timeout=60,
         )
-        r.raise_for_status()
+        if not r.ok:
+            try:
+                err_body = r.json()
+            except Exception:
+                err_body = r.text
+            print(f"LLM review skipped: {r.status_code} {r.reason} — {err_body}", file=sys.stderr)
+            return None
         data = r.json()
         parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
         text = "\n".join(p for p in parts if p).strip()
