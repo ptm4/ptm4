@@ -5,10 +5,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "homelab/RPI-srv/docker-compose.yml"
-      - "homelab/RPI-srv/webapp/**"
-      - "homelab/RPI-srv/nginx-wg.conf"
-      - "homelab/RPI-srv/notes-app/**"
+      - "$GITHUB_WORKSPACE/homelab/RPI-srv/docker-compose.yml"
+      - "$GITHUB_WORKSPACE/homelab/RPI-srv/webapp/**"
+      - "$GITHUB_WORKSPACE/homelab/RPI-srv/nginx-wg.conf"
+      - "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/**"
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
 jobs:
@@ -22,20 +22,20 @@ jobs:
 
       - name: Copy compose file
         run: |
-          cp "homelab/RPI-srv/docker-compose.yml" /srv/docker/compose/docker-compose.yml
+          cp "$GITHUB_WORKSPACE/homelab/RPI-srv/docker-compose.yml" /srv/docker/compose/docker-compose.yml
 
       - name: Copy webapp and nginx config
         run: |
           mkdir -p /srv/docker/compose/webapp
-          cp -r "homelab/RPI-srv/webapp/." /srv/docker/compose/webapp/
-          cp "homelab/RPI-srv/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
+          cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/webapp/." /srv/docker/compose/webapp/
+          cp "$GITHUB_WORKSPACE/homelab/RPI-srv/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
       - name: Copy notes-app
         run: |
           mkdir -p /srv/docker/compose/notes-app/api
           mkdir -p /srv/docker/compose/notes-app/web
-          cp -r "homelab/RPI-srv/notes-app/api/." /srv/docker/compose/notes-app/api/
-          cp -r "homelab/RPI-srv/notes-app/web/." /srv/docker/compose/notes-app/web/
+          cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/api/." /srv/docker/compose/notes-app/api/
+          cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/web/." /srv/docker/compose/notes-app/web/
 
       - name: Pull latest images
         working-directory: /srv/docker/compose
