@@ -21,12 +21,13 @@ function describe(filename) {
   const fullPath = path.join(AGENT_LOGS_DIR, filename);
   const stat = fs.statSync(fullPath);
 
-  let status = 'unknown', summary = '', runAt = null;
+  let status = 'unknown', summary = '', runAt = null, hasAlert = false;
   try {
     const raw = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
     status = raw.status || 'unknown';
     summary = raw.summary || '';
     runAt = raw.run_at || null;
+    hasAlert = hasAlertFlag(raw);
   } catch (_) {}
 
   const ageH = (Date.now() - stat.mtimeMs) / 3600000;
@@ -39,11 +40,19 @@ function describe(filename) {
     status,
     summary,
     run_at: runAt,
+    has_alert: hasAlert,
     mtime: stat.mtime.toISOString(),
     cadence_hours: meta.cadence_h,
     stale: ageH > meta.cadence_h * 2,
     enabled: meta.agent ? enabledFor(meta.agent) : true,
   };
+}
+
+// ALERT badge: any critical/high finding or recommendation, or an overall critical status.
+function hasAlertFlag(raw) {
+  if (raw.status === 'critical') return true;
+  const items = [...(raw.findings || []), ...(raw.recommendations || [])];
+  return items.some(i => ['critical', 'high'].includes((i.severity || '').toLowerCase()));
 }
 
 // GET /api/agents — list homelab agents (excludes Home-only items like Leetify)
@@ -67,6 +76,57 @@ router.get('/', (req, res) => {
 
 // Enable/disable + run-now (proxied to the opti dispatcher)
 attachControls(router);
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// GET /api/agents/:name/history — list dated report files for an agent, newest first.
+// Collectors write agent-logs/<name>/<YYYY-MM-DD>.json alongside <name>.json (the latest pointer).
+router.get('/:name/history', (req, res) => {
+  const base = req.params.name.replace(/\.json$/, '');
+  const dir = path.join(AGENT_LOGS_DIR, base);
+  // Path-traversal guard
+  if (!dir.startsWith(AGENT_LOGS_DIR + path.sep)) {
+    return res.status(400).json({ error: 'Invalid agent name' });
+  }
+  if (!fs.existsSync(dir)) {
+    return res.json({ name: base, history: [] });
+  }
+  let files;
+  try {
+    files = fs.readdirSync(dir).filter(f => DATE_RE.test(f.replace(/\.json$/, '')) && f.endsWith('.json'));
+  } catch (_) {
+    return res.json({ name: base, history: [] });
+  }
+  const history = files.map(f => {
+    const full = path.join(dir, f);
+    let size = 0, mtime = null;
+    try { const s = fs.statSync(full); size = s.size; mtime = s.mtime.toISOString(); } catch (_) {}
+    return { date: f.replace(/\.json$/, ''), filename: f, size, mtime };
+  }).sort((a, b) => b.date.localeCompare(a.date));
+  res.json({ name: base, history });
+});
+
+// GET /api/agents/:name/report/:date — a specific dated report
+router.get('/:name/report/:date', (req, res) => {
+  const base = req.params.name.replace(/\.json$/, '');
+  if (!DATE_RE.test(req.params.date)) {
+    return res.status(400).json({ error: 'Bad date' });
+  }
+  const dir = path.join(AGENT_LOGS_DIR, base);
+  const full = path.join(dir, `${req.params.date}.json`);
+  // Path-traversal guard
+  if (!full.startsWith(dir + path.sep)) {
+    return res.status(400).json({ error: 'Invalid path' });
+  }
+  if (!fs.existsSync(full)) {
+    return res.status(404).json({ error: 'Report not found' });
+  }
+  try {
+    res.json(JSON.parse(fs.readFileSync(full, 'utf8')));
+  } catch (_) {
+    res.status(500).json({ error: 'Could not parse report file' });
+  }
+});
 
 // GET /api/agents/:name — full JSON report (also serves the Home Leetify card)
 router.get('/:name', (req, res) => {

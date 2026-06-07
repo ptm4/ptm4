@@ -456,6 +456,12 @@ async function runSync() {
 // ── Sidebar toggle ────────────────────────────────────────────────────────────
 btnSidebarToggle.addEventListener('click', () => sidebar.classList.toggle('collapsed'));
 
+// Floating reopen button — the only way back once the sidebar is collapsed
+const btnSidebarOpen = document.getElementById('btn-sidebar-open');
+if (btnSidebarOpen) {
+  btnSidebarOpen.addEventListener('click', () => sidebar.classList.remove('collapsed'));
+}
+
 // Close sidebar on mobile when clicking editor area
 editorContent.addEventListener('click', () => {
   if (window.innerWidth <= 600) sidebar.classList.add('collapsed');

@@ -475,3 +475,68 @@ body {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ── Agents: ALERT badge, full-log viewer, history ───────────────────────── */
+.agent-alert-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--red);
+  color: #fff;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+.agent-report-body {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.agent-report-body h1 { margin: 4px 0 10px; font-size: 16px; }
+.agent-report-body h2 { margin: 12px 0 6px; font-size: 15px; color: var(--accent); }
+.agent-report-body h3 { margin: 10px 0 4px; font-size: 13px; }
+.agent-report-body code {
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.agent-report-body pre {
+  background: var(--surface2);
+  padding: 8px;
+  border-radius: 4px;
+  overflow-x: auto;
+  font-size: 12px;
+}
+.agent-report-body table {
+  border-collapse: collapse;
+  margin: 6px 0;
+  font-size: 12px;
+}
+.agent-report-body th, .agent-report-body td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  text-align: left;
+}
+.agent-report-body th { background: var(--surface2); }
+
+.history-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.history-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+.history-link:hover { text-decoration: underline; }
+.history-meta {
+  font-size: 11px;
+  color: var(--muted);
+}

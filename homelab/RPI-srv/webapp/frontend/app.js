@@ -72,12 +72,13 @@ function renderHome(view) {
           </div>
         </div>
 
-        <div class="card card-placeholder">
+        <div class="card">
           <div class="card-icon">📝</div>
           <div class="card-body">
             <h2>Notes</h2>
-            <p>OneNote-style notebook — coming soon.</p>
+            <p>OneNote-style notebook — quick capture, sections &amp; pages.</p>
           </div>
+          <a href="/notes/" class="card-link">Open notes →</a>
         </div>
       </section>
     </div>
@@ -214,22 +215,31 @@ function buildReportCard(r, apiBase) {
   const statusLabel = { ok: 'OK', warn: 'WARN', critical: 'CRITICAL', unknown: '?' }[r.status] ?? r.status.toUpperCase();
   const runAt = r.run_at ? new Date(r.run_at).toLocaleString() : '—';
   const staleBadge = r.stale ? `<span class="sec-stale-badge" title="No fresh run recently">STALE</span>` : '';
+  const alertBadge = r.has_alert ? `<span class="agent-alert-badge" title="Alert flagged in this report">ALERT</span>` : '';
   const safeLabel = (r.label || '').replace(/'/g, "\\'");
+  const isAgent = apiBase === 'agents';
+
   const controls = r.agent ? `
         <button class="btn-toggle ${r.enabled ? 'on' : 'off'}" onclick="toggleAgent('${apiBase}','${r.agent}',${!r.enabled},this)">${r.enabled ? 'Enabled' : 'Disabled'}</button>
         <button class="btn-run" onclick="runAgent('${apiBase}','${r.agent}',this)">Run now</button>` : '';
+
+  // Agents get the full-log viewer ("View latest") + per-run History; security reports keep "View details".
+  const viewBtns = isAgent
+    ? `<button class="btn-view" onclick="openAgentReport('${r.name}', '${safeLabel}')">View latest</button>
+        <button class="btn-view" onclick="openAgentHistory('${r.name}', '${safeLabel}')">History</button>`
+    : `<button class="btn-view" onclick="openReportDetail('${r.name}', '${safeLabel}', '${apiBase}')">View details</button>`;
 
   return `
     <div class="sec-card ${statusClass}${r.enabled === false ? ' card-disabled' : ''}">
       <div class="sec-card-header">
         <span class="sec-status-badge ${statusClass}">${statusLabel}</span>
-        <span class="sec-card-title">${r.label}</span>
+        <span class="sec-card-title">${r.label} ${alertBadge}</span>
         ${staleBadge}
       </div>
       <p class="sec-card-summary">${r.summary || 'No summary available'}</p>
       <div class="sec-card-meta">Last run: ${runAt}</div>
       <div class="sec-card-actions">
-        <button class="btn-view" onclick="openReportDetail('${r.name}', '${safeLabel}', '${apiBase}')">View details</button>
+        ${viewBtns}
         ${controls}
       </div>
     </div>
@@ -271,6 +281,94 @@ async function runAgent(apiBase, agent, btn) {
     btn.disabled = false;
     alert('Could not reach the agent dispatcher on opti.');
   }
+}
+
+// ── Agent full-log viewer + history ─────────────────────────────────────────────
+// `date` optional — when set, opens that specific dated report instead of the latest.
+async function openAgentReport(name, label, date) {
+  const url = date ? `/api/agents/${name}/report/${date}` : `/api/agents/${name}`;
+  let data;
+  try {
+    const res = await fetch(url);
+    data = await res.json();
+  } catch {
+    alert('Could not load report: ' + name);
+    return;
+  }
+
+  const dateLabel = date ? ` — ${date}` : (data.run_at ? ` — ${new Date(data.run_at).toLocaleString()}` : '');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">${escHtml(label)}${escHtml(dateLabel)}</span>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div class="modal-body agent-report-body">${renderAgentReport(data)}</div>
+    </div>
+  `;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+// Render a full agent report: recommendations/watch-list first, then the full markdown log.
+function renderAgentReport(data) {
+  let html = '';
+
+  const recs = data.recommendations ?? [];
+  if (recs.length) {
+    const rows = recs.map(r => `
+      <div class="finding finding-${escHtml(r.severity || 'info')}">
+        <span class="finding-sev">${escHtml((r.severity || 'info').toUpperCase())}</span>
+        <span class="finding-msg">${escHtml(r.message || '')}</span>
+      </div>`).join('');
+    html += `<h3 class="detail-section-title">Recommendations / watch list</h3>
+             <div class="findings-list">${rows}</div>`;
+  }
+
+  if (data.log) {
+    const body = (typeof marked !== 'undefined') ? marked.parse(data.log) : `<pre>${escHtml(data.log)}</pre>`;
+    html += body;
+  } else if (!recs.length) {
+    // Fall back to the structured findings renderer for reports without a log field
+    html += renderReportDetail(data);
+  }
+  return html || '<div class="detail-ok">No report content.</div>';
+}
+
+async function openAgentHistory(name, label) {
+  let data;
+  try {
+    const res = await fetch(`/api/agents/${name}/history`);
+    data = await res.json();
+  } catch {
+    alert('Could not load history: ' + name);
+    return;
+  }
+  const items = data.history ?? [];
+  const rows = items.length
+    ? items.map(h => `
+        <div class="history-row">
+          <button class="history-link" onclick="document.querySelector('.modal-overlay').remove(); openAgentReport('${name}', '${(label || '').replace(/'/g, "\\'")}', '${h.date}')">${escHtml(h.date)}</button>
+          <span class="history-meta">${h.mtime ? new Date(h.mtime).toLocaleString() : '—'} · ${h.size}b</span>
+        </div>`).join('')
+    : `<div class="sec-empty">No history yet.</div>`;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">${escHtml(label)} — history</span>
+        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+      </div>
+      <div class="modal-body">${rows}</div>
+    </div>
+  `;
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
 }
 
 async function openReportDetail(name, label, apiBase = 'reports') {

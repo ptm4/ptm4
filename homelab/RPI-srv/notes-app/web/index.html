@@ -9,11 +9,15 @@
 <body>
   <div id="app">
 
+    <!-- Floating reopen button (visible only when sidebar is collapsed) -->
+    <button id="btn-sidebar-open" title="Open sidebar">&#9776;</button>
+
     <!-- Sidebar -->
     <nav id="sidebar">
       <div id="sidebar-header">
+        <a href="/" id="back-home" title="Back to dashboard">&larr;</a>
         <span id="app-title">Notes</span>
-        <button id="btn-sidebar-toggle" title="Toggle sidebar">&#9776;</button>
+        <button id="btn-sidebar-toggle" title="Collapse sidebar">&#9776;</button>
       </div>
 
       <div id="notebooks-section">
