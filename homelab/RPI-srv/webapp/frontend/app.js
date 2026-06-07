@@ -22,7 +22,17 @@ const routes = {
   home:     renderHome,
   security: renderSecurity,
   agents:   renderAgents,
+  leetify:  renderLeetify,
 };
+
+// Quick-link shortcuts shown on the Home page. Edit here (could graduate to /api/links later).
+const QUICK_LINKS = [
+  { label: 'Cockpit',          url: 'https://rpi:9090/',                              icon: '🖥️' },
+  { label: 'Pi-hole',          url: 'http://rpi/admin/login',                          icon: '🛡️' },
+  { label: 'Vaultwarden',      url: 'https://bitwarden.rpi.lan/#/vault',               icon: '🔑' },
+  { label: 'Vaultwarden admin', url: 'https://bitwarden.rpi.lan/admin/users/overview', icon: '⚙️' },
+  { label: 'OMV (opti)',       url: 'http://opti.lan/#/login',                         icon: '🗄️' },
+];
 
 function route() {
   const hash = location.hash.replace('#', '') || 'home';
@@ -48,6 +58,15 @@ function renderHome(view) {
 
       <section class="cards">
         <div class="card">
+          <div class="card-icon">🤖</div>
+          <div class="card-body">
+            <h2>Agents</h2>
+            <p>Homelab hardware, software &amp; network reports — status, history, run-now.</p>
+          </div>
+          <a href="#agents" class="card-link">View agents →</a>
+        </div>
+
+        <div class="card">
           <div class="card-icon">🔒</div>
           <div class="card-body">
             <h2>Security Reports</h2>
@@ -56,19 +75,20 @@ function renderHome(view) {
           <a href="#security" class="card-link">View reports →</a>
         </div>
 
-        <div class="card card-placeholder">
-          <div class="card-icon">🌤️</div>
-          <div class="card-body">
-            <h2>Weather</h2>
-            <p>OpenWeatherMap widget — coming soon.</p>
-          </div>
-        </div>
-
         <div class="card" id="leetify-card">
           <div class="card-icon">🎯</div>
           <div class="card-body">
             <h2>CS2 / Leetify</h2>
             <p id="leetify-body">Loading…</p>
+          </div>
+          <a href="#leetify" class="card-link">View analysis →</a>
+        </div>
+
+        <div class="card" id="pihole-card">
+          <div class="card-icon">🛡️</div>
+          <div class="card-body">
+            <h2>Pi-hole</h2>
+            <p id="pihole-body">Loading…</p>
           </div>
         </div>
 
@@ -80,10 +100,21 @@ function renderHome(view) {
           </div>
           <a href="/notes/" class="card-link">Open notes →</a>
         </div>
+
+        <div class="card card-links">
+          <div class="card-icon">🔗</div>
+          <div class="card-body">
+            <h2>Quick Links</h2>
+            <div class="links-grid">
+              ${QUICK_LINKS.map(l => `<a class="link-item" href="${escHtml(l.url)}" target="_blank" rel="noopener">${l.icon} ${escHtml(l.label)}</a>`).join('')}
+            </div>
+          </div>
+        </div>
       </section>
     </div>
   `;
   loadLeetify();
+  loadPihole();
 }
 
 async function loadLeetify() {
@@ -97,6 +128,87 @@ async function loadLeetify() {
   } catch {
     el.textContent = 'Unavailable.';
   }
+}
+
+async function loadPihole() {
+  const el = document.getElementById('pihole-body');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/agents/network-latest');
+    if (!res.ok) { el.textContent = 'No network report yet.'; return; }
+    const d = await res.json();
+    const p = (d.hosts && d.hosts[0] && d.hosts[0].metrics && d.hosts[0].metrics.pihole) || d.pihole;
+    if (!p) { el.textContent = 'Pi-hole stats unavailable.'; return; }
+    const q = p.dns_queries_today ?? p.queries ?? '?';
+    const blocked = p.ads_blocked_today ?? p.blocked ?? '?';
+    const pct = p.ads_percentage_today ?? p.percent_blocked;
+    const clients = p.unique_clients ?? p.clients ?? '?';
+    el.innerHTML = `${q} queries today · <strong>${typeof pct === 'number' ? pct.toFixed(1) : pct}%</strong> blocked (${blocked}) · ${clients} clients`;
+  } catch {
+    el.textContent = 'Unavailable.';
+  }
+}
+
+// ── Leetify page ────────────────────────────────────────────────────────────────
+async function renderLeetify(view) {
+  view.innerHTML = `
+    <div class="page-security">
+      <div class="sec-header">
+        <h1>CS2 / Leetify</h1>
+        <div class="sec-header-actions">
+          <button class="btn-view" onclick="openAgentHistory('leetify-latest','CS2 / Leetify')">History</button>
+          <button class="btn-refresh" onclick="renderLeetify(document.getElementById('view'))">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="leetify-page"><div class="sec-loading">Loading analysis…</div></div>
+    </div>
+  `;
+
+  let d;
+  try {
+    const res = await fetch('/api/agents/leetify-latest');
+    if (!res.ok) throw new Error();
+    d = await res.json();
+  } catch {
+    document.getElementById('leetify-page').innerHTML =
+      `<div class="sec-empty"><p>No Leetify report yet.</p>
+       <p class="sec-empty-hint">Set LEETIFY_API_KEY + STEAM64_ID on opti and run the agent.</p></div>`;
+    return;
+  }
+
+  const dims = d.dimensions || {};
+  const dimChip = (k) => {
+    const v = dims[k];
+    if (v == null) return '';
+    const cls = v >= 60 ? 'dim-strong' : (v < 52 ? 'dim-focus' : 'dim-ok');
+    return `<div class="dim ${cls}"><span class="dim-name">${k}</span><span class="dim-val">${Math.round(v)}</span></div>`;
+  };
+
+  const maps = d.maps || [];
+  const mapRows = maps.map(m => {
+    const verdict = m.matches < 2 ? 'low sample'
+      : (m.win_rate >= 55 && m.avg_rating >= 0 ? 'strong'
+      : (m.win_rate <= 40 || m.avg_rating < -0.03 ? 'avoid / practice' : 'even'));
+    return `<tr><td>${escHtml(m.map)}</td><td>${m.matches}</td><td>${m.win_rate}%</td>
+            <td>${(m.ct_rating ?? 0).toFixed(3)}</td><td>${(m.t_rating ?? 0).toFixed(3)}</td>
+            <td>${verdict}</td></tr>`;
+  }).join('');
+
+  const logHtml = d.log
+    ? (typeof marked !== 'undefined' ? marked.parse(d.log) : `<pre>${escHtml(d.log)}</pre>`)
+    : '';
+
+  document.getElementById('leetify-page').innerHTML = `
+    <p class="report-summary">${escHtml(d.summary || '')}</p>
+    <div class="dim-strip">${dimChip('aim')}${dimChip('positioning')}${dimChip('utility')}</div>
+    ${maps.length ? `
+      <h3 class="detail-section-title">Per-map (last 25)</h3>
+      <table class="detail-table">
+        <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
+        <tbody>${mapRows}</tbody>
+      </table>` : ''}
+    <div class="agent-report-body" style="margin-top:20px">${logHtml}</div>
+  `;
 }
 
 // ── Security page ─────────────────────────────────────────────────────────────

@@ -52,6 +52,11 @@ HL_NGINX_LOG=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/logging/stack.log
 LEETIFY_API_KEY=your-leetify-developer-key
 STEAM64_ID=76561198053334813
 HL_DISPATCH_TOKEN=pick-a-long-random-string
+# Optional: enables the Claude-written CS2 coaching narrative on top of the
+# heuristic Leetify review. Without it you still get the full heuristic report.
+ANTHROPIC_API_KEY=sk-ant-...
+# Optional: override the review model (default claude-opus-4-8).
+# LEETIFY_REVIEW_MODEL=claude-opus-4-8
 EOF
 sudo chmod 600 /etc/hl-agents.env
 
