@@ -42,7 +42,7 @@ function renderHome(view) {
   view.innerHTML = `
     <div class="page-home">
       <header class="page-header">
-        <h1>webapp.rpi.lan</h1>
+        <h1 class="home-title"><img src="favicon.svg" alt="" class="home-title-icon" />Pert's Pocket</h1>
         <span class="badge-host">rpi · 192.168.1.10</span>
       </header>
 
@@ -246,40 +246,58 @@ function buildReportCard(r, apiBase) {
   `;
 }
 
+// Turn a failed dispatcher response into a human, diagnosable message.
+async function dispatcherError(res, err) {
+  if (err) return `Network error reaching the webapp backend: ${err.message}`;
+  let detail = '';
+  try { const d = await res.json(); detail = d.error || d.raw || ''; } catch (_) {}
+  switch (res.status) {
+    case 503: return `Dispatcher not configured — set DISPATCHER_URL in the webapp's .env on the Pi. ${detail}`;
+    case 502: return `Backend reached, but could not connect to the dispatcher on opti (network/firewall, or wrong DISPATCHER_URL). ${detail}`;
+    case 401: return `Dispatcher rejected the request (401) — HL_DISPATCH_TOKEN mismatch between the webapp and opti. ${detail}`;
+    default:  return `Run failed (HTTP ${res.status}). ${detail}`;
+  }
+}
+
 async function toggleAgent(apiBase, agent, enabled, btn) {
   btn.disabled = true;
+  let res, err;
   try {
-    const res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/enabled`, {
+    res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/enabled`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled }),
     });
-    if (!res.ok) throw new Error();
+  } catch (e) { err = e; }
+
+  if (res && res.ok) {
     btn.textContent = enabled ? 'Enabled' : 'Disabled';
     btn.classList.toggle('on', enabled);
     btn.classList.toggle('off', !enabled);
     btn.setAttribute('onclick', `toggleAgent('${apiBase}','${agent}',${!enabled},this)`);
     btn.closest('.sec-card')?.classList.toggle('card-disabled', !enabled);
-  } catch {
-    alert('Could not reach the agent dispatcher on opti.');
-  } finally {
-    btn.disabled = false;
+  } else {
+    alert(await dispatcherError(res, err));
   }
+  btn.disabled = false;
 }
 
 async function runAgent(apiBase, agent, btn) {
   const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Queued…';
+  let res, err;
   try {
-    const res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/run`, { method: 'POST' });
-    if (!res.ok && res.status !== 202) throw new Error();
+    res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/run`, { method: 'POST' });
+  } catch (e) { err = e; }
+
+  if (res && (res.ok || res.status === 202)) {
     btn.textContent = 'Queued ✓ — refresh shortly';
     setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 5000);
-  } catch {
+  } else {
     btn.textContent = orig;
     btn.disabled = false;
-    alert('Could not reach the agent dispatcher on opti.');
+    alert(await dispatcherError(res, err));
   }
 }
 
@@ -313,29 +331,88 @@ async function openAgentReport(name, label, date) {
   document.body.appendChild(overlay);
 }
 
-// Render a full agent report: recommendations/watch-list first, then the full markdown log.
+// Render a full agent report. We always show what the run produced — never a bare
+// "all clear" — so an OK report still shows its summary, findings, recommendations,
+// the full markdown log (new collectors), or a structured dump of the data (legacy).
 function renderAgentReport(data) {
   let html = '';
 
-  const recs = data.recommendations ?? [];
-  if (recs.length) {
-    const rows = recs.map(r => `
-      <div class="finding finding-${escHtml(r.severity || 'info')}">
-        <span class="finding-sev">${escHtml((r.severity || 'info').toUpperCase())}</span>
-        <span class="finding-msg">${escHtml(r.message || '')}</span>
-      </div>`).join('');
-    html += `<h3 class="detail-section-title">Recommendations / watch list</h3>
-             <div class="findings-list">${rows}</div>`;
+  // Status + summary header (always present, so OK runs still show context).
+  const status = (data.status || 'unknown').toLowerCase();
+  const statusClass = { ok: 'status-ok', warn: 'status-warn', critical: 'status-critical' }[status] ?? 'status-unknown';
+  html += `<div class="report-status-line">
+             <span class="sec-status-badge ${statusClass}">${escHtml(status.toUpperCase())}</span>
+             ${data.run_at ? `<span class="report-runat">ran ${escHtml(new Date(data.run_at).toLocaleString())}</span>` : ''}
+           </div>`;
+  if (data.summary) html += `<p class="sec-card-summary report-summary">${escHtml(data.summary)}</p>`;
+
+  // Findings (problems detected this run).
+  const findings = data.findings ?? [];
+  if (findings.length) {
+    html += `<h3 class="detail-section-title">Findings</h3>${renderFindingList(findings)}`;
   }
 
-  if (data.log) {
-    const body = (typeof marked !== 'undefined') ? marked.parse(data.log) : `<pre>${escHtml(data.log)}</pre>`;
-    html += body;
-  } else if (!recs.length) {
-    // Fall back to the structured findings renderer for reports without a log field
-    html += renderReportDetail(data);
+  // Recommendations / watch list.
+  const recs = data.recommendations ?? [];
+  if (recs.length) {
+    html += `<h3 class="detail-section-title">Recommendations / watch list</h3>${renderFindingList(recs)}`;
   }
+
+  // The full human-readable log (new collectors).
+  if (data.log) {
+    html += (typeof marked !== 'undefined') ? marked.parse(data.log) : `<pre>${escHtml(data.log)}</pre>`;
+  } else {
+    // Legacy reports (no log) — show the structured data so the run is still visible.
+    html += renderReportData(data);
+  }
+
   return html || '<div class="detail-ok">No report content.</div>';
+}
+
+function renderFindingList(items) {
+  const rows = items.map(f => `
+    <div class="finding finding-${escHtml((f.severity || 'info').toLowerCase())}">
+      <span class="finding-sev">${escHtml((f.severity || 'info').toUpperCase())}</span>
+      <span class="finding-msg">${escHtml(f.message || '')}</span>
+    </div>`).join('');
+  return `<div class="findings-list">${rows}</div>`;
+}
+
+// Generic structured view of an agent report's data (for legacy reports without a `log`).
+// Renders per-host metric tables when present, otherwise a flat key/value table of the
+// report's scalar/array fields — so you always see what the agent ran and found.
+function renderReportData(data) {
+  const SKIP = new Set(['tool', 'run_at', 'status', 'summary', 'findings', 'recommendations', 'log', 'hosts', 'name', 'label']);
+  let html = '';
+
+  if (Array.isArray(data.hosts) && data.hosts.length) {
+    for (const h of data.hosts) {
+      html += `<h3 class="detail-section-title">${escHtml(h.host || 'host')}</h3>`;
+      if (h.summary) html += `<p class="sec-card-summary">${escHtml(h.summary)}</p>`;
+      if (h.metrics) html += kvTable(h.metrics);
+    }
+  }
+
+  const rest = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (!SKIP.has(k)) rest[k] = v;
+  }
+  if (Object.keys(rest).length) {
+    html += `<h3 class="detail-section-title">Details</h3>${kvTable(rest)}`;
+  }
+  return html || '<div class="detail-ok">No additional detail in this report.</div>';
+}
+
+// Render an object as a two-column table; nested objects/arrays are JSON-stringified compactly.
+function kvTable(obj) {
+  const rows = Object.entries(obj).map(([k, v]) => {
+    let val;
+    if (v === null || v === undefined) val = '—';
+    else if (Array.isArray(v) || typeof v === 'object') val = JSON.stringify(v);
+    else val = String(v);
+    return `<tr><td>${escHtml(k)}</td><td>${escHtml(val)}</td></tr>`;
+  }).join('');
+  return `<table class="detail-table"><tbody>${rows}</tbody></table>`;
 }
 
 async function openAgentHistory(name, label) {
