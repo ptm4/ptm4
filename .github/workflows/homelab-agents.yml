@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Install Python deps
-        run: python3 -m pip install --user --quiet requests || pip3 install --user --quiet requests || true
+        run: python3 -m pip install --user --quiet requests demoparser2 || pip3 install --user --quiet requests demoparser2 || true
 
       - name: Run agents (state-gated)
         env:
