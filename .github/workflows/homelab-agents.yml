@@ -33,15 +33,19 @@ jobs:
           fi
 
       - name: Install Python deps
+        env:
+          POLARS_SKIP_CPU_CHECK: "1"
         run: |
           python3 -m pip install --user --quiet --break-system-packages requests
-          python3 -m pip uninstall --yes polars 2>/dev/null || true
-          python3 -m pip install --user --quiet --break-system-packages --force-reinstall polars-lts-cpu demoparser2
+          python3 -m pip uninstall --yes polars polars-lts-cpu demoparser2 2>/dev/null || true
+          rm -rf ~/.local/lib/python3.11/site-packages/polars ~/.local/lib/python3.11/site-packages/polars-*.dist-info
+          python3 -m pip install --user --quiet --break-system-packages polars-lts-cpu demoparser2
 
       - name: Run agents (state-gated)
         env:
           EVENT: ${{ github.event_name }}
           SCHED: ${{ github.event.schedule }}
+          POLARS_SKIP_CPU_CHECK: "1"
           ONLY: ${{ github.event.inputs.agent }}
         run: |
           set -uo pipefail
