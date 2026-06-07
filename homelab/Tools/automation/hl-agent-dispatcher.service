@@ -1,0 +1,23 @@
+[Unit]
+# Homelab agent dispatcher — LAN control plane for enable/disable + run-now.
+# Install on opti:
+#   sudo cp hl-agent-dispatcher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hl-agent-dispatcher
+# Paths below point at opti's stable repo checkout on the OMV disk. Adjust if yours differs.
+Description=Homelab agent dispatcher (enable/disable + run-now)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ptm
+# '-' prefix: missing env file is non-fatal (agent uses relative-path defaults until created)
+EnvironmentFile=-/etc/hl-agents.env
+WorkingDirectory=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4/homelab/Tools/automation
+ExecStart=/usr/bin/python3 /srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4/homelab/Tools/automation/agent-dispatcher.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

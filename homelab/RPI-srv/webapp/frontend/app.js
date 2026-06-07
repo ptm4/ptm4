@@ -21,6 +21,7 @@ async function checkHealth() {
 const routes = {
   home:     renderHome,
   security: renderSecurity,
+  agents:   renderAgents,
 };
 
 function route() {
@@ -63,11 +64,11 @@ function renderHome(view) {
           </div>
         </div>
 
-        <div class="card card-placeholder">
-          <div class="card-icon">🎮</div>
+        <div class="card" id="leetify-card">
+          <div class="card-icon">🎯</div>
           <div class="card-body">
-            <h2>Steam</h2>
-            <p>Recently played &amp; current status — coming soon.</p>
+            <h2>CS2 / Leetify</h2>
+            <p id="leetify-body">Loading…</p>
           </div>
         </div>
 
@@ -81,6 +82,20 @@ function renderHome(view) {
       </section>
     </div>
   `;
+  loadLeetify();
+}
+
+async function loadLeetify() {
+  const el = document.getElementById('leetify-body');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/agents/leetify-latest');
+    if (!res.ok) { el.textContent = 'Not configured yet — set LEETIFY_API_KEY + STEAM64_ID on opti.'; return; }
+    const d = await res.json();
+    el.textContent = d.summary || 'No data yet.';
+  } catch {
+    el.textContent = 'Unavailable.';
+  }
 }
 
 // ── Security page ─────────────────────────────────────────────────────────────
@@ -141,37 +156,127 @@ async function loadSecurityReports() {
     return;
   }
 
-  grid.innerHTML = reports.map(r => buildReportCard(r)).join('');
+  grid.innerHTML = reports.map(r => buildReportCard(r, 'reports')).join('');
 }
 
-function buildReportCard(r) {
+// ── Agents page ───────────────────────────────────────────────────────────────
+let agentsRefreshTimer = null;
+
+async function renderAgents(view) {
+  clearInterval(agentsRefreshTimer);
+  view.innerHTML = `
+    <div class="page-security">
+      <div class="sec-header">
+        <h1>Homelab Agents</h1>
+        <div class="sec-header-actions">
+          <span id="agt-last-refresh" class="sec-refresh-label">Loading...</span>
+          <button class="btn-refresh" onclick="loadAgents()">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="agt-grid" class="sec-grid"><div class="sec-loading">Loading agents…</div></div>
+    </div>
+  `;
+  await loadAgents();
+  agentsRefreshTimer = setInterval(loadAgents, 5 * 60 * 1000);
+}
+
+async function loadAgents() {
+  const grid = document.getElementById('agt-grid');
+  if (!grid) return;
+
+  let agents;
+  try {
+    const res = await fetch('/api/agents');
+    const data = await res.json();
+    agents = data.agents ?? [];
+  } catch {
+    grid.innerHTML = `<div class="sec-error">Cannot reach /api/agents — is the backend running?</div>`;
+    return;
+  }
+
+  const label = document.getElementById('agt-last-refresh');
+  if (label) label.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
+
+  if (agents.length === 0) {
+    grid.innerHTML = `
+      <div class="sec-empty">
+        <p>No agent reports yet.</p>
+        <p class="sec-empty-hint">Run them from opti (GitHub Actions or the dispatcher), or hit “Run now” once reports exist.</p>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = agents.map(a => buildReportCard(a, 'agents')).join('');
+}
+
+function buildReportCard(r, apiBase) {
   const statusClass = { ok: 'status-ok', warn: 'status-warn', critical: 'status-critical' }[r.status] ?? 'status-unknown';
   const statusLabel = { ok: 'OK', warn: 'WARN', critical: 'CRITICAL', unknown: '?' }[r.status] ?? r.status.toUpperCase();
   const runAt = r.run_at ? new Date(r.run_at).toLocaleString() : '—';
-  const mapBtn = r.has_map
-    ? `<a href="/api/reports/geoip/map" target="_blank" class="card-link-secondary">Open map ↗</a>`
-    : '';
+  const staleBadge = r.stale ? `<span class="sec-stale-badge" title="No fresh run recently">STALE</span>` : '';
+  const safeLabel = (r.label || '').replace(/'/g, "\\'");
+  const controls = r.agent ? `
+        <button class="btn-toggle ${r.enabled ? 'on' : 'off'}" onclick="toggleAgent('${apiBase}','${r.agent}',${!r.enabled},this)">${r.enabled ? 'Enabled' : 'Disabled'}</button>
+        <button class="btn-run" onclick="runAgent('${apiBase}','${r.agent}',this)">Run now</button>` : '';
 
   return `
-    <div class="sec-card ${statusClass}">
+    <div class="sec-card ${statusClass}${r.enabled === false ? ' card-disabled' : ''}">
       <div class="sec-card-header">
         <span class="sec-status-badge ${statusClass}">${statusLabel}</span>
         <span class="sec-card-title">${r.label}</span>
+        ${staleBadge}
       </div>
       <p class="sec-card-summary">${r.summary || 'No summary available'}</p>
       <div class="sec-card-meta">Last run: ${runAt}</div>
       <div class="sec-card-actions">
-        <button class="btn-view" onclick="openReportDetail('${r.name}', '${r.label}')">View details</button>
-        ${mapBtn}
+        <button class="btn-view" onclick="openReportDetail('${r.name}', '${safeLabel}', '${apiBase}')">View details</button>
+        ${controls}
       </div>
     </div>
   `;
 }
 
-async function openReportDetail(name, label) {
+async function toggleAgent(apiBase, agent, enabled, btn) {
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/enabled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    if (!res.ok) throw new Error();
+    btn.textContent = enabled ? 'Enabled' : 'Disabled';
+    btn.classList.toggle('on', enabled);
+    btn.classList.toggle('off', !enabled);
+    btn.setAttribute('onclick', `toggleAgent('${apiBase}','${agent}',${!enabled},this)`);
+    btn.closest('.sec-card')?.classList.toggle('card-disabled', !enabled);
+  } catch {
+    alert('Could not reach the agent dispatcher on opti.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runAgent(apiBase, agent, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Queued…';
+  try {
+    const res = await fetch(`/api/${apiBase}/${encodeURIComponent(agent)}/run`, { method: 'POST' });
+    if (!res.ok && res.status !== 202) throw new Error();
+    btn.textContent = 'Queued ✓ — refresh shortly';
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 5000);
+  } catch {
+    btn.textContent = orig;
+    btn.disabled = false;
+    alert('Could not reach the agent dispatcher on opti.');
+  }
+}
+
+async function openReportDetail(name, label, apiBase = 'reports') {
   let data;
   try {
-    const res = await fetch(`/api/reports/${name}`);
+    const res = await fetch(`/api/${apiBase}/${name}`);
     data = await res.json();
   } catch {
     alert('Could not load report: ' + name);

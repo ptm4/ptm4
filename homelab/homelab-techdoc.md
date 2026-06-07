@@ -18,6 +18,7 @@
 12. [Log Management](#12-log-management)
 13. [Useful Commands & Diagnostics](#13-useful-commands--diagnostics)
 14. [WireGuard Peer Manager — Web UI](#14-wireguard-peer-manager--web-ui)
+15. [Homelab Agent Platform](#15-homelab-agent-platform)
 
 ---
 
@@ -730,3 +731,70 @@ curl -k https://wg.rpi.lan:8443/api/peers
 **Suspend disabled:** `sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target`
 
 **If noblenumbat goes down:** Pi loses `/mnt/noblenumbat-fs`. mergerfs degrades to local `/srv/fs` only. Samba + all Docker services stay up. NFS re-mounts on Pi reboot or manual `mount /mnt/noblenumbat-fs`.
+
+---
+
+## 15. Homelab Agent Platform
+
+Self-monitoring "agents" run **entirely on the opti server** (192.168.1.11) — scheduled by GitHub
+Actions on a self-hosted runner, controlled from the webapp via a lightweight dispatcher service.
+Nothing depends on the desktop. Setup checklist: `Tools/automation/setup-opti.md`.
+
+### Agents
+
+**Tier A — Security** (→ `security-reports/` → `/api/reports` → webapp `#security`):
+| Agent | Report | Purpose |
+|---|---|---|
+| `journald-hunter` | `journal-hunt-latest.json` | Combs **all** journald logs (every unit/boot) for errors/flags — service failures, OOM, disk/FS/kernel/hardware faults — **plus** security signals (failed/accepted SSH, sudo/su, new users). Combined security + general-health sweep. |
+| `persistence-auditor` | `persistence-audit-latest.json` | Baseline+diff of cron, systemd timers/units, autostart, rc/profile files. |
+
+**Tier B — Homelab** (→ `agent-logs/` → `/api/agents` → webapp `#agents`):
+| Agent | Report | Purpose |
+|---|---|---|
+| `hardware-report` | `hardware-latest.json` | CPU/RAM/disk/GPU/thermals/uptime/virt (JSON port of `scripts/hrdwre.sh`). |
+| `software-inventory` | `software-latest.json` | Package count, pending updates, kernel/service versions. |
+| `homelab-doctor` | `homelab-doctor-latest.json` | Service reachability, TLS cert expiry, disk, docker, report freshness. |
+| `network-report` | `network-latest.json` | Interfaces, gateway/internet/DNS reachability, listening ports. |
+
+**Leetify** (`leetify-stats` → `leetify-latest.json`) is a non-security CS2-stats agent surfaced on
+the webapp **Home** card; dormant unless `LEETIFY_API_KEY` + `STEAM64_ID` are set.
+
+### Control plane
+
+- **Schedule:** `.github/workflows/homelab-agents.yml`, `runs-on: [self-hosted, opti]`. The `opti`
+  label keeps it off the Pi deploy runner. `homelab-doctor`+`network` every 30 min; the rest daily.
+- **Dispatcher:** `hl-agent-dispatcher.service` on opti (`:9099`) owns `agents-state.json` and runs
+  agents on demand from an allowlist. The webapp **Enable/Disable** + **Run now** buttons proxy to
+  it over the LAN. Both schedule and run-now honor the enabled flag.
+- **Config/secrets:** `/etc/hl-agents.env` on opti (paths + `LEETIFY_API_KEY` + `STEAM64_ID` +
+  `HL_DISPATCH_TOKEN`), sourced by both the workflow and the dispatcher — the key never leaves opti.
+
+### Flow
+
+```mermaid
+flowchart LR
+  subgraph GH[GitHub]
+    WF[homelab-agents.yml<br/>schedule + dispatch]
+  end
+  subgraph OPTI[opti server 192.168.1.11]
+    RUN[self-hosted runner<br/>label: opti]
+    DISP[agent-dispatcher.service :9099<br/>enable/disable + run-now]
+    ENV[/etc/hl-agents.env/]
+    AG[agents<br/>journald-hunter · persistence-auditor<br/>hardware · software · homelab-doctor · network · leetify]
+    REP[(security-reports/ + agent-logs/<br/>+ agents-state.json)]
+  end
+  subgraph PI[Raspberry Pi - rpi.lan]
+    WEB[webapp backend<br/>/api/reports · /api/agents]
+    UI[#security · #agents · Home]
+  end
+  WF -->|runs on| RUN --> AG
+  RUN -. sources .-> ENV
+  AG --> REP
+  DISP --> AG
+  DISP --- REP
+  REP -->|CIFS /mnt/opti-fs| WEB --> UI
+  UI -->|Enable/Disable · Run now| WEB -->|LAN proxy| DISP
+```
+
+**Storage map:** opti `…/fs/ptm/{security-reports,agent-logs}` = Pi `/mnt/opti-fs/ptm/...` = webapp
+container `/reports` + `/agent-logs`.

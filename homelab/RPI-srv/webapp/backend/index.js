@@ -34,6 +34,9 @@ app.get('/api/health', (req, res) => {
 const reportsRouter = require('./routes/reports');
 app.use('/api/reports', reportsRouter);
 
+const agentsRouter = require('./routes/agents');
+app.use('/api/agents', agentsRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

@@ -1,0 +1,76 @@
+name: Homelab Agents
+
+# Runs the homelab agent suite on the self-hosted runner ON OPTI.
+# Reports land in opti's security-reports/ and agent-logs/ dirs (read by the webapp).
+# Schedules are best-effort (GitHub cron, ≥5-min granularity); the opti dispatcher
+# gives instant on-demand runs. Each agent is skipped if disabled in agents-state.json.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # frequent: homelab-doctor + network
+    - cron: "0 9 * * *"      # daily 09:00 UTC: the rest
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Single agent to run (or 'all')"
+        required: false
+        default: "all"
+
+jobs:
+  run-agents:
+    runs-on: [self-hosted, opti]
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Load opti env (/etc/hl-agents.env)
+        run: |
+          if [ -f /etc/hl-agents.env ]; then
+            grep -E '^(HL_|LEETIFY_API_KEY=|STEAM64_ID=)' /etc/hl-agents.env >> "$GITHUB_ENV"
+          else
+            echo "::warning::/etc/hl-agents.env not found — agents will use relative-path defaults"
+          fi
+
+      - name: Install Python deps
+        run: python3 -m pip install --user --quiet requests || pip3 install --user --quiet requests || true
+
+      - name: Run agents (state-gated)
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHED: ${{ github.event.schedule }}
+          ONLY: ${{ github.event.inputs.agent }}
+        run: |
+          set -uo pipefail
+          declare -A SCRIPTS=(
+            [journald-hunter]=homelab/Tools/linux-security/journald-hunter.py
+            [persistence-auditor]=homelab/Tools/linux-security/persistence-auditor.py
+            [hardware-report]=homelab/Tools/homelab/hardware-report.py
+            [software-inventory]=homelab/Tools/homelab/software-inventory.py
+            [homelab-doctor]=homelab/Tools/homelab/homelab-doctor.py
+            [network-report]=homelab/Tools/homelab/network-report.py
+            [leetify-stats]=homelab/Tools/leetify/leetify-stats.py
+          )
+          if [ "$EVENT" = "schedule" ] && [ "$SCHED" = "*/30 * * * *" ]; then
+            AGENTS="homelab-doctor network-report"
+          elif [ "$EVENT" = "schedule" ]; then
+            AGENTS="journald-hunter persistence-auditor hardware-report software-inventory leetify-stats"
+          elif [ -n "${ONLY:-}" ] && [ "$ONLY" != "all" ]; then
+            AGENTS="$ONLY"
+          else
+            AGENTS="journald-hunter persistence-auditor hardware-report software-inventory homelab-doctor network-report leetify-stats"
+          fi
+
+          DISP=homelab/Tools/automation/agent-dispatcher.py
+          rc=0
+          for a in $AGENTS; do
+            script="${SCRIPTS[$a]:-}"
+            if [ -z "$script" ]; then echo "::warning::unknown agent $a"; continue; fi
+            if python3 "$DISP" --is-enabled "$a"; then
+              echo "▶ running $a"
+              python3 "$script" || { echo "::warning::$a exited non-zero"; rc=1; }
+            else
+              echo "⏭ skipping $a (disabled)"
+            fi
+          done
+          exit $rc

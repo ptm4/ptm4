@@ -103,10 +103,14 @@ services:
     logging: *default-logging
     working_dir: /app/backend
     command: sh -c "npm install --omit=dev && node index.js"
+    environment:
+      # opti agent dispatcher (enable/disable + run-now); set in .env
+      DISPATCHER_URL: ${DISPATCHER_URL:-}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro
-      - /mnt/workstation-agent-logs:/agent-logs:ro
+      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
     expose:
       - "3000"
     networks:
