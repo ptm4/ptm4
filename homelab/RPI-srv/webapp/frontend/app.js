@@ -213,11 +213,13 @@ async function renderLeetify(view) {
         </div>`;
       }).join('')}
     </div>
-    <p class="sec-empty-hint">Reposition advice for each hotspot is in the coaching review below.</p>
+    ${d.ai_review ? '<p class="sec-empty-hint">Reposition advice for each hotspot is in the coaching review below.</p>' : ''}
   ` : '';
 
-  const logHtml = d.log
-    ? (typeof marked !== 'undefined' ? marked.parse(d.log) : `<pre>${escHtml(d.log)}</pre>`)
+  // Strip the positional breakdown section from the log — it's already rendered as structured cards above.
+  const logText = d.log ? d.log.replace(/\n---\n## Positional breakdown[\s\S]*$/, '') : '';
+  const logHtml = logText
+    ? (typeof marked !== 'undefined' ? marked.parse(logText) : `<pre>${escHtml(logText)}</pre>`)
     : '';
 
   document.getElementById('leetify-page').innerHTML = `
