@@ -249,7 +249,7 @@ def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None):
     return "\n".join(L)
 
 
-def llm_review(digest, positions_digest=None):
+def llm_review(digest, positions_digest=None, demos_digest=None):
     """Optional: send the digest to Claude for a coaching narrative. Returns text or None.
 
     When positions_digest (per-map death hotspots from demo parsing) is provided, the
@@ -267,9 +267,16 @@ def llm_review(digest, positions_digest=None):
         "CT vs T split. Use short markdown sections. Be direct and actionable.\n\n"
         f"DATA:\n{digest}"
     )
+    if demos_digest:
+        prompt += (
+            "\n\nRECENT DEMOS (date, map, result, K/D, rating, top death spots from parsing):\n"
+            f"{demos_digest}\n\n"
+            "Reference specific demos by date+map when you spot patterns (e.g. 'In your 2026-06-04 "
+            "dust2 loss you died 3x on ARamp CT-side — ...'). Note trends across demos."
+        )
     if positions_digest:
         prompt += (
-            "\n\nDEATH HOTSPOTS (per map, from demo parsing — area, % of deaths, side):\n"
+            "\n\nDEATH HOTSPOTS AGGREGATE (per map across all parsed demos — area, % of deaths, side):\n"
             f"{positions_digest}\n\n"
             "Add a final markdown section '## Positional fixes'. For each map's top death "
             "hotspots, name the SPECIFIC spot/angle the player is dying at and exactly where to "
@@ -336,16 +343,18 @@ def analyze(profile, matches, steam_id):
 
     # Positional "where you die" analysis (heavy, opt-in: LEETIFY_PARSE_DEMOS=1).
     positions = {}
+    demo_summaries = []
     if os.environ.get("LEETIFY_PARSE_DEMOS") in ("1", "true", "yes"):
         try:
-            positions = demo_positions.analyze_positions(
+            positions, demo_summaries = demo_positions.analyze_positions(
                 matches, steam_id, heatmap_dir=agent_logs_dir())
         except Exception as e:
             print(f"positional analysis skipped: {e}", file=sys.stderr)
 
     positions_digest = demo_positions.hotspots_digest(positions) if positions else None
+    demos_dig = demo_positions.demos_digest(demo_summaries) if demo_summaries else None
     digest = build_digest(name, profile, maps, dim, stats)
-    ai = llm_review(digest, positions_digest=positions_digest)
+    ai = llm_review(digest, positions_digest=positions_digest, demos_digest=demos_dig)
 
     status = "warn" if findings else "ok"
     log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai)
@@ -364,6 +373,7 @@ def analyze(profile, matches, steam_id):
         "maps": maps,
         "dimensions": dim["dims"],
         "positions": positions,
+        "demo_summaries": demo_summaries,
         "ai_review": bool(ai),
         # keep raw blobs for the page / future use
         "profile": profile,

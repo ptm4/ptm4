@@ -206,22 +206,94 @@ def _render_heatmaps(deaths_by_map, out_dir):
     return pngs
 
 
+def _match_score(match, steam_id):
+    """Return (won, team_score, enemy_score) for the player's team."""
+    sid = str(steam_id)
+    stats = match.get("stats") or []
+    player_stat = next((s for s in stats if str(s.get("steam64_id")) == sid), None)
+    if not player_stat:
+        return None, None, None
+    team_num = player_stat.get("initial_team_number")
+    scores = {s["team_number"]: s["score"] for s in (match.get("team_scores") or [])}
+    my_score = scores.get(team_num)
+    enemy_score = next((v for k, v in scores.items() if k != team_num), None)
+    if my_score is None or enemy_score is None:
+        return None, None, None
+    return my_score > enemy_score, my_score, enemy_score
+
+
+def demo_summary(match, deaths, steam_id):
+    """Build a per-demo summary dict with date, map, result, stats, and death hotspots."""
+    sid = str(steam_id)
+    mp = match.get("map_name") or "unknown"
+    finished_at = match.get("finished_at") or ""
+    stats = match.get("stats") or []
+    player_stat = next((s for s in stats if str(s.get("steam64_id")) == sid), {})
+
+    won, my_score, enemy_score = _match_score(match, steam_id)
+    result = "win" if won else ("loss" if won is False else "unknown")
+
+    total = len(deaths)
+    ct_d = sum(1 for d in deaths if d.get("side") == "CT")
+    t_d = sum(1 for d in deaths if d.get("side") == "T")
+    area_counts = defaultdict(int)
+    for d in deaths:
+        area_counts[(bucket_area(d), d.get("side") or "?")] += 1
+    hotspots = [
+        {"area": a, "side": s, "count": c, "pct": round(100 * c / total) if total else 0}
+        for (a, s), c in area_counts.items()
+    ]
+    hotspots.sort(key=lambda h: -h["count"])
+
+    return {
+        "match_id": match.get("id") or match.get("data_source_match_id"),
+        "map": mp,
+        "date": finished_at[:10] if finished_at else "",
+        "result": result,
+        "score": f"{my_score}-{enemy_score}" if my_score is not None else "",
+        "kills": player_stat.get("total_kills"),
+        "deaths": player_stat.get("total_deaths"),
+        "rating": player_stat.get("leetify_rating"),
+        "hs_pct": round(100 * player_stat["total_hs_kills"] / player_stat["total_kills"])
+                  if player_stat.get("total_kills") and player_stat.get("total_hs_kills") is not None else None,
+        "demo_deaths": total,
+        "ct_deaths": ct_d,
+        "t_deaths": t_d,
+        "hotspots": hotspots[:6],
+    }
+
+
+def demos_digest(demo_summaries):
+    """Compact text of per-demo results for the LLM coaching prompt."""
+    lines = []
+    for d in demo_summaries:
+        hs = ", ".join(f"{h['area']} {h['pct']}% ({h['side']})" for h in d["hotspots"][:3])
+        lines.append(
+            f"{d['date']} {d['map']} — {d['result']} {d['score']} "
+            f"K/D {d['kills']}/{d['deaths']} rating {d.get('rating', '?'):.3f} | "
+            f"deaths: {hs}"
+        )
+    return "\n".join(lines)
+
+
 def analyze_positions(matches, steam_id, heatmap_dir=None):
     """Top-level: download+parse up to N recent matches, aggregate hotspots, optional heatmaps.
 
-    Returns the `positions` dict (with optional `heatmap_png` per map), or {} if nothing
-    could be parsed. Safe to call only when LEETIFY_PARSE_DEMOS is enabled (caller gates).
+    Returns (positions, demo_summaries). positions is the per-map aggregate dict.
+    demo_summaries is a list of per-match breakdown dicts. Both are {} / [] if nothing parsed.
+    Safe to call only when LEETIFY_PARSE_DEMOS is enabled (caller gates).
     """
     try:
         import demoparser2  # noqa: F401 — fail fast with a clear message if absent
     except Exception:
         print("LEETIFY_PARSE_DEMOS set but demoparser2 not installed — skipping positional analysis. "
               "Install with: pip install demoparser2", file=sys.stderr)
-        return {}
+        return {}, []
 
     cap = int(os.environ.get("LEETIFY_DEMO_MAX", DEMO_MAX_DEFAULT))
     all_deaths = []
     deaths_by_map = defaultdict(list)
+    demo_summaries = []
     parsed = 0
     for m in matches[:cap]:
         mp = m.get("map_name") or "unknown"
@@ -237,10 +309,11 @@ def analyze_positions(matches, steam_id, heatmap_dir=None):
             continue
         all_deaths.extend(ds)
         deaths_by_map[mp].extend(ds)
+        demo_summaries.append(demo_summary(m, ds, steam_id))
         parsed += 1
 
     if not all_deaths:
-        return {}
+        return {}, []
 
     positions = aggregate(all_deaths)
     if heatmap_dir:
@@ -249,7 +322,7 @@ def analyze_positions(matches, steam_id, heatmap_dir=None):
                 positions[mp]["heatmap_png"] = png
     print(f"positional analysis: parsed {parsed} demo(s), {len(all_deaths)} deaths across "
           f"{len(positions)} map(s)", file=sys.stderr)
-    return positions
+    return positions, demo_summaries
 
 
 if __name__ == "__main__":

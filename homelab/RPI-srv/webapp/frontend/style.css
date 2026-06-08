@@ -545,6 +545,12 @@ body {
   gap: 8px;
 }
 .pos-split { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 400; }
+.demo-map  { font-weight: 600; }
+.demo-date { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 400; }
+.demo-result { font-size: 12px; font-family: monospace; font-weight: 700; margin-left: auto; }
+.demo-win  { color: #4caf50; }
+.demo-loss { color: #ef5350; }
+.demo-stats { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 
 /* ── Home: Quick Links tile ───────────────────────────────────────────────── */
 .card-links { grid-column: span 1; }

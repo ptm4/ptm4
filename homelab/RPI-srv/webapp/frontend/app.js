@@ -194,7 +194,34 @@ async function renderLeetify(view) {
             <td>${verdict}</td></tr>`;
   }).join('');
 
-  // Positional breakdown (only present when demo parsing ran on opti).
+  // Per-demo breakdown (only present when demo parsing ran on opti).
+  const demoSummaries = d.demo_summaries || [];
+  const demosHtml = demoSummaries.length ? `
+    <h3 class="detail-section-title">Recent demos</h3>
+    <div class="pos-grid">
+      ${demoSummaries.map(ds => {
+        const resultCls = ds.result === 'win' ? 'demo-win' : ds.result === 'loss' ? 'demo-loss' : '';
+        const hotRows = (ds.hotspots || []).map(h =>
+          `<tr><td>${escHtml(h.area)}</td><td>${escHtml(h.side)}</td><td>${h.count}</td><td>${h.pct}%</td></tr>`
+        ).join('');
+        const kdStr = (ds.kills != null && ds.deaths != null) ? `${ds.kills}/${ds.deaths} K/D` : '';
+        const ratingStr = ds.rating != null ? ` · ${ds.rating > 0 ? '+' : ''}${ds.rating.toFixed(3)} rating` : '';
+        const hsStr = ds.hs_pct != null ? ` · ${ds.hs_pct}% HS` : '';
+        return `<div class="pos-card">
+          <div class="pos-card-head">
+            <span class="demo-map">${escHtml(ds.map)}</span>
+            <span class="demo-date">${escHtml(ds.date)}</span>
+            <span class="demo-result ${resultCls}">${ds.result}${ds.score ? ' ' + ds.score : ''}</span>
+          </div>
+          <div class="demo-stats">${kdStr}${ratingStr}${hsStr}</div>
+          ${hotRows ? `<table class="detail-table"><thead><tr><th>Died at</th><th>Side</th><th>×</th><th>%</th></tr></thead>
+            <tbody>${hotRows}</tbody></table>` : ''}
+        </div>`;
+      }).join('')}
+    </div>
+  ` : '';
+
+  // Aggregate positional breakdown across all parsed demos.
   const positions = d.positions || {};
   const posMaps = Object.keys(positions);
   const posHtml = posMaps.length ? `
@@ -213,10 +240,10 @@ async function renderLeetify(view) {
         </div>`;
       }).join('')}
     </div>
-    ${d.ai_review ? '<p class="sec-empty-hint">Reposition advice for each hotspot is in the coaching review below.</p>' : ''}
+    ${d.ai_review ? '<p class="sec-empty-hint">Reposition advice for each hotspot is in the AI coaching review below.</p>' : ''}
   ` : '';
 
-  // Strip the positional breakdown section from the log — it's already rendered as structured cards above.
+  // Strip the positional breakdown section from the log — already rendered as structured cards above.
   const logText = d.log ? d.log.replace(/\n---\n## Positional breakdown[\s\S]*$/, '') : '';
   const logHtml = logText
     ? (typeof marked !== 'undefined' ? marked.parse(logText) : `<pre>${escHtml(logText)}</pre>`)
@@ -231,6 +258,7 @@ async function renderLeetify(view) {
         <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
         <tbody>${mapRows}</tbody>
       </table>` : ''}
+    ${demosHtml}
     ${posHtml}
     <div class="agent-report-body" style="margin-top:20px">${logHtml}</div>
   `;
