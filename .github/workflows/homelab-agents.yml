@@ -34,8 +34,8 @@ jobs:
 
       - name: Install Python deps
         run: |
-          python3 -m pip install --user --quiet --break-system-packages requests polars-lts-cpu
-          python3 -m pip install --user --quiet --break-system-packages --no-deps "demoparser2==0.41.3"
+          python3 -m pip install --user --quiet --break-system-packages requests
+          python3 -m pip install --user --quiet --break-system-packages --no-deps "polars-lts-cpu==1.33.1" "demoparser2==0.41.3"
 
       - name: Run agents (state-gated)
         env:
