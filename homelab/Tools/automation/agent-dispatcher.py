@@ -45,6 +45,7 @@ AGENTS = {
     "homelab-doctor":      os.path.join(TOOLS_DIR, "homelab", "homelab-doctor.py"),
     "network-report":      os.path.join(TOOLS_DIR, "homelab", "network-report.py"),
     "leetify-stats":       os.path.join(TOOLS_DIR, "leetify", "leetify-stats.py"),
+    "refresh-cs2-knowledge": os.path.join(TOOLS_DIR, "leetify", "refresh-cs2-knowledge.py"),
 }
 
 _lock = threading.Lock()

@@ -25,8 +25,19 @@ import sys
 import urllib.request
 from collections import defaultdict
 
-DEMO_MAX_DEFAULT = 6
+DEMO_MAX_DEFAULT = 25  # parse all matches in the Leetify window — run time is acceptable
 GRID = 600.0  # world-units per bucket when no callout name is available
+TEAM_SIDE = {2: "T", 3: "CT"}  # CS2 team_num → side
+
+
+def _side(team):
+    """Map a CS2 team_num (2=T, 3=CT) to a side string, tolerant of str/float inputs."""
+    if team is None:
+        return None
+    try:
+        return TEAM_SIDE.get(int(float(team)))
+    except (TypeError, ValueError):
+        return None
 
 
 def cache_dir():
@@ -140,16 +151,8 @@ def _col(df, *names):
     return None
 
 
-def _parse_deaths(dem_path, steam_id, map_name):
-    """Extract this player's deaths from one demo. Returns a list of normalized death dicts."""
-    from demoparser2 import DemoParser  # imported lazily; opti-only dependency
-    parser = DemoParser(dem_path)
-    df = parser.parse_event(
-        "player_death",
-        player=["X", "Y", "Z", "team_num", "last_place_name"],
-        other=["total_rounds_played"],
-    )
-    # demoparser2 prefixes requested player fields by perspective; victim is "user"/"player".
+def _deaths_from_df(df, steam_id, map_name):
+    """Build normalized death dicts (positions/hotspots) from a player_death DataFrame."""
     vic_id = _col(df, "user_steamid", "player_steamid", "victim_steamid")
     x_col = _col(df, "user_X", "player_X", "X")
     y_col = _col(df, "user_Y", "player_Y", "Y")
@@ -165,18 +168,208 @@ def _parse_deaths(dem_path, steam_id, map_name):
     for _, row in df.iterrows():
         if str(row.get(vic_id)) != sid:
             continue
-        team = row.get(team_col) if team_col else None
-        # CS2 team_num: 2 = T, 3 = CT
-        side = {2: "T", 3: "CT"}.get(int(team)) if team is not None and str(team).isdigit() else None
         deaths.append({
             "map": map_name,
             "x": float(row[x_col]) if x_col and row.get(x_col) is not None else None,
             "y": float(row[y_col]) if y_col and row.get(y_col) is not None else None,
             "place": row.get(place_col) if place_col else None,
-            "side": side,
+            "side": _side(row.get(team_col)) if team_col else None,
             "round": int(row[round_col]) if round_col and str(row.get(round_col)).isdigit() else None,
             "weapon": row.get(weap_col) if weap_col else None,
         })
+    return deaths
+
+
+def _rounds_from_events(death_df, hurt_df, end_df, plant_df, defuse_df, steam_id):
+    """Assemble per-round summaries for the player from the parsed event DataFrames.
+
+    Returns a list of round dicts (1-indexed round numbers):
+      {round, side, won, reason, kills:[{victim,weapon,hs}], died, killer, damage,
+       planted, defused}
+    """
+    sid = str(steam_id)
+
+    # round_end gives the authoritative winner side per (1-indexed) round.
+    end_round = _col(end_df, "round")
+    end_winner = _col(end_df, "winner")
+    end_reason = _col(end_df, "reason")
+    outcomes = {}  # round -> (winner_side, reason)
+    if end_round is not None and end_winner is not None:
+        for _, r in end_df.iterrows():
+            rn = r.get(end_round)
+            if rn is None or not str(int(rn)).isdigit():
+                continue
+            outcomes[int(rn)] = (r.get(end_winner), r.get(end_reason) if end_reason else None)
+
+    rounds = defaultdict(lambda: {
+        "kills": [], "died": False, "killer": None, "damage": 0,
+        "planted": False, "defused": False, "side": None,
+    })
+
+    def rnum(row, col):
+        """player_death/hurt round is total_rounds_played (0-indexed) → 1-indexed."""
+        v = row.get(col) if col else None
+        return int(v) + 1 if v is not None and str(v).isdigit() else None
+
+    # Kills + deaths from player_death.
+    if death_df is not None and len(death_df):
+        vic = _col(death_df, "user_steamid", "player_steamid")
+        atk = _col(death_df, "attacker_steamid")
+        atk_name = _col(death_df, "attacker_name")
+        vic_team = _col(death_df, "user_team_num", "player_team_num")
+        atk_team = _col(death_df, "attacker_team_num")
+        hs = _col(death_df, "headshot")
+        weap = _col(death_df, "weapon")
+        drc = _col(death_df, "total_rounds_played", "round")
+        for _, row in death_df.iterrows():
+            rn = rnum(row, drc)
+            if rn is None:
+                continue
+            if str(row.get(atk)) == sid and str(row.get(vic)) != sid:  # player got a kill
+                rounds[rn]["kills"].append({
+                    "victim": row.get("user_name") if "user_name" in death_df.columns else None,
+                    "weapon": row.get(weap) if weap else None,
+                    "hs": bool(row.get(hs)) if hs else False,
+                })
+                if rounds[rn]["side"] is None and atk_team:
+                    rounds[rn]["side"] = _side(row.get(atk_team))
+            if str(row.get(vic)) == sid:  # player died
+                rounds[rn]["died"] = True
+                rounds[rn]["killer"] = row.get(atk_name) if atk_name else None
+                if vic_team:
+                    rounds[rn]["side"] = _side(row.get(vic_team))
+
+    # Damage from player_hurt.
+    if hurt_df is not None and len(hurt_df):
+        atk = _col(hurt_df, "attacker_steamid")
+        dmg = _col(hurt_df, "dmg_health")
+        hrc = _col(hurt_df, "total_rounds_played", "round")
+        if atk and dmg:
+            for _, row in hurt_df.iterrows():
+                if str(row.get(atk)) != sid:
+                    continue
+                rn = rnum(row, hrc)
+                if rn is None:
+                    continue
+                try:
+                    rounds[rn]["damage"] += int(row.get(dmg) or 0)
+                except (TypeError, ValueError):
+                    pass
+
+    # Objective plays — map by tick into the round whose end-tick is the next one up.
+    end_tick = _col(end_df, "tick")
+    tick_to_round = []
+    if end_round is not None and end_tick is not None:
+        for _, r in end_df.iterrows():
+            rn, tk = r.get(end_round), r.get(end_tick)
+            if rn is not None and tk is not None:
+                tick_to_round.append((int(tk), int(rn)))
+        tick_to_round.sort()
+
+    def round_for_tick(tk):
+        for etk, rn in tick_to_round:
+            if tk <= etk:
+                return rn
+        return None
+
+    for df, key in ((plant_df, "planted"), (defuse_df, "defused")):
+        if df is None or not len(df):
+            continue
+        uid = _col(df, "user_steamid")
+        tcol = _col(df, "tick")
+        if not uid or not tcol:
+            continue
+        for _, row in df.iterrows():
+            if str(row.get(uid)) != sid:
+                continue
+            rn = round_for_tick(row.get(tcol))
+            if rn is not None:
+                rounds[rn][key] = True
+
+    # Fill side for eventless rounds: sides are constant within a half and flip at the
+    # halftime switch. Carry the last known side forward/back across rounds in the same half.
+    all_rounds = sorted(set(rounds) | set(outcomes))
+    known = {rn: rounds[rn]["side"] for rn in rounds if rounds[rn]["side"]}
+    if known:
+        # Detect the halftime boundary: the round at which the player's side flips.
+        flip_round = None
+        ordered = sorted(known)
+        for a, b in zip(ordered, ordered[1:]):
+            if known[a] != known[b]:
+                flip_round = b
+                break
+        first_side = known[ordered[0]]
+        second_side = "T" if first_side == "CT" else "CT"
+        for rn in all_rounds:
+            if rounds[rn]["side"]:
+                continue
+            if flip_round is None:
+                rounds[rn]["side"] = first_side
+            else:
+                rounds[rn]["side"] = first_side if rn < flip_round else second_side
+
+    # Finalize: attach outcome + side, sort by round.
+    out = []
+    for rn in all_rounds:
+        info = rounds[rn]
+        winner, reason = outcomes.get(rn, (None, None))
+        side = info["side"]
+        won = (winner == side) if (winner and side) else None
+        out.append({
+            "round": rn,
+            "side": side,
+            "won": won,
+            "reason": reason,
+            "kills": info["kills"],
+            "died": info["died"],
+            "killer": info["killer"],
+            "damage": info["damage"],
+            "planted": info["planted"],
+            "defused": info["defused"],
+        })
+    return out
+
+
+def _parse_demo(dem_path, steam_id, map_name):
+    """Parse ONE demo once, returning (deaths, rounds).
+
+    deaths feeds the per-map positional aggregate; rounds feeds the per-match deep-dive.
+    A single DemoParser instance is reused across all events for efficiency.
+    """
+    from demoparser2 import DemoParser  # imported lazily; opti-only dependency
+    parser = DemoParser(dem_path)
+
+    death_df = parser.parse_event(
+        "player_death",
+        player=["X", "Y", "Z", "team_num", "last_place_name"],
+        other=["total_rounds_played"],
+    )
+    deaths = _deaths_from_df(death_df, steam_id, map_name)
+
+    def safe(event, **kw):
+        try:
+            return parser.parse_event(event, **kw)
+        except Exception as e:
+            print(f"parse_event {event} failed ({map_name}): {e}", file=sys.stderr)
+            return None
+
+    hurt_df = safe("player_hurt", other=["total_rounds_played"])
+    end_df = safe("round_end")
+    plant_df = safe("bomb_planted")
+    defuse_df = safe("bomb_defused")
+
+    rounds = []
+    if end_df is not None:
+        try:
+            rounds = _rounds_from_events(death_df, hurt_df, end_df, plant_df, defuse_df, steam_id)
+        except Exception as e:
+            print(f"round assembly failed ({map_name}): {e}", file=sys.stderr)
+    return deaths, rounds
+
+
+def _parse_deaths(dem_path, steam_id, map_name):
+    """Back-compat wrapper: deaths only (used by the self-test / older callers)."""
+    deaths, _ = _parse_demo(dem_path, steam_id, map_name)
     return deaths
 
 
@@ -222,8 +415,8 @@ def _match_score(match, steam_id):
     return my_score > enemy_score, my_score, enemy_score
 
 
-def demo_summary(match, deaths, steam_id):
-    """Build a per-demo summary dict with date, map, result, stats, and death hotspots."""
+def demo_summary(match, deaths, steam_id, rounds=None):
+    """Build a per-demo summary dict with date, map, result, stats, hotspots, and rounds."""
     sid = str(steam_id)
     mp = match.get("map_name") or "unknown"
     finished_at = match.get("finished_at") or ""
@@ -260,6 +453,7 @@ def demo_summary(match, deaths, steam_id):
         "ct_deaths": ct_d,
         "t_deaths": t_d,
         "hotspots": hotspots[:6],
+        "rounds": round_review(rounds or []),
     }
 
 
@@ -268,12 +462,59 @@ def demos_digest(demo_summaries):
     lines = []
     for d in demo_summaries:
         hs = ", ".join(f"{h['area']} {h['pct']}% ({h['side']})" for h in d["hotspots"][:3])
+        rating = d.get("rating")
+        rating_str = f"{rating:.3f}" if isinstance(rating, (int, float)) else "?"
         lines.append(
             f"{d['date']} {d['map']} — {d['result']} {d['score']} "
-            f"K/D {d['kills']}/{d['deaths']} rating {d.get('rating', '?'):.3f} | "
+            f"K/D {d['kills']}/{d['deaths']} rating {rating_str} | "
             f"deaths: {hs}"
         )
     return "\n".join(lines)
+
+
+def round_tag(r):
+    """One-line 'what happened' summary for a round, framed by round-win impact."""
+    k = len(r.get("kills") or [])
+    parts = []
+    if k:
+        parts.append(f"{k}K")
+    if r.get("planted"):
+        parts.append("planted")
+    if r.get("defused"):
+        parts.append("defused")
+    if r.get("damage"):
+        parts.append(f"{r['damage']}dmg")
+    if r.get("died"):
+        killer = r.get("killer")
+        parts.append(f"died{f' to {killer}' if killer else ''}")
+    elif not k:
+        parts.append("survived, no impact")
+    outcome = "won" if r.get("won") else ("lost" if r.get("won") is False else "?")
+    return f"{', '.join(parts) or 'no events'} — round {outcome}"
+
+
+def round_review(rounds):
+    """Attach a 'tag' to each round dict (in place) and return it for JSON + UI."""
+    for r in rounds:
+        r["tag"] = round_tag(r)
+    return rounds
+
+
+def rounds_digest(demo_summaries):
+    """Round-by-round text across ALL parsed demos, for the LLM to spot cross-match patterns."""
+    blocks = []
+    for d in demo_summaries:
+        rounds = d.get("rounds") or []
+        if not rounds:
+            continue
+        won = sum(1 for r in rounds if r.get("won"))
+        lost = sum(1 for r in rounds if r.get("won") is False)
+        head = f"{d['date']} {d['map']} — {d['result']} {d['score']} ({won}W/{lost}L rounds)"
+        lines = [head]
+        for r in rounds:
+            lines.append(f"  R{r['round']} {r.get('side') or '?'}: {r.get('tag', '')}")
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
 
 
 def analyze_positions(matches, steam_id, heatmap_dir=None):
@@ -303,13 +544,13 @@ def analyze_positions(matches, steam_id, heatmap_dir=None):
         if not dem:
             continue
         try:
-            ds = _parse_deaths(dem, steam_id, mp)
+            ds, rounds = _parse_demo(dem, steam_id, mp)
         except Exception as e:
             print(f"demo parse failed ({mp}): {e}", file=sys.stderr)
             continue
         all_deaths.extend(ds)
         deaths_by_map[mp].extend(ds)
-        demo_summaries.append(demo_summary(m, ds, steam_id))
+        demo_summaries.append(demo_summary(m, ds, steam_id, rounds=rounds))
         parsed += 1
 
     if not all_deaths:

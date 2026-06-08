@@ -221,6 +221,46 @@ async function renderLeetify(view) {
     </div>
   ` : '';
 
+  // Match deep-dive — collapsible round-by-round table per parsed demo.
+  const deepDives = demoSummaries.filter(ds => (ds.rounds || []).length);
+  const deepHtml = deepDives.length ? `
+    <h3 class="detail-section-title">Match deep-dive — round by round</h3>
+    <div class="deep-list">
+      ${deepDives.map(ds => {
+        const rounds = ds.rounds || [];
+        const won = rounds.filter(r => r.won === true).length;
+        const lost = rounds.filter(r => r.won === false).length;
+        const resultCls = ds.result === 'win' ? 'demo-win' : ds.result === 'loss' ? 'demo-loss' : '';
+        const kdStr = (ds.kills != null && ds.deaths != null) ? ` · ${ds.kills}/${ds.deaths} K/D` : '';
+        const rows = rounds.map(r => {
+          const rowCls = r.won === true ? 'round-won' : r.won === false ? 'round-lost' : '';
+          const kills = (r.kills || []).length;
+          const killStr = kills ? `${kills}K` : '—';
+          const dmgStr = r.damage ? `${r.damage}` : '—';
+          const obj = r.planted ? '💣 plant' : r.defused ? '🛡 defuse' : '';
+          const fate = r.died ? (r.killer ? `died → ${escHtml(r.killer)}` : 'died') : 'survived';
+          const wl = r.won === true ? 'W' : r.won === false ? 'L' : '?';
+          return `<tr class="${rowCls}">
+            <td>${r.round}</td><td>${escHtml(r.side || '?')}</td><td class="round-wl">${wl}</td>
+            <td>${killStr}</td><td>${dmgStr}</td><td>${escHtml(fate)}</td><td>${obj}</td></tr>`;
+        }).join('');
+        return `<details class="deep-card">
+          <summary>
+            <span class="demo-map">${escHtml(ds.map)}</span>
+            <span class="demo-date">${escHtml(ds.date)}</span>
+            <span class="demo-result ${resultCls}">${ds.result}${ds.score ? ' ' + ds.score : ''}</span>
+            <span class="deep-wl">${won}W / ${lost}L rounds${kdStr}</span>
+          </summary>
+          <table class="detail-table deep-table">
+            <thead><tr><th>R</th><th>Side</th><th>W/L</th><th>Kills</th><th>Dmg</th><th>Fate</th><th>Obj</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </details>`;
+      }).join('')}
+    </div>
+    ${d.ai_review ? '<p class="sec-empty-hint">Per-match coaching & recurring-mistake analysis is in the AI review below.</p>' : ''}
+  ` : '';
+
   // Aggregate positional breakdown across all parsed demos.
   const positions = d.positions || {};
   const posMaps = Object.keys(positions);
@@ -259,6 +299,7 @@ async function renderLeetify(view) {
         <tbody>${mapRows}</tbody>
       </table>` : ''}
     ${demosHtml}
+    ${deepHtml}
     ${posHtml}
     <div class="agent-report-body" style="margin-top:20px">${logHtml}</div>
   `;

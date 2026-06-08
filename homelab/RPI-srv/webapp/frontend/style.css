@@ -552,6 +552,34 @@ body {
 .demo-loss { color: #ef5350; }
 .demo-stats { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 
+/* ── Match deep-dive (collapsible round-by-round) ─────────────────────────── */
+.deep-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.deep-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.deep-card > summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  list-style: none;
+}
+.deep-card > summary::-webkit-details-marker { display: none; }
+.deep-card > summary::before { content: '▸'; color: var(--muted); margin-right: 4px; }
+.deep-card[open] > summary::before { content: '▾'; }
+.deep-wl { margin-left: auto; font-size: 11px; color: var(--muted); font-family: monospace; }
+.deep-table { margin-top: 10px; font-size: 12px; }
+.deep-table td, .deep-table th { padding: 3px 8px; }
+.round-wl { font-weight: 700; font-family: monospace; }
+.round-won  { background: rgba(76, 175, 80, 0.08); }
+.round-lost { background: rgba(239, 83, 80, 0.08); }
+.round-won  .round-wl { color: #4caf50; }
+.round-lost .round-wl { color: #ef5350; }
+
 /* ── Home: Quick Links tile ───────────────────────────────────────────────── */
 .card-links { grid-column: span 1; }
 .links-grid { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }

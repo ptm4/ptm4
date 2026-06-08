@@ -25,9 +25,10 @@ from datetime import datetime, timezone
 # Shared dated-report writer lives in Tools/homelab/. Add it to the path.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "homelab"))
 from _report import write_report, now_iso, agent_logs_dir  # noqa: E402
-# Positional (demo-parsing) analysis lives alongside this file.
+# Positional (demo-parsing) analysis + the CS2 coaching knowledge corpus live alongside this file.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import demo_positions  # noqa: E402
+import cs2_knowledge  # noqa: E402
 
 BASE_URL = "https://api-public.cs-prod.leetify.com"
 MATCH_COUNT = 25
@@ -249,30 +250,52 @@ def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None):
     return "\n".join(L)
 
 
-def llm_review(digest, positions_digest=None, demos_digest=None):
+def llm_review(digest, positions_digest=None, demos_digest=None, rounds_digest=None,
+               tier_labels=None):
     """Optional: send the digest to Claude for a coaching narrative. Returns text or None.
 
-    When positions_digest (per-map death hotspots from demo parsing) is provided, the
-    prompt additionally asks for concrete where-to-reposition advice per hotspot.
+    Grounds the coaching in the CS2 benchmark/principles corpus (cs2_knowledge) and, when
+    available, per-match round-by-round demo data and aggregate death hotspots.
     """
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         return None
     model = os.environ.get("LEETIFY_REVIEW_MODEL", "claude-opus-4-8")
+
+    # Reference block (benchmarks + pro principles) up front so every claim is grounded.
     prompt = (
-        "You are a CS2 coach. Below is a player's aggregated Leetify data (skill dimensions, "
-        "per-map win rates and CT/T ratings, and key stats). Write a concise, specific coaching "
-        "review: 1) top 2-3 strengths, 2) top 2-3 focus areas with concrete drills, 3) a map plan "
-        "(which to queue, which to practice/avoid and why), 4) one positioning/role insight from the "
-        "CT vs T split. Use short markdown sections. Be direct and actionable.\n\n"
+        cs2_knowledge.knowledge_block()
+        + "\n\n"
+        + "You are a CS2 coach. CS2 is won round-by-round; the player wants to be the best "
+        "possible and MINIMIZE the mistakes that cost rounds. Use the REFERENCE benchmarks and "
+        "pro principles above to ground EVERY claim (cite the tier or principle). Below is the "
+        "player's aggregated Leetify data (skill dimensions, per-map win rates and CT/T ratings, "
+        "key stats). Write a concise, specific, markdown coaching review:\n"
+        "1) top 2-3 strengths, 2) top 2-3 focus areas with concrete drills, 3) a map plan "
+        "(queue / practice / avoid and why), 4) one positioning/role insight from the CT-vs-T "
+        "split. Be direct and actionable.\n\n"
         f"DATA:\n{digest}"
     )
+    if tier_labels:
+        prompt += (
+            "\n\nPRE-COMPUTED STAT TIERS (deterministic, from the reference benchmarks — use "
+            "these exact labels):\n"
+            + "\n".join(f"- {k}: {v}" for k, v in tier_labels.items())
+        )
     if demos_digest:
         prompt += (
             "\n\nRECENT DEMOS (date, map, result, K/D, rating, top death spots from parsing):\n"
-            f"{demos_digest}\n\n"
-            "Reference specific demos by date+map when you spot patterns (e.g. 'In your 2026-06-04 "
-            "dust2 loss you died 3x on ARamp CT-side — ...'). Note trends across demos."
+            f"{demos_digest}"
+        )
+    if rounds_digest:
+        prompt += (
+            "\n\nROUND-BY-ROUND (every parsed demo — side, what the player did, round won/lost):\n"
+            f"{rounds_digest}\n\n"
+            "Add a markdown section '## Match deep-dive' — for each match, 2-4 sentences on the "
+            "rounds that decided it and what the player did right/wrong (reference round numbers "
+            "and the relevant principle). Then add '## Recurring mistakes' — rank the patterns "
+            "across matches that most hurt the player's round-win rate, each tied to a benchmark "
+            "or pro principle, with the fix. Focus on winning rounds, not just fragging."
         )
     if positions_digest:
         prompt += (
@@ -293,7 +316,7 @@ def llm_review(digest, positions_digest=None, demos_digest=None):
             },
             json={
                 "model": model,
-                "max_tokens": 2000,
+                "max_tokens": 5000,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=60,
@@ -331,6 +354,35 @@ def build_digest(name, profile, maps, dim, stats):
     return "\n".join(lines)
 
 
+def _tier_labels(stats):
+    """Deterministic benchmark tier labels for the player's headline stats (cs2_knowledge).
+
+    Returns {human_label: 'value (Tier)'} for the stats we can map, skipping any that are
+    missing — so the LLM gets pre-computed, grounded tiers instead of guessing.
+    """
+    # (display name, stats key, cs2_knowledge benchmark key, value formatter)
+    specs = [
+        ("Reaction time", "reaction_time_ms", "reaction_time_ms", lambda v: f"{v:.0f}ms"),
+        ("Preaim", "preaim", "preaim_deg", lambda v: f"{v:.1f}°"),
+        ("Headshot %", "accuracy_head", "headshot_pct", lambda v: f"{v*100:.0f}%" if v <= 1 else f"{v:.0f}%"),
+        ("T opening duels", "t_opening_duel_success_percentage", "opening_duel_pct",
+         lambda v: f"{v:.0f}%"),
+        ("CT opening duels", "ct_opening_duel_success_percentage", "opening_duel_pct",
+         lambda v: f"{v:.0f}%"),
+    ]
+    out = {}
+    for label, skey, bkey, fmt in specs:
+        v = _num(stats.get(skey))
+        if v is None:
+            continue
+        # accuracy_head is a 0-1 ratio; convert to % for the benchmark.
+        bench_val = v * 100 if (bkey == "headshot_pct" and v <= 1) else v
+        tier = cs2_knowledge.tier_for(bkey, bench_val)
+        if tier:
+            out[label] = f"{fmt(v)} ({tier})"
+    return out
+
+
 def analyze(profile, matches, steam_id):
     """Pure analysis — returns the full report dict. Unit-testable without network."""
     name = profile.get("name") or profile.get("nickname") or str(steam_id)
@@ -353,8 +405,11 @@ def analyze(profile, matches, steam_id):
 
     positions_digest = demo_positions.hotspots_digest(positions) if positions else None
     demos_dig = demo_positions.demos_digest(demo_summaries) if demo_summaries else None
+    rounds_dig = demo_positions.rounds_digest(demo_summaries) if demo_summaries else None
+    tier_labels = _tier_labels(stats)
     digest = build_digest(name, profile, maps, dim, stats)
-    ai = llm_review(digest, positions_digest=positions_digest, demos_digest=demos_dig)
+    ai = llm_review(digest, positions_digest=positions_digest, demos_digest=demos_dig,
+                    rounds_digest=rounds_dig, tier_labels=tier_labels)
 
     status = "warn" if findings else "ok"
     log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai)

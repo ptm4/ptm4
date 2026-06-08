@@ -9,6 +9,7 @@ on:
   schedule:
     - cron: "*/30 * * * *"   # frequent: homelab-doctor + network
     - cron: "0 9 * * *"      # daily 09:00 UTC: the rest
+    - cron: "0 8 1 * *"      # monthly (1st, 08:00 UTC): refresh-cs2-knowledge
   workflow_dispatch:
     inputs:
       agent:
@@ -53,9 +54,12 @@ jobs:
             [homelab-doctor]=homelab/Tools/homelab/homelab-doctor.py
             [network-report]=homelab/Tools/homelab/network-report.py
             [leetify-stats]=homelab/Tools/leetify/leetify-stats.py
+            [refresh-cs2-knowledge]=homelab/Tools/leetify/refresh-cs2-knowledge.py
           )
           if [ "$EVENT" = "schedule" ] && [ "$SCHED" = "*/30 * * * *" ]; then
             AGENTS="homelab-doctor network-report"
+          elif [ "$EVENT" = "schedule" ] && [ "$SCHED" = "0 8 1 * *" ]; then
+            AGENTS="refresh-cs2-knowledge"
           elif [ "$EVENT" = "schedule" ]; then
             AGENTS="journald-hunter persistence-auditor hardware-report software-inventory leetify-stats"
           elif [ -n "${ONLY:-}" ] && [ "$ONLY" != "all" ]; then
