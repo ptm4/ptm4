@@ -28,7 +28,7 @@ jobs:
       - name: Load opti env (/etc/hl-agents.env)
         run: |
           if [ -f /etc/hl-agents.env ]; then
-            grep -E '^(HL_|LEETIFY_|STEAM64_ID=|ANTHROPIC_API_KEY=)' /etc/hl-agents.env >> "$GITHUB_ENV"
+            grep -E '^(HL_|LEETIFY_|MY_CS2_ROLES=|STEAM64_ID=|ANTHROPIC_API_KEY=)' /etc/hl-agents.env >> "$GITHUB_ENV"
           else
             echo "::warning::/etc/hl-agents.env not found — agents will use relative-path defaults"
           fi

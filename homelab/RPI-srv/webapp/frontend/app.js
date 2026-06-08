@@ -290,6 +290,36 @@ async function renderLeetify(view) {
     ? (typeof marked !== 'undefined' ? marked.parse(logText) : `<pre>${escHtml(logText)}</pre>`)
     : '';
 
+  // HLTV VRS "players to watch" — role-matched picks from the top-15 teams. Sits directly
+  // under the AI coaching review. Refreshed weekly server-side; absent if it's never run.
+  const wl = d.watchlist;
+  const watchlistHtml = (wl && Array.isArray(wl.teams) && wl.teams.length) ? `
+    <div class="watchlist-block">
+      <h3 class="detail-section-title">Players to watch — HLTV VRS top ${wl.teams.length}</h3>
+      <p class="sec-empty-hint">
+        Matched to your role: ${escHtml(wl.my_roles || '')}.
+        Source: HLTV VRS${wl.vrs_as_of ? ` (${escHtml(wl.vrs_as_of)})` : ''}.
+      </p>
+      <div class="pos-grid">
+        ${wl.teams.map(t => {
+          const picks = (t.players || []).map(p => {
+            const conf = (p.confidence || '').toLowerCase();
+            const confTag = conf === 'low' ? ' <span class="wl-low">(role: low confidence)</span>' : '';
+            return `<li>
+              <span class="wl-player">${escHtml(p.player || '?')}</span>
+              <span class="wl-role">${escHtml(p.role || '')}</span>${confTag}
+              ${p.why_for_you ? `<div class="wl-why">${escHtml(p.why_for_you)}</div>` : ''}
+            </li>`;
+          }).join('');
+          return `<div class="pos-card">
+            <div class="pos-card-head">#${t.rank ?? '?'} · ${escHtml(t.team || '?')}</div>
+            <ul class="wl-players">${picks}</ul>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  ` : '';
+
   // AI coaching is the headline — show it FIRST (right after the summary), data below.
   const coachingHtml = logHtml
     ? `<div class="coaching-block"><div class="agent-report-body">${logHtml}</div></div>`
@@ -305,6 +335,7 @@ async function renderLeetify(view) {
     <p class="report-summary">${escHtml(d.summary || '')}</p>
     <div class="dim-strip">${dimChip('aim')}${dimChip('positioning')}${dimChip('utility')}</div>
     ${coachingHtml}
+    ${watchlistHtml}
     <details class="data-fold" open>
       <summary class="data-fold-summary">Supporting data — stats, demos & death maps</summary>
       ${maps.length ? `

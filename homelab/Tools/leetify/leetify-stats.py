@@ -29,6 +29,7 @@ from _report import write_report, now_iso, agent_logs_dir  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import demo_positions  # noqa: E402
 import cs2_knowledge  # noqa: E402
+import hltv_watchlist  # noqa: E402
 
 BASE_URL = "https://api-public.cs-prod.leetify.com"
 MATCH_COUNT = 25
@@ -445,6 +446,9 @@ def analyze(profile, matches, steam_id):
     ai = llm_review(digest, positions_digest=positions_digest, demos_digest=demos_dig,
                     rounds_digest=rounds_dig, tier_labels=tier_labels)
 
+    # Role-matched "players to watch" from the HLTV VRS top-15 (cached weekly, never raises).
+    watchlist = hltv_watchlist.get_watchlist(os.environ.get("ANTHROPIC_API_KEY"))
+
     status = "warn" if findings else "ok"
     # NOTE: the positional breakdown is intentionally NOT appended to the log — the webapp
     # renders d.positions as structured cards, so appending it here would duplicate it.
@@ -463,6 +467,7 @@ def analyze(profile, matches, steam_id):
         "dimensions": dim["dims"],
         "positions": positions,
         "demo_summaries": demo_summaries,
+        "watchlist": watchlist,
         "ai_review": bool(ai),
         # keep raw blobs for the page / future use
         "profile": profile,
