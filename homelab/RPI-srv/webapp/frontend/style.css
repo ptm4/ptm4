@@ -552,6 +552,33 @@ body {
 .demo-loss { color: #ef5350; }
 .demo-stats { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 
+/* ── AI coaching headline block ───────────────────────────────────────────── */
+.coaching-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent, #6c8cff);
+  border-radius: var(--radius);
+  padding: 4px 20px;
+  margin: 16px 0 20px;
+}
+.coaching-missing {
+  border-left-color: #ef5350;
+  padding: 14px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.coaching-missing span { color: var(--muted); font-size: 13px; }
+.data-fold { margin-top: 12px; }
+.data-fold-summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 0;
+  user-select: none;
+}
+
 /* ── Match deep-dive (collapsible round-by-round) ─────────────────────────── */
 .deep-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
 .deep-card {

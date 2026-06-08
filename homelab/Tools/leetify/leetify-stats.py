@@ -291,11 +291,19 @@ def llm_review(digest, positions_digest=None, demos_digest=None, rounds_digest=N
         prompt += (
             "\n\nROUND-BY-ROUND (every parsed demo — side, what the player did, round won/lost):\n"
             f"{rounds_digest}\n\n"
-            "Add a markdown section '## Match deep-dive' — for each match, 2-4 sentences on the "
-            "rounds that decided it and what the player did right/wrong (reference round numbers "
-            "and the relevant principle). Then add '## Recurring mistakes' — rank the patterns "
-            "across matches that most hurt the player's round-win rate, each tied to a benchmark "
-            "or pro principle, with the fix. Focus on winning rounds, not just fragging."
+            "This round data is the MOST IMPORTANT input — mine it for real patterns, don't just "
+            "summarize it. Add these sections:\n"
+            "'## What's costing you rounds' — the 3-4 BIGGEST recurring patterns across all matches "
+            "that lose rounds (e.g. repeatedly dying to the same player/angle, dry-peeking the same "
+            "choke, T-side entries that never trade, CT over-peeks). For each: name the exact "
+            "pattern with round/match evidence (cite specific rounds and matches), explain WHY it "
+            "loses the round via a pro principle, and give the concrete fix. Be specific and "
+            "quantify (how many rounds it cost).\n"
+            "'## Match deep-dive' — pick only the 3-4 MOST INSTRUCTIVE matches (a dominant win to "
+            "replicate, a close loss that turned on a few rounds, a collapse). For each, explain the "
+            "turning-point rounds and the lesson. Skip forgettable matches — depth over coverage.\n"
+            "Reference real round numbers and player names from the data. Goal: minimize the "
+            "mistakes that cost rounds, not maximize frags."
         )
     if positions_digest:
         prompt += (
@@ -306,6 +314,9 @@ def llm_review(digest, positions_digest=None, demos_digest=None, rounds_digest=N
             "reposition or how to play it instead (safer angle, off-angle, default position, "
             "trade setup, or utility to use first). Use your CS2 map knowledge of callouts."
         )
+    # Stream the response: with a large round-by-round prompt the full generation can exceed a
+    # plain POST's read timeout (seen as "Read timed out" at 25 demos). Streaming keeps the
+    # connection active as tokens arrive, so we accumulate text incrementally instead.
     try:
         r = requests.post(
             "https://api.anthropic.com/v1/messages",
@@ -317,9 +328,11 @@ def llm_review(digest, positions_digest=None, demos_digest=None, rounds_digest=N
             json={
                 "model": model,
                 "max_tokens": 5000,
+                "stream": True,
                 "messages": [{"role": "user", "content": prompt}],
             },
-            timeout=60,
+            timeout=(15, 120),  # (connect, read-between-chunks) — generous per-chunk gap
+            stream=True,
         )
         if not r.ok:
             try:
@@ -328,9 +341,30 @@ def llm_review(digest, positions_digest=None, demos_digest=None, rounds_digest=N
                 err_body = r.text
             print(f"LLM review skipped: {r.status_code} {r.reason} — {err_body}", file=sys.stderr)
             return None
-        data = r.json()
-        parts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
-        text = "\n".join(p for p in parts if p).strip()
+
+        text_parts = []
+        for line in r.iter_lines():
+            if not line:
+                continue
+            line = line.decode("utf-8") if isinstance(line, bytes) else line
+            if not line.startswith("data: "):
+                continue
+            payload = line[6:]
+            if payload == "[DONE]":
+                break
+            try:
+                evt = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+            if evt.get("type") == "content_block_delta":
+                delta = evt.get("delta", {})
+                if delta.get("type") == "text_delta":
+                    text_parts.append(delta.get("text", ""))
+            elif evt.get("type") == "error":
+                print(f"LLM review skipped: stream error — {evt.get('error')}", file=sys.stderr)
+                return None
+
+        text = "".join(text_parts).strip()
         return text or None
     except Exception as e:
         print(f"LLM review skipped: {e}", file=sys.stderr)
@@ -412,9 +446,9 @@ def analyze(profile, matches, steam_id):
                     rounds_digest=rounds_dig, tier_labels=tier_labels)
 
     status = "warn" if findings else "ok"
+    # NOTE: the positional breakdown is intentionally NOT appended to the log — the webapp
+    # renders d.positions as structured cards, so appending it here would duplicate it.
     log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai)
-    if positions:
-        log += "\n\n---\n\n" + demo_positions.positions_markdown(positions)
 
     return {
         "tool": "leetify-stats",

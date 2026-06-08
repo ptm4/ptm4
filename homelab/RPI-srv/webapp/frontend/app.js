@@ -283,25 +283,40 @@ async function renderLeetify(view) {
     ${d.ai_review ? '<p class="sec-empty-hint">Reposition advice for each hotspot is in the AI coaching review below.</p>' : ''}
   ` : '';
 
-  // Strip the positional breakdown section from the log — already rendered as structured cards above.
-  const logText = d.log ? d.log.replace(/\n---\n## Positional breakdown[\s\S]*$/, '') : '';
+  // Belt-and-suspenders: strip any positional breakdown section from the log (newer reports
+  // omit it server-side, but older cached JSON may still embed it) — it's rendered as cards above.
+  const logText = d.log ? d.log.replace(/\n+---\n+## Positional breakdown[\s\S]*$/, '') : '';
   const logHtml = logText
     ? (typeof marked !== 'undefined' ? marked.parse(logText) : `<pre>${escHtml(logText)}</pre>`)
     : '';
 
+  // AI coaching is the headline — show it FIRST (right after the summary), data below.
+  const coachingHtml = logHtml
+    ? `<div class="coaching-block"><div class="agent-report-body">${logHtml}</div></div>`
+    : (d.demo_summaries && d.demo_summaries.length
+        ? `<div class="coaching-block coaching-missing">
+             <strong>AI coaching unavailable for this run.</strong>
+             <span>The demo data below was parsed, but the coaching call didn't complete
+             (check the agent run / API credits). The structured breakdowns still show what happened.</span>
+           </div>`
+        : '');
+
   document.getElementById('leetify-page').innerHTML = `
     <p class="report-summary">${escHtml(d.summary || '')}</p>
     <div class="dim-strip">${dimChip('aim')}${dimChip('positioning')}${dimChip('utility')}</div>
-    ${maps.length ? `
-      <h3 class="detail-section-title">Per-map (last 25)</h3>
-      <table class="detail-table">
-        <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
-        <tbody>${mapRows}</tbody>
-      </table>` : ''}
-    ${demosHtml}
-    ${deepHtml}
-    ${posHtml}
-    <div class="agent-report-body" style="margin-top:20px">${logHtml}</div>
+    ${coachingHtml}
+    <details class="data-fold" open>
+      <summary class="data-fold-summary">Supporting data — stats, demos & death maps</summary>
+      ${maps.length ? `
+        <h3 class="detail-section-title">Per-map (last 25)</h3>
+        <table class="detail-table">
+          <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
+          <tbody>${mapRows}</tbody>
+        </table>` : ''}
+      ${demosHtml}
+      ${deepHtml}
+      ${posHtml}
+    </details>
   `;
 }
 
