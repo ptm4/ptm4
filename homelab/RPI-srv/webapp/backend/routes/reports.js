@@ -86,7 +86,8 @@ router.get('/:name', (req, res) => {
   try {
     res.json(JSON.parse(fs.readFileSync(fullPath, 'utf8')));
   } catch (e) {
-    res.status(500).json({ error: 'Could not parse report file' });
+    console.error(`Failed to parse report ${fullPath}: ${e.message}`);
+    res.status(500).json({ error: 'Could not parse report file', detail: e.message });
   }
 });
 

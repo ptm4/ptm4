@@ -61,6 +61,8 @@ def _dump(path, report):
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(report, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())  # ensure data hits disk before the rename
     os.replace(tmp, path)
 
 

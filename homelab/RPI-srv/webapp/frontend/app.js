@@ -170,7 +170,20 @@ async function renderLeetify(view) {
   let d;
   try {
     const res = await fetch('/api/agents/leetify-latest');
-    if (!res.ok) throw new Error();
+    if (!res.ok) {
+      // A 500 means the report file exists but won't parse (corrupt/truncated) —
+      // distinct from a 404 "no report yet". Show the real reason so it's fixable.
+      let detail = '';
+      try { const e = await res.json(); detail = e.detail || ''; } catch (_) {}
+      if (res.status === 500) {
+        document.getElementById('leetify-page').innerHTML =
+          `<div class="sec-empty"><p>Leetify report is corrupt and could not be read.</p>
+           ${detail ? `<p class="sec-empty-hint">${detail}</p>` : ''}
+           <p class="sec-empty-hint">Re-run the agent to regenerate it (↻ Refresh after).</p></div>`;
+        return;
+      }
+      throw new Error();
+    }
     d = await res.json();
   } catch {
     document.getElementById('leetify-page').innerHTML =
@@ -330,15 +343,19 @@ async function renderLeetify(view) {
   ` : '';
 
   // AI coaching is the headline — show it FIRST (right after the summary), data below.
+  // The notice keys off d.ai_review (the real flag), NOT off logHtml: build_log() always
+  // emits the deterministic report (per-map tables, findings) even when the AI call is
+  // skipped, so logHtml is almost never empty. Without this, a skipped review (e.g. out of
+  // API credits) silently drops the AI narrative with no explanation.
+  const missingNotice = `<div class="coaching-missing">
+       <strong>AI coaching unavailable for this run.</strong>
+       <span>The coaching call didn't complete — usually out of Anthropic API credits, or a
+       transient API error. Everything below is the full deterministic analysis; re-run the
+       agent once credits are restored to get the AI narrative back.</span>
+     </div>`;
   const coachingHtml = logHtml
-    ? `<div class="coaching-block"><div class="agent-report-body">${logHtml}</div></div>`
-    : (d.demo_summaries && d.demo_summaries.length
-        ? `<div class="coaching-block coaching-missing">
-             <strong>AI coaching unavailable for this run.</strong>
-             <span>The demo data below was parsed, but the coaching call didn't complete
-             (check the agent run / API credits). The structured breakdowns still show what happened.</span>
-           </div>`
-        : '');
+    ? `<div class="coaching-block">${d.ai_review ? '' : missingNotice}<div class="agent-report-body">${logHtml}</div></div>`
+    : `<div class="coaching-block">${missingNotice}</div>`;
 
   document.getElementById('leetify-page').innerHTML = `
     <p class="report-summary">${escHtml(d.summary || '')}</p>

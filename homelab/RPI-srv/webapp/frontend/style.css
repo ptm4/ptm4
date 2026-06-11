@@ -562,8 +562,11 @@ body {
   margin: 16px 0 20px;
 }
 .coaching-missing {
-  border-left-color: #ef5350;
+  border-left: 3px solid #ef5350;
+  background: rgba(239, 83, 80, 0.06);
+  border-radius: var(--radius);
   padding: 14px 20px;
+  margin: 8px 0 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
