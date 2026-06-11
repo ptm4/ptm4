@@ -20,6 +20,7 @@ Env: HL_AGENT_LOGS_DIR overrides the logs dir (default ../../../agent-logs from 
 """
 
 import json
+import math
 import os
 from datetime import datetime, timezone
 
@@ -57,10 +58,28 @@ def write_report(report_base, report):
     return latest_path, dated_path
 
 
+def _json_safe(obj):
+    """Replace NaN/Infinity floats with None, recursively.
+
+    Python's json.dump emits bare `NaN`/`Infinity` tokens that browsers' JSON.parse (and
+    strict parsers) reject — a single divide-by-zero stat would corrupt the whole report.
+    Coerce those to null so every report we write is valid JSON.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
 def _dump(path, report):
     tmp = path + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(report, f, indent=2)
+        # allow_nan=False + pre-sanitize: never write a NaN/Infinity token that would make
+        # the report unparseable in the browser.
+        json.dump(_json_safe(report), f, indent=2, allow_nan=False)
         f.flush()
         os.fsync(f.fileno())  # ensure data hits disk before the rename
     os.replace(tmp, path)
