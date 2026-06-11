@@ -127,8 +127,13 @@ A `git push` to `main` triggers `rpi-deploy.yml`, which redeploys the webapp wit
 
 ## How it runs
 
-- **Scheduled:** `homelab-agents.yml` — `homelab-doctor` + `network` every 30 min; the rest daily
-  at 09:00 UTC. Each agent is skipped if disabled in `agents-state.json`.
+- **Scheduled:** `homelab-agents.yml` — `homelab-doctor` + `network` every 30 min; the homelab
+  collectors (`hardware`, `software`) + security agents daily at 09:00 UTC. Each agent is skipped
+  if disabled in `agents-state.json`.
+- **Not scheduled (paid Claude calls — run on demand):** `leetify-stats` and
+  `refresh-cs2-knowledge` are deliberately left out of every cron branch so they don't drain API
+  credits. Run them manually from **Actions → Homelab Agents → Run workflow** with
+  `agent=leetify-stats` (or `refresh-cs2-knowledge`).
 - **On demand:** the webapp **Run now** button → backend → dispatcher → agent runs immediately.
 - **Enable/Disable:** the webapp toggle → dispatcher writes `agents-state.json`; both the schedule
   and run-now honor it.

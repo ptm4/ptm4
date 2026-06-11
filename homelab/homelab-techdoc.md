@@ -774,7 +774,9 @@ the webapp **Home** card; dormant unless `LEETIFY_API_KEY` + `STEAM64_ID` are se
 ### Control plane
 
 - **Schedule:** `.github/workflows/homelab-agents.yml`, `runs-on: [self-hosted, opti]`. The `opti`
-  label keeps it off the Pi deploy runner. `homelab-doctor`+`network` every 30 min; the rest daily.
+  label keeps it off the Pi deploy runner. `homelab-doctor`+`network` every 30 min; `hardware`,
+  `software` + security agents daily. `leetify-stats` and `refresh-cs2-knowledge` make paid Claude
+  calls and are **not scheduled** — run them on demand via "Run workflow" (`workflow_dispatch`).
 - **Dispatcher:** `hl-agent-dispatcher.service` on opti (`:9099`) owns `agents-state.json` and runs
   agents on demand from an allowlist. The webapp **Enable/Disable** + **Run now** buttons proxy to
   it over the LAN. Both schedule and run-now honor the enabled flag.
