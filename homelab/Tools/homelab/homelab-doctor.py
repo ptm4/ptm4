@@ -2,25 +2,31 @@
 """
 homelab-doctor.py — Homelab health diagnostician.
 
-Runs from opti and checks the things that quietly break a homelab:
-  • reachability of the core services (webapp, Pi-hole, Vaultwarden, notes)
-  • TLS certificate expiry on the HTTPS services
-  • local disk space
-  • docker containers (only if docker runs locally)
-  • freshness of the agent reports themselves (stale agent = silent failure)
+Two layers of checks:
+  • Network-wide (run once, from the orchestrator) — the "can the homelab reach its own
+    services" view: reachability of the core services (webapp, Pi-hole, Vaultwarden,
+    notes), TLS certificate expiry, and freshness of the agent reports themselves
+    (a stale agent is a silent failure).
+  • Per-host (over SSH, for every host in HL_HOSTS) — the box-intrinsic view: local disk
+    space and docker container health on opti, rpi and noblenumbat.
 
-Writes <agent-logs>/homelab-doctor-latest.json. Dirs from $HL_AGENT_LOGS_DIR /
-$HL_REPORTS_DIR.
+Service reachability stays a single vantage point on purpose: "is the webapp up?" is one
+question, not three. Disk/docker are per-box because they differ per machine.
+
+Writes <agent-logs>/homelab-doctor-latest.json + a dated history copy via
+_report.write_report. Dirs from $HL_AGENT_LOGS_DIR / $HL_REPORTS_DIR; hosts/key from
+HL_HOSTS / HL_SSH_KEY (see _hosts.py).
 """
 
-import json
 import os
 import shutil
-import socket
 import ssl
 import subprocess
 import urllib.request
 from datetime import datetime, timezone
+
+from _report import write_report, now_iso
+from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENT_LOGS_DIR = os.environ.get(
@@ -29,7 +35,7 @@ AGENT_LOGS_DIR = os.environ.get(
 REPORTS_DIR = os.environ.get(
     "HL_REPORTS_DIR", os.path.join(BASE_DIR, "..", "..", "..", "security-reports")
 )
-REPORT_PATH = os.path.join(AGENT_LOGS_DIR, "homelab-doctor-latest.json")
+REPORT_BASE = "homelab-doctor-latest"
 
 # name -> (url, https-host:port for cert check or None)
 SERVICES = [
@@ -82,27 +88,32 @@ def cert_days_left_openssl(host, port):
     return None
 
 
-def disk_pct(path):
-    try:
-        st = os.statvfs(path)
-        used = (st.f_blocks - st.f_bfree) / st.f_blocks * 100
-        return round(used, 1)
-    except OSError:
+def host_disk_pct(host):
+    """Root-fs used % on `host`, over SSH. None if unavailable."""
+    out, rc = run_on(host, ["df", "-P", "/"], timeout=15)
+    if rc != 0:
         return None
+    lines = out.splitlines()
+    if len(lines) >= 2:
+        parts = lines[1].split()
+        if len(parts) >= 5:
+            try:
+                return float(parts[4].rstrip("%"))
+            except ValueError:
+                return None
+    return None
 
 
-def docker_containers():
-    if not shutil.which("docker"):
+def host_containers(host):
+    """Docker containers on `host`, over SSH. None if docker absent/unavailable."""
+    _, rc = run_on(host, ["sh", "-c", "command -v docker >/dev/null 2>&1"], timeout=10)
+    if rc != 0:
         return None
-    try:
-        out = subprocess.run(["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"],
-                             capture_output=True, text=True, timeout=15)
-        if out.returncode != 0:
-            return None
-        return [dict(zip(("name", "status"), l.split("\t", 1)))
-                for l in out.stdout.splitlines() if l.strip()]
-    except Exception:
+    out, rc = run_on(host, ["docker", "ps", "--format", "{{.Names}}\t{{.Status}}"], timeout=15)
+    if rc != 0:
         return None
+    return [dict(zip(("name", "status"), l.split("\t", 1)))
+            for l in out.splitlines() if l.strip()]
 
 
 def report_freshness():
@@ -120,11 +131,75 @@ def report_freshness():
     return stale
 
 
+def collect_host(host):
+    """Per-host disk + docker over SSH. Returns (host_dict, findings)."""
+    findings = []
+    dpct = host_disk_pct(host)
+    if dpct is not None and dpct >= DISK_WARN_PCT:
+        findings.append({"severity": "warn", "message": f"[{host.name}] Root disk {dpct}% full"})
+    containers = host_containers(host)
+    down = [c for c in (containers or []) if "Up" not in (c.get("status") or "")]
+    for c in down:
+        findings.append({"severity": "warn",
+                         "message": f"[{host.name}] container {c['name']} not up: {c['status']}"})
+
+    parts = []
+    if dpct is not None:
+        parts.append(f"disk {dpct}%")
+    if containers is not None:
+        parts.append(f"{len(containers)} container(s)")
+    summary = ", ".join(parts) or "no disk/docker data"
+    status = "warn" if findings else "ok"
+    return ({"host": host.name, "status": status, "summary": summary,
+             "metrics": {"disk_used_pct": dpct, "containers": containers}}, findings)
+
+
+def build_log(services_state, host_dicts, stale, findings):
+    L = ["# Homelab Doctor", "", f"_Generated {now_iso()}_", "",
+         "## Services (network-wide)", "",
+         "| Service | Up | Detail | Cert days left |", "|---|---|---|---|"]
+    for s in services_state:
+        L.append(f"| {s['name']} | {'✅' if s['up'] else '❌'} | {s['detail']} | "
+                 f"{s.get('cert_days_left', '—')} |")
+    L.append("")
+    L.append("## Hosts (disk + docker)")
+    L.append("")
+    for hd in host_dicts:
+        m = hd["metrics"]
+        L.append(f"### {hd['host']}")
+        L.append("")
+        L.append(f"- Root disk: {m.get('disk_used_pct') if m.get('disk_used_pct') is not None else '?'}%")
+        containers = m.get("containers")
+        if containers is None:
+            L.append("- Docker: not present / unavailable")
+        elif containers:
+            L += ["", "| Container | Status |", "|---|---|"]
+            for c in containers:
+                L.append(f"| {c['name']} | {c['status']} |")
+        else:
+            L.append("- Docker: no running containers")
+        L.append("")
+    if stale:
+        L += ["## Stale reports", ""]
+        for fn, age in stale:
+            L.append(f"- {fn} — {age}h old")
+        L.append("")
+    L += ["## Concerns / watch list", ""]
+    if findings:
+        for it in findings:
+            L.append(f"- **{it['severity'].upper()}** — {it['message']}")
+    else:
+        L.append("- None.")
+    L.append("")
+    return "\n".join(L)
+
+
 def main():
     os.makedirs(AGENT_LOGS_DIR, exist_ok=True)
     findings = []
-    services_state = []
 
+    # ── Network-wide: services + certs (single vantage point) ──
+    services_state = []
     for name, url, cert in SERVICES:
         up, detail = check_service(url)
         entry = {"name": name, "url": url, "up": up, "detail": detail}
@@ -140,12 +215,26 @@ def main():
             findings.append({"severity": "critical",
                              "message": f"{name} unreachable ({detail})"})
 
-    dpct = disk_pct("/")
-    if dpct is not None and dpct >= DISK_WARN_PCT:
-        findings.append({"severity": "warn", "message": f"Root disk {dpct}% full"})
+    # ── Per-host: disk + docker over SSH ──
+    host_dicts = []
+    try:
+        ensure_key()
+        for host in hosts():
+            ok, detail = probe(host)
+            if not ok:
+                findings.append({"severity": "warn",
+                                 "message": f"[{host.name}] unreachable over SSH — {detail}"})
+                host_dicts.append({"host": host.name, "status": "unknown",
+                                   "summary": f"unreachable ({detail})", "metrics": {}})
+                continue
+            hd, hf = collect_host(host)
+            host_dicts.append(hd)
+            findings += hf
+    except MissingKeyError as e:
+        findings.append({"severity": "warn",
+                         "message": f"Per-host disk/docker checks skipped — {e}"})
 
-    containers = docker_containers()
-
+    # ── Report freshness (local agent-logs) ──
     stale = report_freshness()
     for fn, age in stale:
         findings.append({"severity": "warn",
@@ -157,27 +246,27 @@ def main():
         status = "warn"
     else:
         status = "ok"
+
     up_count = sum(1 for s in services_state if s["up"])
     summary = f"{up_count}/{len(services_state)} services up"
-    if dpct is not None:
-        summary += f", disk {dpct}%"
+    reachable = [h for h in host_dicts if h["status"] != "unknown"]
+    summary += f", {len(reachable)}/{len(host_dicts)} host(s)"
     if findings:
         summary += f", {len(findings)} flag(s)"
 
     report = {
         "tool": "homelab-doctor",
-        "run_at": datetime.now(timezone.utc).isoformat(),
+        "run_at": now_iso(),
         "status": status,
         "summary": summary,
         "findings": findings,
         "services": services_state,
-        "disk_used_pct": dpct,
-        "containers": containers,
+        "hosts": host_dicts,
         "stale_reports": [{"file": f, "age_hours": a} for f, a in stale],
+        "log": build_log(services_state, host_dicts, stale, findings),
     }
-    with open(REPORT_PATH, "w") as f:
-        json.dump(report, f, indent=2)
-    print(f"Report written: {REPORT_PATH} (status={status})")
+    latest, dated = write_report(REPORT_BASE, report)
+    print(f"Report written: {latest} + {dated} (status={status})")
 
 
 if __name__ == "__main__":

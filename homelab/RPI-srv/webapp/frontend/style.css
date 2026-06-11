@@ -573,6 +573,20 @@ body {
 /* ── HLTV VRS "players to watch" ───────────────────────────────────────────── */
 .watchlist-block { margin: 16px 0 20px; }
 .watchlist-block .pos-card { border-left: 3px solid var(--accent, #6c8cff); }
+/* Summary row: labeled my_roles / vrs_as_of, readable at a glance. */
+.wl-summary {
+  display: flex; flex-wrap: wrap; gap: 8px 20px;
+  margin: 4px 0 14px; padding: 10px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.wl-summary-row { display: flex; flex-direction: column; gap: 2px; }
+.wl-summary-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted); font-weight: 600;
+}
+.wl-summary-val { font-size: 13px; color: var(--text, #e6e6e6); }
 .wl-players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .wl-players li { font-size: 13px; }
 .wl-player { font-weight: 600; }

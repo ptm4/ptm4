@@ -49,6 +49,13 @@ HL_REPORTS_DIR=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/security-reports
 HL_AGENT_LOGS_DIR=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/agent-logs
 HL_DATA_DIR=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/agent-logs/.state
 HL_NGINX_LOG=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/logging/stack.log
+# Multi-host collection: the homelab agents SSH into every box (opti reaches itself via
+# localhost). name=target, comma-separated. HL_SSH_KEY is a private key authorized on ALL
+# of these hosts (opti included). See step 3b.
+HL_HOSTS=opti=127.0.0.1,rpi=192.168.1.10,noblenumbat=192.168.1.6
+HL_SSH_KEY=/home/ptm/.ssh/hl_agents
+# Optional: default SSH login user when a target omits user@ (default: the runner user).
+# HL_SSH_USER=ptm
 LEETIFY_API_KEY=your-leetify-developer-key
 STEAM64_ID=76561198053334813
 HL_DISPATCH_TOKEN=pick-a-long-random-string
@@ -62,6 +69,35 @@ sudo chmod 600 /etc/hl-agents.env
 
 mkdir -p /srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/agent-logs
 ```
+
+## 3b. SSH key for multi-host collection
+
+The homelab agents (`hardware-report`, `software-inventory`, `network-report`, and
+`homelab-doctor`'s disk/docker checks) run each host's commands **on that host** over SSH, so
+the data reflects that box. opti reaches itself the same way (via `127.0.0.1`). Create one key as
+the **runner user** (the agents inherit its env), authorize it on all three boxes including opti:
+
+```bash
+# As the runner user (e.g. ptm) on opti:
+ssh-keygen -t ed25519 -f ~/.ssh/hl_agents -N '' -C 'hl-agents'
+
+# Authorize on opti itself (localhost path), rpi, and noblenumbat:
+ssh-copy-id -i ~/.ssh/hl_agents.pub ptm@127.0.0.1
+ssh-copy-id -i ~/.ssh/hl_agents.pub ptm@192.168.1.10     # rpi
+ssh-copy-id -i ~/.ssh/hl_agents.pub ptm@192.168.1.6      # noblenumbat
+
+# Verify non-interactive access to each (must print 'ok' with no prompt):
+for h in 127.0.0.1 192.168.1.10 192.168.1.6; do
+  ssh -i ~/.ssh/hl_agents -o BatchMode=yes -o StrictHostKeyChecking=no "ptm@$h" echo ok
+done
+```
+
+`HL_SSH_KEY` in `/etc/hl-agents.env` must point at this private key. If the key is missing the
+agents emit a single clear "SSH key not found" finding instead of silently collecting nothing; an
+individual host that's down shows as "unreachable" without sinking the whole report.
+
+> **For `sudo smartctl`/`dmesg`** (full hardware report): add a NOPASSWD sudoers rule for those
+> read-only commands on each host, or those sections degrade gracefully to "needs sudo".
 
 ## 4. Dispatcher service (enable/disable + run-now)
 

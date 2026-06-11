@@ -1,48 +1,46 @@
 #!/usr/bin/env python3
 """
-software-inventory.py — OS + package + update health report.
+software-inventory.py — OS + package + update health report across all homelab hosts.
 
-Detects the package manager (apt / pacman / dnf), lists pending updates with a
-security flag, counts installed packages, records running-vs-latest kernel,
-reboot-required state, unattended-upgrades posture, and Docker image drift. Emits
-a recommendations/"watch list" section and a full markdown `log`.
+For every host in HL_HOSTS (opti, rpi, noblenumbat by default), over SSH: detects the
+package manager (apt / pacman / dnf), lists pending updates with a security flag,
+counts installed packages, records running-vs-latest kernel, reboot-required state,
+unattended-upgrades posture, and Docker image drift. Emits a multi-host report with a
+per-host "watch list" and a full markdown `log`.
 
 Writes <agent-logs>/software-latest.json + <agent-logs>/software-latest/<date>.json
-via _report.write_report. Logs dir from $HL_AGENT_LOGS_DIR.
+via _report.write_report. Logs dir from $HL_AGENT_LOGS_DIR; hosts/key from HL_HOSTS /
+HL_SSH_KEY (see _hosts.py).
 
 Read-only: never installs/upgrades anything (apt-get -s is a simulation).
 """
 
-import os
-import platform
-import re
-import shutil
-import socket
-import subprocess
-
 from _report import write_report, now_iso
+from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
 
 REPORT_BASE = "software-latest"
 
 
-def _run(cmd, timeout=60):
-    try:
-        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return out.stdout, out.returncode
-    except Exception:
-        return "", 1
+def _run(host, cmd, timeout=60):
+    return run_on(host, cmd, timeout=timeout)
 
 
-def _count(cmd):
-    out, _ = _run(cmd)
+def _count(host, cmd):
+    out, _ = _run(host, cmd)
     return len([l for l in out.splitlines() if l.strip()])
 
 
-def package_status():
+def _has(host, prog):
+    """Remote `command -v` — is `prog` on this host's PATH?"""
+    _, rc = run_on(host, ["sh", "-c", f"command -v {prog} >/dev/null 2>&1"], timeout=10)
+    return rc == 0
+
+
+def package_status(host):
     """Return (manager, installed_count, pending_list, security_count)."""
-    if shutil.which("apt"):
-        installed = _count(["dpkg-query", "-f", "${binary:Package}\n", "-W"])
-        out, _ = _run(["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"])
+    if _has(host, "apt"):
+        installed = _count(host, ["dpkg-query", "-f", "${binary:Package}\n", "-W"])
+        out, _ = _run(host, ["apt-get", "-s", "-o", "Debug::NoLocking=true", "upgrade"])
         pending = []
         security = 0
         for l in out.splitlines():
@@ -51,111 +49,109 @@ def package_status():
                 if "-security" in l or "Security" in l:
                     security += 1
         return "apt", installed, pending, security
-    if shutil.which("pacman"):
-        installed = _count(["pacman", "-Qq"])
-        out, rc = _run(["pacman", "-Qu"])
+    if _has(host, "pacman"):
+        installed = _count(host, ["pacman", "-Qq"])
+        out, rc = _run(host, ["pacman", "-Qu"])
         pending = [l.strip() for l in out.splitlines() if l.strip()] if rc in (0, 1) else []
         return "pacman", installed, pending, 0  # pacman has no built-in security flag
-    if shutil.which("dnf"):
-        installed = _count(["dnf", "list", "--installed", "-q"])
-        out, _ = _run(["dnf", "-q", "check-update"])
+    if _has(host, "dnf"):
+        installed = _count(host, ["dnf", "list", "--installed", "-q"])
+        out, _ = _run(host, ["dnf", "-q", "check-update"])
         pending = [l.split()[0] for l in out.splitlines()
                    if l.strip() and not l.startswith(" ") and "." in l.split()[0]]
-        sec_out, _ = _run(["dnf", "-q", "updateinfo", "list", "security"])
+        sec_out, _ = _run(host, ["dnf", "-q", "updateinfo", "list", "security"])
         security = len([l for l in sec_out.splitlines() if l.strip()])
         return "dnf", installed, pending, security
     return "unknown", 0, [], 0
 
 
-def kernel_info():
-    running = platform.release()
+def kernel_info(host):
+    running, _ = _run(host, ["uname", "-r"])
+    running = running.strip()
     latest = None
-    out, _ = _run(["bash", "-lc",
-                   "dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' | awk '{print $2}' | sort -V | tail -1"])
+    out, _ = _run(host, ["bash", "-lc",
+                         "dpkg -l 'linux-image-*' 2>/dev/null | grep '^ii' | awk '{print $2}' | sort -V | tail -1"])
     if out.strip():
         latest = out.strip()
     return running, latest
 
 
-def reboot_required():
-    if os.path.exists("/var/run/reboot-required"):
-        pkgs = ""
-        try:
-            with open("/var/run/reboot-required.pkgs") as f:
-                pkgs = ", ".join(sorted(set(f.read().split())))
-        except OSError:
-            pass
+def reboot_required(host):
+    _, rc = run_on(host, ["test", "-f", "/var/run/reboot-required"], timeout=10)
+    if rc == 0:
+        out, _ = _run(host, ["cat", "/var/run/reboot-required.pkgs"])
+        pkgs = ", ".join(sorted(set(out.split()))) if out else ""
         return True, pkgs
-    # arch: compare running kernel to installed /boot vmlinuz
     return False, ""
 
 
-def unattended_state():
-    out, rc = _run(["systemctl", "is-active", "unattended-upgrades"])
+def unattended_state(host):
+    out, rc = _run(host, ["systemctl", "is-active", "unattended-upgrades"])
     return out.strip() or ("inactive" if rc else "unknown")
 
 
-def docker_images():
-    """Running containers + image; flag drift when local digest != registry (best-effort)."""
-    if not shutil.which("docker"):
+def docker_images(host):
+    """Running containers + image; drift detection is best-effort (left empty)."""
+    if not _has(host, "docker"):
         return [], []
-    out, rc = _run(["docker", "ps", "--format", "{{.Image}}\t{{.Names}}\t{{.Status}}"])
+    out, rc = _run(host, ["docker", "ps", "--format", "{{.Image}}\t{{.Names}}\t{{.Status}}"])
     if rc != 0:
         return [], []
     images = []
-    drift = []
     for line in out.splitlines():
         parts = line.split("\t")
         if len(parts) >= 2:
             img, name = parts[0], parts[1]
             status = parts[2] if len(parts) > 2 else ""
             images.append({"image": img, "name": name, "status": status})
-    return images, drift
+    return images, []
 
 
-def version_of(cmd, args=None):
-    if not shutil.which(cmd):
+def version_of(host, cmd, args=None):
+    if not _has(host, cmd):
         return None
-    out, _ = _run([cmd] + (args or ["--version"]))
-    if not out:
-        out, _ = _run([cmd] + (args or ["--version"]))  # some tools print to stderr; ignore
+    out, _ = _run(host, [cmd] + (args or ["--version"]))
     return out.splitlines()[0].strip() if out else None
 
 
-def collect_host():
-    host = socket.gethostname()
+def python_version(host):
+    out, _ = _run(host, ["python3", "-c", "import platform;print(platform.python_version())"])
+    return out.strip() or None
+
+
+def collect_host(host):
     findings = []
     recs = []
 
-    manager, installed, pending, security = package_status()
-    running_kernel, latest_kernel = kernel_info()
-    reboot, reboot_pkgs = reboot_required()
-    unattended = unattended_state()
-    images, drift = docker_images()
+    manager, installed, pending, security = package_status(host)
+    running_kernel, latest_kernel = kernel_info(host)
+    reboot, reboot_pkgs = reboot_required(host)
+    unattended = unattended_state(host)
+    images, drift = docker_images(host)
 
     versions = {
         "kernel": running_kernel,
-        "docker": version_of("docker", ["--version"]),
-        "nginx": version_of("nginx", ["-v"]),
-        "python3": platform.python_version(),
+        "docker": version_of(host, "docker", ["--version"]),
+        "nginx": version_of(host, "nginx", ["-v"]),
+        "python3": python_version(host),
     }
     versions = {k: v for k, v in versions.items() if v}
 
     if security > 0:
         findings.append({"severity": "warn",
-                         "message": f"{security} pending security update(s) ({manager})"})
+                         "message": f"[{host.name}] {security} pending security update(s) ({manager})"})
     if pending:
-        findings.append({"severity": "warn" if not security else "warn",
-                         "message": f"{len(pending)} package update(s) pending ({manager})"})
+        findings.append({"severity": "warn",
+                         "message": f"[{host.name}] {len(pending)} package update(s) pending ({manager})"})
     if reboot:
         findings.append({"severity": "warn",
-                         "message": f"Reboot required{(': ' + reboot_pkgs) if reboot_pkgs else ''}"})
+                         "message": f"[{host.name}] Reboot required{(': ' + reboot_pkgs) if reboot_pkgs else ''}"})
     if latest_kernel and latest_kernel not in (running_kernel, f"linux-image-{running_kernel}"):
         recs.append({"severity": "info",
-                     "message": f"Kernel installed ({latest_kernel}) newer than running ({running_kernel}) — reboot to apply."})
+                     "message": f"[{host.name}] Kernel installed ({latest_kernel}) newer than running ({running_kernel}) — reboot to apply."})
     if unattended not in ("active",):
         recs.append({"severity": "info",
-                     "message": f"unattended-upgrades is {unattended} — consider enabling auto security updates."})
+                     "message": f"[{host.name}] unattended-upgrades is {unattended} — consider enabling auto security updates."})
 
     status = "warn" if findings else "ok"
     metrics = {
@@ -175,15 +171,13 @@ def collect_host():
     summary = (f"{installed} pkgs via {manager} · {len(pending)} update(s)"
                f"{f', {security} security' if security else ''}"
                f"{' · reboot needed' if reboot else ''}")
-    return ({"host": host, "status": status, "summary": summary, "metrics": metrics},
+    return ({"host": host.name, "status": status, "summary": summary, "metrics": metrics},
             findings, recs)
 
 
-def build_log(host, findings, recs):
-    m = host["metrics"]
-    L = [f"# Software Report — {host['host']}", "",
-         f"_Generated {now_iso()}_", "",
-         "## Summary", "",
+def _host_log(host_dict):
+    m = host_dict["metrics"]
+    L = [f"## {host_dict['host']}", "",
          f"- Package manager: {m['package_manager']}",
          f"- Installed packages: {m['installed_count']}",
          f"- Pending updates: {m['pending_count']} ({m['security_count']} security)",
@@ -192,30 +186,28 @@ def build_log(host, findings, recs):
          f"- Unattended-upgrades: {m['unattended_upgrades']}",
          ""]
     if m["versions"]:
-        L.append("## Key versions")
-        L.append("")
-        for k, v in m["versions"].items():
-            L.append(f"- {k}: {v}")
+        L.append("Key versions: " + ", ".join(f"{k} {v}" for k, v in m["versions"].items()))
         L.append("")
     if m["pending_updates"]:
-        L.append(f"## Pending updates ({m['pending_count']})")
-        L.append("")
-        L.append("```")
+        L += [f"Pending updates ({m['pending_count']}):", "", "```"]
         L += m["pending_updates"][:60]
         if m["pending_count"] > 60:
             L.append(f"... and {m['pending_count'] - 60} more")
-        L.append("```")
-        L.append("")
+        L += ["```", ""]
     if m["docker_images"]:
-        L.append("## Docker containers")
-        L.append("")
-        L.append("| Image | Name | Status |")
-        L.append("|---|---|---|")
+        L += ["**Docker containers**", "", "| Image | Name | Status |", "|---|---|---|"]
         for d in m["docker_images"]:
             L.append(f"| {d['image']} | {d['name']} | {d['status']} |")
         L.append("")
-    L.append("## Concerns / watch list")
-    L.append("")
+    return L
+
+
+def build_log(host_dicts, findings, recs):
+    L = ["# Software Report", "", f"_Generated {now_iso()}_",
+         f" · {len(host_dicts)} host(s)", ""]
+    for hd in host_dicts:
+        L += _host_log(hd)
+    L += ["## Concerns / watch list", ""]
     items = findings + recs
     if items:
         for it in items:
@@ -227,22 +219,60 @@ def build_log(host, findings, recs):
 
 
 def main():
-    host, findings, recs = collect_host()
-    status = host["status"]
+    all_hosts = hosts()
+    host_dicts = []
+    findings = []
+    recs = []
+
+    try:
+        ensure_key()
+    except MissingKeyError as e:
+        report = {
+            "tool": "software-inventory", "run_at": now_iso(), "status": "critical",
+            "summary": "SSH key missing — cannot collect from any host",
+            "findings": [{"severity": "critical", "message": str(e)}],
+            "recommendations": [], "hosts": [],
+            "log": "# Software Report\n\n**SSH key missing.** " + str(e),
+        }
+        latest, dated = write_report(REPORT_BASE, report)
+        print(f"Report written: {latest} (status=critical, key missing)")
+        return
+
+    for host in all_hosts:
+        ok, detail = probe(host)
+        if not ok:
+            findings.append({"severity": "warn",
+                             "message": f"[{host.name}] unreachable over SSH — {detail}"})
+            host_dicts.append({"host": host.name, "status": "unknown",
+                               "summary": f"unreachable ({detail})", "metrics": {}})
+            continue
+        hd, hf, hr = collect_host(host)
+        host_dicts.append(hd)
+        findings += hf
+        recs += hr
+
+    if any(f["severity"] == "critical" for f in findings):
+        status = "critical"
+    elif findings:
+        status = "warn"
+    else:
+        status = "ok"
+
+    reachable = [h for h in host_dicts if h["status"] != "unknown"]
+    summary = f"{len(reachable)}/{len(host_dicts)} host(s) reported"
+    total_pending = sum((h.get("metrics", {}).get("pending_count") or 0) for h in host_dicts)
+    if total_pending:
+        summary += f" · {total_pending} update(s) total"
+
     report = {
         "tool": "software-inventory",
         "run_at": now_iso(),
         "status": status,
-        "summary": host["summary"],
+        "summary": summary,
         "findings": findings,
         "recommendations": recs,
-        "hosts": [host],
-        "log": build_log(host, findings, recs),
-        # back-compat convenience keys
-        "package_manager": host["metrics"]["package_manager"],
-        "installed_count": host["metrics"]["installed_count"],
-        "pending_updates": host["metrics"]["pending_count"],
-        "versions": host["metrics"]["versions"],
+        "hosts": host_dicts,
+        "log": build_log(host_dicts, findings, recs),
     }
     latest, dated = write_report(REPORT_BASE, report)
     print(f"Report written: {latest} + {dated} (status={status})")

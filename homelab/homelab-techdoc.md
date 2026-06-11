@@ -736,9 +736,18 @@ curl -k https://wg.rpi.lan:8443/api/peers
 
 ## 15. Homelab Agent Platform
 
-Self-monitoring "agents" run **entirely on the opti server** (192.168.1.11) — scheduled by GitHub
-Actions on a self-hosted runner, controlled from the webapp via a lightweight dispatcher service.
-Nothing depends on the desktop. Setup checklist: `Tools/automation/setup-opti.md`.
+Self-monitoring "agents" are **orchestrated from the opti server** (192.168.1.11) — scheduled by
+GitHub Actions on a self-hosted runner, controlled from the webapp via a lightweight dispatcher
+service. Nothing depends on the desktop. Setup checklist: `Tools/automation/setup-opti.md`.
+
+The Tier-B homelab agents (`hardware-report`, `software-inventory`, `network-report`, and the
+disk/docker half of `homelab-doctor`) gather data **from every box in the homelab** — `opti`,
+`rpi` (192.168.1.10) and `noblenumbat` (192.168.1.6) — over SSH. Each host's commands run *on that
+host* (including opti, reached via localhost) so reachability/DNS/port checks reflect that box's own
+vantage point. The collector reads the host list + key from `HL_HOSTS` / `HL_SSH_KEY` (see
+`Tools/homelab/_hosts.py`); it is host-agnostic, so the same command works run from a workstation.
+Each report carries a `hosts[]` array the webapp renders per host. If the SSH key is missing the
+report fails loudly with a single clear finding rather than silently producing empty data.
 
 ### Agents
 
@@ -751,10 +760,13 @@ Nothing depends on the desktop. Setup checklist: `Tools/automation/setup-opti.md
 **Tier B — Homelab** (→ `agent-logs/` → `/api/agents` → webapp `#agents`):
 | Agent | Report | Purpose |
 |---|---|---|
-| `hardware-report` | `hardware-latest.json` | CPU/RAM/disk/GPU/thermals/uptime/virt (JSON port of `scripts/hrdwre.sh`). |
-| `software-inventory` | `software-latest.json` | Package count, pending updates, kernel/service versions. |
-| `homelab-doctor` | `homelab-doctor-latest.json` | Service reachability, TLS cert expiry, disk, docker, report freshness. |
-| `network-report` | `network-latest.json` | Interfaces, gateway/internet/DNS reachability, listening ports. |
+| `hardware-report` | `hardware-latest.json` | Per-host CPU/RAM/disk+SMART/GPU/thermals/uptime/virt across all boxes. |
+| `software-inventory` | `software-latest.json` | Per-host package count, pending updates, kernel/service versions, docker. |
+| `homelab-doctor` | `homelab-doctor-latest.json` | Network-wide service reachability + TLS cert expiry + report freshness; **per-host** disk + docker. |
+| `network-report` | `network-latest.json` | Per-host interfaces, gateway/internet/DNS reachability, listening ports. |
+
+Webapp `#agents` cards are shown in a fixed order — **Homelab Doctor → Hardware → Software →
+Network** (set via `order` in the backend `CATALOG`, `routes/agents.js`).
 
 **Leetify** (`leetify-stats` → `leetify-latest.json`) is a non-security CS2-stats agent surfaced on
 the webapp **Home** card; dormant unless `LEETIFY_API_KEY` + `STEAM64_ID` are set.
@@ -767,7 +779,13 @@ the webapp **Home** card; dormant unless `LEETIFY_API_KEY` + `STEAM64_ID` are se
   agents on demand from an allowlist. The webapp **Enable/Disable** + **Run now** buttons proxy to
   it over the LAN. Both schedule and run-now honor the enabled flag.
 - **Config/secrets:** `/etc/hl-agents.env` on opti (paths + `LEETIFY_API_KEY` + `STEAM64_ID` +
-  `HL_DISPATCH_TOKEN`), sourced by both the workflow and the dispatcher — the key never leaves opti.
+  `HL_DISPATCH_TOKEN` + `HL_HOSTS` + `HL_SSH_KEY`), sourced by both the workflow and the dispatcher
+  — secrets never leave opti.
+- **Multi-host SSH:** `HL_HOSTS="opti=127.0.0.1,rpi=192.168.1.10,noblenumbat=192.168.1.6"` and
+  `HL_SSH_KEY=/path/to/hl_agents` (private key authorized on all three boxes *and* on opti itself).
+  Non-interactive `BatchMode` SSH; an unreachable host degrades to an "unreachable" entry, not a
+  crash. Generate once: `ssh-keygen -t ed25519 -f ~/.ssh/hl_agents -N ''`, then append the `.pub`
+  to each host's `~/.ssh/authorized_keys` (opti included).
 
 ### Flow
 

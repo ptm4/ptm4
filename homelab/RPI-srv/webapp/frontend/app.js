@@ -137,7 +137,10 @@ async function loadPihole() {
     const res = await fetch('/api/agents/network-latest');
     if (!res.ok) { el.textContent = 'No network report yet.'; return; }
     const d = await res.json();
-    const p = (d.hosts && d.hosts[0] && d.hosts[0].metrics && d.hosts[0].metrics.pihole) || d.pihole;
+    // Pi-hole runs on one host (rpi) — find whichever host's metrics carry it.
+    const p = (Array.isArray(d.hosts)
+      ? (d.hosts.find(h => h && h.metrics && h.metrics.pihole) || {}).metrics?.pihole
+      : null) || d.pihole;
     if (!p) { el.textContent = 'Pi-hole stats unavailable.'; return; }
     const q = p.dns_queries_today ?? p.queries ?? '?';
     const blocked = p.ads_blocked_today ?? p.blocked ?? '?';
@@ -296,10 +299,16 @@ async function renderLeetify(view) {
   const watchlistHtml = (wl && Array.isArray(wl.teams) && wl.teams.length) ? `
     <div class="watchlist-block">
       <h3 class="detail-section-title">Players to watch — HLTV VRS top ${wl.teams.length}</h3>
-      <p class="sec-empty-hint">
-        Matched to your role: ${escHtml(wl.my_roles || '')}.
-        Source: HLTV VRS${wl.vrs_as_of ? ` (${escHtml(wl.vrs_as_of)})` : ''}.
-      </p>
+      <div class="wl-summary">
+        <div class="wl-summary-row">
+          <span class="wl-summary-label">Your roles</span>
+          <span class="wl-summary-val">${escHtml(wl.my_roles || '—')}</span>
+        </div>
+        <div class="wl-summary-row">
+          <span class="wl-summary-label">VRS as of</span>
+          <span class="wl-summary-val">${escHtml(wl.vrs_as_of || '—')}</span>
+        </div>
+      </div>
       <div class="pos-grid">
         ${wl.teams.map(t => {
           const picks = (t.players || []).map(p => {

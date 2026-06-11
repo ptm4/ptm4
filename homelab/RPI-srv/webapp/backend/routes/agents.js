@@ -5,13 +5,15 @@ const { AGENT_LOGS_DIR, enabledFor, attachControls } = require('./controls');
 
 const router = express.Router();
 
-// report name -> { label, agent (dispatcher key), cadence_h, home }
+// report name -> { label, agent (dispatcher key), cadence_h, home, order }
 // `home: true` items are surfaced on the Home page, not in the #agents list.
+// `order` fixes the card display order on the #agents page (lower = first):
+// Homelab Doctor → Hardware → Software → Network.
 const CATALOG = {
-  'hardware-latest':       { label: 'Hardware Report',  agent: 'hardware-report',    cadence_h: 24 },
-  'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24 },
-  'homelab-doctor-latest': { label: 'Homelab Doctor',   agent: 'homelab-doctor',     cadence_h: 1 },
-  'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1 },
+  'homelab-doctor-latest': { label: 'Homelab Doctor',   agent: 'homelab-doctor',     cadence_h: 1,  order: 0 },
+  'hardware-latest':       { label: 'Hardware Report',  agent: 'hardware-report',    cadence_h: 24, order: 1 },
+  'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24, order: 2 },
+  'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1,  order: 3 },
   'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true },
 };
 
@@ -43,6 +45,7 @@ function describe(filename) {
     has_alert: hasAlert,
     mtime: stat.mtime.toISOString(),
     cadence_hours: meta.cadence_h,
+    order: meta.order ?? 99,
     stale: ageH > meta.cadence_h * 2,
     enabled: meta.agent ? enabledFor(meta.agent) : true,
   };
@@ -69,8 +72,9 @@ router.get('/', (req, res) => {
 
   const all = files.map(describe);
   const agents = all.filter(a => !a.home);
-  const order = { critical: 0, warn: 1, ok: 2, unknown: 3 };
-  agents.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+  // Fixed display order (Doctor → Hardware → Software → Network); unknown agents fall
+  // to the end, tie-broken by label so the layout is stable run to run.
+  agents.sort((a, b) => (a.order - b.order) || a.label.localeCompare(b.label));
   res.json({ agents, agent_logs_dir: AGENT_LOGS_DIR });
 });
 
