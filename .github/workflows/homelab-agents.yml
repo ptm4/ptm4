@@ -16,6 +16,10 @@ on:
         description: "Single agent to run (or 'all')"
         required: false
         default: "all"
+      match_count:
+        description: "leetify-stats: how many recent matches to analyze (blank = default 25)"
+        required: false
+        default: ""
 
 jobs:
   run-agents:
@@ -31,6 +35,10 @@ jobs:
             grep -E '^(HL_|LEETIFY_|MY_CS2_ROLES=|STEAM64_ID=|ANTHROPIC_API_KEY=)' /etc/hl-agents.env >> "$GITHUB_ENV"
           else
             echo "::warning::/etc/hl-agents.env not found — agents will use relative-path defaults"
+          fi
+          # Per-run "last N games" override wins over the env-file/default when provided.
+          if [ -n "${{ github.event.inputs.match_count }}" ]; then
+            echo "LEETIFY_MATCH_COUNT=${{ github.event.inputs.match_count }}" >> "$GITHUB_ENV"
           fi
 
       - name: Install Python deps

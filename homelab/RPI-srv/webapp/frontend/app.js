@@ -365,7 +365,7 @@ async function renderLeetify(view) {
     <details class="data-fold" open>
       <summary class="data-fold-summary">Supporting data — stats, demos & death maps</summary>
       ${maps.length ? `
-        <h3 class="detail-section-title">Per-map (last 25)</h3>
+        <h3 class="detail-section-title">Per-map ${d.match_count ? `(last ${d.match_count})` : '(recent)'}</h3>
         <table class="detail-table">
           <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
           <tbody>${mapRows}</tbody>

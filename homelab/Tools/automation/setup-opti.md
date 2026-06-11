@@ -58,6 +58,9 @@ HL_SSH_KEY=/home/ptm/.ssh/hl_agents
 # HL_SSH_USER=ptm
 LEETIFY_API_KEY=your-leetify-developer-key
 STEAM64_ID=76561198053334813
+# Optional: how many recent matches leetify-stats analyzes (default 25). Set a persistent
+# default here, or override per run via the "match_count" input on Run workflow.
+# LEETIFY_MATCH_COUNT=10
 HL_DISPATCH_TOKEN=pick-a-long-random-string
 # Optional: enables the Claude-written CS2 coaching narrative on top of the
 # heuristic Leetify review. Without it you still get the full heuristic report.

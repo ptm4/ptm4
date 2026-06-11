@@ -32,7 +32,20 @@ import cs2_knowledge  # noqa: E402
 import hltv_watchlist  # noqa: E402
 
 BASE_URL = "https://api-public.cs-prod.leetify.com"
-MATCH_COUNT = 25
+# How many of the most-recent matches to analyze. Override per run via LEETIFY_MATCH_COUNT
+# (e.g. =5 for "last 5 games"); defaults to 25. Invalid/<=0 values fall back to the default.
+DEFAULT_MATCH_COUNT = 25
+
+
+def match_count():
+    raw = os.environ.get("LEETIFY_MATCH_COUNT", "")
+    try:
+        n = int(raw)
+        return n if n > 0 else DEFAULT_MATCH_COUNT
+    except (TypeError, ValueError):
+        return DEFAULT_MATCH_COUNT
+
+
 REPORT_BASE = "leetify-latest"
 
 # Dimension thresholds (Leetify sub-ratings are roughly 0-100; CT/T leetify are small +/- numbers).
@@ -209,7 +222,7 @@ def headline(dim, rating_val):
     return f"Leetify rating {rating_val:+.2f}"
 
 
-def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None):
+def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None, n_matches=None):
     ranks = profile.get("ranks") or {}
     L = []
     if ai_review:
@@ -231,7 +244,8 @@ def build_log(profile, maps, dim, stats, findings, recs, name, ai_review=None):
         L.append(f"| {k.capitalize()} | {v:.0f} | {verdict} |")
     L.append("")
     if maps:
-        L += ["## Per-map (last 25)", "",
+        scope = f"last {n_matches}" if n_matches else "recent"
+        L += [f"## Per-map ({scope})", "",
               "| Map | Matches | Win % | CT | T | Verdict |", "|---|---|---|---|---|---|"]
         for r in maps:
             L.append(f"| {r['map']} | {r['matches']} | {r['win_rate']}% | "
@@ -452,7 +466,8 @@ def analyze(profile, matches, steam_id):
     status = "warn" if findings else "ok"
     # NOTE: the positional breakdown is intentionally NOT appended to the log — the webapp
     # renders d.positions as structured cards, so appending it here would duplicate it.
-    log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai)
+    log = build_log(profile, maps, dim, stats, findings, recs, name, ai_review=ai,
+                    n_matches=len(matches))
 
     return {
         "tool": "leetify-stats",
@@ -469,6 +484,7 @@ def analyze(profile, matches, steam_id):
         "demo_summaries": demo_summaries,
         "watchlist": watchlist,
         "ai_review": bool(ai),
+        "match_count": len(matches),  # how many recent matches this run analyzed
         # keep raw blobs for the page / future use
         "profile": profile,
         "matches": matches,
@@ -495,7 +511,7 @@ def main():
         matches = sorted(
             all_matches if isinstance(all_matches, list) else [],
             key=lambda m: m.get("finished_at", ""), reverse=True,
-        )[:MATCH_COUNT]
+        )[:match_count()]
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else "?"
         report = {
