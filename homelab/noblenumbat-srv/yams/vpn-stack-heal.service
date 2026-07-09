@@ -1,0 +1,10 @@
+[Unit]
+Description=Heal VPN-dependent containers after gluetun restart
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vpn-stack-heal.sh
+StandardOutput=journal
+StandardError=journal

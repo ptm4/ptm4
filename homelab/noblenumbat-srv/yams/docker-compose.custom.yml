@@ -1,0 +1,66 @@
+networks:
+  default:
+    external: true
+    name: yams_network
+
+services:
+  jellyfin:
+    devices:
+      - /dev/dri:/dev/dri           # Intel QuickSync/VAAPI passthrough
+    group_add:
+      - "992"                        # render gid on noblenumbat (required for /dev/dri/renderD128)
+    environment:
+      - JELLYFIN_PublishedServerUrl=http://jellyfin.lan:8096
+    volumes:
+      # movie + TV libraries live on opti (CIFS mounts); nested over the /srv/media:/data bind
+      - /mnt/opti-library:/data/movies
+      - /mnt/opti-shows:/data/tvshows
+
+  radarr:
+    volumes:
+      - /mnt/opti-library:/data/movies
+
+  sonarr:
+    volumes:
+      - /mnt/opti-shows:/data/tvshows
+
+  bazarr:
+    volumes:
+      - /mnt/opti-library:/data/movies
+      - /mnt/opti-shows:/data/tvshows
+
+  # Mylar3 is used to query, add downloads to the download queue and index comics
+  mylar3:
+    image: lscr.io/linuxserver/mylar3
+    container_name: mylar3
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${MEDIA_DIRECTORY}:/data
+      - ${INSTALL_DIRECTORY}/config/mylar3:/config
+    ports:
+      - 8090:8090
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.60.0.22
+
+  # Kavita serves the comic/book library (CBZ/CBR/epub/PDF web reader + OPDS)
+  kavita:
+    image: lscr.io/linuxserver/kavita
+    container_name: kavita
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${MEDIA_DIRECTORY}:/data
+      - ${INSTALL_DIRECTORY}/config/kavita:/config
+    ports:
+      - 5000:5000
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.60.0.23

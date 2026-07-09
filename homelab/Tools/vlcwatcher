@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+#
+# vlcwatcher — Linux port of homelab/Tools/vlcwatcher.ps1
+#
+# Launches one or more live streams in VLC via streamlink. Accepts a platform
+# and one or more channels, builds the proper URL per platform, and launches
+# each stream in its own VLC window (one process per channel, in parallel).
+#
+# USAGE
+#   vlcwatcher -p twitch -ch eslcs
+#   vlcwatcher -p twitch -ch eslcs,eslcsb,pgl,fl0m
+#   vlcwatcher --preset cs
+#   vlcwatcher -p twitch -ch fl0m --dry-run
+#
+# OPTIONS
+#   -p,  --platform   twitch | youtube | kick   (required unless --preset)
+#   -ch, --channel    one or more channels, comma-separated (no URL prefix)
+#   -q,  --quality    streamlink quality string (default: see QUALITY below)
+#        --preset      load a saved channel group (see PRESETS below)
+#        --vlc-path    path to the vlc binary (default: auto-detected)
+#        --dry-run     print the streamlink commands without launching
+#   -h,  --help       show this help
+#
+set -euo pipefail
+
+# --------------------------------------------------------------------
+# Defaults
+# --------------------------------------------------------------------
+QUALITY='best,1440p60,1440p,1080p60,1080p,720p60,720p,worst'
+VLC_PATH=''        # empty => auto-detect on PATH
+PLATFORM=''
+CHANNELS_RAW=''
+PRESET=''
+DRY_RUN=0
+
+# --------------------------------------------------------------------
+# Presets: edit these to build your own channel groups.
+# Format per entry: "platform:channel"
+# --------------------------------------------------------------------
+declare -A PRESETS=(
+    ['cs']='twitch:eslcs twitch:eslcsb twitch:pgl twitch:fl0m'
+)
+
+# --------------------------------------------------------------------
+# Helpers
+# --------------------------------------------------------------------
+die()  { printf '\033[31m[vlcwatcher] error: %s\033[0m\n' "$*" >&2; exit 1; }
+info() { printf '\033[36m[vlcwatcher] %s\033[0m\n' "$*"; }
+warn() { printf '\033[33m           %s\033[0m\n' "$*"; }
+
+usage() { sed -n '3,23p' "$0" | sed 's/^#\( \|$\)//'; exit 0; }
+
+stream_url() {
+    local platform="$1" channel="$2"
+    case "${platform,,}" in
+        twitch)  printf 'https://www.twitch.tv/%s' "$channel" ;;
+        youtube) printf 'https://www.youtube.com/@%s/live' "$channel" ;;
+        kick)    printf 'https://kick.com/%s' "$channel" ;;
+        *)       die "Unsupported platform: $platform" ;;
+    esac
+}
+
+start_stream() {
+    local platform="$1" channel="$2"
+    local url; url="$(stream_url "$platform" "$channel")"
+
+    local -a args=(
+        "$url" "$QUALITY"
+        --player "$VLC_PATH"
+        --title "${platform}:${channel}"
+    )
+
+    info "${platform}/${channel} -> ${url}"
+
+    if (( DRY_RUN )); then
+        warn "streamlink ${args[*]}"
+        return
+    fi
+
+    # Each stream in its own detached process so channels run in parallel.
+    setsid streamlink "${args[@]}" >/dev/null 2>&1 < /dev/null &
+}
+
+# --------------------------------------------------------------------
+# Arg parsing (long + PowerShell-style short aliases)
+# --------------------------------------------------------------------
+while (( $# )); do
+    case "$1" in
+        -p|--platform|-Platform)  PLATFORM="$2"; shift 2 ;;
+        -ch|--channel|-Channel)   CHANNELS_RAW="$2"; shift 2 ;;
+        -q|--quality|-Quality)    QUALITY="$2"; shift 2 ;;
+        --preset|-Preset)         PRESET="$2"; shift 2 ;;
+        --vlc-path|-VlcPath)      VLC_PATH="$2"; shift 2 ;;
+        --dry-run|-DryRun)        DRY_RUN=1; shift ;;
+        -h|--help)                usage ;;
+        *)                        die "Unknown argument: $1 (try --help)" ;;
+    esac
+done
+
+# --------------------------------------------------------------------
+# Sanity checks
+# --------------------------------------------------------------------
+# Dry-run only prints commands, so it doesn't require the tools to be present.
+if (( ! DRY_RUN )); then
+    command -v streamlink >/dev/null 2>&1 || \
+        die "streamlink not found on PATH. Install via: sudo pacman -S streamlink"
+
+    if [[ -z "$VLC_PATH" ]]; then
+        VLC_PATH="$(command -v vlc || true)"
+        [[ -n "$VLC_PATH" ]] || die "vlc not found on PATH. Install it or pass --vlc-path."
+    elif [[ ! -x "$VLC_PATH" ]]; then
+        die "VLC not found/executable at: $VLC_PATH"
+    fi
+else
+    [[ -n "$VLC_PATH" ]] || VLC_PATH="$(command -v vlc || echo vlc)"
+fi
+
+# --------------------------------------------------------------------
+# Dispatch
+# --------------------------------------------------------------------
+if [[ -n "$PRESET" ]]; then
+    [[ -v "PRESETS[$PRESET]" ]] || \
+        die "Unknown preset '$PRESET'. Available: ${!PRESETS[*]}"
+    for entry in ${PRESETS[$PRESET]}; do
+        start_stream "${entry%%:*}" "${entry#*:}"
+    done
+else
+    [[ -n "$PLATFORM"     ]] || die "Missing -p/--platform (or use --preset)."
+    [[ -n "$CHANNELS_RAW" ]] || die "Missing -ch/--channel (or use --preset)."
+    IFS=',' read -ra channels <<< "$CHANNELS_RAW"
+    for c in "${channels[@]}"; do
+        c="${c// /}"           # strip stray spaces
+        [[ -n "$c" ]] && start_stream "$PLATFORM" "$c"
+    done
+fi
+
+(( DRY_RUN )) || wait 2>/dev/null || true

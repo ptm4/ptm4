@@ -1,0 +1,10 @@
+[Unit]
+Description=Run media-import every 2 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitInactiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

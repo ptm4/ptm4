@@ -1,0 +1,10 @@
+[Unit]
+Description=Media import: opti -> Radarr staging
+After=network-online.target mnt-opti\x2dmedia.automount
+Requires=mnt-opti\x2dmedia.automount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/media-import.sh
+StandardOutput=journal
+StandardError=journal

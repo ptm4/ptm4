@@ -19,6 +19,7 @@
 13. [Useful Commands & Diagnostics](#13-useful-commands--diagnostics)
 14. [WireGuard Peer Manager — Web UI](#14-wireguard-peer-manager--web-ui)
 15. [Homelab Agent Platform](#15-homelab-agent-platform)
+16. [YAMS Media Stack (noblenumbat)](#16-yams-media-stack-noblenumbat)
 
 ---
 
@@ -32,7 +33,8 @@ Router / Gateway — 192.168.1.1
     LAN: 192.168.1.0/24
     |
     ├── rpi.lan          192.168.1.10   Raspberry Pi 4 (Pi-hole, WireGuard, Vaultwarden, Samba)
-    └── noblenumbat      192.168.1.6    Dell Latitude 7400 (NFS server, storage)
+    ├── noblenumbat.lan  192.168.1.6    Dell Latitude 7400 (NFS server, YAMS media stack)
+    └── opti.lan         192.168.1.11   Custom x86 tower (OpenMediaVault, agent orchestration, Samba \\opti\fs)
 
 VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 ```
@@ -45,6 +47,9 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 - `rpi.lan` → `192.168.1.10`
 - `bitwarden.rpi.lan` → `192.168.1.10` (Pi-hole local DNS record)
 - `vpn.rpi.lan` → `192.168.1.10` (Pi-hole local DNS record, also needs public DNS if VPN clients are external)
+- `noblenumbat.lan` → `192.168.1.6`
+- `jellyfin.lan` → `192.168.1.6` (YAMS/Jellyfin media server)
+- `opti.lan` → `192.168.1.11`
 
 ---
 
@@ -61,18 +66,44 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 | OS | Ubuntu Server |
 | IP | `192.168.1.10` (static) |
 
-### noblenumbat (`192.168.1.6`)
+### noblenumbat (`noblenumbat.lan` / `192.168.1.6`)
 
 | Field | Value |
 |---|---|
 | Model | Dell Latitude 7400 |
-| CPU | i7-8665U · 4c/8t · 4.8 GHz boost · VT-x |
+| CPU | i7-8665U · 4c/8t · 4.8 GHz boost · VT-x · Intel UHD 620 (QuickSync H.264 VAAPI) |
 | RAM | 16 GB DDR4 2667 MT/s |
-| Disk | 512 GB NVMe · SK Hynix PC611 |
-| Network | Intel Wireless-AC · WiFi only |
-| OS | Ubuntu 24.04 |
+| Disk | 512 GB NVMe · SK Hynix PC611 · ~389 GB free |
+| GPU | `/dev/dri/renderD128` · render gid **992** |
+| Network | Intel Wireless-AC · WiFi only (`wlo1`) |
+| OS | Ubuntu 24.04.4 |
 | IP | `192.168.1.6` (DHCP) |
-| Role | NFS server (`/srv/fs-ext`) · suspend disabled |
+| Role | NFS server (`/srv/fs-ext`) · YAMS media stack · suspend disabled |
+
+### opti (`opti.lan` / `192.168.1.11`)
+
+| Field | Value |
+|---|---|
+| CPU | i5-3570 · 4c/4t · 3.4 GHz · Intel HD 2500 (QuickSync H.264) |
+| RAM | 5.7 GB |
+| Disk | 457 GB root · mergerfs pool `/srv/pool` (~1.1 TB, ~858 GB free) |
+| GPU | `/dev/dri/renderD128` · render gid **106** |
+| OS | Debian 12 (Bookworm) |
+| IP | `192.168.1.11` (DHCP) |
+| Role | **OpenMediaVault** NAS · Samba share `\\opti\fs` = `/srv/pool` · homelab agent orchestration · self-hosted GitHub Actions runner (`label: opti`) |
+
+**opti storage map:**
+```
+/srv/pool/               ← OMV mergerfs pool (~1.1 TB total)
+  ptm/
+    Media/Movies/        ← Jellyfin MOVIE LIBRARY (primary storage; noblenumbat mounts at /mnt/opti-library)
+    Media-Import/        ← file-drop inbox for Jellyfin (\\opti\fs\ptm\Media-Import\)
+    security-reports/    ← security agent reports (Pi mounts as /mnt/opti-fs/ptm/security-reports)
+    agent-logs/          ← homelab agent logs
+    certs/               ← TLS certs for webapp
+```
+
+**Note:** OMV manages `/etc/exports` and Samba config on opti — do NOT hand-edit these files.
 
 ---
 
@@ -693,9 +724,22 @@ curl -k https://wg.rpi.lan:8443/api/peers
 | Pi-hole web UI | `http://192.168.1.10/admin` | or `http://rpi.lan/admin` |
 | Vaultwarden | `https://bitwarden.rpi.lan` | LAN only — self-signed cert |
 | Vaultwarden admin | `https://bitwarden.rpi.lan/admin` | requires admin token |
-| Samba share | `\\192.168.1.10\FS` | or `\\rpi.lan\FS` |
+| Samba share (Pi) | `\\192.168.1.10\FS` | or `\\rpi.lan\FS` |
+| Samba share (opti) | `\\192.168.1.11\fs` | or `\\opti.lan\fs` · OMV-managed |
+| Media drop inbox | `\\opti.lan\fs\ptm\Media-Import\` | drop video files here for Jellyfin auto-import |
+| Movie library storage | `\\opti.lan\fs\ptm\Media\Movies\` | primary movie library (served by Jellyfin on noblenumbat) |
 | Deploy logs | `\\rpi.lan\ptm\logging\` | deploy + stack logs |
 | WireGuard Manager | `https://wg.rpi.lan:8443` | LAN only — self-signed cert |
+| **Jellyfin** | `http://jellyfin.lan:8096` | runs on noblenumbat · user: admin |
+| Radarr | `http://192.168.1.6:7878` | noblenumbat · movie manager |
+| Sonarr | `http://192.168.1.6:8989` | noblenumbat · TV manager |
+| Prowlarr | `http://192.168.1.6:9696` | noblenumbat · indexer manager |
+| qBittorrent | `http://192.168.1.6:8081` | noblenumbat · via gluetun VPN · user: admin |
+| Bazarr | `http://192.168.1.6:6767` | noblenumbat · subtitle manager |
+| Mylar3 | `http://192.168.1.6:8090` | noblenumbat · comic manager |
+| Kavita | `http://192.168.1.6:5000` | noblenumbat · comic/book reader (phone-friendly PWA) |
+| Portainer | `http://192.168.1.6:9000` | noblenumbat · Docker UI |
+| FlareSolverr | `http://192.168.1.6:8191` | noblenumbat · Cloudflare bypass for Prowlarr |
 
 ---
 
@@ -818,3 +862,142 @@ flowchart LR
 
 **Storage map:** opti `…/fs/ptm/{security-reports,agent-logs}` = Pi `/mnt/opti-fs/ptm/...` = webapp
 container `/reports` + `/agent-logs`.
+
+---
+
+## 16. YAMS Media Stack (noblenumbat)
+
+Full YAMS installation on noblenumbat (192.168.1.6) — Jellyfin + arr stack + qBittorrent + ProtonVPN.
+
+### Containers
+
+| Container | Image | Port | Notes |
+|---|---|---|---|
+| `jellyfin` | `lscr.io/linuxserver/jellyfin` | `8096` | Media server · QuickSync VAAPI |
+| `radarr` | `lscr.io/linuxserver/radarr` | `7878` | Movie manager · 43 Batman titles added |
+| `sonarr` | `lscr.io/linuxserver/sonarr` | `8989` | TV manager |
+| `lidarr` | `lscr.io/linuxserver/lidarr` | `8686` | Music manager |
+| `prowlarr` | `lscr.io/linuxserver/prowlarr` | `9696` | Indexer manager (no indexers configured) |
+| `qbittorrent` | `lscr.io/linuxserver/qbittorrent:4.6.3` | `8081` | Torrent client · routed through gluetun |
+| `sabnzbd` | `lscr.io/linuxserver/sabnzbd` | `8080` | Usenet client · unconfigured |
+| `bazarr` | `lscr.io/linuxserver/bazarr` | `6767` | Subtitle manager |
+| `gluetun` | `qmcgaw/gluetun:v3.41.0` | — | ProtonVPN free tier · Netherlands · OpenVPN |
+| `portainer` | `portainer/portainer-ce` | `9000` | Docker management UI |
+| `watchtower` | `nickfedor/watchtower` | — | Auto-updates containers |
+| `flaresolverr` | `ghcr.io/flaresolverr/flaresolverr` | `8191` | Cloudflare bypass proxy for Prowlarr indexers |
+| `mylar3` | `lscr.io/linuxserver/mylar3` | `8090` | Comic manager (arr for comics) · sends torrents to qBittorrent |
+| `kavita` | `lscr.io/linuxserver/kavita` | `5000` | Comic/book library + mobile web reader (CBZ/CBR/epub/PDF, OPDS) |
+
+### Storage layout (on noblenumbat)
+
+```
+/srv/media/
+  music/           ← Lidarr-managed music
+  comics/          ← Mylar3-managed comic library (Kavita library root; Kavita also reads books/)
+  downloads/
+    torrents/      ← qBittorrent save path (LOCAL — torrents never write to the network)
+  staging/         ← media-import drop zone → Radarr DownloadedMoviesScan
+  blackhole/       ← torrent blackhole (qBittorrent watch folder, fed by media-import.sh)
+
+/mnt/opti-library/ ← MOVIE LIBRARY — CIFS mount of \\opti\fs\ptm\Media\Movies (opti mergerfs pool).
+                     Bind-mounted over /data/movies in jellyfin/radarr/bazarr via
+                     docker-compose.custom.yaml, so containers still see /data/movies.
+                     Radarr imports are cross-device → copy fallback (no hardlinks).
+/mnt/opti-shows/   ← TV LIBRARY — CIFS mount of \\opti\fs\ptm\Media\Shows (opti mergerfs pool).
+                     Bind-mounted over /data/tvshows in jellyfin/sonarr/bazarr, same pattern as
+                     movies. Migrated 2026-07-08 (85 episode files / ~37 GB, diff-verified against
+                     source before the local copy was deleted).
+/mnt/opti-media/   ← file-drop inbox — CIFS mount of \\opti\fs\ptm\Media-Import
+
+/opt/yams/         ← YAMS install root
+  docker-compose.yaml
+  docker-compose.custom.yaml  ← QuickSync patch + opti movie/TV library binds + kavita/mylar3
+  .env               ← includes COMPOSE_FILE= so both compose files always load
+  config/          ← per-service config volumes
+```
+
+Movies and TV both live on **opti** (movies moved 2026-07; TV followed 2026-07-08, freeing an
+additional ~37 GB). Only comics/music/downloads/staging remain local. Note: on 2026-07-08 the
+opti bind-mounts for `jellyfin`/`radarr`/`sonarr`/`bazarr` were found **missing from the live
+`docker-compose.custom.yaml`** despite being documented here and present in git — the deployed
+file only had the QuickSync patch, meaning new Radarr/Sonarr imports had been silently landing on
+local disk for an unknown period before this was caught and redeployed. If storage docs and live
+`docker inspect` output disagree again, trust `docker inspect`, not this file, and re-sync
+whichever drifted. The `vpn-stack-heal.timer` also enforces a low-disk guardrail: **< 10 GB free
+on `/` pauses all torrents** (log: `/var/log/vpn-stack-heal.log`; resume manually in qBittorrent
+after freeing space).
+
+### File-drop pipeline
+
+Drop video files **or `.torrent` files** to **`\\opti.lan\fs\ptm\Media-Import\`** from any Windows machine. (noblenumbat runs no SMB server — the drop share is on opti only. `\\opti\fs\ptm\Media\Movies\` is the movie *library* — don't drop files there.)
+
+On noblenumbat: `/mnt/opti-media` is a CIFS mount of that share (fstab, auto-mount). The `media-import.timer` systemd unit runs `/usr/local/bin/media-import.sh` every 2 min:
+- **Video files** (mtime-stable ≥2 min) → moved to `/srv/media/staging/` + `Radarr: DownloadedMoviesScan`. Radarr matches, renames, and imports into the movie library on opti (`/data/movies` in-container = `/mnt/opti-library`). Jellyfin picks it up automatically (realtime monitor enabled).
+- **`.torrent` files** → moved to `/srv/media/blackhole/`, which qBittorrent watches (`/data/blackhole` in-container, scan_dirs). qBittorrent downloads via the VPN into `/data/downloads/torrents`; Radarr imports completed downloads.
+
+Logs: `/var/log/media-import.log` on noblenumbat.
+
+### Hardware transcoding (QuickSync)
+
+Jellyfin uses Intel UHD 620 (i7-8665U) for VAAPI H.264 transcoding. The custom compose override passes `/dev/dri` and render gid `992` into the container. Configured in Jellyfin Dashboard → Playback → Hardware acceleration: **VAAPI**, device `/dev/dri/renderD128`.
+
+### VPN (Gluetun / ProtonVPN)
+
+qBittorrent and SABnzbd run inside gluetun's network namespace (`network_mode: service:gluetun`). Free tier: Netherlands servers only, no port forwarding. Credentials in `/opt/yams/.env` (`VPN_USER`/`VPN_PASSWORD` = ProtonVPN OpenVPN credentials, not account login).
+
+### FlareSolverr (Cloudflare bypass)
+
+FlareSolverr runs on port `8191` and solves Cloudflare challenges on behalf of Prowlarr. To wire it in Prowlarr:
+1. Prowlarr → Settings → Indexers → Add FlareSolverr proxy → URL: `http://flaresolverr:8191`
+2. Tag the proxy (e.g. `flaresolverr`), then assign that tag to any Cloudflare-protected indexer (e.g. 1337x).
+
+### Comics arm (Mylar3 + Kavita)
+
+Defined in `docker-compose.custom.yaml` (not the YAMS base compose, so YAMS updates won't clobber it). Mylar3 monitors series and pushes torrents to qBittorrent (via gluetun, same as everything else); completed downloads land in `/srv/media/comics/`, which Kavita serves as a phone-friendly web reader (also covers `/srv/media/books/`).
+
+One-time wiring (all via UIs):
+1. **Mylar3** (`:8090`) → Settings → Web Interface: note the API key. Settings → Download → Torrents: qBittorrent, host `172.60.0.18`, port `8081` (gluetun IP — qBittorrent lives in gluetun's netns), qBittorrent credentials, label/category `comics`. Comic Location: `/data/comics`.
+2. **Mylar3 metadata:** requires a free ComicVine API key (comicvine.gamespot.com/api) → Settings → Web Interface → ComicVine API.
+3. **Prowlarr** (`:9696`) → Settings → Apps → add **Mylar** → Prowlarr server `http://prowlarr:9696`, Mylar server `http://mylar3:8090`, Mylar3 API key. Indexers with the Comics category sync automatically.
+4. **Kavita** (`:5000`) → create admin account on first visit → Add library: type *Comics*, folder `/data/comics` (optionally a second *Books* library at `/data/books`).
+
+Phone reading: open `http://192.168.1.6:5000` in the phone browser → "Add to Home Screen" (PWA, remembers reading position). Native apps connect via OPDS (Kavita → user settings → OPDS URL): Mihon on Android (Kavita extension), Panels/Chunky on iOS. Off-LAN: connect the phone's WireGuard tunnel first (see §WireGuard).
+
+### What is NOT configured (intentional)
+
+- **Prowlarr indexers:** none added — FlareSolverr is ready to support Cloudflare-protected indexers (e.g. 1337x) once you add them via the Prowlarr UI.
+- **SABnzbd:** installed but unconfigured (requires paid Usenet provider).
+
+### Manage stack
+
+```bash
+# SSH to noblenumbat (via opti jump or direct if key is authorized)
+cd /opt/yams
+docker compose -f docker-compose.yaml -f docker-compose.custom.yaml ps
+docker compose -f docker-compose.yaml -f docker-compose.custom.yaml up -d
+docker compose -f docker-compose.yaml -f docker-compose.custom.yaml logs -f jellyfin
+
+# Or use yams CLI (installed at /usr/local/bin/yams)
+yams start
+yams stop
+yams restart
+
+# Check VPN
+docker logs gluetun --tail=20
+# Check media importer
+systemctl status media-import.timer
+journalctl -u media-import.service -n 30
+tail -f /var/log/media-import.log
+```
+
+### Repo files
+
+```
+homelab/noblenumbat-srv/yams/
+  docker-compose.yml          ← deployed compose (secrets stripped)
+  docker-compose.custom.yml   ← QuickSync overlay
+  .env.example
+  media-import.sh             ← file-drop importer script
+  media-import.service        ← systemd unit
+  media-import.timer          ← systemd timer (2 min interval)
+```

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run vpn-stack-heal every 2 minutes
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=2min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target
