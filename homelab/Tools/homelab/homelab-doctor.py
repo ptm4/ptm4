@@ -18,6 +18,7 @@ _report.write_report. Dirs from $HL_AGENT_LOGS_DIR / $HL_REPORTS_DIR; hosts/key 
 HL_HOSTS / HL_SSH_KEY (see _hosts.py).
 """
 
+import json
 import os
 import shutil
 import ssl
@@ -47,6 +48,23 @@ SERVICES = [
 
 DISK_WARN_PCT = 90
 STALE_HOURS = 36
+
+# Reports from manual-only agents (paid/on-demand, not on the schedule — see
+# homelab-techdoc.md "Homelab Agent Platform") are exempt from staleness checks;
+# "last run 3 weeks ago" is expected for these, not a silent failure.
+MANUAL_ONLY_REPORTS = {"leetify-latest.json"}
+
+# vpn-stack-heal writes this every 2 min on hosts running the gluetun stack; a stale
+# or non-ok file means VPN port forwarding needed healing (or the watchdog itself died)
+VPN_STATUS_PATH = "/var/lib/vpn-stack-heal/status.json"
+VPN_STALE_MIN = 10
+
+# mergerfs pool mount (opti); hosts without it simply skip the pool metric
+POOL_PATH = "/srv/pool"
+
+# homelab-autoupdate.sh + homelab-autoreboot.sh both log here (see Tools/automation)
+AUTOUPDATE_LOG = "/var/log/homelab-autoupdate.log"
+AUTOUPDATE_STALE_HOURS = 48
 
 
 def _unverified_ctx():
@@ -125,33 +143,153 @@ def report_freshness():
         for fn in os.listdir(d):
             if not fn.endswith("-latest.json") or fn == "homelab-doctor-latest.json":
                 continue
+            if fn in MANUAL_ONLY_REPORTS:
+                continue
             age_h = (now - os.path.getmtime(os.path.join(d, fn))) / 3600
             if age_h > STALE_HOURS:
                 stale.append((fn, round(age_h, 1)))
     return stale
 
 
+def host_pool_disk(host):
+    """Mergerfs pool usage on `host`. None where the host has no pool."""
+    out, rc = run_on(host, ["df", "-P", POOL_PATH], timeout=15)
+    if rc != 0:
+        return None
+    lines = out.splitlines()
+    if len(lines) < 2:
+        return None
+    parts = lines[1].split()
+    if len(parts) < 5:
+        return None
+    try:
+        return {"used_pct": float(parts[4].rstrip("%")),
+                "size_gb": round(int(parts[1]) / 1024 / 1024, 1),
+                "avail_gb": round(int(parts[3]) / 1024 / 1024, 1)}
+    except ValueError:
+        return None
+
+
+def host_autoupdate(host):
+    """Last homelab-autoupdate run, parsed from its log on `host`. None where not deployed."""
+    # 400 lines, not 50: a single run block includes raw apt output, which alone
+    # can run past 50 lines on a host with many packages (seen on opti)
+    out, rc = run_on(host, ["tail", "-n", "400", AUTOUPDATE_LOG], timeout=15)
+    if rc != 0:
+        return None
+    lines = out.splitlines()
+    start = None
+    for i, l in enumerate(lines):
+        if "=== homelab-autoupdate start ===" in l:
+            start = i
+    if start is None:
+        return {"last_run": None, "result": "unknown", "reboot_required": False,
+                "detail": "no run found in log tail"}
+    last_run = lines[start].split(" ", 1)[0]
+    result, detail = "unknown", "run did not finish"
+    reboot = False
+    for l in lines[start:]:
+        if "ERROR:" in l:
+            result, detail = "error", l.split("ERROR:", 1)[1].strip()
+        elif "=== homelab-autoupdate done ===" in l and result != "error":
+            result, detail = "ok", "completed"
+        # order matters: "no reboot required" contains "reboot required"
+        if "no reboot required" in l:
+            reboot = False
+        elif "reboot required" in l or "reboot-required present" in l:
+            reboot = True
+    return {"last_run": last_run, "result": result,
+            "reboot_required": reboot, "detail": detail}
+
+
+def autoupdate_findings(name, au):
+    """Findings for a host's autoupdate state (failed run, or timer gone silent)."""
+    if au.get("result") == "error":
+        return [{"severity": "warn", "message": f"[{name}] autoupdate failed: {au.get('detail')}"}]
+    try:
+        ts = datetime.strptime(au["last_run"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
+        if age_h > AUTOUPDATE_STALE_HOURS:
+            return [{"severity": "warn",
+                     "message": f"[{name}] autoupdate hasn't run for {age_h:.0f}h "
+                                f"(runs daily) — timer dead?"}]
+    except (KeyError, TypeError, ValueError):
+        return [{"severity": "warn",
+                 "message": f"[{name}] autoupdate log has no parseable last run"}]
+    return []
+
+
+def host_vpn_status(host):
+    """vpn-stack-heal's status.json on `host`, parsed. None where not deployed."""
+    out, rc = run_on(host, ["cat", VPN_STATUS_PATH], timeout=10)
+    if rc != 0:
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return {"status": "unparseable"}
+
+
+def vpn_findings(name, vpn):
+    """Findings for a host's VPN watchdog state (non-ok status, or watchdog gone stale)."""
+    if vpn.get("status") == "unparseable":
+        return [{"severity": "warn", "message": f"[{name}] VPN watchdog status.json unparseable"}]
+    findings = []
+    sev = {"warn": "warn", "critical": "critical"}.get(vpn.get("status"))
+    if sev:
+        acts = "; ".join(vpn.get("actions") or []) or "no detail"
+        findings.append({"severity": sev, "message": f"[{name}] VPN watchdog {vpn['status']}: {acts}"})
+    try:
+        ts = datetime.strptime(vpn["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60
+        if age_min > VPN_STALE_MIN:
+            findings.append({"severity": "warn",
+                             "message": f"[{name}] VPN watchdog silent for {age_min:.0f} min "
+                                        f"(runs every 2) — timer dead?"})
+    except (KeyError, ValueError):
+        findings.append({"severity": "warn",
+                         "message": f"[{name}] VPN watchdog status has no valid timestamp"})
+    return findings
+
+
 def collect_host(host):
-    """Per-host disk + docker over SSH. Returns (host_dict, findings)."""
+    """Per-host disk + docker + VPN watchdog over SSH. Returns (host_dict, findings)."""
     findings = []
     dpct = host_disk_pct(host)
     if dpct is not None and dpct >= DISK_WARN_PCT:
         findings.append({"severity": "warn", "message": f"[{host.name}] Root disk {dpct}% full"})
+    pool = host_pool_disk(host)
+    if pool is not None and pool["used_pct"] >= DISK_WARN_PCT:
+        findings.append({"severity": "warn",
+                         "message": f"[{host.name}] Pool {POOL_PATH} {pool['used_pct']}% full"})
+    autoupdate = host_autoupdate(host)
+    if autoupdate is not None:
+        findings += autoupdate_findings(host.name, autoupdate)
     containers = host_containers(host)
     down = [c for c in (containers or []) if "Up" not in (c.get("status") or "")]
     for c in down:
         findings.append({"severity": "warn",
                          "message": f"[{host.name}] container {c['name']} not up: {c['status']}"})
+    vpn = host_vpn_status(host)
+    if vpn is not None:
+        findings += vpn_findings(host.name, vpn)
 
     parts = []
     if dpct is not None:
         parts.append(f"disk {dpct}%")
+    if pool is not None:
+        parts.append(f"pool {pool['used_pct']}%")
     if containers is not None:
         parts.append(f"{len(containers)} container(s)")
+    if vpn is not None:
+        parts.append(f"vpn {vpn.get('status', '?')}")
+    if autoupdate is not None:
+        parts.append(f"autoupdate {autoupdate['result']}")
     summary = ", ".join(parts) or "no disk/docker data"
     status = "warn" if findings else "ok"
     return ({"host": host.name, "status": status, "summary": summary,
-             "metrics": {"disk_used_pct": dpct, "containers": containers}}, findings)
+             "metrics": {"disk_used_pct": dpct, "pool": pool, "containers": containers,
+                         "vpn": vpn, "autoupdate": autoupdate}}, findings)
 
 
 def build_log(services_state, host_dicts, stale, findings):
@@ -169,6 +307,18 @@ def build_log(services_state, host_dicts, stale, findings):
         L.append(f"### {hd['host']}")
         L.append("")
         L.append(f"- Root disk: {m.get('disk_used_pct') if m.get('disk_used_pct') is not None else '?'}%")
+        pool = m.get("pool")
+        if pool is not None:
+            L.append(f"- Pool {POOL_PATH}: {pool['used_pct']}% used ({pool['avail_gb']} GB free)")
+        au = m.get("autoupdate")
+        if au is not None:
+            L.append(f"- Autoupdate: {au['result']} (last run {au.get('last_run') or '?'})"
+                     + (" — reboot pending" if au.get("reboot_required") else ""))
+        vpn = m.get("vpn")
+        if vpn is not None:
+            L.append(f"- VPN watchdog: {vpn.get('status', '?')} — forwarded port "
+                     f"{vpn.get('forwarded_port', '?')}, qbt {vpn.get('qbt_listen_port', '?')}, "
+                     f"exit IP {vpn.get('public_ip') or '?'} (as of {vpn.get('ts', '?')})")
         containers = m.get("containers")
         if containers is None:
             L.append("- Docker: not present / unavailable")

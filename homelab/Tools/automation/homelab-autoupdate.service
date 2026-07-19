@@ -1,0 +1,14 @@
+[Unit]
+# Daily apt update + full upgrade, unattended. Companion to homelab-autoreboot.service.
+# Install on opti / rpi / noblenumbat:
+#   sudo cp homelab-autoupdate.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/homelab-autoupdate.sh
+#   sudo cp homelab-autoupdate.service homelab-autoupdate.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now homelab-autoupdate.timer
+Description=Homelab daily apt update + upgrade
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/homelab-autoupdate.sh

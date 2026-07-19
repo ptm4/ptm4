@@ -37,6 +37,22 @@ app.use('/api/reports', reportsRouter);
 const agentsRouter = require('./routes/agents');
 app.use('/api/agents', agentsRouter);
 
+const weatherRouter = require('./routes/weather');
+app.use('/api/weather', weatherRouter);
+
+// bot proxies — /api/health is taken by the webapp's own healthcheck, hence /api/healthdigest
+const healthdigestRouter = require('./routes/healthdigest');
+app.use('/api/healthdigest', healthdigestRouter);
+
+const jellyfinRouter = require('./routes/jellyfin');
+app.use('/api/jellyfin', jellyfinRouter);
+
+const sportsRouter = require('./routes/sports');
+app.use('/api/sports', sportsRouter);
+
+const hltvRouter = require('./routes/hltv');
+app.use('/api/hltv', hltvRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

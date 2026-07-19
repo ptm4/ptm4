@@ -695,3 +695,107 @@ body {
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ── Weather bot page ─────────────────────────────────────────────────────── */
+.w-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.w-kv span { color: var(--muted); }
+
+.w-field { margin: 10px 0; }
+.w-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.w-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-family: inherit;
+}
+.w-input:focus { outline: 1px solid var(--accent); }
+.w-hint { font-size: 11px; color: var(--muted); }
+.w-warn { color: var(--yellow); }
+
+.w-card-wide { grid-column: 1 / -1; }
+
+.w-search-row { display: flex; gap: 8px; }
+.w-search-row .w-input { flex: 1; }
+
+.w-loc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.w-loc-name { flex: 1; font-size: 13px; }
+.w-loc-coords { font-size: 11px; color: var(--muted); font-family: monospace; }
+.w-loc-del {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--red);
+  cursor: pointer;
+  padding: 2px 8px;
+}
+.w-loc-del:hover { background: rgba(224,92,92,0.12); }
+
+.w-geo-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 7px 10px;
+  margin-top: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.w-geo-result:hover { border-color: var(--accent); }
+
+/* Discord-style embed preview (modal) */
+.embed-preview {
+  background: #2b2d31;
+  border-left: 4px solid #58b9ff;
+  border-radius: 4px;
+  padding: 12px 16px;
+  max-width: 440px;
+}
+.embed-author { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.embed-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.embed-desc { font-size: 14px; color: var(--text); margin-bottom: 8px; }
+.embed-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+  margin-top: 4px;
+}
+.embed-field { margin: 8px 0; }
+.embed-fields .embed-field { margin: 0; }
+.embed-field:not(.inline) { grid-column: 1 / -1; }
+.embed-field-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+.embed-field-value { font-size: 13px; line-height: 1.45; }
+.embed-footer { font-size: 11px; color: var(--muted); margin-top: 10px; }
+
+/* message text above the embed in the preview modal */
+.msg-content { font-size: 14px; margin-bottom: 8px; max-width: 440px; }
+.mention {
+  background: rgba(88,101,242,0.3);
+  color: #c9cdfb;
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 500;
+}

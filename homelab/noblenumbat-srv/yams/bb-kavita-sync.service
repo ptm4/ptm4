@@ -1,0 +1,10 @@
+[Unit]
+Description=Curate Batman Beyond downloads into Kavita story-order tree
+After=docker.service
+
+[Service]
+Type=oneshot
+User=ptm
+ExecStart=/usr/bin/python3 /usr/local/bin/bb-kavita-sync.py
+StandardOutput=journal
+StandardError=journal

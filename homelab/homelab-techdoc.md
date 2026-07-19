@@ -9,7 +9,7 @@
 3. [Raspberry Pi — OS & Base Config](#3-raspberry-pi--os--base-config)
 4. [Docker Stack Overview](#4-docker-stack-overview)
 5. [Pi-hole — DNS & DHCP](#5-pi-hole--dns--dhcp)
-6. [WireGuard — VPN](#6-wireguard--vpn)
+6. [WireGuard — VPN (decommissioned)](#6-wireguard--vpn-decommissioned)
 7. [Vaultwarden + Nginx — Password Manager](#7-vaultwarden--nginx--password-manager)
 8. [MariaDB — Vaultwarden Database](#8-mariadb--vaultwarden-database)
 9. [Samba — File Server](#9-samba--file-server)
@@ -17,13 +17,20 @@
 11. [CI/CD — GitHub Actions Runner](#11-cicd--github-actions-runner)
 12. [Log Management](#12-log-management)
 13. [Useful Commands & Diagnostics](#13-useful-commands--diagnostics)
-14. [WireGuard Peer Manager — Web UI](#14-wireguard-peer-manager--web-ui)
+14. [WireGuard Peer Manager — Web UI (decommissioned)](#14-wireguard-peer-manager--web-ui-decommissioned)
 15. [Homelab Agent Platform](#15-homelab-agent-platform)
 16. [YAMS Media Stack (noblenumbat)](#16-yams-media-stack-noblenumbat)
+17. [Remote Access](#17-remote-access)
+18. [Daily Maintenance — auto-update & reboot](#18-daily-maintenance--auto-update--reboot)
 
 ---
 
 ## 1. Network Topology
+
+**Host roles, at a glance:**
+- **opti** — FS/storage (OpenMediaVault, mergerfs pool, Samba/CIFS server for the whole homelab)
+- **noblenumbat** — YAMS media operation (Jellyfin + arr stack + qBittorrent/VPN)
+- **rpi** — DNS & webapp (Pi-hole, Vaultwarden, the homelab dashboard webapp)
 
 ```
 Internet
@@ -32,12 +39,17 @@ Router / Gateway — 192.168.1.1
     |
     LAN: 192.168.1.0/24
     |
-    ├── rpi.lan          192.168.1.10   Raspberry Pi 4 (Pi-hole, WireGuard, Vaultwarden, Samba)
-    ├── noblenumbat.lan  192.168.1.6    Dell Latitude 7400 (NFS server, YAMS media stack)
-    └── opti.lan         192.168.1.11   Custom x86 tower (OpenMediaVault, agent orchestration, Samba \\opti\fs)
-
-VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
+    ├── rpi.lan          192.168.1.10   Raspberry Pi 4 — DNS & webapp (Pi-hole, Vaultwarden)
+    ├── noblenumbat.lan  192.168.1.6    Dell Latitude 7400 — YAMS media operation
+    └── opti.lan         192.168.1.11   Custom x86 tower — FS/storage (OpenMediaVault, agent orchestration, Samba \\opti\fs)
 ```
+
+**No VPN currently exists.** WireGuard (§6) and its peer-manager web UI (§14) were both
+decommissioned at some point — the containers, `wg0` interface, and API are all gone
+(confirmed 2026-07-11: no `wg0`, nothing on UDP 51820, no `/api/peers` route in the current
+webapp). Off-LAN peer configs (`/srv/docker/compose/data/wireguard*` on rpi) are still
+sitting on disk, orphaned. **There is currently no way to reach this LAN from outside it.**
+Remote access today (§17) is LAN-only: SSH + RDP on opti/noblenumbat, SSH-only on rpi.
 
 **DNS:** Pi-hole at `192.168.1.10:53` handles all LAN DNS. Upstream: `192.168.1.1` (router) + `1.1.1.1` (Cloudflare fallback).
 
@@ -46,9 +58,10 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 **Local hostnames used in stack:**
 - `rpi.lan` → `192.168.1.10`
 - `bitwarden.rpi.lan` → `192.168.1.10` (Pi-hole local DNS record)
-- `vpn.rpi.lan` → `192.168.1.10` (Pi-hole local DNS record, also needs public DNS if VPN clients are external)
+- `webapp.rpi.lan` → `192.168.1.10` (Pi-hole local DNS record, homelab dashboard)
 - `noblenumbat.lan` → `192.168.1.6`
 - `jellyfin.lan` → `192.168.1.6` (YAMS/Jellyfin media server)
+- `comics.lan` → `192.168.1.6` (Kavita comic/book reader, port 5000)
 - `opti.lan` → `192.168.1.11`
 
 ---
@@ -78,7 +91,7 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 | Network | Intel Wireless-AC · WiFi only (`wlo1`) |
 | OS | Ubuntu 24.04.4 |
 | IP | `192.168.1.6` (DHCP) |
-| Role | NFS server (`/srv/fs-ext`) · YAMS media stack · suspend disabled |
+| Role | YAMS media stack · suspend disabled (`sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target`) |
 
 ### opti (`opti.lan` / `192.168.1.11`)
 
@@ -103,7 +116,13 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
     certs/               ← TLS certs for webapp
 ```
 
-**Note:** OMV manages `/etc/exports` and Samba config on opti — do NOT hand-edit these files.
+**Note:** OMV manages Samba config on opti — do NOT hand-edit it directly.
+
+**NFS:** removed 2026-07-11. `nfs-kernel-server` (plus `rpcbind`/`rpc-statd`) was installed
+and running on opti but exported nothing — `/etc/exports` was empty, and the fstab entry
+for mounting noblenumbat's export was commented out and never finished. All cross-host
+storage sharing runs on Samba/CIFS instead (see §10). Disabled and removed rather than
+left idle, to shrink unused attack surface.
 
 ---
 
@@ -118,11 +137,12 @@ VPN tunnel: 10.8.0.0/24   (WireGuard peers, up to 5)
 /srv/docker/compose/nginx.conf           # nginx reverse proxy config
 /srv/docker/compose/bitwarden-db/data/   # MariaDB data (bind mount)
 /srv/docker/compose/vaultwarden-data/    # Vaultwarden data (bind mount)
-/srv/docker/compose/data/wireguard/      # WireGuard config (bind mount)
-/srv/fs/                                 # Local storage pool (74 GB SD card)
-/srv/fs-merged/                          # mergerfs mount (local + NFS combined)
-/mnt/noblenumbat-fs/                     # NFS mount from noblenumbat
-/mnt/noblenumbat-fs/ptm/logging/         # Deploy & stack logs (Samba-accessible)
+/srv/docker/compose/data/wireguard*/      # orphaned WireGuard config — service decommissioned, see §6
+/mnt/opti-fs/                            # CIFS mount of \\opti\fs — the real shared storage (see §10)
+/mnt/opti-fs/ptm/logging/                # Deploy & stack logs
+/mnt/opti-fs/ptm/security-reports/       # Security agent reports (see §15)
+/mnt/opti-fs/ptm/agent-logs/             # Homelab agent reports (see §15)
+/mnt/workstation-agent-logs/             # CIFS mount from tux (192.168.1.3), read-only
 ```
 
 **Manage Docker stack:**
@@ -145,13 +165,17 @@ Stack at `/srv/docker/compose/docker-compose.yml`. All services use the shared `
 | Container | Image | Network | Ports |
 |---|---|---|---|
 | `pihole` | `pihole/pihole:latest` | host | :53 (DNS/UDP+TCP), :67 (DHCP), :80/:443 (web UI) |
-| `wireguard` | `linuxserver/wireguard` | default | `51820:51820/udp` |
 | `nginx-bitwarden` | `nginx:stable-alpine` | internal bridge | `443:443` |
 | `bitwarden` | `vaultwarden/server:latest` | internal bridge | :80 (internal only) |
 | `bitwarden-db` | `mariadb:11` | internal bridge | :3306 (internal only) |
-| `samba` | `dperson/samba` | default | `192.168.1.10:445:445` |
-| `wg-manager` | `node:lts-alpine` | internal bridge | :3000 (internal only) |
-| `nginx-wgmgr` | `nginx:stable-alpine` | internal bridge | `192.168.1.10:8443:443` |
+| `webapp` | `node:lts-alpine` | internal bridge | :3000 (internal only) — homelab dashboard backend (§15) |
+| `nginx-webapp` | `nginx:stable-alpine` | internal bridge | `192.168.1.10:8443:443` |
+| `notes-api` | (compose build) | internal bridge | `192.168.1.10:3002:3002` |
+
+Decommissioned, no longer present: `wireguard` (§6), `samba`/`dperson-samba` (§9),
+`wg-manager` + `nginx-wgmgr` — the latter two were replaced in place by `webapp` +
+`nginx-webapp` (same port 8443, repurposed from WireGuard peer management to the homelab
+agents/reports dashboard — see §15).
 
 **Docker network `internal`:** Bridge network isolating Nginx, Vaultwarden, and MariaDB from the host. Only Nginx is reachable from outside (via port 443).
 
@@ -200,11 +224,24 @@ docker logs pihole --tail=100 -f
 
 ---
 
-## 6. WireGuard — VPN
+## 6. WireGuard — VPN (decommissioned)
+
+**Decommissioned — confirmed gone 2026-07-11.** No `wireguard` container, no `wg0`
+interface, nothing listening on UDP 51820. This section originally documented a
+`linuxserver/wireguard` container (5 auto-provisioned peers, `10.8.0.0/24`, `vpn.rpi.lan`)
+that no longer exists — kept below for history only, **do not follow it as current state.**
+
+Orphaned config data is still on disk at `/srv/docker/compose/data/wireguard*` on rpi
+(never cleaned up). **Practical impact: there is currently no VPN and no off-LAN access
+into this homelab at all** — see the note in §1. If WireGuard (or a replacement like
+Tailscale) is wanted again, that's a fresh setup, not a restart of anything existing.
+
+<details>
+<summary>Original config (historical, non-functional)</summary>
 
 **Image:** `linuxserver/wireguard`
 
-**Config volume:** `./data/wireguard:/config` — peer configs are auto-generated here by the container on first start.
+**Config volume:** `./data/wireguard:/config` — peer configs were auto-generated here by the container on first start.
 
 **Key settings:**
 ```yaml
@@ -216,23 +253,9 @@ INTERNAL_SUBNET: 10.8.0.0   # VPN address space (10.8.0.0/24)
 PUID/PGID: 1000
 ```
 
-**Port:** `51820/udp` mapped to host (no bind to specific IP — listens on all interfaces).
-
 **Capabilities:** `NET_ADMIN`, `SYS_MODULE` + kernel module volume `/lib/modules:/lib/modules` + sysctl `net.ipv4.conf.all.src_valid_mark=1`
 
-**Peer configs** are generated at:
-```
-./data/wireguard/peer1/peer1.conf       # client config file
-./data/wireguard/peer1/peer1.png        # QR code for mobile
-```
-
-**Note:** `vpn.rpi.lan` needs to resolve from the outside internet for external VPN peers to connect. Currently no peers are provisioned. If adding an external peer, either set `SERVERURL` to the Pi's public IP or set up DDNS.
-
-**Debug:**
-```bash
-docker exec wireguard wg show
-docker logs wireguard --tail=50
-```
+</details>
 
 ---
 
@@ -334,29 +357,18 @@ docker exec bitwarden-db mysqldump -u bitwarden -p bitwarden > ~/bitwarden-backu
 
 ## 9. Samba — File Server
 
-**Image:** `dperson/samba`
-**Port:** `192.168.1.10:445:445` (bound to Pi's LAN IP only — not exposed on 0.0.0.0)
-
-**Share config (from compose `command`):**
-```
--u "ptm;<password>"         # create user ptm
--s "FS;/share;yes;no;no;ptm"  # share name FS, path /share, browsable, not readonly, not guest, owner ptm
-```
-
-**Volume mounts:**
-- `/srv/fs-merged:/share` — the mergerfs pool is the share root
-- Named volumes for Samba state: `samba_etc`, `samba_run`, `samba_cache`, `samba_lib`, `samba_log`
-
-**Access:**
-- Windows: `\\192.168.1.10\FS` or `\\rpi.lan\FS`
-- Linux: `smb://192.168.1.10/FS`
-
-**USERID/GROUPID:** `1000` / `1003`
+**Decommissioned.** rpi used to run its own `dperson/samba` container serving a local
+`/srv/fs-merged` mergerfs pool (local SD card + NFS from noblenumbat) as `\\rpi.lan\FS`.
+That entire architecture was replaced by opti's centralized Samba/mergerfs setup — rpi
+runs no Samba server today (confirmed: no `samba` container in `docker ps`, `/srv/fs-merged`
+doesn't exist). **The real, current Samba file server is on opti** — see §2 (`\\opti\fs`)
+and §10 for the full storage architecture. This section is kept only so the history isn't
+lost; don't follow its old paths.
 
 **Healthcheck:** `smbclient -L \\localhost -U % -m SMB3` every 60s
 
-**Logging subdirectory** (separate from the FS share):
-- `\\rpi.lan\ptm\logging` → `/mnt/noblenumbat-fs/ptm/logging/` — deploy and stack logs land here, accessible from Windows.
+**Logging subdirectory** (on opti's share, not rpi's local Samba):
+- `\\opti.lan\fs\ptm\logging` → `/mnt/opti-fs/ptm/logging/` on rpi — deploy and stack logs land here, accessible from Windows.
 
 **Debug:**
 ```bash
@@ -366,62 +378,71 @@ docker logs samba --tail=50
 
 ---
 
-## 10. Storage — mergerfs + NFS
+## 10. Storage — mergerfs + Samba/CIFS
 
 ### Architecture
 
+**opti is the single source of truth for shared storage.** An OMV-managed mergerfs pool
+on opti unifies its local disk(s), and everything else in the homelab reaches it over
+Samba/CIFS — there is no NFS anywhere in this stack (see §2 "NFS: removed 2026-07-11" for
+why; a partial NFS setup was planned early on and never finished, so it's been fully
+removed rather than left as unused surface).
+
 ```
-/srv/fs-merged/         ← mergerfs mount (unified pool)
-    ├── /srv/fs/            ← local SD card storage (~74 GB)
-    └── /mnt/noblenumbat-fs/  ← NFS from noblenumbat (/srv/fs-ext, ~397 GB)
+opti — /srv/pool/                    ← OMV mergerfs pool (~1.1 TB total)
+  ptm/
+    Media/Movies/, Media/Shows/      ← Jellyfin library (noblenumbat mounts these)
+    Media-Import/                    ← file-drop inbox
+    security-reports/, agent-logs/   ← homelab agent reports
+    certs/, logging/, repo/, ...
 
-Total pool: ~585 GB · Available: ~470 GB
-```
-
-Samba shares `/srv/fs-merged` as `\\rpi.lan\FS`.
-
-### NFS
-
-**Server:** noblenumbat (`192.168.1.6`) exports `/srv/fs-ext`
-
-**Client:** Pi mounts it at `/mnt/noblenumbat-fs`
-
-Check Pi's `/etc/fstab` entry:
-```fstab
-192.168.1.6:/srv/fs-ext  /mnt/noblenumbat-fs  nfs  defaults,_netdev  0  0
-```
-
-**Verify NFS mount:**
-```bash
-mountpoint /mnt/noblenumbat-fs
-df -h /mnt/noblenumbat-fs
-showmount -e 192.168.1.6           # from Pi
+    │  Samba (\\opti\fs)
+    ▼
+  ├── rpi        mounts the whole share at /mnt/opti-fs
+  └── noblenumbat mounts specific subfolders: /mnt/opti-library, /mnt/opti-shows,
+                  /mnt/opti-media (see §16 storage layout)
 ```
 
-**On noblenumbat — check NFS exports:**
-```bash
-cat /etc/exports
-sudo exportfs -v
-systemctl status nfs-kernel-server
-```
-
-**If NFS drops:** mergerfs degrades gracefully to local-only. Samba stays up. Re-mount:
-```bash
-sudo mount /mnt/noblenumbat-fs     # or: sudo mount -a
-```
-
-### mergerfs
+### mergerfs (on opti)
 
 **Check pool status:**
 ```bash
-df -h /srv/fs-merged
-ls /srv/fs-merged
+df -h /srv/pool
+ls /srv/pool
 ```
 
 **Check policy** (mergerfs uses `ff` / `mfs` / `lfs` etc. for placement — check `/etc/fstab` or systemd unit for the mount options):
 ```bash
 cat /proc/mounts | grep mergerfs
 ```
+
+### CIFS mounts (client side)
+
+Every mount uses `_netdev,nofail` (or `x-systemd.automount` on noblenumbat) so a slow or
+down opti never hangs a client's boot — the mount just fails/degrades gracefully and
+`mount -a` (or the automount trigger) picks it back up once opti's reachable again.
+
+**rpi** (`/etc/fstab`):
+```fstab
+//192.168.1.11/fs  /mnt/opti-fs  cifs  credentials=/etc/opti-creds,uid=1000,gid=1003,_netdev,nofail,iocharset=utf8,vers=3.0  0  0
+```
+
+**noblenumbat** (`/etc/fstab`, three separate sub-mounts):
+```fstab
+//192.168.1.11/fs/ptm/Media-Import  /mnt/opti-media    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+//192.168.1.11/fs/ptm/Media/Movies  /mnt/opti-library  cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+//192.168.1.11/fs/ptm/Media/Shows   /mnt/opti-shows    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+```
+
+**Verify a mount:**
+```bash
+mountpoint /mnt/opti-fs        # or /mnt/opti-library, etc.
+df -h /mnt/opti-fs
+```
+
+**If a mount drops:** re-mount with `sudo mount -a`. If that fails with a connection error
+immediately after opti was rebooted or its network changed, give opti a minute to finish
+starting Samba (`smbd`), then retry.
 
 ---
 
@@ -438,7 +459,7 @@ The Pi runs a self-hosted GitHub Actions runner process that **polls** GitHub's 
 2. `cp "Peters Spellbook/RPI/docker-compose.yml" /srv/docker/compose/docker-compose.yml` — deploy compose file
 3. `docker compose pull` — pull latest images
 4. `docker compose up -d --remove-orphans` — bring stack up, remove stale containers
-5. `docker compose logs --tail=200` (if: always) — capture startup logs → `/mnt/noblenumbat-fs/ptm/logging/deploy-<timestamp>.log`
+5. `docker compose logs --tail=200` (if: always) — capture startup logs → `/mnt/opti-fs/ptm/logging/deploy-<timestamp>.log`
 
 **Timeout:** 10 minutes. **Trigger:** also supports `workflow_dispatch` for manual runs from GitHub UI.
 
@@ -473,23 +494,23 @@ cd ~/actions-runner
 
 ### Deploy logs (per-deploy snapshot)
 
-**Location:** `/mnt/noblenumbat-fs/ptm/logging/deploy-YYYYMMDD-HHMMSS.log`
+**Location:** `/mnt/opti-fs/ptm/logging/deploy-YYYYMMDD-HHMMSS.log`
 **Created by:** Step 5 of the CI workflow (`docker compose logs --tail=200`)
-**Windows path:** `\\rpi.lan\ptm\logging\`
+**Windows path:** `\\opti.lan\fs\ptm\logging\`
 **Logrotate:** 10 rotations × 5 MB max = 50 MB total
 
 ### Stack log (continuous live stream)
 
-**Location:** `/mnt/noblenumbat-fs/ptm/logging/stack.log`
+**Location:** `/mnt/opti-fs/ptm/logging/stack.log`
 **Created by:** `docker-stack-logs.service` (systemd) — streams `docker compose logs -f` continuously
 **Logrotate:** 5 rotations × 20 MB max = 100 MB total (uses `copytruncate`)
 
 **Live tail:**
 ```bash
-tail -f /mnt/noblenumbat-fs/ptm/logging/stack.log
+tail -f /mnt/opti-fs/ptm/logging/stack.log
 ```
 
-**From Windows:** open `\\rpi.lan\ptm\logging\stack.log` in a text editor that supports live reload.
+**From Windows:** open `\\opti.lan\fs\ptm\logging\stack.log` in a text editor that supports live reload.
 
 **Service management:**
 ```bash
@@ -550,7 +571,7 @@ docker volume prune -f                   # careful: only removes volumes not in 
 
 ```bash
 ss -tlnp
-ss -ulnp                                 # UDP (for DNS :53, WireGuard :51820)
+ss -ulnp                                 # UDP (for DNS :53)
 ```
 
 ### Pi system
@@ -584,24 +605,25 @@ dig @192.168.1.10 bitwarden.rpi.lan
 ss -tlnp | grep 53
 ss -ulnp | grep 53
 
-# WireGuard
-docker exec wireguard wg show
-
-# Samba reachability
-smbclient -L \\\\192.168.1.10 -U ptm -m SMB3
+# Samba reachability (on opti — the real Samba server, see §9/§10)
+smbclient -L \\\\192.168.1.11 -U ptm -m SMB3
 ```
 
-### NFS troubleshooting
+### CIFS troubleshooting
 
 ```bash
-# On Pi — check if NFS mount is live
-mountpoint -q /mnt/noblenumbat-fs && echo "mounted" || echo "NOT mounted"
-showmount -e 192.168.1.6
+# On any client (rpi, noblenumbat) — check if the opti share is mounted
+mountpoint -q /mnt/opti-fs && echo "mounted" || echo "NOT mounted"   # rpi
+df -h /mnt/opti-fs /mnt/opti-library /mnt/opti-shows /mnt/opti-media 2>/dev/null
 
-# On noblenumbat — check NFS server
-sudo systemctl status nfs-kernel-server
-sudo exportfs -v
+# Re-mount
+sudo mount -a
+
+# On opti — check Samba is up
+systemctl status smbd
+smbclient -L \\\\localhost -U % -m SMB3
 ```
+(There is no NFS anywhere in this stack — see §10.)
 
 ### Vaultwarden / MariaDB
 
@@ -635,85 +657,17 @@ sudo logrotate -f /etc/logrotate.d/docker-stack
 
 ---
 
-## 14. WireGuard Peer Manager — Web UI
+## 14. WireGuard Peer Manager — Web UI (decommissioned)
 
-### Overview
+**Decommissioned along with WireGuard itself (§6).** This used to be a self-hosted
+Node.js/Express + NGINX web UI for managing WireGuard peers at `https://wg.rpi.lan:8443`
+(`wg-manager` + `nginx-wgmgr` containers, `wg.rpi.lan.pem` cert, `/api/peers` routes).
 
-Self-hosted web UI for managing WireGuard peers. Replaces manual config file editing.
-Built with Node.js/Express (backend) + vanilla HTML/JS (frontend), served over HTTPS via a dedicated NGINX container.
-
-**URL:** `https://wg.rpi.lan:8443` (LAN only — NGINX bound to `192.168.1.10:8443`)
-
-### Containers
-
-| Container | Image | Port |
-|---|---|---|
-| `wg-manager` | `node:lts-alpine` | :3000 (internal only) |
-| `nginx-wgmgr` | `nginx:stable-alpine` | `192.168.1.10:8443:443` |
-
-### Volumes
-
-| Mount | Purpose |
-|---|---|
-| `./data/wireguard:/wg-config` | Read/write WireGuard peer configs (shared with `wireguard` container) |
-| `/var/run/docker.sock:/var/run/docker.sock` | Exec `wg syncconf` into the `wireguard` container to apply changes live |
-| `./webapp:/app` | Node app source (deployed by CI) |
-| `/srv/fs-merged/ptm/certs/wg.rpi.lan.pem` | TLS cert (off-repo, stored at `/srv/fs-merged/ptm/certs/`) |
-| `/srv/fs-merged/ptm/certs/wg.rpi.lan-key.pem` | TLS key (off-repo) |
-
-### How peer reload works
-
-After adding or removing a peer, the backend runs:
-```bash
-docker exec wireguard sh -c "wg syncconf wg0 <(wg-quick strip /config/wg0.conf)"
-```
-This is **non-disruptive** — existing VPN sessions are not dropped.
-
-### API endpoints
-
-| Method | Route | Action |
-|---|---|---|
-| GET | `/api/peers` | List all peers from `wg0.conf` |
-| GET | `/api/peers/status` | Live handshake/transfer data from `wg show` |
-| POST | `/api/peers` | Add peer (body: `{ "name": "..." }`) |
-| DELETE | `/api/peers/:dir` | Remove peer by directory name (e.g. `peer_laptop`) |
-| GET | `/api/peers/:dir/config` | Download `.conf` file |
-| GET | `/api/peers/:dir/qr` | Get QR code PNG |
-
-### TLS cert
-
-Self-signed, 10-year validity. Stored off-repo at `/srv/fs-merged/ptm/certs/`.
-To regenerate:
-```bash
-openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
-  -keyout /srv/fs-merged/ptm/certs/wg.rpi.lan-key.pem \
-  -out /srv/fs-merged/ptm/certs/wg.rpi.lan.pem \
-  -subj "/CN=wg.rpi.lan" \
-  -addext "subjectAltName=DNS:wg.rpi.lan,IP:192.168.1.10"
-```
-
-### Pi-hole DNS record
-
-`wg.rpi.lan → 192.168.1.10` (Local DNS Records in Pi-hole UI)
-
-### Manual fallback (if webapp is down)
-
-Add peer manually:
-```bash
-# Edit wg0.conf directly
-nano /srv/docker/compose/data/wireguard/wg0.conf
-
-# Reload live (no session drop)
-docker exec wireguard sh -c "wg syncconf wg0 <(wg-quick strip /config/wg0.conf)"
-```
-
-### Debug
-
-```bash
-docker logs wg-manager --tail=50
-docker logs nginx-wgmgr --tail=50
-curl -k https://wg.rpi.lan:8443/api/peers
-```
+**The container slot and port were reused, not left empty:** `wg-manager` → `webapp`,
+`nginx-wgmgr` → `nginx-webapp`, same `192.168.1.10:8443`, but repurposed entirely into the
+**homelab agents/reports dashboard** — see §15 for what actually lives there today
+(`webapp.rpi.lan:8443`, cert `webapp.rpi.lan.pem`, routes are `/api/agents` + `/api/reports`,
+nothing WireGuard-related remains in the current codebase).
 
 ---
 
@@ -724,12 +678,14 @@ curl -k https://wg.rpi.lan:8443/api/peers
 | Pi-hole web UI | `http://192.168.1.10/admin` | or `http://rpi.lan/admin` |
 | Vaultwarden | `https://bitwarden.rpi.lan` | LAN only — self-signed cert |
 | Vaultwarden admin | `https://bitwarden.rpi.lan/admin` | requires admin token |
-| Samba share (Pi) | `\\192.168.1.10\FS` | or `\\rpi.lan\FS` |
-| Samba share (opti) | `\\192.168.1.11\fs` | or `\\opti.lan\fs` · OMV-managed |
+| Samba share (opti) | `\\192.168.1.11\fs` | or `\\opti.lan\fs` · OMV-managed · **the** file share (rpi's old local Samba is decommissioned, see §9) |
 | Media drop inbox | `\\opti.lan\fs\ptm\Media-Import\` | drop video files here for Jellyfin auto-import |
 | Movie library storage | `\\opti.lan\fs\ptm\Media\Movies\` | primary movie library (served by Jellyfin on noblenumbat) |
-| Deploy logs | `\\rpi.lan\ptm\logging\` | deploy + stack logs |
-| WireGuard Manager | `https://wg.rpi.lan:8443` | LAN only — self-signed cert |
+| Deploy logs | `\\opti.lan\fs\ptm\logging\` | deploy + stack logs |
+| opti RDP | `192.168.1.11:3389` | xrdp, open to LAN (see §17) |
+| noblenumbat RDP | `192.168.1.6:3389` | gnome-remote-desktop, scoped to specific IPs (see §17) |
+| Cockpit (rpi) | `https://192.168.1.10:9090` | admin web UI |
+| Homelab dashboard | `https://webapp.rpi.lan:8443` | LAN only — self-signed cert · agents/reports UI (§15), formerly the WireGuard peer manager (§14) |
 | **Jellyfin** | `http://jellyfin.lan:8096` | runs on noblenumbat · user: admin |
 | Radarr | `http://192.168.1.6:7878` | noblenumbat · movie manager |
 | Sonarr | `http://192.168.1.6:8989` | noblenumbat · TV manager |
@@ -752,29 +708,12 @@ curl -k https://wg.rpi.lan:8443/api/peers
 | `/srv/docker/compose/certs/` | TLS certs for bitwarden.rpi.lan |
 | `/srv/docker/compose/bitwarden-db/data/` | MariaDB data directory |
 | `/srv/docker/compose/vaultwarden-data/` | Vaultwarden data directory |
-| `/srv/docker/compose/data/wireguard/` | WireGuard config + peer keys |
-| `/srv/fs/` | Local SD card storage pool |
-| `/srv/fs-merged/` | mergerfs unified mount |
-| `/mnt/noblenumbat-fs/` | NFS mount from noblenumbat |
-| `/mnt/noblenumbat-fs/ptm/logging/` | All homelab logs |
+| `/srv/docker/compose/data/wireguard*/` | orphaned WireGuard config — service decommissioned, see §6 |
+| `/mnt/opti-fs/` | CIFS mount of `\\opti\fs` — the real shared storage (see §10) |
+| `/mnt/opti-fs/ptm/logging/` | All homelab logs |
 | `~/actions-runner/` | GitHub Actions runner install |
 | `/etc/systemd/system/docker-stack-logs.service` | Live log streaming service |
 | `/etc/logrotate.d/docker-stack` | Log rotation config |
-
----
-
-## noblenumbat — NFS Server Config
-
-**NFS export:** `/srv/fs-ext` → Pi
-
-**Check exports file:**
-```
-/srv/fs-ext  192.168.1.10(rw,sync,no_subtree_check,no_root_squash)
-```
-
-**Suspend disabled:** `sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target`
-
-**If noblenumbat goes down:** Pi loses `/mnt/noblenumbat-fs`. mergerfs degrades to local `/srv/fs` only. Samba + all Docker services stay up. NFS re-mounts on Pi reboot or manual `mount /mnt/noblenumbat-fs`.
 
 ---
 
@@ -821,6 +760,10 @@ the webapp **Home** card; dormant unless `LEETIFY_API_KEY` + `STEAM64_ID` are se
   label keeps it off the Pi deploy runner. `homelab-doctor`+`network` every 30 min; `hardware`,
   `software` + security agents daily. `leetify-stats` and `refresh-cs2-knowledge` make paid Claude
   calls and are **not scheduled** — run them on demand via "Run workflow" (`workflow_dispatch`).
+  Because it's on-demand, `leetify-latest.json` is explicitly exempted from staleness checks
+  (`MANUAL_ONLY_REPORTS` in `homelab-doctor.py`, `manual: true` in the webapp's `agents.js`
+  `CATALOG`) — otherwise every homelab-doctor run flagged it as a false-positive "stale report"
+  simply because it hadn't been run recently on purpose.
 - **Dispatcher:** `hl-agent-dispatcher.service` on opti (`:9099`) owns `agents-state.json` and runs
   agents on demand from an allowlist. The webapp **Enable/Disable** + **Run now** buttons proxy to
   it over the LAN. Both schedule and run-now honor the enabled flag.
@@ -955,13 +898,23 @@ FlareSolverr runs on port `8191` and solves Cloudflare challenges on behalf of P
 
 Defined in `docker-compose.custom.yaml` (not the YAMS base compose, so YAMS updates won't clobber it). Mylar3 monitors series and pushes torrents to qBittorrent (via gluetun, same as everything else); completed downloads land in `/srv/media/comics/`, which Kavita serves as a phone-friendly web reader (also covers `/srv/media/books/`).
 
+**Mobile / offline reading (set up 2026-07-12):** Kavita is reachable on LAN at
+`http://comics.lan:5000` (Pi-hole record). Comics are read on the Pixel 10 via **Mihon**
+with the official Kavita extension (extension repo: `Kareadita/tach-extension` on GitHub;
+configured with the per-user OPDS URL from Kavita → User Dashboard → 3rd Party Clients).
+Chapters are downloaded in Mihon over home WiFi and read offline anywhere — **no remote
+access by design** (no VPN/port forward; Tailscale/WireGuard considered and deliberately
+skipped). OPDS is enabled server-side (`EnableOpds` in ServerSetting, verified 2026-07-12).
+Progress sync is chapter-level: Mihon marks finished chapters as read back in Kavita.
+Caveat: Mihon handles CBZ/CBR only — EPUBs in `books/` still need the Kavita web reader.
+
 One-time wiring (all via UIs):
 1. **Mylar3** (`:8090`) → Settings → Web Interface: note the API key. Settings → Download → Torrents: qBittorrent, host `172.60.0.18`, port `8081` (gluetun IP — qBittorrent lives in gluetun's netns), qBittorrent credentials, label/category `comics`. Comic Location: `/data/comics`.
 2. **Mylar3 metadata:** requires a free ComicVine API key (comicvine.gamespot.com/api) → Settings → Web Interface → ComicVine API.
 3. **Prowlarr** (`:9696`) → Settings → Apps → add **Mylar** → Prowlarr server `http://prowlarr:9696`, Mylar server `http://mylar3:8090`, Mylar3 API key. Indexers with the Comics category sync automatically.
 4. **Kavita** (`:5000`) → create admin account on first visit → Add library: type *Comics*, folder `/data/comics` (optionally a second *Books* library at `/data/books`).
 
-Phone reading: open `http://192.168.1.6:5000` in the phone browser → "Add to Home Screen" (PWA, remembers reading position). Native apps connect via OPDS (Kavita → user settings → OPDS URL): Mihon on Android (Kavita extension), Panels/Chunky on iOS. Off-LAN: connect the phone's WireGuard tunnel first (see §WireGuard).
+Phone reading: open `http://192.168.1.6:5000` in the phone browser → "Add to Home Screen" (PWA, remembers reading position). Native apps connect via OPDS (Kavita → user settings → OPDS URL): Mihon on Android (Kavita extension), Panels/Chunky on iOS. **Off-LAN reading currently isn't possible** — WireGuard (the VPN this used to route through) is decommissioned, see §6.
 
 ### What is NOT configured (intentional)
 
@@ -1000,4 +953,101 @@ homelab/noblenumbat-srv/yams/
   media-import.sh             ← file-drop importer script
   media-import.service        ← systemd unit
   media-import.timer          ← systemd timer (2 min interval)
+```
+
+---
+
+## 17. Remote Access
+
+### SSH
+
+Enabled and reachable on all three servers — opti, rpi, noblenumbat. Standard OpenSSH,
+key-based auth. rpi did not have passwordless sudo configured for the automation SSH key
+until 2026-07-11 (`/etc/sudoers.d/ptm-nopasswd`, added manually) — opti and noblenumbat
+already had it.
+
+### RDP
+
+| Host | Server | Port(s) | Firewall scope |
+|---|---|---|---|
+| **opti** | xrdp | 3389 (LAN), 3350 (xrdp-sesman, loopback only) | Open to full LAN (`192.168.1.0/24`) — matches opti's existing blanket ufw rule |
+| **noblenumbat** | gnome-remote-desktop | 3389 (system daemon) + 3390 (user session) | Scoped via ufw to specific source IPs only: `192.168.1.3`, `.5`, `.6` |
+| **rpi** | — none — | — | Intentionally SSH-only. Headless 3.7GB-RAM appliance (Pi-hole/webapp) — not worth the XFCE+xrdp footprint for occasional access. |
+| tux (workstation) | — out of scope — | — | Considered during the 2026-07-11 remote-access review and explicitly retracted; not part of the managed fleet. |
+
+Both opti's xrdp and noblenumbat's gnome-remote-desktop predate this doc section — they
+were already deployed and working, just undocumented. This section makes them official.
+
+### Other listening services worth knowing about (not remote-access, but adjacent)
+
+These showed up as "unexpected" in `network-report`'s port audit before being whitelisted
+(`PER_HOST_EXPECTED_PORTS` in `network-report.py`) — all confirmed benign:
+
+- **opti — wsdd (5357) + LLMNR (5355):** Windows network-browsing helpers so `\\opti\fs`
+  shows up in Windows' Network view. Not a security concern on a LAN-only service.
+- **noblenumbat — rpcbind (111):** pulled in by `nfs-common`, used for NFS *client* support
+  only (nothing on noblenumbat exports anything). Harmless, low-value to remove.
+- **noblenumbat — cupsd (631):** loopback-only print system, standard Ubuntu desktop default.
+- **rpi — Cockpit (9090):** the standard Debian/Ubuntu web-based admin UI
+  (`https://192.168.1.10:9090`). No firewall scoping applied — same treatment as other
+  admin UIs like Portainer.
+
+---
+
+## 18. Daily Maintenance — auto-update & reboot
+
+Unattended daily package updates across opti, rpi, and noblenumbat, added 2026-07-11.
+
+### What it does
+
+Two systemd timer/service pairs, identical on all three hosts:
+
+- **`homelab-autoupdate.timer`** — fires daily at **02:00** (±5 min randomized delay so all
+  three hosts don't hit apt mirrors simultaneously). Runs `homelab-autoupdate.sh`:
+  `apt-get update && apt-get upgrade -y && apt-get autoremove -y`, unattended
+  (`DEBIAN_FRONTEND=noninteractive`). Logs to `/var/log/homelab-autoupdate.log`.
+- **`homelab-autoreboot.timer`** — fires daily at **03:00**, one hour after the update
+  window. Runs `homelab-autoreboot.sh`, which checks for `/var/run/reboot-required` (the
+  standard Debian/Ubuntu marker dpkg creates when a kernel/libc/etc. upgrade needs a
+  reboot) and **only reboots if that file is present**. Most nights, nothing happens.
+
+This **layers on top of**, not replaces, the stock `unattended-upgrades` +
+`apt-daily-upgrade.timer` already active on all three boxes (security-origin packages
+only, no auto-reboot by default). The new timers do a full `apt upgrade -y` across all
+repos and add the reboot behavior. The overlap between the two systems is harmless — `apt
+upgrade` is idempotent.
+
+### Reboot safety
+
+Confirmed safe before this was deployed — see the boot-resilience notes throughout this
+doc (`unless-stopped` restart policy on every docker container, `_netdev,nofail` /
+`x-systemd.automount` on every CIFS mount, all relevant services `enabled` at boot). A
+reboot on any of the three hosts should come back to a fully working state with no manual
+intervention.
+
+### Repo files & deployment
+
+```
+homelab/Tools/automation/
+  homelab-autoupdate.sh        ← apt update + upgrade + autoremove
+  homelab-autoupdate.service   ← oneshot, runs the script above
+  homelab-autoupdate.timer     ← daily 02:00 (+jitter)
+  homelab-autoreboot.sh        ← checks /var/run/reboot-required, reboots if present
+  homelab-autoreboot.service   ← oneshot, runs the script above
+  homelab-autoreboot.timer     ← daily 03:00
+```
+
+Deployed identically to opti, rpi, noblenumbat:
+```bash
+sudo install -m 755 homelab-autoupdate.sh homelab-autoreboot.sh -t /usr/local/bin/
+sudo install -m 644 homelab-autoupdate.service homelab-autoreboot.service \
+                     homelab-autoupdate.timer homelab-autoreboot.timer -t /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now homelab-autoupdate.timer homelab-autoreboot.timer
+```
+
+**Check status:**
+```bash
+systemctl list-timers homelab-auto*
+tail -f /var/log/homelab-autoupdate.log
 ```

@@ -1,0 +1,10 @@
+[Unit]
+# Reboots only if /var/run/reboot-required exists (left by homelab-autoupdate.service).
+# Install alongside homelab-autoupdate — see that .service file's header for the copy steps;
+# also copy homelab-autoreboot.sh to /usr/local/bin/ and chmod +x it.
+Description=Homelab conditional reboot (only if reboot-required)
+After=homelab-autoupdate.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/homelab-autoreboot.sh

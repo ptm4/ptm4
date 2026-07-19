@@ -9,6 +9,11 @@ on:
       - "homelab/RPI-srv/webapp/**"
       - "homelab/RPI-srv/nginx-wg.conf"
       - "homelab/RPI-srv/notes-app/**"
+      - "homelab/RPI-srv/discord-weather/**"
+      - "homelab/RPI-srv/discord-healthdigest/**"
+      - "homelab/RPI-srv/discord-jellyfin/**"
+      - "homelab/RPI-srv/discord-sports/**"
+      - "homelab/RPI-srv/discord-hltv/**"
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
 jobs:
@@ -37,6 +42,14 @@ jobs:
           cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/api/." /srv/docker/compose/notes-app/api/
           cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/notes-app/web/." /srv/docker/compose/notes-app/web/
 
+      - name: Copy discord bots
+        # must run before "Bring stack up" — compose references these build contexts
+        run: |
+          for bot in discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv; do
+            mkdir -p "/srv/docker/compose/$bot"
+            cp -r "$GITHUB_WORKSPACE/homelab/RPI-srv/$bot/." "/srv/docker/compose/$bot/"
+          done
+
       - name: Pull latest images
         working-directory: /srv/docker/compose
         run: docker compose pull
@@ -54,6 +67,12 @@ jobs:
         run: |
           docker compose build notes-api
           docker compose up -d notes-api
+
+      - name: Build and restart discord bots
+        working-directory: /srv/docker/compose
+        run: |
+          docker compose build discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
+          docker compose up -d discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
 
       - name: Restart nginx to pick up config changes
         working-directory: /srv/docker/compose

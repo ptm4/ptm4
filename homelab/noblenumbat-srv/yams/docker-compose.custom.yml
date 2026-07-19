@@ -12,7 +12,7 @@ services:
     environment:
       - JELLYFIN_PublishedServerUrl=http://jellyfin.lan:8096
     volumes:
-      # movie + TV libraries live on opti (CIFS mounts); nested over the /srv/media:/data bind
+      # movie + TV libraries live on opti (CIFS); nested over the /srv/media:/data bind
       - /mnt/opti-library:/data/movies
       - /mnt/opti-shows:/data/tvshows
 
@@ -40,12 +40,12 @@ services:
       - /etc/localtime:/etc/localtime:ro
       - ${MEDIA_DIRECTORY}:/data
       - ${INSTALL_DIRECTORY}/config/mylar3:/config
-    ports:
-      - 8090:8090
+    #ports: # mylar3 — published via gluetun
+      #- 8090:8090 # mylar3
     restart: unless-stopped
-    networks:
-      default:
-        ipv4_address: 172.60.0.22
+    # rides the VPN netns: GetComics' Cloudflare clearance cookie is bound to the
+    # egress IP, so mylar must exit through the same tunnel as flaresolverr
+    network_mode: "service:gluetun"
 
   # Kavita serves the comic/book library (CBZ/CBR/epub/PDF web reader + OPDS)
   kavita:

@@ -23,8 +23,23 @@ from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
 
 REPORT_BASE = "network-latest"
 
-# ports we expect to be bound on a host's LAN surface
+# ports we expect to be bound on a host's LAN surface, common to all hosts
 EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099}
+
+# additional per-host expected ports — see homelab-techdoc.md "Remote Access"
+# and "Homelab Agent Platform" sections for what each of these is
+PER_HOST_EXPECTED_PORTS = {
+    "opti": {139, 3389, 3350, 5355, 5357},   # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
+    "rpi": {111, 9090},                       # idle rpcbind, Cockpit admin UI
+    "noblenumbat": {
+        111, 631,                             # rpcbind (nfs-common, client support), cupsd (loopback)
+        3389, 3390,                           # gnome-remote-desktop
+        5000, 6767, 7878, 8003, 8081, 8090, 8096,
+        8191, 8388, 8686, 8888, 8989, 9000, 9696,
+        # kavita, bazarr, radarr, gluetun-admin, qbittorrent, mylar3, jellyfin,
+        # flaresolverr, gluetun-shadowsocks/http-proxy, lidarr, portainer, sonarr, prowlarr
+    },
+}
 
 
 def _run(host, cmd, timeout=15):
@@ -158,7 +173,8 @@ def collect_host(host):
     if lookups.get("github.com") is None:
         findings.append({"severity": "critical", "message": f"[{host.name}] DNS resolution failing (github.com)"})
 
-    unexpected = sorted(p for p in ports if p not in EXPECTED_PORTS)
+    allowed = EXPECTED_PORTS | PER_HOST_EXPECTED_PORTS.get(host.name, set())
+    unexpected = sorted(p for p in ports if p not in allowed)
     if unexpected:
         recs.append({"severity": "warn",
                      "message": f"[{host.name}] Unexpected listening port(s): {', '.join(map(str, unexpected))} — confirm these are intended."})

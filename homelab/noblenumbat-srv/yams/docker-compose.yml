@@ -51,6 +51,7 @@ services:
     network_mode: "service:gluetun"
 
   # Sonarr is used to query, add downloads to the download queue and index TV shows
+  # https://sonarr.tv/
   sonarr:
     image: lscr.io/linuxserver/sonarr
     container_name: sonarr
@@ -69,6 +70,7 @@ services:
         ipv4_address: 172.60.0.13
 
   # Radarr is used to query, add downloads to the download queue and index Movies
+  # https://radarr.video/
   radarr:
     image: lscr.io/linuxserver/radarr
     container_name: radarr
@@ -87,6 +89,7 @@ services:
         ipv4_address: 172.60.0.14
 
   # Lidarr is used to query, add downloads to the download queue and index Music
+  # https://lidarr.audio/
   lidarr:
     image: lscr.io/linuxserver/lidarr
     container_name: lidarr
@@ -105,6 +108,7 @@ services:
         ipv4_address: 172.60.0.15
 
   # Bazarr is used to download and categorize subtitles
+  # https://www.bazarr.media/
   bazarr:
     image: lscr.io/linuxserver/bazarr
     container_name: bazarr
@@ -123,6 +127,7 @@ services:
         ipv4_address: 172.60.0.16
 
   # Prowlarr is our torrent indexer/searcher. Sonarr/Radarr use Prowlarr as a source
+  # https://prowlarr.com/
   prowlarr:
     image: lscr.io/linuxserver/prowlarr
     container_name: prowlarr
@@ -132,14 +137,12 @@ services:
     volumes:
       - /etc/localtime:/etc/localtime:ro
       - ${INSTALL_DIRECTORY}/config/prowlarr:/config
-    ports:
-      - 9696:9696
+    #ports: # prowlarr — published via gluetun
+      #- 9696:9696 # prowlarr
     restart: unless-stopped
-    networks:
-      yams_network:
-        ipv4_address: 172.60.0.17
+    network_mode: "service:gluetun"
 
-  # Gluetun VPN — ProtonVPN free tier, Netherlands servers
+  # Gluetun is our VPN, so you can download torrents safely
   gluetun:
     image: qmcgaw/gluetun:v3.41.0
     container_name: gluetun
@@ -152,25 +155,43 @@ services:
       - 8388:8388/tcp # Shadowsocks
       - 8388:8388/udp # Shadowsocks
       - 8003:8000/tcp # Admin
-      - 8081:8081/tcp # qBittorrent WebUI (via gluetun)
+      #- 8080:8080/tcp # gluetun
+      - 8081:8081/tcp # gluetun
+      - 9696:9696/tcp # prowlarr WebUI (via gluetun)
+      - 8191:8191/tcp # flaresolverr (via gluetun)
+      - 8090:8090/tcp # mylar3 WebUI (via gluetun)
     environment:
       - VPN_SERVICE_PROVIDER=${VPN_SERVICE}
-      - VPN_TYPE=openvpn
-      - OPENVPN_USER=${VPN_USER}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=iPW4KC2cB3nzaC2b58QEgvYts6KdScbeR0oiY3LASEo=
+      - OPENVPN_USER=${VPN_USER}+pmp
       - OPENVPN_PASSWORD=${VPN_PASSWORD}
       - OPENVPN_CIPHERS=AES-256-GCM
-      - FREE_ONLY=true
       - SERVER_COUNTRIES=Netherlands
-      - PORT_FORWARD_ONLY=off
-      - VPN_PORT_FORWARDING=off
+      - PORT_FORWARD_ONLY=on
+      - VPN_PORT_FORWARDING=on
+      - VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'wget -O- --post-data "json={\"listen_port\":{{PORTS}}}" http://127.0.0.1:8081/api/v2/app/setPreferences 2>&1'
+      - BLOCK_MALICIOUS=off
       - FIREWALL_OUTBOUND_SUBNETS=172.60.0.0/24
+      # HTTP proxy on :8888 — any LAN app pointed at 192.168.1.6:8888 egresses
+      # via the VPN; creds in .env so the whole LAN isn't an open proxy
+      - HTTPPROXY=on
+      - HTTPPROXY_USER=${PROXY_USER}
+      - HTTPPROXY_PASSWORD=${PROXY_PASSWORD}
     volumes:
       - ${INSTALL_DIRECTORY}/config/gluetun:/gluetun
     restart: unless-stopped
     networks:
       yams_network:
         ipv4_address: 172.60.0.18
+        aliases:
+          # prowlarr/flaresolverr/mylar3 live inside this netns; keep their old
+          # DNS names resolving so pre-move URLs still work
+          - prowlarr
+          - flaresolverr
+          - mylar3
 
+  # Portainer helps debugging and monitors the containers
   portainer:
     image: portainer/portainer-ce
     container_name: portainer
@@ -185,6 +206,7 @@ services:
       yams_network:
         ipv4_address: 172.60.0.19
 
+  # Watchtower is going to keep our instances updated
   watchtower:
     image: nickfedor/watchtower
     container_name: watchtower
@@ -197,6 +219,7 @@ services:
       yams_network:
         ipv4_address: 172.60.0.20
 
+  # FlareSolverr bypasses Cloudflare protection for Prowlarr indexers
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
@@ -205,12 +228,10 @@ services:
       - LOG_HTML=false
       - CAPTCHA_SOLVER=none
       - TZ=America/New_York
-    ports:
-      - 8191:8191
+    #ports: # flaresolverr — published via gluetun
+      #- 8191:8191 # flaresolverr
     restart: unless-stopped
-    networks:
-      yams_network:
-        ipv4_address: 172.60.0.21
+    network_mode: "service:gluetun"
 
 networks:
   yams_network:

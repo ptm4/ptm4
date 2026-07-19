@@ -14,7 +14,7 @@ const CATALOG = {
   'hardware-latest':       { label: 'Hardware Report',  agent: 'hardware-report',    cadence_h: 24, order: 1 },
   'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24, order: 2 },
   'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1,  order: 3 },
-  'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true },
+  'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true, manual: true },
 };
 
 function describe(filename) {
@@ -46,7 +46,7 @@ function describe(filename) {
     mtime: stat.mtime.toISOString(),
     cadence_hours: meta.cadence_h,
     order: meta.order ?? 99,
-    stale: ageH > meta.cadence_h * 2,
+    stale: !meta.manual && ageH > meta.cadence_h * 2,
     enabled: meta.agent ? enabledFor(meta.agent) : true,
   };
 }

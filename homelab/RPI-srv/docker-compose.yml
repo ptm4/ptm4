@@ -116,6 +116,117 @@ services:
     networks:
       - internal
 
+  discord-weather:
+    build: ./discord-weather
+    container_name: discord-weather
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      - weather_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-healthdigest:
+    build: ./discord-healthdigest
+    container_name: discord-healthdigest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HEALTHDIGEST: ${DISCORD_WEBHOOK_URL_HEALTHDIGEST:-}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+      RPI_IP: ${RPI_IP:-}
+      DISPATCHER_URL: ${DISPATCHER_URL:-}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+    volumes:
+      - healthdigest_data:/data
+      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-jellyfin:
+    build: ./discord-jellyfin
+    container_name: discord-jellyfin
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_JELLYFIN: ${DISCORD_WEBHOOK_URL_JELLYFIN:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+    volumes:
+      - jellyfinbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-sports:
+    build: ./discord-sports
+    container_name: discord-sports
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_SPORTS: ${DISCORD_WEBHOOK_URL_SPORTS:-}
+    volumes:
+      - sportsbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-hltv:
+    build: ./discord-hltv
+    container_name: discord-hltv
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HLTV: ${DISCORD_WEBHOOK_URL_HLTV:-}
+    volumes:
+      - hltvbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
   nginx-webapp:
     image: nginx:stable-alpine
     container_name: nginx-webapp
@@ -139,6 +250,11 @@ networks:
 
 volumes:
   notes_data:
+  weather_data:
+  healthdigest_data:
+  jellyfinbot_data:
+  sportsbot_data:
+  hltvbot_data:
   pihole_data:
   dnsmasq_data:
   db_data:
