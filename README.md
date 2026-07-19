@@ -1,60 +1,67 @@
-# Peter's Spellbook — Azure DevOps & Infrastructure-as-Code Portfolio
+# Peter's Spellbook
 
-Production-grade Azure infrastructure, DevOps pipelines, and automation built and operated across a 20+ subscription enterprise environment.
+Azure Infrastructure-as-Code, DevOps automation, and a homelab playground.
 
-This repo is my working portfolio — Terraform modules, Azure DevOps pipelines, and PowerShell tooling used to deploy and manage secure, private, hub-and-spoke Azure platforms.
+This repo has two halves, and they should be read differently:
 
-> Environment: Azure (20+ subscriptions across hub / prod / test / dev / QA / UAT / lab), Azure DevOps (self-hosted agents), Entra ID workload-identity auth, centralized Terraform remote state (Azure Storage).
-> Everything here was designed, built, and run by me in production.
+* **[infra/](infra/)** is my professional work: production-grade Terraform, Azure DevOps pipelines, and PowerShell tooling that I designed, built, and operate across a 20+ subscription enterprise Azure environment. It has been de-sensitized (names, IDs, and secrets stripped) for public viewing, but the engineering is the real thing.
+* **[homelab/](homelab/)** is my personal playground. Everything in it is a hobby project, and it doubles as my lab for agentic coding: building the skills, rules, and harnesses that govern what AI agents can do, then letting them do real work against real machines and learning from how those structures hold up.
 
----
+That split is intentional. If you're evaluating my engineering, start with `infra/`. If you're a hobbyist tinkerer, `homelab/` will feel familiar; it's a lab, breaking things there is part of the point, so judge it gently.
 
-## What This Repo Demonstrates
-
-* End-to-end Azure infrastructure delivery using Terraform (networking → compute → application)
-* Azure DevOps pipelines with Plan → Approval → Apply gates and workload identity auth
-* Secure-by-default Azure design (private endpoints, private DNS, zero public exposure)
-* Cross-subscription automation across a 20+ subscription hub-and-spoke environment
-* Real production workloads (Front Door, Container Apps, WordPress, AMPLS, Policy)
+> Professional environment: Azure (20+ subscriptions across hub / prod / test / dev / QA / UAT / lab), Azure DevOps with self-hosted agents, Entra ID workload-identity auth, centralized Terraform remote state on Azure Storage.
 
 ---
 
-## Key Projects
-
-* **Fully Automated Homelab** — GitHub actions workflow to deploy docker-compose.yml from Desktop > Repo > Deploy to Homelab Server and compose > Run logging back to central fs & rotate logs every 15days 
-* **Azure Front Door + Private Link (Terraform Modules)** — reusable system for onboarding new production sites
-* **WordPress on Azure Container Apps** — fully private, production-ready platform with custom container + Key Vault integration
-* **Custom Developed Internal Tool** - fully developed, custom internal tool for SQL writebacks to enable non-technical staff to make very controlled updates to a specific table to enable quicker turnaround on jobs*(see #11 below)*
-* **Azure DevOps Pipelines** — standardized CI/CD for infrastructure with approval gates
-* **Cross-Subscription Networking Automation (PowerShell)** — VNet, peering, DNS, and AMPLS automation, Network testing ACIs
-
----
 ## Table of Contents
 
-1. [Terraform — AFD (Azure Front Door) Module Suite](#1-terraform--afd-azure-front-door-module-suite)
-2. [Terraform — WordPress on Azure Container Apps (`wp-shccares`)](#2-terraform--wordpress-on-azure-container-apps)
-3. [Terraform — ACI (Azure Container Instances) Testing Platform](#3-terraform--aci-testing-platform)
-4. [Terraform — Policy Exemption Framework](#4-terraform--policy-exemption-framework)
-5. [Terraform — CAE / Ubuntu VM Proof-of-Concepts](#5-terraform--cae--vm-proof-of-concepts)
+**infra/**
+1. [Terraform: AFD Module Suite](#1-terraform-afd-module-suite)
+2. [Terraform: WordPress on Azure Container Apps](#2-terraform-wordpress-on-azure-container-apps)
+3. [Terraform: ACI Testing Platform](#3-terraform-aci-testing-platform)
+4. [Terraform: Policy Exemption Framework](#4-terraform-policy-exemption-framework)
+5. [Terraform: VM Proof-of-Concepts](#5-terraform-vm-proof-of-concepts)
 6. [Azure DevOps Pipelines](#6-azure-devops-pipelines)
-7. [PowerShell — Azure Networking Automation](#7-powershell--cross-subscription-networking-automation)
-8. [PowerShell — Azure Pipelines (AMPLS + VNet Intake-Driven)](#8-powershell--azure-pipelines-ampls--vnet-intake)
-9. [PowerShell — Azure Policy Automation](#9-powershell--azure-policy-automation)
-10. [PowerShell — Azure & M365 Misc Utilities](#10-powershell--azure--m365-utilities)
-11. [PowerShell WinForms App — GP Voucher Tool](#11-powershell-winforms-app--voucher-tool)
+7. [PowerShell: Cross-Subscription Networking Automation](#7-powershell-cross-subscription-networking-automation)
+8. [PowerShell: AMPLS + VNet Pipeline Scripts](#8-powershell-ampls--vnet-pipeline-scripts)
+9. [PowerShell: Azure Policy Automation](#9-powershell-azure-policy-automation)
+10. [PowerShell: Azure & M365 Utilities](#10-powershell-azure--m365-utilities)
+11. [PowerShell WinForms App: GP Voucher Tool](#11-powershell-winforms-app-gp-voucher-tool)
 12. [Tech Stack Summary](#12-tech-stack-summary)
+
+**homelab/**
+
+13. [The Playground](#13-homelab-the-playground)
 
 ---
 
-## 1. Terraform — AFD (Azure Front Door) Module Suite
+## infra/: Production Azure Engineering
 
-**Path:** `Terraform/AFD/`
+What this half demonstrates:
 
-A reusable, pipeline-driven Terraform module system for onboarding new sites onto a shared Front Door profile. Each deployment uses a **Private Link Service (PLS) path** backed by an internal load balancer, abstracting the underlying networking so new sites can be onboarded with minimal input.
+* End-to-end Azure infrastructure delivery with Terraform (networking, then compute, then application)
+* Azure DevOps pipelines with Plan, Approval, and Apply gates using workload identity auth
+* Secure-by-default design: private endpoints, private DNS, no public exposure
+* Cross-subscription automation across a hub-and-spoke environment
+* Real production workloads: Front Door, Container Apps, WordPress, AMPLS, Azure Policy
+
+Key results this tooling delivered in production:
+
+* Onboarded **32 IIS-hosted sites and APIs** onto Front Door with Private Link origins using the AFD module suite and its intake pipeline
+* Re-platformed the company's externally hosted production WordPress site onto Container Apps with fully private networking, cutting server response times from ~4s to ~100ms by baking heavy plugins into a custom Docker image instead of loading them over SMB
+* Replaced click-ops networking with idempotent, intake-driven VNet, peering, DNS, and AMPLS automation
+
+---
+
+## 1. Terraform: AFD Module Suite
+
+**Path:** [infra/Terraform/AFD/](infra/Terraform/AFD/) (has its own [README](infra/Terraform/AFD/README.md))
+
+A reusable, pipeline-driven Terraform module system for onboarding new sites onto a shared Front Door profile. Each deployment uses a Private Link Service path backed by an internal load balancer, abstracting the underlying networking so new sites can be onboarded with minimal input.
 
 ### What it builds
 
-* Modular AFD deployments (origin groups, private origins, domains, WAF policies, routing)
+* Modular AFD deployments: origin groups, private origins, domains, WAF policies, routing
 * Private Link Service + internal load balancing stack
 * Per-site deployment structure with parameterized configuration
 * Optional WordPress-aware cache bypass rules
@@ -62,21 +69,21 @@ A reusable, pipeline-driven Terraform module system for onboarding new sites ont
 
 ### Intake automation
 
-* PowerShell-based intake generator that produces an Excel workbook mapping directly to Terraform variables
+* PowerShell intake generator ([New-AFDSiteIntake.ps1](infra/Terraform/AFD/New-AFDSiteIntake.ps1)) that produces an Excel workbook mapping directly to Terraform variables
 * Includes validation guidance and shared configuration constants
 
 ### Documentation
 
-* Step-by-step onboarding runbook (intake → pipeline → approval → validation → testing)
+* Step-by-step onboarding runbook (intake, pipeline, approval, validation, testing)
 * Full mapping between input data and deployed resources
 
 ---
 
-## 2. Terraform — WordPress on Azure Container Apps
+## 2. Terraform: WordPress on Azure Container Apps
 
-**Path:** `Terraform/wp-shccares/`
+**Path:** [infra/Terraform/wp-jammylab/](infra/Terraform/wp-jammylab/)
 
-End-to-end Terraform deployment of a **fully private WordPress platform on Azure Container Apps**, designed for secure production workloads with no public endpoints.
+End-to-end Terraform deployment of a fully private WordPress platform on Azure Container Apps, built for a production workload with no public endpoints. Sanitized here; the production twin runs the main public site of the business.
 
 ### Resources deployed
 
@@ -90,61 +97,58 @@ End-to-end Terraform deployment of a **fully private WordPress platform on Azure
 
 ### Custom container image
 
-* Based on official WordPress image with performance tuning (OPcache)
-* Improved speed of Wordpress site for the main production site of the business by 2.5x by baking heavy plugins & media into custom docker image to avoid smb/io ops slowing & adding latency
-* Custom entrypoint:
-
-  * Generates and persists WordPress auth keys securely
-  * Ensures plugin state persistence across deployments
+* Based on the official WordPress image with performance tuning (OPcache)
+* Diagnosed slow page loads as plugin I/O over SMB, then baked heavy plugins and media into the image; server response times went from ~4s to ~100ms
+* Custom entrypoint that generates and persists WordPress auth keys securely and keeps plugin state consistent across deployments
 
 ### Operations
 
-* Full production deployment runbook covering environment setup, pipeline integration, and cutover strategy
+* Full production deployment runbook ([ProdDeployment.md](infra/Terraform/wp-jammylab/ProdDeployment.md)) covering environment setup, pipeline integration, and cutover strategy
 
 ---
 
-## 3. Terraform — ACI Testing Platform
+## 3. Terraform: ACI Testing Platform
 
-**Path:** `Terraform/aci-module/`, `Terraform/ACI-vnet-testing/`
+**Paths:** [infra/Terraform/aci-module/](infra/Terraform/aci-module/), [infra/Terraform/ACI-vnet-testing/](infra/Terraform/ACI-vnet-testing/), [infra/Terraform/aci-prod-it/](infra/Terraform/aci-prod-it/)
 
-A multi-subscription ACI-based platform used for **network connectivity validation** across a hub-and-spoke environment.
+A multi-subscription ACI-based platform used for network connectivity validation across the hub-and-spoke environment.
 
 * Reusable Terraform module with dynamic subscription targeting
 * Containers running network diagnostic tools for port and connectivity testing
-* Deployed across multiple environments for validation of NSGs, routing, and Private Endpoint DNS
+* Deployed across multiple environments to validate NSGs, routing, and Private Endpoint DNS
 
 ---
 
-## 4. Terraform — Policy Exemption Framework
+## 4. Terraform: Policy Exemption Framework
 
-**Path:** `Terraform/Policy/exemptions/`
+**Path:** [infra/Terraform/Policy/](infra/Terraform/Policy/)
 
 Terraform-based framework for managing Azure Policy exemptions as code.
 
 * Parameterized exemption definitions
 * Scalable pattern using `for_each`
-* Integrated into pipeline workflow with approval gates
+* Integrated into the pipeline workflow with approval gates
 
 ---
 
-## 5. Terraform — CAE / VM Proof-of-Concepts
+## 5. Terraform: VM Proof-of-Concepts
 
-**Path:** `Terraform/cae-*`, `Terraform/ubuntuvm-testing/`
+**Path:** [infra/Terraform/ubuntuvm-testing/](infra/Terraform/ubuntuvm-testing/)
 
-* Early Container Apps + database deployment patterns used as a foundation for production builds
-* Reusable Linux VM module with environment-specific configurations
+* Reusable Linux VM module with per-environment `.tfvars` configurations (dev, test, and multiple prod workloads)
+* Early Container Apps + database deployment patterns from this work became the foundation for the production WordPress build
 
 ---
 
 ## 6. Azure DevOps Pipelines
 
-**Path:** `Terraform/Pipelines/`, `Azure/Pipelines/`
+**Paths:** [infra/Terraform/Pipelines/](infra/Terraform/Pipelines/), [infra/Azure/Pipelines/](infra/Azure/Pipelines/)
 
-Standardized CI/CD pipelines for infrastructure and application delivery.
+Standardized CI/CD for infrastructure and application delivery.
 
 ### Pattern
 
-* Manual trigger → Plan → Approval → Apply
+* Manual trigger, then Plan, then Approval, then Apply
 * Approval step with timeout and auto-reject
 * Workload identity authentication
 * Self-hosted agents
@@ -152,32 +156,32 @@ Standardized CI/CD pipelines for infrastructure and application delivery.
 
 ### Capabilities
 
-* Terraform deployments (modular + environment-based)
+* Terraform deployments (modular and environment-based)
 * Container image build and push workflows
-* Parameterized infrastructure pipelines (e.g., networking, monitoring)
+* Parameterized infrastructure pipelines (networking, monitoring)
 * Validation stages for input and environment readiness
 
 ---
 
-## 7. PowerShell — Cross-Subscription Networking Automation
+## 7. PowerShell: Cross-Subscription Networking Automation
 
-**Path:** `Azure/Networking/`
+**Path:** [infra/Azure/Networking/](infra/Azure/Networking/)
 
-Automation scripts for managing networking across a multi-subscription Azure environment.
+Automation for managing networking across a multi-subscription Azure environment.
 
-* VNet creation and subnet provisioning
-* Hub/spoke peering automation
-* Private DNS zone management and cleanup
+* VNet creation and subnet provisioning ([createVNet.ps1](infra/Azure/Networking/createVNet.ps1))
+* Hub/spoke peering automation ([azvnetpeering.ps1](infra/Azure/Networking/azvnetpeering.ps1), [peerdeploy.ps1](infra/Azure/Networking/peerdeploy.ps1))
+* Private DNS zone management and cleanup ([PrivateDNS.ps1](infra/Azure/Networking/PrivateDNS.ps1), [VnetLinkCleanup.ps1](infra/Azure/Networking/VnetLinkCleanup.ps1))
 * Resource discovery and inventory export
 * CSV/Excel-driven deployment patterns
 
 ---
 
-## 8. PowerShell — Azure Pipelines (AMPLS + VNet Intake)
+## 8. PowerShell: AMPLS + VNet Pipeline Scripts
 
-**Path:** `Azure/Pipelines/`
+**Path:** [infra/Azure/Pipelines/](infra/Azure/Pipelines/)
 
-Production deployment scripts used by CI/CD pipelines.
+Production deployment scripts executed by CI/CD pipelines.
 
 ### AMPLS deployment
 
@@ -194,35 +198,33 @@ Production deployment scripts used by CI/CD pipelines.
 
 ---
 
-## 9. PowerShell — Azure Policy Automation
+## 9. PowerShell: Azure Policy Automation
 
-**Path:** `Azure/Policy/`
+**Path:** [infra/Azure/Policy/](infra/Azure/Policy/)
 
 * Policy definition migration and normalization
-* Bulk exemption handling (later replaced by Terraform framework)
+* Bulk exemption handling (later replaced by the Terraform framework in section 4)
 
 ---
 
-## 10. PowerShell — Azure & M365 Utilities
+## 10. PowerShell: Azure & M365 Utilities
 
-**Path:** `Azure/Misc/`
+**Path:** [infra/Azure/Misc/](infra/Azure/Misc/)
 
-Targeted automation scripts for operational tasks:
+Targeted automation for operational tasks:
 
-* RBAC role assignment
-* Data transfer automation
+* RBAC role assignment ([GroupRBACAssign.ps1](infra/Azure/Misc/GroupRBACAssign.ps1))
+* Data transfer automation ([azcopy.ps1](infra/Azure/Misc/azcopy.ps1))
 * File structure migration
 * Exchange Online management utilities
 
 ---
 
-## 11. PowerShell WinForms App — Voucher Tool
+## 11. PowerShell WinForms App: GP Voucher Tool
 
-**Path:** `GP-VoucherApp/`
+**Path:** [infra/GP-VoucherApp/](infra/GP-VoucherApp/)
 
-A desktop application built with PowerShell for internal operations teams.
-
-### Features
+A desktop application built with PowerShell WinForms for internal operations teams: it gives non-technical staff a controlled way to write back to a specific SQL table, cutting job turnaround time without opening up direct database access.
 
 * Bulk processing of records via UI
 * Secure SQL interaction using parameterized queries
@@ -234,18 +236,34 @@ A desktop application built with PowerShell for internal operations teams.
 
 ## 12. Tech Stack Summary
 
-| Category                  | Tools / Services                                                                                       |
+| Category                  | Tools / Services                                                                                        |
 | ------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **IaC**                   | Terraform (AzureRM), HCL, remote state on Azure Storage, modular design                                |
-| **Azure — Compute**       | Container Apps, ACI, Container Registry, Linux VMs                                                     |
-| **Azure — Networking**    | VNets, hub-spoke peering, Private Endpoints, Private DNS, Front Door                                   |
-| **Azure — Data**          | Storage Accounts (SMB), MySQL Flexible Server                                                          |
-| **Security & Governance** | Entra ID, Key Vault, RBAC, Azure Policy, AMPLS                                                         |
-| **Containers**            | Docker, custom images, runtime configuration                                                           |
-| **CI/CD**                 | Azure DevOps pipelines, YAML, approval gates, self-hosted agents                                       |
-| **Scripting**             | PowerShell, Azure CLI, automation tooling                                                              |
-| **Desktop**               | PowerShell WinForms applications                                                                       |
-| **Patterns**              | Hub-spoke networking, private-only architecture, cross-subscription automation, idempotent deployments |
+| **IaC**                   | Terraform (AzureRM), HCL, remote state on Azure Storage, modular design                                 |
+| **Azure Compute**         | Container Apps, ACI, Container Registry, Linux VMs                                                      |
+| **Azure Networking**      | VNets, hub-spoke peering, Private Endpoints, Private DNS, Front Door, Private Link Service              |
+| **Azure Data**            | Storage Accounts (SMB), MySQL Flexible Server                                                           |
+| **Security & Governance** | Entra ID, Key Vault, RBAC, Azure Policy, AMPLS                                                          |
+| **Containers**            | Docker, custom images, runtime configuration                                                            |
+| **CI/CD**                 | Azure DevOps pipelines, YAML, approval gates, self-hosted agents                                        |
+| **Scripting**             | PowerShell, Azure CLI, automation tooling                                                               |
+| **Desktop**               | PowerShell WinForms applications                                                                        |
+| **Patterns**              | Hub-spoke networking, private-only architecture, cross-subscription automation, idempotent deployments  |
+
+---
+
+## 13. homelab/: The Playground
+
+Everything in [homelab/](homelab/) is a personal project. It runs my actual home infrastructure, and it is deliberately where I practice agentic coding: I build the structures around the agents (skills that package repeatable procedures, rules that bound what they may touch, harnesses that let them act against real machines safely) and then put them to work. The output matters less than what the structure teaches me. Hobbyist tinkerers will understand. Don't judge harshly.
+
+What's in it:
+
+* **[RPI-srv/](homelab/RPI-srv/)**: Raspberry Pi services. Discord bots (weather, sports, CS2/HLTV, Jellyfin, health digest), a Node.js web control panel for managing the fleet, and a notes app.
+* **[noblenumbat-srv/](homelab/noblenumbat-srv/)**: media server stack (Docker Compose) plus a self-healing VPN watchdog ([vpn-stack-heal.sh](homelab/noblenumbat-srv/yams/vpn-stack-heal.sh)) that detects dead port forwarding and recovers the stack unattended.
+* **[Tools/](homelab/Tools/)**: fleet tooling. Health checks across hosts ([homelab-doctor](homelab/Tools/homelab/homelab-doctor.py)), network reporting, systemd timers for unattended updates and reboots, a CS2 stats coach built on the Leetify API, and other experiments.
+* **[PTMonitor-widget/](homelab/PTMonitor-widget/)**: a desktop monitoring widget built with Tauri.
+* **[homelab-techdoc.md](homelab/homelab-techdoc.md)** and draw.io diagrams: architecture documentation for all of it.
+
+Deployment is automated end to end: pushing a `docker-compose.yml` change to this repo triggers a GitHub Actions workflow that deploys to the homelab servers, brings the stack up, and logs back to a central filesystem with 15-day rotation.
 
 ---
 
@@ -253,6 +271,6 @@ A desktop application built with PowerShell for internal operations teams.
 
 I'm **Peter Minerva**, an Azure-focused Infrastructure & DevOps Engineer.
 
-This repo showcases real production work: Terraform modules, Azure DevOps pipelines, and PowerShell automation used to deploy and operate secure, private Azure environments at scale.
+`infra/` is my professional portfolio: Terraform modules, Azure DevOps pipelines, and PowerShell automation that deploy and operate secure, private Azure environments at scale. Designed, built, and run by me in production.
 
-Everything here was designed, built, and operated by me.
+`homelab/` is where I tinker, and where AI agents earn their keep under rules I write.
