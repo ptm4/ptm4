@@ -1,0 +1,12 @@
+[Unit]
+# Fires daily at 09:15 UTC — a few minutes after the 09:00 UTC homelab-agents sweep,
+# so the docs reflect the freshest hardware/software/doctor/network reports.
+Description=Regenerate homelab docs daily (after the agent sweep)
+
+[Timer]
+OnCalendar=*-*-* 09:15:00 UTC
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

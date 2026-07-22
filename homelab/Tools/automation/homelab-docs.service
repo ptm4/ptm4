@@ -1,0 +1,16 @@
+[Unit]
+# Renders the latest homelab agent JSON reports into topic-oriented Markdown docs
+# (overview/network/hardware/software/security) consumed by the local llama.cpp
+# assistant. Companion to the Homelab Agents suite; runs just after the daily sweep.
+# Install on opti:
+#   sudo cp homelab-docs.service homelab-docs.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-docs.timer
+Description=Homelab documentation generator (agent reports -> Markdown docs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ptm
+EnvironmentFile=/etc/hl-agents.env
+ExecStart=/usr/bin/python3 /srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4/homelab/Tools/homelab/docs-generator.py

@@ -44,6 +44,7 @@ AGENTS = {
     "software-inventory":  os.path.join(TOOLS_DIR, "homelab", "software-inventory.py"),
     "homelab-doctor":      os.path.join(TOOLS_DIR, "homelab", "homelab-doctor.py"),
     "network-report":      os.path.join(TOOLS_DIR, "homelab", "network-report.py"),
+    "docs-generator":      os.path.join(TOOLS_DIR, "homelab", "docs-generator.py"),
     "leetify-stats":       os.path.join(TOOLS_DIR, "leetify", "leetify-stats.py"),
     "refresh-cs2-knowledge": os.path.join(TOOLS_DIR, "leetify", "refresh-cs2-knowledge.py"),
 }
