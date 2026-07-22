@@ -213,6 +213,22 @@ function catColor(cat){
   return l ? l.color : '#7a7f99';
 }
 
+// Looks up a node's docker container(s) in the synced live data. Returns null if this
+// node isn't container-backed or nothing has been synced yet.
+function nodeLiveness(n){
+  if(!liveData) return null;
+  const wanted = NODE_CONTAINERS[n.id];
+  if(!wanted) return null;
+  const hostName = COLUMN_HOST[n.column];
+  const host = hostName && liveData.hosts[hostName];
+  const containers = host?.containers || [];
+  const found = wanted.map(name => containers.find(c => c.name === name));
+  const upCount = found.filter(c => c && /^Up/.test(c.status)).length;
+  const cls = upCount === wanted.length ? 'up' : (upCount === 0 ? 'down' : 'up');
+  const detail = wanted.map((name, i) => `${name}: ${found[i] ? found[i].status : 'not found'}`).join('\n');
+  return { cls, detail };
+}
+
 function layout(){
   const colIndex = {};
   DATA.columns.forEach((c, i) => colIndex[c.id] = i);
@@ -384,6 +400,18 @@ function draw(){
     accent.setAttribute('fill', catColor(n.category));
     accent.setAttribute('opacity', isDim ? 0.35 : 1);
     g.appendChild(accent);
+
+    const liveness = nodeLiveness(n);
+    if(liveness){
+      const dot = document.createElementNS(SVG_NS, 'circle');
+      dot.setAttribute('cx', p.x + p.w - 8); dot.setAttribute('cy', p.y + 8); dot.setAttribute('r', 4);
+      dot.setAttribute('class', 'live-dot ' + liveness.cls);
+      dot.setAttribute('opacity', isDim ? 0.35 : 1);
+      const title = document.createElementNS(SVG_NS, 'title');
+      title.textContent = liveness.detail;
+      dot.appendChild(title);
+      g.appendChild(dot);
+    }
 
     const label = document.createElementNS(SVG_NS, 'text');
     label.setAttribute('x', p.x + 12); label.setAttribute('y', p.y + 17);
