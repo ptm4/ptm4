@@ -71,7 +71,14 @@ def routes(host):
 
 def default_gateway(host):
     out = _run(host, ["ip", "route", "show", "default"]).split()
-    return out[2] if len(out) >= 3 and out[0] == "default" else None
+    if len(out) >= 3 and out[0] == "default":
+        return out[2]
+    # Fallback for hosts whose default route isn't in the main table an unprivileged
+    # process can see (e.g. unrooted Android/Termux, where the OS routes per-uid) —
+    # ask the kernel what it would actually use to reach the internet instead. See
+    # homelab/agentic/troubleshooting.md "android: No default gateway configured".
+    m = re.search(r"via (\S+)", _run(host, ["ip", "route", "get", "1.1.1.1"]))
+    return m.group(1) if m else None
 
 
 def ping(host, target, count=2):
