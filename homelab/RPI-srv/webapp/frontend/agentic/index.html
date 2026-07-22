@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Agentic Workspace</title>
+<style>
+  :root{
+    --bg:#0f1117; --surface:#1a1d27; --surface2:#20232f; --border:#2a2d3a;
+    --text:#e2e4ed; --muted:#7a7f99; --accent:#e0b44a; --ok:#4caf7d; --warn:#e0b44a;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.5;}
+  a{color:var(--accent);}
+  code,.mono{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:12px;}
+  #back{position:fixed;top:14px;left:14px;z-index:20;background:var(--surface2);border:1px solid var(--border);
+    color:var(--text);padding:6px 12px;border-radius:6px;text-decoration:none;font-size:12px;}
+  #back:hover{border-color:var(--accent);}
+  header.page-head{padding:56px 24px 8px;max-width:1080px;}
+  header.page-head h1{font-size:20px;margin-bottom:6px;}
+  header.page-head p{color:var(--muted);max-width:860px;}
+  .meta{color:var(--muted);font-size:11px;margin-top:8px;}
+  .wrap{max-width:1080px;padding:12px 24px 48px;}
+  section{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-top:16px;}
+  section h2{font-size:14px;letter-spacing:.4px;margin-bottom:12px;color:var(--text);
+    border-bottom:1px solid var(--border);padding-bottom:8px;}
+  .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;}
+  .kv .k{color:var(--muted);}
+  .kv .v{word-break:break-word;}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+  th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.4px;}
+  tr:last-child td{border-bottom:none;}
+  .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid var(--border);
+    background:var(--surface2);color:var(--muted);}
+  .tag.stub{color:var(--warn);border-color:var(--warn);}
+  ul.clean{list-style:none;display:flex;flex-direction:column;gap:6px;}
+  ul.clean li{padding-left:16px;position:relative;}
+  ul.clean li::before{content:"▸";position:absolute;left:0;color:var(--accent);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:720px){.cols{grid-template-columns:1fr;}.kv{grid-template-columns:1fr;}}
+  #err{background:#2a1d1d;border:1px solid #e05c5c;color:#ffb4b4;padding:14px;border-radius:8px;margin-top:16px;}
+  .muted{color:var(--muted);}
+</style>
+</head>
+<body>
+<a id="back" href="/">← Dashboard</a>
+
+<header class="page-head">
+  <h1>Agentic Workspace</h1>
+  <p id="purpose" class="muted">Loading…</p>
+  <div class="meta" id="meta"></div>
+</header>
+
+<div class="wrap" id="content"></div>
+
+<script>
+const $ = (t, cls, html) => { const e = document.createElement(t); if(cls) e.className = cls; if(html!=null) e.innerHTML = html; return e; };
+const esc = s => String(s==null?'':s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+function kv(obj){
+  const g = $('div','kv');
+  for(const [k,v] of Object.entries(obj)){
+    g.appendChild($('div','k', esc(k)));
+    const val = (v && typeof v === 'object') ? Object.entries(v).map(([a,b])=>`<div><code>${esc(a)}</code> — ${esc(b)}</div>`).join('') : esc(v);
+    g.appendChild($('div','v', val));
+  }
+  return g;
+}
+function section(title, node){ const s=$('section'); s.appendChild($('h2',null,esc(title))); s.appendChild(node); return s; }
+
+fetch('/api/agentic').then(r=>r.json()).then(resp=>{
+  const content = document.getElementById('content');
+  if(!resp.ok){
+    document.getElementById('purpose').textContent = 'Manifest unavailable.';
+    const e = $('div'); e.id='err';
+    e.innerHTML = `<b>Could not load workspace.json</b><br>${esc(resp.error||'')}<br><span class="muted">${esc(resp.hint||'')}</span><br><span class="muted mono">${esc(resp.source||'')}</span>`;
+    content.appendChild(e);
+    return;
+  }
+  const m = resp.manifest;
+  document.getElementById('purpose').textContent = m.purpose || '';
+  document.getElementById('meta').innerHTML =
+    `schema v${esc(m.schema_version)} · generated ${esc(m.generated_at)} by <code>${esc(m.generated_by)}</code>` +
+    (resp.mtime ? ` · file mtime ${esc(resp.mtime)}` : '') +
+    `<br><span class="mono">${esc(resp.source)}</span>`;
+
+  // Workspace
+  const w = m.workspace || {};
+  const wnode = $('div');
+  wnode.appendChild(kv({repo:w.repo, git_remote:w.git_remote, agentic_root:w.agentic_root, canonical_host:w.canonical_host}));
+  if(w.access_paths){ wnode.appendChild($('div','meta','Access paths')); wnode.appendChild(kv(w.access_paths)); }
+  if(w.note){ wnode.appendChild($('p','muted','<br>'+esc(w.note))); }
+  content.appendChild(section('Workspace', wnode));
+
+  // Current agent
+  content.appendChild(section('Current agent', kv(m.current_agent||{})));
+
+  // Portability
+  const p = m.portability||{};
+  const pnode = $('div');
+  if(p.summary) pnode.appendChild($('p',null,esc(p.summary)));
+  if(p.for_a_new_tool){ pnode.appendChild($('div','meta','To onboard a new tool')); const ul=$('ul','clean'); p.for_a_new_tool.forEach(x=>ul.appendChild($('li',null,esc(x)))); pnode.appendChild(ul); }
+  if(p.tool_adapters){ pnode.appendChild($('div','meta','Tool adapters')); pnode.appendChild(kv(p.tool_adapters)); }
+  content.appendChild(section('Portability (agent-agnostic)', pnode));
+
+  // Hosts
+  const ht = $('table'); ht.innerHTML = '<tr><th>Alias</th><th>IP</th><th>Role</th></tr>';
+  (m.hosts||[]).forEach(h=>ht.innerHTML += `<tr><td><code>${esc(h.alias)}</code></td><td class="mono">${esc(h.ip)}</td><td>${esc(h.role)}</td></tr>`);
+  content.appendChild(section('Hosts', ht));
+
+  // Inventory tables
+  const inv = m.inventory||{};
+  const skt = $('table'); skt.innerHTML = '<tr><th>Skill</th><th>Description</th><th></th></tr>';
+  (inv.skills||[]).forEach(s=>skt.innerHTML += `<tr><td><code>${esc(s.name)}</code><div class="muted mono" style="font-size:10.5px">${esc(s.path)}</div></td><td>${esc(s.description)}</td><td>${s.status?`<span class="tag stub">${esc(s.status)}</span>`:'<span class="tag">ok</span>'}</td></tr>`);
+  content.appendChild(section(`Skills (${(inv.skills||[]).length})`, skt));
+
+  const mkList = (title, arr) => {
+    const t = $('table'); t.innerHTML = '<tr><th>File</th><th>Title</th><th></th></tr>';
+    (arr||[]).forEach(x=>t.innerHTML += `<tr><td><code>${esc(x.file)}</code></td><td>${esc(x.title)}</td><td>${x.status?`<span class="tag stub">${esc(x.status)}</span>`:''}</td></tr>`);
+    return section(`${title} (${(arr||[]).length})`, t);
+  };
+  const grid = $('div','cols');
+  grid.appendChild(mkList('Rules', inv.rules));
+  grid.appendChild(mkList('Runbooks', inv.runbooks));
+  content.appendChild(grid);
+  content.appendChild(mkList('Harness', inv.harness));
+}).catch(e=>{
+  document.getElementById('content').appendChild(Object.assign(document.createElement('div'),{id:'err',textContent:'Fetch failed: '+e.message}));
+});
+</script>
+</body>
+</html>

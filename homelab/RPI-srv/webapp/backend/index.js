@@ -61,6 +61,11 @@ app.use('/api/llama', llamaRouter);
 const architectureRouter = require('./routes/architecture');
 app.use('/api/architecture', architectureRouter);
 
+// agentic workspace manifest — portable skills/rules/runbooks description, read live from
+// opti's homelab/agentic/workspace.json (bind-mounted at /agentic)
+const agenticRouter = require('./routes/agentic');
+app.use('/api/agentic', agenticRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

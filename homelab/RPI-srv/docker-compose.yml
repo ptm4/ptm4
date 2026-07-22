@@ -114,6 +114,8 @@ services:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro
       - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
+      # agentic workspace manifest (homelab/agentic/workspace.json) — served at /agentic route
+      - /mnt/opti-fs/ptm/repo/ptm4/homelab/agentic:/agentic:ro
     expose:
       - "3000"
     networks:

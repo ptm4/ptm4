@@ -1,0 +1,168 @@
+{
+  "schema_version": "1.0",
+  "kind": "agentic-workspace-manifest",
+  "generated_at": "2026-07-22T05:51:11Z",
+  "generated_by": "homelab/agentic/gen-workspace.py",
+  "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
+  "workspace": {
+    "repo": "ptm4",
+    "git_remote": "https://github.com/ptm4/ptm4.git",
+    "agentic_root": "homelab/agentic",
+    "canonical_host": "opti",
+    "note": "Canonical working copy lives on opti's fs share. Edit there (directly on opti or via a CIFS mount). homelab/agentic/ is gitignored — it is local-only content, NOT on GitHub, so keep it here and back it up out-of-band.",
+    "access_paths": {
+      "opti_native": "/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4",
+      "tux_cifs_mount": "/home/ptm/opti/ptm/repo/ptm4",
+      "rpi_cifs_mount": "/mnt/opti-fs/ptm/repo/ptm4"
+    }
+  },
+  "current_agent": {
+    "tool": "Claude Code",
+    "native_skill_discovery": ".claude/skills/<name>/SKILL.md",
+    "discovery_link_design": "Real skill content lives in agentic/skills/<name>/; Claude Code only discovers skills under .claude/skills/, so each is meant to be exposed via a symlink .claude/skills/<name> -> ../../homelab/agentic/skills/<name>. NOTE: symlinks are not supported on the tux CIFS mount (create them on opti natively, or fall back to real copies).",
+    "config_files": [
+      ".claude/settings.local.json",
+      ".claude/ONBOARDING.md"
+    ]
+  },
+  "portability": {
+    "summary": "This workspace is described tool-agnostically. Skills are folders with a SKILL.md (YAML frontmatter: name + description, then a Markdown procedure). Rules are standing behavioral Markdown files. Runbooks are per-host/subsystem operational Markdown. Any agent can read these directly; only the *discovery* wiring differs per tool.",
+    "for_a_new_tool": [
+      "Point the tool at homelab/agentic/ as the source of truth.",
+      "Load agentic/rules/*.md as always-on system rules.",
+      "Register each agentic/skills/<name> per the tool's skill/command mechanism.",
+      "Treat agentic/runbooks/*.md as retrievable reference docs."
+    ],
+    "tool_adapters": {
+      "claude_code": ".claude/skills/<name> symlink -> agentic/skills/<name>; rules via CLAUDE.md / settings",
+      "codex": "TODO: copy/symlink agentic/skills into the Codex skills dir; surface rules via AGENTS.md",
+      "cursor": "TODO: reference agentic/rules from .cursor/rules; skills as callable commands"
+    }
+  },
+  "hosts": [
+    {
+      "alias": "opti",
+      "ip": "192.168.1.11",
+      "role": "Storage/NAS (OpenMediaVault, mergerfs pool /srv/pool, Samba), CI runner, control plane / agent dispatcher"
+    },
+    {
+      "alias": "rpi",
+      "ip": "192.168.1.10",
+      "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.rpi.lan), Vaultwarden"
+    },
+    {
+      "alias": "noblenumbat",
+      "ip": "192.168.1.6",
+      "role": "Media server (Jellyfin, Radarr/Sonarr). Was a code server 2026-07-20; reverted 2026-07-22"
+    },
+    {
+      "alias": "android",
+      "ip": "192.168.1.54",
+      "role": "Low-power node; local LLM (llama.cpp llama-server, Qwen2.5-3B) on :8080, LAN-only"
+    }
+  ],
+  "inventory": {
+    "skills": [
+      {
+        "name": "add-to-rpi-webapp",
+        "description": "Add a generated static page (dashboard, report, diagram, tool) to the homelab dashboard at webapp.rpi.lan. Use when the user asks to add/publish a page to the homelab webapp.",
+        "path": "homelab/agentic/skills/add-to-rpi-webapp",
+        "files": [
+          "SKILL.md"
+        ],
+        "status": "recovery-stub (re-author)"
+      },
+      {
+        "name": "homelab-ssh",
+        "description": "SSH into a homelab server (opti, rpi, noblenumbat, or android) to run commands, check status, or make changes on that box. Use whenever a query names one of these hosts and doing anything about it requires actually logging in (not just reading about it in docs).",
+        "path": "homelab/agentic/skills/homelab-ssh",
+        "files": [
+          "SKILL.md"
+        ]
+      },
+      {
+        "name": "opti-drive-onboard",
+        "description": "Onboard a new physical drive into the opti server (192.168.1.11) mergerfs pool /srv/pool. Use when the user says they installed a new drive in opti, wants to add a disk to the pool/share, or expand opti storage. Walks through identify → SMART → wipe → ext4 → OMV mount → mergerfs branch add → verify.",
+        "path": "homelab/agentic/skills/opti-drive-onboard",
+        "files": [
+          "SKILL.md"
+        ]
+      },
+      {
+        "name": "radarr-add",
+        "description": "Add movies to the homelab Radarr (noblenumbat) by title/year. Use when the user asks to add movies to Radarr, the media server, or their Jellyfin library. Handles lookup, year matching, duplicate detection, and triggers an automatic download search.",
+        "path": "homelab/agentic/skills/radarr-add",
+        "files": [
+          "SKILL.md",
+          "scripts/add_movies.py"
+        ]
+      },
+      {
+        "name": "sonarr-add",
+        "description": "Add TV series (including docuseries) to the homelab Sonarr (noblenumbat) by title/year. Use when the user asks to add shows, series, seasons, or multi-part documentaries to Sonarr, the media server, or their Jellyfin library.",
+        "path": "homelab/agentic/skills/sonarr-add",
+        "files": [
+          "SKILL.md",
+          "scripts/add_series.py"
+        ]
+      }
+    ],
+    "rules": [
+      {
+        "file": "00-file-locations.md",
+        "path": "homelab/agentic/rules/00-file-locations.md",
+        "title": "Where agentic files live"
+      },
+      {
+        "file": "homelab-ssh-autotrigger.md",
+        "path": "homelab/agentic/rules/homelab-ssh-autotrigger.md",
+        "title": "homelab SSH auto-trigger rule",
+        "status": "recovery-stub (re-author)"
+      }
+    ],
+    "runbooks": [
+      {
+        "file": "01-hosts-and-ssh.md",
+        "path": "homelab/agentic/runbooks/01-hosts-and-ssh.md",
+        "title": "Homelab hosts & SSH"
+      },
+      {
+        "file": "02-network-dhcp-dns.md",
+        "path": "homelab/agentic/runbooks/02-network-dhcp-dns.md",
+        "title": "Network: DHCP / DNS (\"servers down\")"
+      },
+      {
+        "file": "03-vpn-gluetun-portforward.md",
+        "path": "homelab/agentic/runbooks/03-vpn-gluetun-portforward.md",
+        "title": "VPN: gluetun port-forward failure"
+      },
+      {
+        "file": "04-discord-bot-fleet.md",
+        "path": "homelab/agentic/runbooks/04-discord-bot-fleet.md",
+        "title": "Discord bot fleet (on rpi)"
+      },
+      {
+        "file": "05-noblenumbat.md",
+        "path": "homelab/agentic/runbooks/05-noblenumbat.md",
+        "title": "noblenumbat (media + code server)"
+      },
+      {
+        "file": "06-local-llm.md",
+        "path": "homelab/agentic/runbooks/06-local-llm.md",
+        "title": "Local LLM on the android server"
+      },
+      {
+        "file": "07-llm-troubleshooting.md",
+        "path": "homelab/agentic/runbooks/07-llm-troubleshooting.md",
+        "title": "Local LLM Troubleshooting"
+      }
+    ],
+    "harness": [
+      {
+        "file": "README.md",
+        "path": "homelab/agentic/harness/README.md",
+        "title": "Harness notes"
+      }
+    ]
+  }
+}
