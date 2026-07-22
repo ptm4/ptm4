@@ -1,0 +1,197 @@
+{
+  "meta": {
+    "title": "Homelab — Architecture & Flows",
+    "subtitle": "Every host, container, mount and external service across rpi, opti and noblenumbat. Pick a flow on the right to trace the path through the system."
+  },
+  "legend": [
+    { "key": "actor",    "label": "Actor / client",        "color": "#e0b44a" },
+    { "key": "edge",     "label": "rpi — DNS & edge",       "color": "#4f8ef7" },
+    { "key": "rpi",      "label": "rpi — apps",             "color": "#4caf7d" },
+    { "key": "opti",     "label": "opti — storage & agents","color": "#c07de0" },
+    { "key": "media",    "label": "noblenumbat — media",    "color": "#e0824a" },
+    { "key": "external", "label": "External service",       "color": "#7a7f99" }
+  ],
+  "columns": [
+    { "id": "actors",  "label": "ACTORS / CLIENTS" },
+    { "id": "edge",    "label": "RPI — DNS & EDGE (192.168.1.10)" },
+    { "id": "rpiapps", "label": "RPI — APPS" },
+    { "id": "opti",    "label": "OPTI — STORAGE & AGENTS (192.168.1.11)" },
+    { "id": "media",   "label": "NOBLENUMBAT — YAMS MEDIA (192.168.1.6)" },
+    { "id": "external","label": "EXTERNAL SERVICES" }
+  ],
+  "nodes": [
+    { "id": "you",          "label": "You",                     "sublabel": "git push · SSH",               "column": "actors", "category": "actor" },
+    { "id": "browser",      "label": "Browser (LAN)",            "sublabel": "webapp, Vaultwarden, Cockpit",  "column": "actors", "category": "actor" },
+    { "id": "windows-pc",   "label": "Windows PC",                "sublabel": "SMB drop \\\\opti\\fs",          "column": "actors", "category": "actor" },
+    { "id": "phone",        "label": "Phone",                     "sublabel": "Mihon · Kavita PWA",            "column": "actors", "category": "actor" },
+
+    { "id": "pihole",         "label": "Pi-hole",              "sublabel": ":53 DNS/DHCP · :80 admin",   "column": "edge", "category": "edge" },
+    { "id": "cockpit",        "label": "Cockpit",               "sublabel": ":9090 admin UI",             "column": "edge", "category": "edge" },
+    { "id": "nginx-bitwarden","label": "nginx-bitwarden",       "sublabel": ":443 TLS terminator",        "column": "edge", "category": "edge" },
+    { "id": "nginx-webapp",   "label": "nginx-webapp",          "sublabel": ":8443 TLS terminator",       "column": "edge", "category": "edge" },
+
+    { "id": "vaultwarden",    "label": "Vaultwarden",           "sublabel": "password manager",           "column": "rpiapps", "category": "rpi" },
+    { "id": "mariadb",        "label": "MariaDB",                "sublabel": "bitwarden-db",                "column": "rpiapps", "category": "rpi" },
+    { "id": "webapp-backend", "label": "webapp backend",         "sublabel": ":3000 Express · dashboard",   "column": "rpiapps", "category": "rpi" },
+    { "id": "notes-api",      "label": "notes-api",              "sublabel": ":3002 notebook",              "column": "rpiapps", "category": "rpi" },
+    { "id": "discord-bots",   "label": "discord-* bots",         "sublabel": "weather · healthdigest · jellyfin · sports · hltv", "column": "rpiapps", "category": "rpi" },
+    { "id": "rpi-runner",     "label": "GH Actions runner (rpi)","sublabel": "polls GitHub · deploys stack","column": "rpiapps", "category": "rpi" },
+
+    { "id": "omv",         "label": "OpenMediaVault",   "sublabel": "manages Samba + pool",           "column": "opti", "category": "opti" },
+    { "id": "mergerfs",    "label": "mergerfs pool",     "sublabel": "/srv/pool · ~1.1 TB",             "column": "opti", "category": "opti" },
+    { "id": "samba",       "label": "Samba",             "sublabel": "\\\\opti\\fs · CIFS server",       "column": "opti", "category": "opti" },
+    { "id": "opti-runner", "label": "GH Actions runner (opti)", "sublabel": "label: opti · agent workflow", "column": "opti", "category": "opti" },
+    { "id": "dispatcher",  "label": "agent-dispatcher",  "sublabel": ":9099 · enable/disable · run-now","column": "opti", "category": "opti" },
+    { "id": "agents",      "label": "homelab agents",    "sublabel": "hardware · software · network · doctor · journald-hunter · persistence-auditor · leetify", "column": "opti", "category": "opti" },
+
+    { "id": "jellyfin",     "label": "Jellyfin",          "sublabel": ":8096 · VAAPI transcode",        "column": "media", "category": "media" },
+    { "id": "arr-stack",    "label": "Radarr / Sonarr / Lidarr / Bazarr", "sublabel": "library managers", "column": "media", "category": "media" },
+    { "id": "prowlarr",     "label": "Prowlarr",          "sublabel": ":9696 · indexer manager",        "column": "media", "category": "media" },
+    { "id": "qbittorrent",  "label": "qBittorrent",       "sublabel": ":8081 · routed via gluetun",     "column": "media", "category": "media" },
+    { "id": "gluetun",      "label": "gluetun",           "sublabel": "VPN network namespace",          "column": "media", "category": "media" },
+    { "id": "media-import", "label": "media-import.timer","sublabel": "every 2 min · file-drop importer","column": "media", "category": "media" },
+    { "id": "mylar-kavita", "label": "Mylar3 + Kavita",   "sublabel": ":8090 · :5000 comics/books",     "column": "media", "category": "media" },
+    { "id": "portainer-wt", "label": "Portainer + Watchtower", "sublabel": ":9000 · auto-updates",      "column": "media", "category": "media" },
+
+    { "id": "github",       "label": "GitHub",            "sublabel": "repo + Actions",                 "column": "external", "category": "external" },
+    { "id": "discord",      "label": "Discord webhooks",  "sublabel": "channel notifications",          "column": "external", "category": "external" },
+    { "id": "protonvpn",    "label": "ProtonVPN",         "sublabel": "free tier · Netherlands",        "column": "external", "category": "external" },
+    { "id": "indexers",     "label": "Torrent/Usenet indexers", "sublabel": "via FlareSolverr (Cloudflare bypass)", "column": "external", "category": "external" },
+    { "id": "comicvine",    "label": "ComicVine API",     "sublabel": "comic metadata",                 "column": "external", "category": "external" },
+    { "id": "upstream-dns", "label": "Upstream DNS",      "sublabel": "router · 1.1.1.1 fallback",      "column": "external", "category": "external" }
+  ],
+  "edges": [
+    { "id": "e-push",          "from": "you",          "to": "github",         "label": "git push (main)" },
+    { "id": "e-browser-webapp","from": "browser",      "to": "nginx-webapp",   "label": "HTTPS :8443" },
+    { "id": "e-browser-bw",    "from": "browser",      "to": "nginx-bitwarden","label": "HTTPS :443" },
+    { "id": "e-browser-cockpit","from": "browser",     "to": "cockpit",        "label": "HTTPS :9090" },
+    { "id": "e-browser-pihole","from": "browser",      "to": "pihole",         "label": "DNS query :53" },
+    { "id": "e-browser-jf",    "from": "browser",      "to": "jellyfin",       "label": "watch" },
+    { "id": "e-pihole-upstream","from": "pihole",      "to": "upstream-dns",   "label": "forward unresolved" },
+
+    { "id": "e-gh-rpirunner",  "from": "github",       "to": "rpi-runner",     "label": "rpi-deploy.yml (poll)" },
+    { "id": "e-rpirunner-webapp","from": "rpi-runner",  "to": "webapp-backend","label": "compose up -d --remove-orphans" },
+    { "id": "e-rpirunner-log", "from": "rpi-runner",   "to": "mergerfs",       "label": "deploy log → /ptm/logging" },
+
+    { "id": "e-gh-optirunner", "from": "github",       "to": "opti-runner",    "label": "homelab-agents.yml (schedule/dispatch)" },
+    { "id": "e-optirunner-agents","from": "opti-runner","to": "agents",        "label": "runs agents" },
+    { "id": "e-dispatcher-agents","from": "dispatcher", "to": "agents",        "label": "run-now / enable" },
+    { "id": "e-webapp-dispatcher","from": "webapp-backend","to": "dispatcher","label": "LAN proxy :9099" },
+    { "id": "e-agents-mergerfs","from": "agents",       "to": "mergerfs",      "label": "write reports/agent-logs" },
+    { "id": "e-mergerfs-samba", "from": "mergerfs",     "to": "samba",         "label": "exposed as \\\\opti\\fs" },
+    { "id": "e-samba-webapp",   "from": "samba",        "to": "webapp-backend","label": "CIFS /mnt/opti-fs (read)" },
+    { "id": "e-webapp-nginxwebapp","from": "webapp-backend","to": "nginx-webapp","label": "proxied :3000→:8443" },
+    { "id": "e-nginxwebapp-notes","from": "nginx-webapp","to": "notes-api",    "label": "proxied :3002" },
+
+    { "id": "e-nginxbw-vw",     "from": "nginx-bitwarden","to": "vaultwarden", "label": "proxy_pass :80" },
+    { "id": "e-vw-mariadb",     "from": "vaultwarden",  "to": "mariadb",       "label": "mysql:// bitwarden" },
+
+    { "id": "e-bots-discord",   "from": "discord-bots", "to": "discord",      "label": "webhook POST" },
+    { "id": "e-bots-mergerfs",  "from": "discord-bots", "to": "mergerfs",     "label": "healthdigest reads agent-logs" },
+
+    { "id": "e-win-mergerfs",   "from": "windows-pc",   "to": "mergerfs",     "label": "drop → Media-Import\\" },
+    { "id": "e-mergerfs-import","from": "mergerfs",     "to": "media-import", "label": "CIFS /mnt/opti-media" },
+    { "id": "e-import-arr",     "from": "media-import", "to": "arr-stack",    "label": "video → DownloadedMoviesScan" },
+    { "id": "e-import-qbit",    "from": "media-import", "to": "qbittorrent",  "label": ".torrent → blackhole watch" },
+    { "id": "e-qbit-gluetun",   "from": "qbittorrent",  "to": "gluetun",      "label": "network_mode: service:gluetun" },
+    { "id": "e-gluetun-proton", "from": "gluetun",      "to": "protonvpn",    "label": "OpenVPN tunnel" },
+    { "id": "e-arr-mergerfs",   "from": "arr-stack",    "to": "mergerfs",     "label": "import → opti library" },
+    { "id": "e-jf-mergerfs",    "from": "jellyfin",     "to": "mergerfs",     "label": "reads /mnt/opti-library, /mnt/opti-shows" },
+    { "id": "e-prowlarr-indexers","from": "prowlarr",   "to": "indexers",     "label": "via FlareSolverr proxy" },
+
+    { "id": "e-mylar-qbit",     "from": "mylar-kavita", "to": "qbittorrent",  "label": "sends comic torrents" },
+    { "id": "e-mylar-comicvine","from": "mylar-kavita", "to": "comicvine",    "label": "metadata lookup" },
+    { "id": "e-phone-mylar",    "from": "phone",        "to": "mylar-kavita", "label": "OPDS / PWA read" }
+  ],
+  "flows": [
+    {
+      "id": "flow-deploy",
+      "name": "rpi webapp deploy (CI/CD)",
+      "description": "Developer pushes a compose change; the rpi's self-hosted runner rolls it out.",
+      "steps": [
+        { "edge": "e-push",            "title": "You → GitHub", "detail": "git push to main — modifies Peters Spellbook/RPI/docker-compose.yml" },
+        { "edge": "e-gh-rpirunner",    "title": "GitHub → rpi runner", "detail": "rpi-deploy.yml triggers; self-hosted runner on rpi polls GitHub over HTTPS (no inbound ports needed)" },
+        { "edge": "e-rpirunner-webapp","title": "rpi runner → webapp backend", "detail": "cp compose file → /srv/docker/compose/, docker compose pull, docker compose up -d --remove-orphans" },
+        { "edge": "e-rpirunner-log",   "title": "rpi runner → mergerfs pool", "detail": "docker compose logs --tail=200 written to /mnt/opti-fs/ptm/logging/deploy-<timestamp>.log" }
+      ]
+    },
+    {
+      "id": "flow-agents",
+      "name": "Homelab agent sweep",
+      "description": "Scheduled + on-demand agents gather hardware/software/network/security data from every host.",
+      "steps": [
+        { "edge": "e-gh-optirunner",    "title": "GitHub → opti runner", "detail": "homelab-agents.yml, runs-on: [self-hosted, opti]; homelab-doctor+network every 30 min, hardware/software/security daily" },
+        { "edge": "e-optirunner-agents","title": "opti runner → agents", "detail": "agents SSH into opti/rpi/noblenumbat (HL_HOSTS + HL_SSH_KEY) — an unreachable host degrades gracefully, doesn't crash" },
+        { "edge": "e-dispatcher-agents","title": "dispatcher → agents", "detail": "hl-agent-dispatcher.service (:9099) also runs agents on demand from an allowlist, driven by webapp Enable/Disable + Run now buttons" },
+        { "edge": "e-webapp-dispatcher","title": "webapp backend → dispatcher", "detail": "LAN proxy call, token-authed via HL_DISPATCH_TOKEN" },
+        { "edge": "e-agents-mergerfs",  "title": "agents → mergerfs pool", "detail": "reports land in security-reports/ and agent-logs/ on opti's pool" },
+        { "edge": "e-mergerfs-samba",   "title": "mergerfs → Samba", "detail": "OMV exposes the pool as \\\\opti\\fs" },
+        { "edge": "e-samba-webapp",     "title": "Samba → webapp backend", "detail": "rpi mounts the whole share at /mnt/opti-fs (CIFS, read-only for reports)" },
+        { "edge": "e-webapp-nginxwebapp","title": "webapp backend → nginx-webapp", "detail": "served at https://webapp.rpi.lan:8443 — #agents and #security tabs" }
+      ]
+    },
+    {
+      "id": "flow-media-drop",
+      "name": "Media file-drop pipeline",
+      "description": "Drop a video or .torrent file on the network share and it ends up playable in Jellyfin.",
+      "steps": [
+        { "edge": "e-win-mergerfs",  "title": "Windows PC → mergerfs pool", "detail": "drop video or .torrent files to \\\\opti.lan\\fs\\ptm\\Media-Import\\" },
+        { "edge": "e-mergerfs-import","title": "mergerfs → media-import.timer", "detail": "noblenumbat mounts the inbox at /mnt/opti-media; systemd timer scans it every 2 min" },
+        { "edge": "e-import-arr",    "title": "media-import → arr stack", "detail": "stable video files move to /srv/media/staging/ and trigger Radarr: DownloadedMoviesScan" },
+        { "edge": "e-import-qbit",   "title": "media-import → qBittorrent", "detail": ".torrent files move to /srv/media/blackhole/, a qBittorrent watch folder" },
+        { "edge": "e-qbit-gluetun",  "title": "qBittorrent → gluetun", "detail": "qBittorrent runs inside gluetun's network namespace — all torrent traffic is VPN-routed" },
+        { "edge": "e-gluetun-proton","title": "gluetun → ProtonVPN", "detail": "OpenVPN tunnel, free tier, Netherlands servers only, no port forwarding" },
+        { "edge": "e-arr-mergerfs",  "title": "arr stack → mergerfs pool", "detail": "Radarr renames + imports into the movie library on opti (cross-device copy, no hardlinks)" },
+        { "edge": "e-jf-mergerfs",   "title": "Jellyfin → mergerfs pool", "detail": "realtime monitor picks up the new file from /mnt/opti-library automatically" },
+        { "edge": "e-browser-jf",    "title": "Browser → Jellyfin", "detail": "stream the newly imported title, hardware-transcoded via Intel QuickSync VAAPI" }
+      ]
+    },
+    {
+      "id": "flow-dns",
+      "name": "LAN DNS resolution",
+      "description": "Every device on the LAN resolves names through Pi-hole first.",
+      "steps": [
+        { "edge": "e-browser-pihole", "title": "Browser → Pi-hole", "detail": "all LAN DNS hits 192.168.1.10:53 — local records (bitwarden.rpi.lan, webapp.rpi.lan, jellyfin.lan, comics.lan, opti.lan) resolve directly" },
+        { "edge": "e-pihole-upstream","title": "Pi-hole → upstream DNS", "detail": "anything not blocked or locally defined forwards to the router (192.168.1.1) with 1.1.1.1 as fallback" }
+      ]
+    },
+    {
+      "id": "flow-vaultwarden",
+      "name": "Vaultwarden login",
+      "description": "Password manager traffic, TLS-terminated on rpi.",
+      "steps": [
+        { "edge": "e-browser-bw", "title": "Browser → nginx-bitwarden", "detail": "HTTPS :443, self-signed cert for bitwarden.rpi.lan" },
+        { "edge": "e-nginxbw-vw", "title": "nginx-bitwarden → Vaultwarden", "detail": "proxy_pass to the internal bridge network, port 80 (no direct host exposure)" },
+        { "edge": "e-vw-mariadb","title": "Vaultwarden → MariaDB", "detail": "mysql://bitwarden@bitwarden-db:3306/bitwarden — stop_grace_period 60s to avoid tc.log corruption" }
+      ]
+    },
+    {
+      "id": "flow-discord",
+      "name": "Discord bot notification",
+      "description": "Health-digest bot posts a daily summary pulled from agent reports.",
+      "steps": [
+        { "edge": "e-bots-mergerfs", "title": "discord-healthdigest → mergerfs pool", "detail": "reads agent-logs/ (CIFS /mnt/opti-fs) plus Pi-hole + dispatcher status for the digest" },
+        { "edge": "e-bots-discord",  "title": "discord-* bots → Discord", "detail": "each bot posts to its own webhook URL (weather, healthdigest, jellyfin, sports, hltv)" }
+      ]
+    },
+    {
+      "id": "flow-comics",
+      "name": "Comics: Mylar3 → Kavita → Mihon",
+      "description": "Automated comic acquisition, then offline reading on the phone.",
+      "steps": [
+        { "edge": "e-mylar-comicvine","title": "Mylar3 → ComicVine", "detail": "free API key for series/issue metadata" },
+        { "edge": "e-mylar-qbit",     "title": "Mylar3 → qBittorrent", "detail": "sends matched torrents to qBittorrent (label/category: comics)" },
+        { "edge": "e-qbit-gluetun",   "title": "qBittorrent → gluetun", "detail": "download still routes through the VPN like everything else" },
+        { "edge": "e-phone-mylar",    "title": "Phone → Mylar3/Kavita", "detail": "Kavita serves completed comics; Mihon (Kavita extension) syncs chapter-level read progress over OPDS — no VPN, LAN-only by design" }
+      ]
+    },
+    {
+      "id": "flow-indexers",
+      "name": "Indexer search (Prowlarr + FlareSolverr)",
+      "description": "Cloudflare-protected torrent/usenet sites, bypassed for automated search.",
+      "steps": [
+        { "edge": "e-prowlarr-indexers", "title": "Prowlarr → indexers", "detail": "requests route through the FlareSolverr proxy (:8191) to solve Cloudflare challenges before hitting tagged indexers" }
+      ]
+    }
+  ]
+}
