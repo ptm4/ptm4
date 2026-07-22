@@ -57,6 +57,10 @@ app.use('/api/hltv', hltvRouter);
 const llamaRouter = require('./routes/llama');
 app.use('/api/llama', llamaRouter);
 
+// architecture page's Sync button — live per-host status from the latest agent reports
+const architectureRouter = require('./routes/architecture');
+app.use('/api/architecture', architectureRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

@@ -51,4 +51,7 @@ vaultwarden-data/
 *.log
 logs/
 homelab/agentic/runbooks
+homelab/agentic/skills
+homelab/agentic/rules
+homelab/agentic/harness
 .claude

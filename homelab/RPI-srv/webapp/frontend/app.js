@@ -152,6 +152,15 @@ function renderHome(view) {
           <a href="/notes/" class="card-link">Open notes →</a>
         </div>
 
+        <div class="card">
+          <div class="card-icon">🗺️</div>
+          <div class="card-body">
+            <h2>Architecture</h2>
+            <p>Every host, container &amp; flow across the homelab — synced live from agent reports.</p>
+          </div>
+          <a href="/architecture/" class="card-link">View map →</a>
+        </div>
+
         <div class="card card-links">
           <div class="card-icon">🔗</div>
           <div class="card-body">

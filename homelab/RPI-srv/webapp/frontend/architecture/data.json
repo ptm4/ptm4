@@ -1,14 +1,15 @@
 {
   "meta": {
     "title": "Homelab — Architecture & Flows",
-    "subtitle": "Every host, container, mount and external service across rpi, opti and noblenumbat. Pick a flow on the right to trace the path through the system."
+    "subtitle": "Every host, container, mount and external service across rpi, opti, noblenumbat and android. Verified against a live pull of the homelab agent reports (hardware/software/network/doctor — 4/4 hosts). Pick a flow on the right to trace the path through the system, or hit Sync to refresh host status from the latest reports."
   },
   "legend": [
     { "key": "actor",    "label": "Actor / client",        "color": "#e0b44a" },
     { "key": "edge",     "label": "rpi — DNS & edge",       "color": "#4f8ef7" },
     { "key": "rpi",      "label": "rpi — apps",             "color": "#4caf7d" },
     { "key": "opti",     "label": "opti — storage & agents","color": "#c07de0" },
-    { "key": "media",    "label": "noblenumbat — media",    "color": "#e0824a" },
+    { "key": "media",    "label": "noblenumbat — media & dev","color": "#e0824a" },
+    { "key": "android",  "label": "android — Termux server","color": "#4ac0b0" },
     { "key": "external", "label": "External service",       "color": "#7a7f99" }
   ],
   "columns": [
@@ -16,11 +17,12 @@
     { "id": "edge",    "label": "RPI — DNS & EDGE (192.168.1.10)" },
     { "id": "rpiapps", "label": "RPI — APPS" },
     { "id": "opti",    "label": "OPTI — STORAGE & AGENTS (192.168.1.11)" },
-    { "id": "media",   "label": "NOBLENUMBAT — YAMS MEDIA (192.168.1.6)" },
+    { "id": "media",   "label": "NOBLENUMBAT — YAMS MEDIA & DEV (192.168.1.6)" },
+    { "id": "android", "label": "ANDROID — TERMUX SERVER (192.168.1.54:8022)" },
     { "id": "external","label": "EXTERNAL SERVICES" }
   ],
   "nodes": [
-    { "id": "you",          "label": "You",                     "sublabel": "git push · SSH",               "column": "actors", "category": "actor" },
+    { "id": "you",          "label": "You",                     "sublabel": "SSH · Remote-SSH · git push",   "column": "actors", "category": "actor" },
     { "id": "browser",      "label": "Browser (LAN)",            "sublabel": "webapp, Vaultwarden, Cockpit",  "column": "actors", "category": "actor" },
     { "id": "windows-pc",   "label": "Windows PC",                "sublabel": "SMB drop \\\\opti\\fs",          "column": "actors", "category": "actor" },
     { "id": "phone",        "label": "Phone",                     "sublabel": "Mihon · Kavita PWA",            "column": "actors", "category": "actor" },
@@ -38,20 +40,27 @@
     { "id": "rpi-runner",     "label": "GH Actions runner (rpi)","sublabel": "polls GitHub · deploys stack","column": "rpiapps", "category": "rpi" },
 
     { "id": "omv",         "label": "OpenMediaVault",   "sublabel": "manages Samba + pool",           "column": "opti", "category": "opti" },
-    { "id": "mergerfs",    "label": "mergerfs pool",     "sublabel": "/srv/pool · ~1.1 TB",             "column": "opti", "category": "opti" },
+    { "id": "mergerfs",    "label": "mergerfs pool",     "sublabel": "/srv/pool · ~1 TB, ~70% used",    "column": "opti", "category": "opti" },
     { "id": "samba",       "label": "Samba",             "sublabel": "\\\\opti\\fs · CIFS server",       "column": "opti", "category": "opti" },
     { "id": "opti-runner", "label": "GH Actions runner (opti)", "sublabel": "label: opti · agent workflow", "column": "opti", "category": "opti" },
     { "id": "dispatcher",  "label": "agent-dispatcher",  "sublabel": ":9099 · enable/disable · run-now","column": "opti", "category": "opti" },
     { "id": "agents",      "label": "homelab agents",    "sublabel": "hardware · software · network · doctor · journald-hunter · persistence-auditor · leetify", "column": "opti", "category": "opti" },
+    { "id": "docs-generator","label": "docs-generator (WIP)", "sublabel": "regen homelab/agentic/runbooks/*.md from latest reports — button exists, NOT in the dispatcher allowlist yet", "column": "opti", "category": "opti" },
 
-    { "id": "jellyfin",     "label": "Jellyfin",          "sublabel": ":8096 · VAAPI transcode",        "column": "media", "category": "media" },
+    { "id": "jellyfin",     "label": "Jellyfin",          "sublabel": ":8096 · VAAPI transcode · movies+shows","column": "media", "category": "media" },
     { "id": "arr-stack",    "label": "Radarr / Sonarr / Lidarr / Bazarr", "sublabel": "library managers", "column": "media", "category": "media" },
     { "id": "prowlarr",     "label": "Prowlarr",          "sublabel": ":9696 · indexer manager",        "column": "media", "category": "media" },
     { "id": "qbittorrent",  "label": "qBittorrent",       "sublabel": ":8081 · routed via gluetun",     "column": "media", "category": "media" },
-    { "id": "gluetun",      "label": "gluetun",           "sublabel": "VPN network namespace",          "column": "media", "category": "media" },
+    { "id": "gluetun",      "label": "gluetun",           "sublabel": "VPN namespace · control API :8003","column": "media", "category": "media" },
     { "id": "media-import", "label": "media-import.timer","sublabel": "every 2 min · file-drop importer","column": "media", "category": "media" },
-    { "id": "mylar-kavita", "label": "Mylar3 + Kavita",   "sublabel": ":8090 · :5000 comics/books",     "column": "media", "category": "media" },
+    { "id": "mylar-kavita", "label": "Mylar3 + Kavita",   "sublabel": ":8090 · :5000 comics & books",   "column": "media", "category": "media" },
     { "id": "portainer-wt", "label": "Portainer + Watchtower", "sublabel": ":9000 · auto-updates",      "column": "media", "category": "media" },
+    { "id": "vscode-remote","label": "VS Code Server",    "sublabel": "Remote-SSH · primary ptm4 repo at ~/code/ptm4 — this page was built here", "column": "media", "category": "media" },
+
+    { "id": "android-host",   "label": "Galaxy S10 (Termux)","sublabel": "sshd :8022 · runit services · unrooted","column": "android", "category": "android" },
+    { "id": "llama-server",   "label": "llama-server",       "sublabel": ":8080 · raw OpenAI-compatible chat · qwen2.5 3B/1.5B, CPU-only","column": "android", "category": "android" },
+    { "id": "llama-ctl",      "label": "llama-ctl",          "sublabel": ":8081 · status/models/runbooks CRUD/ask","column": "android", "category": "android" },
+    { "id": "android-backup", "label": "rsync backup",       "sublabel": "→ opti /srv/pool/ptm/android/ (~14 GB)","column": "android", "category": "android" },
 
     { "id": "github",       "label": "GitHub",            "sublabel": "repo + Actions",                 "column": "external", "category": "external" },
     { "id": "discord",      "label": "Discord webhooks",  "sublabel": "channel notifications",          "column": "external", "category": "external" },
@@ -61,7 +70,8 @@
     { "id": "upstream-dns", "label": "Upstream DNS",      "sublabel": "router · 1.1.1.1 fallback",      "column": "external", "category": "external" }
   ],
   "edges": [
-    { "id": "e-push",          "from": "you",          "to": "github",         "label": "git push (main)" },
+    { "id": "e-you-vscode",    "from": "you",          "to": "vscode-remote",  "label": "Remote-SSH (VS Code / Claude Code)" },
+    { "id": "e-push",          "from": "vscode-remote","to": "github",         "label": "git push (main) — primary repo copy lives here" },
     { "id": "e-browser-webapp","from": "browser",      "to": "nginx-webapp",   "label": "HTTPS :8443" },
     { "id": "e-browser-bw",    "from": "browser",      "to": "nginx-bitwarden","label": "HTTPS :443" },
     { "id": "e-browser-cockpit","from": "browser",     "to": "cockpit",        "label": "HTTPS :9090" },
@@ -78,10 +88,13 @@
     { "id": "e-dispatcher-agents","from": "dispatcher", "to": "agents",        "label": "run-now / enable" },
     { "id": "e-webapp-dispatcher","from": "webapp-backend","to": "dispatcher","label": "LAN proxy :9099" },
     { "id": "e-agents-mergerfs","from": "agents",       "to": "mergerfs",      "label": "write reports/agent-logs" },
+    { "id": "e-agents-android", "from": "agents",       "to": "android-host",  "label": "SSH health check (HL_HOSTS now includes android — 4/4 hosts)" },
     { "id": "e-mergerfs-samba", "from": "mergerfs",     "to": "samba",         "label": "exposed as \\\\opti\\fs" },
     { "id": "e-samba-webapp",   "from": "samba",        "to": "webapp-backend","label": "CIFS /mnt/opti-fs (read)" },
     { "id": "e-webapp-nginxwebapp","from": "webapp-backend","to": "nginx-webapp","label": "proxied :3000→:8443" },
     { "id": "e-nginxwebapp-notes","from": "nginx-webapp","to": "notes-api",    "label": "proxied :3002" },
+    { "id": "e-webapp-docsgen", "from": "webapp-backend","to": "docs-generator","label": "Regenerate docs button → POST /api/agents/docs-generator/run" },
+    { "id": "e-docsgen-llamactl","from": "docs-generator","to": "llama-ctl",   "label": "regenerated runbooks sync to phone (~2 min), once wired up" },
 
     { "id": "e-nginxbw-vw",     "from": "nginx-bitwarden","to": "vaultwarden", "label": "proxy_pass :80" },
     { "id": "e-vw-mariadb",     "from": "vaultwarden",  "to": "mariadb",       "label": "mysql:// bitwarden" },
@@ -101,15 +114,21 @@
 
     { "id": "e-mylar-qbit",     "from": "mylar-kavita", "to": "qbittorrent",  "label": "sends comic torrents" },
     { "id": "e-mylar-comicvine","from": "mylar-kavita", "to": "comicvine",    "label": "metadata lookup" },
-    { "id": "e-phone-mylar",    "from": "phone",        "to": "mylar-kavita", "label": "OPDS / PWA read" }
+    { "id": "e-phone-mylar",    "from": "phone",        "to": "mylar-kavita", "label": "OPDS / PWA read" },
+
+    { "id": "e-you-android",    "from": "you",          "to": "android-host", "label": "ssh android (Termux, :8022, key: ~/.ssh/homelab)" },
+    { "id": "e-androidbackup-mergerfs","from": "android-backup","to": "mergerfs","label": "rsync push (exits 23 by design on the NTFS branch — verify by size, not exit code)" },
+    { "id": "e-webapp-llamactl","from": "webapp-backend","to": "llama-ctl",   "label": "proxy /api/llama/status,models,runbooks,ask" },
+    { "id": "e-webapp-llamaserver","from": "webapp-backend","to": "llama-server","label": "proxy /api/llama/chat" }
   ],
   "flows": [
     {
       "id": "flow-deploy",
       "name": "rpi webapp deploy (CI/CD)",
-      "description": "Developer pushes a compose change; the rpi's self-hosted runner rolls it out.",
+      "description": "Developer edits on noblenumbat (the primary repo copy) and pushes; the rpi's self-hosted runner rolls it out.",
       "steps": [
-        { "edge": "e-push",            "title": "You → GitHub", "detail": "git push to main — modifies Peters Spellbook/RPI/docker-compose.yml" },
+        { "edge": "e-you-vscode",      "title": "You → VS Code Server (noblenumbat)", "detail": "Remote-SSH into noblenumbat:~/code/ptm4 — the primary copy of the repo; the opti mount is stale, don't edit there" },
+        { "edge": "e-push",            "title": "VS Code Server → GitHub", "detail": "git push to main — modifies homelab/RPI-srv/**" },
         { "edge": "e-gh-rpirunner",    "title": "GitHub → rpi runner", "detail": "rpi-deploy.yml triggers; self-hosted runner on rpi polls GitHub over HTTPS (no inbound ports needed)" },
         { "edge": "e-rpirunner-webapp","title": "rpi runner → webapp backend", "detail": "cp compose file → /srv/docker/compose/, docker compose pull, docker compose up -d --remove-orphans" },
         { "edge": "e-rpirunner-log",   "title": "rpi runner → mergerfs pool", "detail": "docker compose logs --tail=200 written to /mnt/opti-fs/ptm/logging/deploy-<timestamp>.log" }
@@ -118,16 +137,17 @@
     {
       "id": "flow-agents",
       "name": "Homelab agent sweep",
-      "description": "Scheduled + on-demand agents gather hardware/software/network/security data from every host.",
+      "description": "Scheduled + on-demand agents gather hardware/software/network/security data from every host — now 4/4 including android.",
       "steps": [
         { "edge": "e-gh-optirunner",    "title": "GitHub → opti runner", "detail": "homelab-agents.yml, runs-on: [self-hosted, opti]; homelab-doctor+network every 30 min, hardware/software/security daily" },
-        { "edge": "e-optirunner-agents","title": "opti runner → agents", "detail": "agents SSH into opti/rpi/noblenumbat (HL_HOSTS + HL_SSH_KEY) — an unreachable host degrades gracefully, doesn't crash" },
+        { "edge": "e-optirunner-agents","title": "opti runner → agents", "detail": "agents SSH into opti/rpi/noblenumbat/android (HL_HOSTS + HL_SSH_KEY) — an unreachable host degrades gracefully, doesn't crash. Live-verified: 4/4 hosts reported on the most recent run." },
+        { "edge": "e-agents-android",   "title": "agents → android", "detail": "android joined the monitored fleet — hardware/software/network agents now SSH in like the other three hosts" },
         { "edge": "e-dispatcher-agents","title": "dispatcher → agents", "detail": "hl-agent-dispatcher.service (:9099) also runs agents on demand from an allowlist, driven by webapp Enable/Disable + Run now buttons" },
         { "edge": "e-webapp-dispatcher","title": "webapp backend → dispatcher", "detail": "LAN proxy call, token-authed via HL_DISPATCH_TOKEN" },
         { "edge": "e-agents-mergerfs",  "title": "agents → mergerfs pool", "detail": "reports land in security-reports/ and agent-logs/ on opti's pool" },
         { "edge": "e-mergerfs-samba",   "title": "mergerfs → Samba", "detail": "OMV exposes the pool as \\\\opti\\fs" },
         { "edge": "e-samba-webapp",     "title": "Samba → webapp backend", "detail": "rpi mounts the whole share at /mnt/opti-fs (CIFS, read-only for reports)" },
-        { "edge": "e-webapp-nginxwebapp","title": "webapp backend → nginx-webapp", "detail": "served at https://webapp.rpi.lan:8443 — #agents and #security tabs" }
+        { "edge": "e-webapp-nginxwebapp","title": "webapp backend → nginx-webapp", "detail": "served at https://webapp.rpi.lan:8443 — #agents and #security tabs, and this Architecture page's Sync button reads the same files" }
       ]
     },
     {
@@ -151,7 +171,7 @@
       "name": "LAN DNS resolution",
       "description": "Every device on the LAN resolves names through Pi-hole first.",
       "steps": [
-        { "edge": "e-browser-pihole", "title": "Browser → Pi-hole", "detail": "all LAN DNS hits 192.168.1.10:53 — local records (bitwarden.rpi.lan, webapp.rpi.lan, jellyfin.lan, comics.lan, opti.lan) resolve directly" },
+        { "edge": "e-browser-pihole", "title": "Browser → Pi-hole", "detail": "all LAN DNS hits 192.168.1.10:53 — local records (bitwarden.rpi.lan, webapp.rpi.lan, jellyfin.lan, comics.lan, opti.lan, android.lan) resolve directly" },
         { "edge": "e-pihole-upstream","title": "Pi-hole → upstream DNS", "detail": "anything not blocked or locally defined forwards to the router (192.168.1.1) with 1.1.1.1 as fallback" }
       ]
     },
@@ -191,6 +211,27 @@
       "description": "Cloudflare-protected torrent/usenet sites, bypassed for automated search.",
       "steps": [
         { "edge": "e-prowlarr-indexers", "title": "Prowlarr → indexers", "detail": "requests route through the FlareSolverr proxy (:8191) to solve Cloudflare challenges before hitting tagged indexers" }
+      ]
+    },
+    {
+      "id": "flow-android",
+      "name": "Android: fleet monitoring + backup",
+      "description": "The Galaxy S10 was brought into the monitored fleet and backs its data up to opti.",
+      "steps": [
+        { "edge": "e-you-android",    "title": "You → android", "detail": "ssh android (Termux, port 8022, user u0_a204, key ~/.ssh/homelab) — unrooted, so privileged commands need adb, not sudo" },
+        { "edge": "e-agents-android", "title": "agents → android", "detail": "hardware/software/network agents SSH in on the same schedule as the other three hosts; homelab-doctor currently flags the root disk at 97% full" },
+        { "edge": "e-androidbackup-mergerfs","title": "rsync backup → mergerfs pool", "detail": "~14 GB (installers/media/docs) pushed to /srv/pool/ptm/android/; exit code 23 is expected on the pool's NTFS branch (no POSIX utime) — verify success by comparing sizes, not the exit status" }
+      ]
+    },
+    {
+      "id": "flow-llm",
+      "name": "Local LLM assistant (android)",
+      "description": "Private, offline inference on the phone — no cloud API cost. Surfaced in the webapp's Local LLM tab.",
+      "steps": [
+        { "edge": "e-webapp-llamactl",  "title": "webapp backend → llama-ctl", "detail": "management API (:8081) — status, model list/switch, runbook CRUD, and grounded /ask (server-side stuffs the runbooks as context)" },
+        { "edge": "e-webapp-llamaserver","title": "webapp backend → llama-server", "detail": "raw inference (:8080) — POST /v1/chat/completions, OpenAI-compatible; qwen2.5 3B (default, better judgment) or 1.5B (fast path), CPU-only, one model resident at a time" },
+        { "edge": "e-webapp-docsgen",   "title": "webapp backend → docs-generator", "detail": "the 'Regenerate docs' button POSTs /api/agents/docs-generator/run — as of this scan that agent name isn't in agent-dispatcher.py's AGENTS allowlist yet, so clicking it will currently fail until that's wired up" },
+        { "edge": "e-docsgen-llamactl", "title": "docs-generator → llama-ctl", "detail": "once wired up: regenerates homelab/agentic/runbooks/*.md from the latest agent reports, syncs to the phone within ~2 minutes for grounded Q&A" }
       ]
     }
   ]
