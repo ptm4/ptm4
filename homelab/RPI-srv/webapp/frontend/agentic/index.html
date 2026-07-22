@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0f1117; --surface:#1a1d27; --surface2:#20232f; --border:#2a2d3a;
-    --text:#e2e4ed; --muted:#7a7f99; --accent:#e0b44a; --ok:#4caf7d; --warn:#e0b44a;
+    --text:#e2e4ed; --muted:#7a7f99; --accent:#e0b44a; --ok:#4caf7d; --bad:#e05c5c;
   }
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
   body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.5;}
@@ -16,35 +16,49 @@
   #back{position:fixed;top:14px;left:14px;z-index:20;background:var(--surface2);border:1px solid var(--border);
     color:var(--text);padding:6px 12px;border-radius:6px;text-decoration:none;font-size:12px;}
   #back:hover{border-color:var(--accent);}
+  #sync-bar{position:fixed;top:14px;right:24px;z-index:20;display:flex;align-items:center;gap:10px;}
+  #sync-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;}
+  #sync-btn:hover{border-color:var(--accent);} #sync-btn:disabled{opacity:.5;cursor:default;}
+  #sync-status{font-size:11px;color:var(--muted);}
   header.page-head{padding:56px 24px 8px;max-width:1080px;}
   header.page-head h1{font-size:20px;margin-bottom:6px;}
   header.page-head p{color:var(--muted);max-width:860px;}
   .meta{color:var(--muted);font-size:11px;margin-top:8px;}
   .wrap{max-width:1080px;padding:12px 24px 48px;}
   section{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-top:16px;}
-  section h2{font-size:14px;letter-spacing:.4px;margin-bottom:12px;color:var(--text);
-    border-bottom:1px solid var(--border);padding-bottom:8px;}
+  section h2{font-size:14px;letter-spacing:.4px;margin-bottom:12px;color:var(--text);border-bottom:1px solid var(--border);padding-bottom:8px;}
   .kv{display:grid;grid-template-columns:170px 1fr;gap:6px 14px;}
-  .kv .k{color:var(--muted);}
-  .kv .v{word-break:break-word;}
+  .kv .k{color:var(--muted);} .kv .v{word-break:break-word;}
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
   th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.4px;}
   tr:last-child td{border-bottom:none;}
-  .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid var(--border);
-    background:var(--surface2);color:var(--muted);}
-  .tag.stub{color:var(--warn);border-color:var(--warn);}
+  .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);}
+  .tag.stub{color:var(--accent);border-color:var(--accent);}
+  .tag.ok{color:var(--ok);border-color:var(--ok);} .tag.bad{color:var(--bad);border-color:var(--bad);}
   ul.clean{list-style:none;display:flex;flex-direction:column;gap:6px;}
-  ul.clean li{padding-left:16px;position:relative;}
-  ul.clean li::before{content:"▸";position:absolute;left:0;color:var(--accent);}
+  ul.clean li{padding-left:16px;position:relative;} ul.clean li::before{content:"▸";position:absolute;left:0;color:var(--accent);}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   @media(max-width:720px){.cols{grid-template-columns:1fr;}.kv{grid-template-columns:1fr;}}
-  #err{background:#2a1d1d;border:1px solid #e05c5c;color:#ffb4b4;padding:14px;border-radius:8px;margin-top:16px;}
+  #err{background:#2a1d1d;border:1px solid var(--bad);color:#ffb4b4;padding:14px;border-radius:8px;margin-top:16px;}
   .muted{color:var(--muted);}
+  .tool-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surface2);margin-bottom:10px;}
+  .tool-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .tool-head .name{font-size:13.5px;font-weight:600;}
+  .checks{display:flex;flex-direction:column;gap:5px;margin-top:4px;}
+  .chk{display:flex;gap:8px;align-items:flex-start;font-size:12px;}
+  .chk .dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;margin-top:5px;}
+  .chk.pass .dot{background:var(--ok);} .chk.fail .dot{background:var(--bad);}
+  .chk .detail{color:var(--muted);}
 </style>
 </head>
 <body>
 <a id="back" href="/">← Dashboard</a>
+<div id="sync-bar">
+  <button id="sync-btn">↻ Sync</button>
+  <span id="sync-status">—</span>
+</div>
 
 <header class="page-head">
   <h1>Agentic Workspace</h1>
@@ -57,77 +71,119 @@
 <script>
 const $ = (t, cls, html) => { const e = document.createElement(t); if(cls) e.className = cls; if(html!=null) e.innerHTML = html; return e; };
 const esc = s => String(s==null?'':s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const ago = iso => { if(!iso) return ''; const s=Math.max(0,(Date.now()-new Date(iso))/1000); if(s<90) return Math.round(s)+'s ago'; if(s<5400) return Math.round(s/60)+'m ago'; if(s<172800) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago'; };
 
 function kv(obj){
   const g = $('div','kv');
-  for(const [k,v] of Object.entries(obj)){
+  for(const [k,v] of Object.entries(obj||{})){
     g.appendChild($('div','k', esc(k)));
     const val = (v && typeof v === 'object') ? Object.entries(v).map(([a,b])=>`<div><code>${esc(a)}</code> — ${esc(b)}</div>`).join('') : esc(v);
     g.appendChild($('div','v', val));
   }
   return g;
 }
-function section(title, node){ const s=$('section'); s.appendChild($('h2',null,esc(title))); s.appendChild(node); return s; }
+function section(title, node, extraHead){ const s=$('section'); const h=$('h2',null,esc(title)); if(extraHead) h.innerHTML += extraHead; s.appendChild(h); s.appendChild(node); return s; }
 
-fetch('/api/agentic').then(r=>r.json()).then(resp=>{
-  const content = document.getElementById('content');
-  if(!resp.ok){
-    document.getElementById('purpose').textContent = 'Manifest unavailable.';
-    const e = $('div'); e.id='err';
-    e.innerHTML = `<b>Could not load workspace.json</b><br>${esc(resp.error||'')}<br><span class="muted">${esc(resp.hint||'')}</span><br><span class="muted mono">${esc(resp.source||'')}</span>`;
-    content.appendChild(e);
-    return;
+function toolingAndWiring(resp){
+  const wiring = resp.wiring||{}; const hosts = resp.hosts||[];
+  const node = $('div');
+
+  // Per-tool wiring cards (live, workspace-level)
+  Object.entries(wiring).forEach(([key,w])=>{
+    // find installs of this tool across reporting hosts
+    const installs = [];
+    hosts.forEach(h=>(h.tools||[]).forEach(t=>{ if(t.key===key && t.installed) installs.push({host:h.host, version:t.version, path:t.path, when:h.generated_at}); }));
+    const card = $('div','tool-card');
+    const head = $('div','tool-head');
+    head.appendChild($('span','name', esc(w.name)));
+    if(installs.length){
+      head.appendChild($('span','tag ok', 'installed'));
+      head.appendChild($('span','tag '+(w.wired?'ok':'bad'), w.wired?'wired ✓':'NOT wired'));
+    } else {
+      head.appendChild($('span','tag', 'not detected on any host'));
+      if(w.wired) head.appendChild($('span','tag ok','wired ✓'));
+    }
+    card.appendChild(head);
+    // install details
+    if(installs.length){
+      const d = $('div','meta');
+      d.innerHTML = installs.map(i=>`on <code>${esc(i.host)}</code>: v${esc(i.version||'?')} <span class="mono">${esc(i.path||'')}</span> · probed ${esc(ago(i.when))}`).join('<br>');
+      card.appendChild(d);
+    }
+    // wiring checks
+    const checks = $('div','checks');
+    (w.checks||[]).forEach(c=>{
+      const row = $('div','chk '+c.status);
+      row.innerHTML = `<span class="dot"></span><span><b>${esc(c.label)}</b> — <span class="detail">${esc(c.detail)}</span></span>`;
+      checks.appendChild(row);
+    });
+    card.appendChild(checks);
+    node.appendChild(card);
+  });
+
+  if(!hosts.length){
+    node.appendChild($('p','muted','No host has reported tooling yet. Run <code>python3 homelab/agentic/probe.py</code> on the workstation where your agent runs.'));
   }
+  return node;
+}
+
+function render(resp){
+  const content = document.getElementById('content'); content.innerHTML='';
   const m = resp.manifest;
   document.getElementById('purpose').textContent = m.purpose || '';
   document.getElementById('meta').innerHTML =
-    `schema v${esc(m.schema_version)} · generated ${esc(m.generated_at)} by <code>${esc(m.generated_by)}</code>` +
-    (resp.mtime ? ` · file mtime ${esc(resp.mtime)}` : '') +
-    `<br><span class="mono">${esc(resp.source)}</span>`;
+    `schema v${esc(m.schema_version)} · manifest generated ${esc(m.generated_at)} · wiring computed live ${esc(ago(resp.computed_at))}` +
+    `<br><span class="mono">source: ${esc(resp.source)}</span>`;
+
+  // Tooling & Wiring FIRST (the point of this page)
+  content.appendChild(section('Tooling & Wiring', toolingAndWiring(resp),
+    ' <span class="muted" style="font-weight:400;font-size:11px">— detected per host, wiring checked live</span>'));
 
   // Workspace
-  const w = m.workspace || {};
-  const wnode = $('div');
+  const w = m.workspace||{}; const wnode=$('div');
   wnode.appendChild(kv({repo:w.repo, git_remote:w.git_remote, agentic_root:w.agentic_root, canonical_host:w.canonical_host}));
   if(w.access_paths){ wnode.appendChild($('div','meta','Access paths')); wnode.appendChild(kv(w.access_paths)); }
   if(w.note){ wnode.appendChild($('p','muted','<br>'+esc(w.note))); }
   content.appendChild(section('Workspace', wnode));
 
-  // Current agent
-  content.appendChild(section('Current agent', kv(m.current_agent||{})));
-
   // Portability
-  const p = m.portability||{};
-  const pnode = $('div');
+  const p=m.portability||{}; const pnode=$('div');
   if(p.summary) pnode.appendChild($('p',null,esc(p.summary)));
   if(p.for_a_new_tool){ pnode.appendChild($('div','meta','To onboard a new tool')); const ul=$('ul','clean'); p.for_a_new_tool.forEach(x=>ul.appendChild($('li',null,esc(x)))); pnode.appendChild(ul); }
   if(p.tool_adapters){ pnode.appendChild($('div','meta','Tool adapters')); pnode.appendChild(kv(p.tool_adapters)); }
   content.appendChild(section('Portability (agent-agnostic)', pnode));
 
   // Hosts
-  const ht = $('table'); ht.innerHTML = '<tr><th>Alias</th><th>IP</th><th>Role</th></tr>';
-  (m.hosts||[]).forEach(h=>ht.innerHTML += `<tr><td><code>${esc(h.alias)}</code></td><td class="mono">${esc(h.ip)}</td><td>${esc(h.role)}</td></tr>`);
+  const ht=$('table'); ht.innerHTML='<tr><th>Alias</th><th>IP</th><th>Role</th></tr>';
+  (m.hosts||[]).forEach(h=>ht.innerHTML+=`<tr><td><code>${esc(h.alias)}</code></td><td class="mono">${esc(h.ip)}</td><td>${esc(h.role)}</td></tr>`);
   content.appendChild(section('Hosts', ht));
 
-  // Inventory tables
-  const inv = m.inventory||{};
-  const skt = $('table'); skt.innerHTML = '<tr><th>Skill</th><th>Description</th><th></th></tr>';
-  (inv.skills||[]).forEach(s=>skt.innerHTML += `<tr><td><code>${esc(s.name)}</code><div class="muted mono" style="font-size:10.5px">${esc(s.path)}</div></td><td>${esc(s.description)}</td><td>${s.status?`<span class="tag stub">${esc(s.status)}</span>`:'<span class="tag">ok</span>'}</td></tr>`);
+  // Inventory
+  const inv=m.inventory||{};
+  const skt=$('table'); skt.innerHTML='<tr><th>Skill</th><th>Description</th><th></th></tr>';
+  (inv.skills||[]).forEach(s=>skt.innerHTML+=`<tr><td><code>${esc(s.name)}</code><div class="muted mono" style="font-size:10.5px">${esc(s.path)}</div></td><td>${esc(s.description)}</td><td>${s.status?`<span class="tag stub">${esc(s.status)}</span>`:'<span class="tag ok">ok</span>'}</td></tr>`);
   content.appendChild(section(`Skills (${(inv.skills||[]).length})`, skt));
+  const mkList=(title,arr)=>{ const t=$('table'); t.innerHTML='<tr><th>File</th><th>Title</th><th></th></tr>'; (arr||[]).forEach(x=>t.innerHTML+=`<tr><td><code>${esc(x.file)}</code></td><td>${esc(x.title)}</td><td>${x.status?`<span class="tag stub">${esc(x.status)}</span>`:''}</td></tr>`); return section(`${title} (${(arr||[]).length})`, t); };
+  const grid=$('div','cols'); grid.appendChild(mkList('Rules',inv.rules)); grid.appendChild(mkList('Runbooks',inv.runbooks)); content.appendChild(grid);
+  content.appendChild(mkList('Harness',inv.harness));
+}
 
-  const mkList = (title, arr) => {
-    const t = $('table'); t.innerHTML = '<tr><th>File</th><th>Title</th><th></th></tr>';
-    (arr||[]).forEach(x=>t.innerHTML += `<tr><td><code>${esc(x.file)}</code></td><td>${esc(x.title)}</td><td>${x.status?`<span class="tag stub">${esc(x.status)}</span>`:''}</td></tr>`);
-    return section(`${title} (${(arr||[]).length})`, t);
-  };
-  const grid = $('div','cols');
-  grid.appendChild(mkList('Rules', inv.rules));
-  grid.appendChild(mkList('Runbooks', inv.runbooks));
-  content.appendChild(grid);
-  content.appendChild(mkList('Harness', inv.harness));
-}).catch(e=>{
-  document.getElementById('content').appendChild(Object.assign(document.createElement('div'),{id:'err',textContent:'Fetch failed: '+e.message}));
-});
+function load(){
+  const btn=document.getElementById('sync-btn'), st=document.getElementById('sync-status');
+  btn.disabled=true; st.textContent='syncing…';
+  fetch('/api/agentic',{cache:'no-store'}).then(r=>r.json()).then(resp=>{
+    if(!resp.ok){
+      document.getElementById('purpose').textContent='Manifest unavailable.';
+      document.getElementById('content').innerHTML='';
+      const e=$('div'); e.id='err'; e.innerHTML=`<b>Could not load workspace.json</b><br>${esc(resp.error||'')}<br><span class="muted">${esc(resp.hint||'')}</span>`;
+      document.getElementById('content').appendChild(e);
+    } else { render(resp); }
+    st.textContent='synced '+ago(resp.computed_at||new Date().toISOString());
+  }).catch(e=>{ st.textContent='sync failed'; document.getElementById('content').appendChild($('div','','')).id='err'; })
+   .finally(()=>{ btn.disabled=false; });
+}
+document.getElementById('sync-btn').addEventListener('click', load);
+load();
 </script>
 </body>
 </html>

@@ -1,0 +1,67 @@
+{
+  "host": "tux",
+  "generated_at": "2026-07-22T11:47:26Z",
+  "generated_by": "homelab/agentic/probe.py",
+  "workspace": {
+    "repo_root": "/home/ptm/opti/ptm/repo/ptm4",
+    "repo_root_realpath": "/home/ptm/opti/ptm/repo/ptm4",
+    "basename_ok": true,
+    "git_remote": "https://github.com/ptm4/ptm4.git",
+    "git_remote_ok": true,
+    "agentic_dir_present": true
+  },
+  "tools": [
+    {
+      "key": "claude",
+      "name": "Claude Code",
+      "installed": true,
+      "version": "2.1.214",
+      "path": "/home/ptm/.local/bin/claude",
+      "extra": {},
+      "wireable": true,
+      "wiring": [
+        {
+          "id": "claude_md",
+          "label": "CLAUDE.md directs Claude to homelab/agentic",
+          "status": "pass",
+          "detail": "present & references agentic"
+        },
+        {
+          "id": "claude_skills",
+          "label": ".claude/skills registers all agentic skills",
+          "status": "pass",
+          "detail": "5/5 discoverable"
+        },
+        {
+          "id": "claude_settings",
+          "label": ".claude settings present",
+          "status": "pass",
+          "detail": "settings.local.json found"
+        }
+      ],
+      "wired": true
+    },
+    {
+      "key": "codex",
+      "name": "Codex",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    },
+    {
+      "key": "cursor",
+      "name": "Cursor",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-07-22T05:51:11Z",
+  "generated_at": "2026-07-22T11:50:22Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
   "workspace": {
