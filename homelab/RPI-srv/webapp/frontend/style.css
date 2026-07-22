@@ -766,6 +766,22 @@ body {
 }
 .w-geo-result:hover { border-color: var(--accent); }
 
+/* Local LLM page */
+.llm-section { margin-top: 16px; }
+.llm-textarea { resize: vertical; font-family: inherit; }
+.llm-textarea-lg { font-family: monospace; font-size: 12px; }
+.llm-response {
+  margin-top: 10px;
+  padding: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.llm-response:empty { display: none; }
+.llm-response pre { white-space: pre-wrap; word-break: break-word; }
+
 /* Discord-style embed preview (modal) */
 .embed-preview {
   background: #2b2d31;

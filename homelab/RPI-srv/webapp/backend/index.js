@@ -53,6 +53,10 @@ app.use('/api/sports', sportsRouter);
 const hltvRouter = require('./routes/hltv');
 app.use('/api/hltv', hltvRouter);
 
+// local LLM (android phone) — status/models/runbooks/chat, see routes/llama.js
+const llamaRouter = require('./routes/llama');
+app.use('/api/llama', llamaRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

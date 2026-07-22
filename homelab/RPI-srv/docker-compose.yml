@@ -107,6 +107,9 @@ services:
       # opti agent dispatcher (enable/disable + run-now); set in .env
       DISPATCHER_URL: ${DISPATCHER_URL:-}
       HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+      # android phone local LLM (llama.cpp + llama-ctl management API)
+      LLAMA_URL: ${LLAMA_URL:-http://android.lan:8080}
+      LLAMA_CTL_URL: ${LLAMA_CTL_URL:-http://android.lan:8081}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro

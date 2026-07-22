@@ -28,6 +28,7 @@ const routes = {
   sports:   renderSports,
   hltv:     renderHltv,
   leetify:  renderLeetify,
+  llm:      renderLlm,
 };
 
 // Quick-link shortcuts shown on the Home page. Edit here (could graduate to /api/links later).
@@ -1851,6 +1852,289 @@ async function hdSave(btn) {
 
 function escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Local LLM page (android phone) ─────────────────────────────────────────────
+// Talks to the phone through /api/llama/* (backend proxy). Two upstream services
+// on the phone: llama-server (inference, :8080) and llama-ctl (management, :8081) —
+// see routes/llama.js. llmRunbooks is the working copy of the runbook list.
+let llmRunbooks = [];
+let llmEditingIndex = null;
+let llmElapsedTimer = null;
+
+function llmError(res, err) {
+  if (err) return `Network error reaching the webapp backend: ${err.message}`;
+  switch (res && res.status) {
+    case 502: return 'phone unreachable — check llama-server/llama-ctl are up (`sv status llama`, `sv status llama-ctl` on the phone).';
+    case 400: return null; // caller shows the validation message from the body
+    default:  return `Request failed (HTTP ${res ? res.status : '?'}).`;
+  }
+}
+
+// Trigger the docs-generator agent on opti (via the dispatcher run endpoint the
+// webapp already proxies). Fire-and-forget: opti rebuilds the reference docs from
+// the latest agent reports; the phone picks them up on its next ~2-min sync.
+async function llmRegenDocs(btn) {
+  if (!confirm('Rebuild the auto-generated homelab docs from the latest agent reports on opti?\n\n'
+    + 'The docs regenerate in a few seconds; the phone syncs them within ~2 minutes.')) return;
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = '⟳ Regenerating…';
+  let res, err;
+  try {
+    res = await fetch('/api/agents/docs-generator/run', { method: 'POST' });
+  } catch (e) { err = e; }
+  btn.disabled = false;
+  btn.textContent = orig;
+  if (res && res.ok) {
+    alert('Docs regeneration queued on opti. They will sync to the phone within ~2 minutes.');
+  } else {
+    alert(err ? `Failed to reach dispatcher: ${err.message}` : `Regeneration failed (HTTP ${res ? res.status : '?'}).`);
+  }
+}
+
+async function renderLlm(view) {
+  view.innerHTML = `
+    <div class="page-security">
+      <div class="sec-header">
+        <h1>Local LLM (android)</h1>
+        <div class="sec-header-actions">
+          <button class="btn-run" onclick="llmRegenDocs(this)" title="Rebuild the auto-generated homelab docs from the latest agent reports">⟳ Regenerate docs</button>
+          <button class="btn-refresh" onclick="renderLlm(document.getElementById('view'))">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="llm-page"><div class="sec-loading">Loading…</div></div>
+    </div>`;
+  await loadLlm();
+}
+
+async function loadLlm() {
+  const page = document.getElementById('llm-page');
+  if (!page) return;
+  let status, models, runbooksData;
+  try {
+    const [sRes, mRes, rRes] = await Promise.all([
+      fetch('/api/llama/status'), fetch('/api/llama/models'), fetch('/api/llama/runbooks'),
+    ]);
+    if (!sRes.ok) { page.innerHTML = `<div class="sec-error">${llmError(sRes)}</div>`; return; }
+    status = await sRes.json();
+    models = mRes.ok ? await mRes.json() : { models: [], current: null };
+    runbooksData = rRes.ok ? await rRes.json() : { runbooks: [] };
+  } catch (e) {
+    page.innerHTML = `<div class="sec-error">${llmError(null, e)}</div>`;
+    return;
+  }
+  llmRunbooks = runbooksData.runbooks || [];
+
+  const b = status.battery || {};
+  page.innerHTML = `
+    <div class="sec-grid">
+      <div class="sec-card ${status.llama_healthy ? 'status-ok' : ''}">
+        <div class="sec-card-header">
+          <span class="sec-status-badge ${status.llama_healthy ? 'status-ok' : 'status-unknown'}">${status.llama_healthy ? 'ONLINE' : 'UNREACHABLE'}</span>
+          <span class="sec-card-title">Server status</span>
+        </div>
+        <div class="w-kv"><span>Model</span><strong>${escHtml(status.current_model || '—')}</strong></div>
+        <div class="w-kv"><span>Battery</span><strong>${b.percentage != null ? b.percentage + '%' : '—'} (${escHtml(b.status || '—')})</strong></div>
+        <div class="w-kv"><span>Temp</span><strong>${b.temperature != null ? Number(b.temperature).toFixed(1) + '°C' : '—'}</strong></div>
+        <div class="w-kv"><span>Service</span><strong>${escHtml((status.sv_status || '—').split(';')[0])}</strong></div>
+      </div>
+
+      <div class="sec-card">
+        <div class="sec-card-header"><span class="sec-card-title">Model</span></div>
+        <div class="w-field">
+          <label for="llm-model-select">Switch active model (restarts the server, ~1–2 min reload)</label>
+          <div class="w-search-row">
+            <select id="llm-model-select" class="w-input">
+              ${(models.models || []).map(m => `<option value="${escHtml(m)}" ${m === models.current ? 'selected' : ''}>${escHtml(m)}</option>`).join('')}
+            </select>
+            <button class="btn-run" onclick="llmSwitchModel(this)">Switch</button>
+          </div>
+          <span id="llm-model-msg" class="w-hint"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec-card w-card-wide llm-section">
+      <div class="sec-card-header"><span class="sec-card-title">Prompt console</span></div>
+      <div class="w-field">
+        <label for="llm-mode">Mode</label>
+        <select id="llm-mode" class="w-input">
+          <option value="ask">Grounded — answers only from the runbooks below</option>
+          <option value="chat">Raw chat — no grounding</option>
+        </select>
+      </div>
+      <div class="w-field">
+        <label for="llm-prompt">Prompt</label>
+        <textarea id="llm-prompt" class="w-input llm-textarea" rows="4" placeholder="Ask the homelab assistant something…"></textarea>
+      </div>
+      <div class="sec-card-actions">
+        <button class="btn-run" onclick="llmSend(this)">Send</button>
+        <span id="llm-send-msg" class="w-hint"></span>
+      </div>
+      <div id="llm-response" class="llm-response"></div>
+    </div>
+
+    <div class="sec-card w-card-wide llm-section">
+      <div class="sec-card-header"><span class="sec-card-title">Runbooks (${llmRunbooks.length})</span></div>
+      <div id="llm-runbook-list"></div>
+      <div class="sec-card-actions">
+        <button class="btn-view" onclick="llmNewRunbook()">+ New runbook</button>
+      </div>
+      <div id="llm-runbook-editor"></div>
+    </div>`;
+  llmRenderRunbookList();
+}
+
+function llmRenderRunbookList() {
+  const el = document.getElementById('llm-runbook-list');
+  if (!el) return;
+  el.innerHTML = llmRunbooks.map((r, i) => `
+    <div class="w-loc-row">
+      <span class="w-loc-name">📄 ${escHtml(r.name)}${r.editable ? '' : ' <span class="w-hint">(auto-generated — read only)</span>'}</span>
+      <span class="w-loc-coords">${r.content.length} chars</span>
+      ${r.editable
+        ? `<button class="btn-view" onclick="llmEditRunbook(${i})">Edit</button>
+           <button class="w-loc-del" title="Delete" onclick="llmDeleteRunbook(${i})">✕</button>`
+        : `<button class="btn-view" onclick="llmEditRunbook(${i})">View</button>`}
+    </div>`).join('') || '<div class="sec-empty">No runbooks yet.</div>';
+}
+
+function llmEditRunbook(i) {
+  llmEditingIndex = i;
+  const r = llmRunbooks[i];
+  const editor = document.getElementById('llm-runbook-editor');
+  if (!r.editable) {
+    editor.innerHTML = `
+      <div class="w-field">
+        <label>${escHtml(r.name)} — auto-generated from the homelab agent reports on opti.
+          Edits here would just get overwritten by the next sync; use "⟳ Regenerate docs"
+          above instead, or edit the source collector if the data itself is wrong.</label>
+        <textarea class="w-input llm-textarea llm-textarea-lg" rows="14" readonly>${escHtml(r.content)}</textarea>
+      </div>
+      <div class="sec-card-actions">
+        <button class="btn-refresh" onclick="document.getElementById('llm-runbook-editor').innerHTML=''">Close</button>
+      </div>`;
+    return;
+  }
+  editor.innerHTML = `
+    <div class="w-field">
+      <label for="llm-rb-name">Filename</label>
+      <input type="text" id="llm-rb-name" class="w-input" value="${escHtml(r.name)}" />
+    </div>
+    <div class="w-field">
+      <label for="llm-rb-content">Content (markdown)</label>
+      <textarea id="llm-rb-content" class="w-input llm-textarea llm-textarea-lg" rows="14">${escHtml(r.content)}</textarea>
+    </div>
+    <div class="sec-card-actions">
+      <button class="btn-run" onclick="llmSaveRunbook()">Save</button>
+      <button class="btn-refresh" onclick="document.getElementById('llm-runbook-editor').innerHTML=''">Cancel</button>
+      <span id="llm-rb-msg" class="w-hint"></span>
+    </div>`;
+}
+
+function llmNewRunbook() {
+  llmEditingIndex = null;
+  const editor = document.getElementById('llm-runbook-editor');
+  editor.innerHTML = `
+    <div class="w-field">
+      <label for="llm-rb-name">Filename (must end in .md)</label>
+      <input type="text" id="llm-rb-name" class="w-input" placeholder="07-new-runbook.md" />
+    </div>
+    <div class="w-field">
+      <label for="llm-rb-content">Content (markdown)</label>
+      <textarea id="llm-rb-content" class="w-input llm-textarea llm-textarea-lg" rows="14" placeholder="# Title..."></textarea>
+    </div>
+    <div class="sec-card-actions">
+      <button class="btn-run" onclick="llmSaveRunbook()">Save</button>
+      <button class="btn-refresh" onclick="document.getElementById('llm-runbook-editor').innerHTML=''">Cancel</button>
+      <span id="llm-rb-msg" class="w-hint"></span>
+    </div>`;
+}
+
+async function llmSaveRunbook() {
+  const name = (document.getElementById('llm-rb-name')?.value || '').trim();
+  const content = document.getElementById('llm-rb-content')?.value || '';
+  const msg = document.getElementById('llm-rb-msg');
+  if (!name.endsWith('.md')) { msg.textContent = 'Filename must end in .md'; return; }
+  let res, err;
+  try {
+    res = await fetch(`/api/llama/runbooks/${encodeURIComponent(name)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content }),
+    });
+  } catch (e) { err = e; }
+  if (res && res.ok) {
+    msg.textContent = 'Saved.';
+    await loadLlm();
+  } else {
+    msg.textContent = llmError(res, err) || 'Save failed.';
+  }
+}
+
+async function llmDeleteRunbook(i) {
+  const r = llmRunbooks[i];
+  if (!confirm(`Delete ${r.name}?`)) return;
+  let res, err;
+  try { res = await fetch(`/api/llama/runbooks/${encodeURIComponent(r.name)}`, { method: 'DELETE' }); } catch (e) { err = e; }
+  if (res && res.ok) await loadLlm();
+  else alert(llmError(res, err) || 'Delete failed.');
+}
+
+async function llmSwitchModel(btn) {
+  const sel = document.getElementById('llm-model-select');
+  const msg = document.getElementById('llm-model-msg');
+  const name = sel && sel.value;
+  if (!name) return;
+  if (!confirm(`Switch to ${name}? The server restarts and is unavailable for ~1–2 minutes while it reloads.`)) return;
+  btn.disabled = true;
+  msg.textContent = 'Switching (server is restarting)…';
+  let res, err;
+  try {
+    res = await fetch('/api/llama/model', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
+    });
+  } catch (e) { err = e; }
+  btn.disabled = false;
+  if (res && res.ok) msg.textContent = 'Switched — reloading in the background.';
+  else msg.textContent = llmError(res, err) || 'Switch failed.';
+}
+
+async function llmSend(btn) {
+  const mode = (document.getElementById('llm-mode') || {}).value || 'ask';
+  const prompt = (document.getElementById('llm-prompt')?.value || '').trim();
+  const msg = document.getElementById('llm-send-msg');
+  const respEl = document.getElementById('llm-response');
+  if (!prompt) return;
+  btn.disabled = true;
+  const started = Date.now();
+  clearInterval(llmElapsedTimer);
+  llmElapsedTimer = setInterval(() => {
+    msg.textContent = `Thinking… ${Math.floor((Date.now() - started) / 1000)}s (local model — can take up to ~90s)`;
+  }, 1000);
+  respEl.innerHTML = '';
+  let res, err;
+  try {
+    if (mode === 'ask') {
+      res = await fetch('/api/llama/ask', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question: prompt }),
+      });
+    } else {
+      res = await fetch('/api/llama/chat', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      });
+    }
+  } catch (e) { err = e; }
+  clearInterval(llmElapsedTimer);
+  btn.disabled = false;
+  if (res && res.ok) {
+    const data = await res.json();
+    const text = mode === 'ask' ? data.answer : ((data.choices && data.choices[0] && data.choices[0].message.content) || '');
+    msg.textContent = `Done in ${Math.floor((Date.now() - started) / 1000)}s.`;
+    respEl.innerHTML = (typeof marked !== 'undefined') ? marked.parse(text || '') : `<pre>${escHtml(text || '')}</pre>`;
+  } else {
+    msg.textContent = llmError(res, err) || 'Request failed.';
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
