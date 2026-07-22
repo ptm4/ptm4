@@ -50,3 +50,5 @@ vaultwarden-data/
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/
+homelab/agentic/runbooks
+.claude
