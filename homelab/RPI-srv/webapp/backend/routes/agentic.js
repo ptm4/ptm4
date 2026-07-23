@@ -12,6 +12,11 @@ const path = require('path');
 
 const router = express.Router();
 
+// Dispatcher on opti (same infra as controls.js) — used to materialize wiring server-side.
+const DISPATCHER_URL = process.env.DISPATCHER_URL || '';
+const DISPATCH_TOKEN = process.env.HL_DISPATCH_TOKEN || '';
+const WIREABLE = new Set(['claude']);   // tools the "Wire it" button can materialize
+
 const WORKSPACE = fs.existsSync('/workspace')
   ? '/workspace'
   : path.join(__dirname, '..', '..', '..', '..');          // dev: repo root from backend/routes
@@ -48,19 +53,19 @@ function liveWiring() {
       `${discoverable.length}/${names.length} discoverable`),
     check('claude_settings', '.claude settings present', settings, settings ? 'settings.local.json found' : 'none'),
   ];
-  out.claude = { name: 'Claude Code', wired: cChecks.every(c => c.status === 'pass'), checks: cChecks };
+  out.claude = { name: 'Claude Code', wireable: WIREABLE.has('claude'), wired: cChecks.every(c => c.status === 'pass'), checks: cChecks };
 
   // Codex (Phase 2 wiring)
   const agentsMd = path.join(WORKSPACE, 'AGENTS.md');
   const codexOk = exists(agentsMd) && readText(agentsMd).includes(AGENTIC_REL);
-  out.codex = { name: 'Codex', wired: codexOk,
+  out.codex = { name: 'Codex', wireable: WIREABLE.has('codex'), wired: codexOk,
     checks: [check('codex_agents_md', 'AGENTS.md directs Codex to homelab/agentic', codexOk, codexOk ? 'wired' : 'not wired')] };
 
   // Cursor (Phase 2 wiring)
   const cursorRules = path.join(WORKSPACE, '.cursor', 'rules');
   let cursorOk = false;
   try { cursorOk = fs.readdirSync(cursorRules).some(f => readText(path.join(cursorRules, f)).includes(AGENTIC_REL)); } catch (_) {}
-  out.cursor = { name: 'Cursor', wired: cursorOk,
+  out.cursor = { name: 'Cursor', wireable: WIREABLE.has('cursor'), wired: cursorOk,
     checks: [check('cursor_rules', '.cursor/rules reference homelab/agentic', cursorOk, cursorOk ? 'wired' : 'not wired')] };
 
   return out;
@@ -95,6 +100,46 @@ router.get('/', (req, res) => {
     hosts: statusFiles(),
     wiring: liveWiring(),
   });
+});
+
+// POST /api/agentic/wire/:tool — materialize that tool's wiring via the opti dispatcher,
+// which runs `probe.py --wire <tool>` on the workspace. Tool is whitelisted here and again
+// in the dispatcher; no arbitrary input reaches a shell.
+router.post('/wire/:tool', async (req, res) => {
+  const tool = String(req.params.tool || '');
+  if (!WIREABLE.has(tool)) return res.status(400).json({ ok: false, error: `not wireable: ${tool}` });
+  if (!DISPATCHER_URL) return res.status(503).json({ ok: false, error: 'dispatcher not configured (DISPATCHER_URL)' });
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (DISPATCH_TOKEN) headers['Authorization'] = `Bearer ${DISPATCH_TOKEN}`;
+    const r = await fetch(`${DISPATCHER_URL}/agentic/wire/${encodeURIComponent(tool)}`, {
+      method: 'POST', headers, signal: AbortSignal.timeout(30000),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(502).json({ ok: false, error: String(e.message || e) });
+  }
+});
+
+// POST /api/agentic/proposal/:action/:id — promote or dismiss a skill/rule proposal via the
+// opti dispatcher (runs propose.py). id is validated to the strict proposal slug here too.
+router.post('/proposal/:action/:id', async (req, res) => {
+  const { action, id } = req.params;
+  if (!['promote', 'dismiss'].includes(action)) return res.status(400).json({ ok: false, error: 'bad action' });
+  if (!/^(skill|rule)-[a-z0-9][a-z0-9-]*$/.test(id)) return res.status(400).json({ ok: false, error: 'bad proposal id' });
+  if (!DISPATCHER_URL) return res.status(503).json({ ok: false, error: 'dispatcher not configured (DISPATCHER_URL)' });
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (DISPATCH_TOKEN) headers['Authorization'] = `Bearer ${DISPATCH_TOKEN}`;
+    const r = await fetch(`${DISPATCHER_URL}/agentic/${action}/${encodeURIComponent(id)}`, {
+      method: 'POST', headers, signal: AbortSignal.timeout(30000),
+    });
+    const data = await r.json().catch(() => ({}));
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(502).json({ ok: false, error: String(e.message || e) });
+  }
 });
 
 module.exports = router;

@@ -167,6 +167,29 @@ def scan_md_dir(sub):
     return out
 
 
+def scan_proposed():
+    out = []
+    base = os.path.join(HERE, "proposed")
+    if not os.path.isdir(base):
+        return out
+    for fn in sorted(os.listdir(base)):
+        if not fn.endswith(".md") or fn == "README.md":
+            continue
+        meta, _ = read_frontmatter(os.path.join(base, fn))
+        out.append({
+            "id": fn[:-3],
+            "kind": meta.get("kind", ""),
+            "name": meta.get("name", ""),
+            "description": meta.get("description", ""),
+            "rationale": meta.get("rationale", ""),
+            "status": meta.get("status", "proposed"),
+            "created": meta.get("created", ""),
+            "created_by": meta.get("created_by", ""),
+            "path": f"homelab/agentic/proposed/{fn}",
+        })
+    return out
+
+
 def build():
     return {
         "schema_version": "1.0",
@@ -188,6 +211,7 @@ def build():
             "runbooks": scan_md_dir("runbooks"),
             "harness": scan_md_dir("harness"),
         },
+        "proposed": scan_proposed(),
     }
 
 

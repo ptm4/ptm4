@@ -1,0 +1,48 @@
+{
+  "host": "opti",
+  "generated_at": "2026-07-22T12:23:29Z",
+  "generated_by": "homelab/agentic/probe.py",
+  "workspace": {
+    "repo_root": "/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4",
+    "repo_root_realpath": "/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/repo/ptm4",
+    "basename_ok": true,
+    "git_remote": "https://github.com/ptm4/ptm4.git",
+    "git_remote_ok": true,
+    "agentic_dir_present": true
+  },
+  "tools": [
+    {
+      "key": "claude",
+      "name": "Claude Code",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": true,
+      "wiring": [],
+      "wired": null
+    },
+    {
+      "key": "codex",
+      "name": "Codex",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    },
+    {
+      "key": "cursor",
+      "name": "Cursor",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    }
+  ]
+}

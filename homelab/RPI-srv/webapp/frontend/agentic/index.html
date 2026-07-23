@@ -20,6 +20,9 @@
   #sync-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);
     padding:6px 12px;border-radius:6px;font-size:12px;cursor:pointer;}
   #sync-btn:hover{border-color:var(--accent);} #sync-btn:disabled{opacity:.5;cursor:default;}
+  .wire-btn{margin-left:auto;background:var(--surface);border:1px solid var(--accent);color:var(--accent);
+    padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;}
+  .wire-btn:hover{background:var(--accent);color:#0f1117;} .wire-btn:disabled{opacity:.5;cursor:default;}
   #sync-status{font-size:11px;color:var(--muted);}
   header.page-head{padding:56px 24px 8px;max-width:1080px;}
   header.page-head h1{font-size:20px;margin-bottom:6px;}
@@ -103,6 +106,11 @@ function toolingAndWiring(resp){
       head.appendChild($('span','tag', 'not detected on any host'));
       if(w.wired) head.appendChild($('span','tag ok','wired ✓'));
     }
+    if(w.wireable && !w.wired){
+      const b = $('button','wire-btn','⚙ Wire it');
+      b.addEventListener('click', ()=>wireTool(key, b));
+      head.appendChild(b);
+    }
     card.appendChild(head);
     // install details
     if(installs.length){
@@ -127,6 +135,35 @@ function toolingAndWiring(resp){
   return node;
 }
 
+function proposedSection(m){
+  const arr = m.proposed||[]; const node = $('div');
+  if(!arr.length){ node.appendChild($('p','muted','No proposals right now. When recurring work suggests a new skill or rule, a session drops a candidate here (<code>homelab/agentic/propose.py</code>) for you to promote.')); return node; }
+  arr.forEach(p=>{
+    const card=$('div','tool-card'); const head=$('div','tool-head');
+    head.appendChild($('span','name', esc(p.name||p.id)));
+    head.appendChild($('span','tag '+(p.kind==='skill'?'ok':''), esc(p.kind)));
+    const pro=$('button','wire-btn','✓ Promote'); pro.addEventListener('click',()=>proposalAction('promote',p.id,pro));
+    const dis=$('button','wire-btn','✕ Dismiss'); dis.style.cssText='margin-left:8px;border-color:var(--bad);color:var(--bad)';
+    dis.addEventListener('click',()=>proposalAction('dismiss',p.id,dis));
+    head.appendChild(pro); head.appendChild(dis); card.appendChild(head);
+    if(p.description) card.appendChild($('div',null,esc(p.description)));
+    if(p.rationale) card.appendChild($('div','meta','Why: '+esc(p.rationale)));
+    card.appendChild($('div','meta',`<span class="mono">${esc(p.path)}</span> · ${esc(p.created)} · ${esc(p.created_by)}`));
+    node.appendChild(card);
+  });
+  return node;
+}
+
+function proposalAction(action, id, btn){
+  const st=document.getElementById('sync-status'); const orig=btn.textContent;
+  btn.disabled=true; btn.textContent=action+'ing…'; st.textContent=action+' '+id+'…';
+  fetch('/api/agentic/proposal/'+action+'/'+encodeURIComponent(id),{method:'POST'})
+   .then(r=>r.json()).then(d=>{
+     if(d.ok){ st.textContent=action+'d '+id+' — refreshing…'; setTimeout(load,2500); }
+     else { st.textContent=action+' failed: '+esc(d.error||d.output||'unknown'); btn.disabled=false; btn.textContent=orig; }
+   }).catch(e=>{ st.textContent=action+' failed: '+esc(e.message); btn.disabled=false; btn.textContent=orig; });
+}
+
 function render(resp){
   const content = document.getElementById('content'); content.innerHTML='';
   const m = resp.manifest;
@@ -138,6 +175,10 @@ function render(resp){
   // Tooling & Wiring FIRST (the point of this page)
   content.appendChild(section('Tooling & Wiring', toolingAndWiring(resp),
     ' <span class="muted" style="font-weight:400;font-size:11px">— detected per host, wiring checked live</span>'));
+
+  // Proposed skills & rules (trend-driven candidates awaiting approval)
+  content.appendChild(section('Proposed skills & rules', proposedSection(m),
+    ' <span class="muted" style="font-weight:400;font-size:11px">— trends suggest, you decide</span>'));
 
   // Workspace
   const w = m.workspace||{}; const wnode=$('div');
@@ -181,6 +222,15 @@ function load(){
     st.textContent='synced '+ago(resp.computed_at||new Date().toISOString());
   }).catch(e=>{ st.textContent='sync failed'; document.getElementById('content').appendChild($('div','','')).id='err'; })
    .finally(()=>{ btn.disabled=false; });
+}
+function wireTool(tool, btn){
+  const st=document.getElementById('sync-status');
+  btn.disabled=true; btn.textContent='wiring…'; st.textContent='wiring '+tool+'…';
+  fetch('/api/agentic/wire/'+encodeURIComponent(tool),{method:'POST'})
+   .then(r=>r.json()).then(d=>{
+     if(d.ok){ st.textContent='wired '+tool+' — refreshing…'; setTimeout(load, 2500); }  // CIFS propagation
+     else { st.textContent='wire failed: '+esc(d.error||d.output||'unknown'); btn.disabled=false; btn.textContent='⚙ Wire it'; }
+   }).catch(e=>{ st.textContent='wire failed: '+esc(e.message); btn.disabled=false; btn.textContent='⚙ Wire it'; });
 }
 document.getElementById('sync-btn').addEventListener('click', load);
 load();

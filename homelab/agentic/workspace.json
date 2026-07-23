@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-07-22T11:50:22Z",
+  "generated_at": "2026-07-22T23:31:14Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
   "workspace": {
@@ -164,5 +164,18 @@
         "title": "Harness notes"
       }
     ]
-  }
+  },
+  "proposed": [
+    {
+      "id": "rule-check-ignored-before-delete",
+      "kind": "rule",
+      "name": "check-ignored-before-delete",
+      "description": "Before rm -rf of any repo copy, check git-ignored files (status --ignored / clean -ndx) and preserve agentic/.claude local-only content",
+      "rationale": "Learned from the 2026-07-22 noblenumbat deletion that wiped the only copy of agentic/{skills,rules,harness}",
+      "status": "proposed",
+      "created": "2026-07-22",
+      "created_by": "jarvis-session",
+      "path": "homelab/agentic/proposed/rule-check-ignored-before-delete.md"
+    }
+  ]
 }
