@@ -1,6 +1,6 @@
 {
   "host": "tux",
-  "generated_at": "2026-07-25T06:46:32Z",
+  "generated_at": "2026-07-25T14:11:09Z",
   "generated_by": "homelab/agentic/probe.py",
   "workspace": {
     "repo_root": "/home/ptm/opti/ptm/repo/ptm4",
@@ -33,10 +33,28 @@
           "detail": "5/5 discoverable"
         },
         {
+          "id": "claude_rules",
+          "label": ".claude/rules registers all agentic rules",
+          "status": "pass",
+          "detail": "3/3 auto-loaded"
+        },
+        {
           "id": "claude_settings",
           "label": ".claude settings present",
           "status": "pass",
           "detail": "settings.local.json found"
+        },
+        {
+          "id": "claude_hooks",
+          "label": "harness hooks wired in .claude/settings.json",
+          "status": "pass",
+          "detail": "2/2 events wired"
+        },
+        {
+          "id": "claude_hook_scripts",
+          "label": "harness hook scripts present & valid",
+          "status": "pass",
+          "detail": "ok"
         }
       ],
       "wired": true
