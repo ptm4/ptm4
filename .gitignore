@@ -3,6 +3,16 @@ target/
 **/*.rs.bk
 Cargo.lock          # only ignore for libraries; binaries should keep it — but fine for mono-repo
 
+# ── Python ────────────────────────────────────────────────────────────────────
+# 25 __pycache__ dirs were committed before this was added (2026-07-25); they were
+# untracked with `git rm -r --cached` in the same change.
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+
 # ── Node / npm ────────────────────────────────────────────────────────────────
 node_modules/
 npm-debug.log*

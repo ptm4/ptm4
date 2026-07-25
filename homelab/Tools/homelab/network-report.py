@@ -141,18 +141,67 @@ def listening_ports(host):
     return sorted(set(ports)), rows
 
 
+# Pi-hole v6 stats. The old implementation shelled out to `pihole -c -j`, which v6
+# REMOVED — it now prints "Chronometer is gone, use PADD", json.loads threw, and this
+# returned None for every host. The Home page's Pi-hole card had been dead ever since
+# the v6 upgrade with nothing reporting it.
+#
+# v6 replaces that with an authenticated REST API. Three things worth knowing:
+#   1. The whole exchange runs ON the Pi-hole host over the SSH transport we already
+#      have, reading the password from that host's own compose .env — so no Pi-hole
+#      credential ever has to be copied to opti or into /etc/hl-agents.env.
+#   2. The session MUST be released with DELETE /api/auth. v6 caps concurrent
+#      sessions, and leaking one every run would eventually lock out the health bot,
+#      which authenticates the same way (see discord-healthdigest.py's fetch_pihole).
+#   3. Contract is unchanged: a dict on success, None on any failure. Callers
+#      (docs-generator, the webapp Home card) already handle None.
+_PIHOLE_SH = r'''
+set -a; . /srv/docker/compose/.env 2>/dev/null; set +a
+[ -n "$PIHOLE_WEB_PASSWORD" ] || exit 1
+SID=$(curl -s -m 8 -X POST http://localhost/api/auth \
+        -H "Content-Type: application/json" \
+        -d "{\"password\":\"$PIHOLE_WEB_PASSWORD\"}" \
+      | python3 -c 'import sys,json;print(json.load(sys.stdin)["session"]["sid"])' 2>/dev/null)
+[ -n "$SID" ] || exit 1
+curl -s -m 8 http://localhost/api/stats/summary -H "X-FTL-SID: $SID"
+curl -s -m 8 -X DELETE http://localhost/api/auth -H "X-FTL-SID: $SID" >/dev/null 2>&1
+'''
+
+
 def pihole_stats(host):
-    _, rc = run_on(host, ["sh", "-c", "command -v docker >/dev/null 2>&1"], timeout=10)
+    # Only the host actually running Pi-hole; everywhere else this is correctly None.
+    _, rc = run_on(host, ["sh", "-c",
+                          "docker ps --format '{{.Names}}' 2>/dev/null | grep -qx pihole"],
+                   timeout=10)
     if rc != 0:
         return None
-    out = _run(host, ["docker", "exec", "pihole", "pihole", "-c", "-j"], timeout=15)
-    if not out:
+
+    out, rc = run_on(host, ["sh", "-c", _PIHOLE_SH], timeout=30)
+    if rc != 0 or not out.strip():
         return None
     try:
         import json as _json
-        return _json.loads(out)
+        data = _json.loads(out)
     except Exception:
         return None
+
+    q = (data or {}).get("queries") or {}
+    if not q:
+        return None
+    # Flatten to the shape the Home card and docs-generator read, keeping the v5 key
+    # names they already expect so nothing downstream needs to change.
+    return {
+        "dns_queries_today": q.get("total"),
+        "ads_blocked_today": q.get("blocked"),
+        "ads_percentage_today": q.get("percent_blocked"),
+        "unique_domains": q.get("unique_domains"),
+        "queries_forwarded": q.get("forwarded"),
+        "queries_cached": q.get("cached"),
+        "unique_clients": ((data.get("clients") or {}).get("active")
+                           if isinstance(data.get("clients"), dict) else None),
+        "gravity_domains": ((data.get("gravity") or {}).get("domains_being_blocked")
+                            if isinstance(data.get("gravity"), dict) else None),
+    }
 
 
 def collect_host(host):

@@ -91,12 +91,25 @@ def unattended_state(host):
 
 
 def docker_images(host):
-    """Running containers + image; drift detection is best-effort (left empty)."""
+    """Running containers + image, plus which of them have a newer image published.
+
+    The update check replaces watchtower (removed 2026-07-25, see the YAMS compose for
+    why). Deliberately REPORT-ONLY: it compares digests and tells you, it never pulls or
+    restarts anything. Applying an update is a `docker compose pull` in the deploy
+    workflow — a decision, not a 3am surprise.
+
+    Method: a locally-pulled tag records the *manifest-list* digest in RepoDigests, and
+    `docker buildx imagetools inspect --format {{.Manifest.Digest}}` returns the same
+    kind of digest for what the registry currently serves. Comparing the two needs no
+    pull. (`docker pull` would answer the same question but mutates state, and
+    `docker manifest inspect` returns the list body rather than its digest.)
+    """
     if not _has(host, "docker"):
         return [], []
     out, rc = _run(host, ["docker", "ps", "--format", "{{.Image}}\t{{.Names}}\t{{.Status}}"])
     if rc != 0:
         return [], []
+
     images = []
     for line in out.splitlines():
         parts = line.split("\t")
@@ -104,7 +117,45 @@ def docker_images(host):
             img, name = parts[0], parts[1]
             status = parts[2] if len(parts) > 2 else ""
             images.append({"image": img, "name": name, "status": status})
-    return images, []
+
+    return images, _image_updates(host, images)
+
+
+def _image_updates(host, images):
+    """Which running images have a newer digest in the registry. Best-effort: any host
+    without buildx, or any image we can't resolve (private/rate-limited/offline), is
+    skipped silently rather than reported as a false 'update available'."""
+    if not images:
+        return []
+    _, rc = run_on(host, ["sh", "-c", "docker buildx version >/dev/null 2>&1"], timeout=15)
+    if rc != 0:
+        return []
+
+    updates = []
+    # De-dupe: several containers can share one image (and each check is a network call).
+    for ref in sorted({i["image"] for i in images}):
+        # A digest-pinned ref can't drift, and a bare sha isn't resolvable by tag.
+        if "@" in ref or ref.startswith("sha256:"):
+            continue
+        local, rc_l = _run(host, ["docker", "image", "inspect", ref,
+                                  "--format", "{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}"],
+                           timeout=20)
+        if rc_l != 0 or "@" not in local:
+            continue
+        remote, rc_r = _run(host, ["docker", "buildx", "imagetools", "inspect", ref,
+                                   "--format", "{{.Manifest.Digest}}"], timeout=45)
+        if rc_r != 0 or not remote.strip().startswith("sha256:"):
+            continue
+
+        local_digest, remote_digest = local.strip().split("@", 1)[1], remote.strip()
+        if local_digest != remote_digest:
+            updates.append({
+                "image": ref,
+                "containers": sorted(i["name"] for i in images if i["image"] == ref),
+                "local_digest": local_digest[:19],
+                "remote_digest": remote_digest[:19],
+            })
+    return updates
 
 
 def version_of(host, cmd, args=None):
@@ -152,6 +203,14 @@ def collect_host(host):
     if unattended not in ("active",):
         recs.append({"severity": "info",
                      "message": f"[{host.name}] unattended-upgrades is {unattended} — consider enabling auto security updates."})
+    if drift:
+        # info, not warn: a newer image existing is normal and not itself a problem.
+        # Applying it is a deliberate `docker compose pull`, so this is a nudge, not an alarm.
+        containers = sorted(c for d in drift for c in d["containers"])
+        recs.append({"severity": "info",
+                     "message": f"[{host.name}] {len(drift)} container image(s) have a newer "
+                                f"version published: {', '.join(containers)} — "
+                                f"apply with `docker compose pull && docker compose up -d`."})
 
     status = "warn" if findings else "ok"
     metrics = {
@@ -166,6 +225,8 @@ def collect_host(host):
         "reboot_pkgs": reboot_pkgs,
         "unattended_upgrades": unattended,
         "docker_images": images,
+        "image_updates": drift,
+        "image_update_count": len(drift),
         "versions": versions,
     }
     summary = (f"{installed} pkgs via {manager} · {len(pending)} update(s)"
@@ -195,9 +256,19 @@ def _host_log(host_dict):
             L.append(f"... and {m['pending_count'] - 60} more")
         L += ["```", ""]
     if m["docker_images"]:
-        L += ["**Docker containers**", "", "| Image | Name | Status |", "|---|---|---|"]
+        updated = {c for u in m.get("image_updates") or [] for c in u["containers"]}
+        L += ["**Docker containers**", "", "| Image | Name | Status | Update |", "|---|---|---|---|"]
         for d in m["docker_images"]:
-            L.append(f"| {d['image']} | {d['name']} | {d['status']} |")
+            L.append(f"| {d['image']} | {d['name']} | {d['status']} | "
+                     f"{'**available**' if d['name'] in updated else 'up to date'} |")
+        L.append("")
+    if m.get("image_updates"):
+        L += [f"**Image updates available ({m['image_update_count']})** — report only; apply with "
+              "`docker compose pull && docker compose up -d`.", "",
+              "| Image | Containers | Running | Published |", "|---|---|---|---|"]
+        for u in m["image_updates"]:
+            L.append(f"| {u['image']} | {', '.join(u['containers'])} | "
+                     f"`{u['local_digest']}` | `{u['remote_digest']}` |")
         L.append("")
     return L
 

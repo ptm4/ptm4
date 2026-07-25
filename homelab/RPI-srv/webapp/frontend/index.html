@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>webapp.rpi.lan</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css" />
+  <!-- ?v= is a cache-buster: nginx serves these static and browsers hold onto them, so
+       without it a deploy can leave someone on new HTML with the old CSS/JS (which looks
+       like a broken layout rather than a caching problem). Bump the date on any change
+       to style.css or app.js. -->
+  <link rel="stylesheet" href="style.css?v=20260725" />
 </head>
 <body>
   <div class="layout">
@@ -17,22 +21,47 @@
         <span id="healthDot" class="health-dot" title="API health"></span>
       </div>
 
-      <ul class="nav-links">
-        <li><a href="#home"     class="nav-link" data-route="home">Home</a></li>
-        <li><a href="#security" class="nav-link" data-route="security">Security</a></li>
-        <li><a href="#reports"  class="nav-link" data-route="reports">Reports</a></li>
-        <li><a href="#weather"  class="nav-link" data-route="weather">Weather Bot</a></li>
-        <li><a href="#healthdigest" class="nav-link" data-route="healthdigest">Health Bot</a></li>
-        <li><a href="#jellyfin" class="nav-link" data-route="jellyfin">Jellyfin Bot</a></li>
-        <li><a href="#sports"   class="nav-link" data-route="sports">Sports Bot</a></li>
-        <li><a href="#hltv"     class="nav-link" data-route="hltv">HLTV Bot</a></li>
-        <li><a href="#leetify"  class="nav-link" data-route="leetify">CS2 / Leetify</a></li>
-        <li><a href="#llm"      class="nav-link" data-route="llm">Local LLM</a></li>
-        <li><a href="/notes/"   class="nav-link">Notes</a></li>
-        <li><a href="/architecture/" class="nav-link">Architecture</a></li>
-        <li><a href="/agents/" class="nav-link">Agents</a></li>
-        <li><a href="/agentic/" class="nav-link">Agentic Workspace</a></li>
-      </ul>
+      <!-- Grouped nav. Was 14 flat entries; the 5 per-bot links collapsed into one
+           "Bots" page with tabs, so related things now sit together and the list is
+           scannable. Status dots are filled in by app.js from the live reports. -->
+      <div class="nav-group">
+        <div class="nav-group-label">Overview</div>
+        <ul class="nav-links">
+          <li><a href="#home" class="nav-link" data-route="home">Home</a></li>
+          <li><a href="/architecture/" class="nav-link">Architecture</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-label">Monitoring</div>
+        <ul class="nav-links">
+          <li><a href="#reports" class="nav-link" data-route="reports">Reports<span class="nav-dot" id="dot-reports"></span></a></li>
+          <li><a href="#security" class="nav-link" data-route="security">Security<span class="nav-dot" id="dot-security"></span></a></li>
+          <li><a href="/agents/" class="nav-link">Agents<span class="nav-dot" id="dot-agents"></span></a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-label">Services</div>
+        <ul class="nav-links">
+          <li><a href="#bots" class="nav-link" data-route="bots">Bots<span class="nav-count" id="count-bots">5</span></a></li>
+          <li><a href="#leetify" class="nav-link" data-route="leetify">CS2 / Leetify</a></li>
+          <li><a href="#llm" class="nav-link" data-route="llm">Local LLM<span class="nav-dot" id="dot-llm"></span></a></li>
+          <li><a href="/notes/" class="nav-link">Notes</a></li>
+        </ul>
+      </div>
+
+      <div class="nav-group">
+        <div class="nav-group-label">Reference</div>
+        <ul class="nav-links">
+          <li><a href="/agentic/" class="nav-link">Agentic Workspace</a></li>
+        </ul>
+      </div>
+
+      <div class="sidebar-actions">
+        <button id="cmdkBtn" title="Command palette">⌘ Search <kbd>K</kbd></button>
+        <button id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
+      </div>
 
       <div class="sidebar-footer">
         <span id="uptimeEl" class="uptime-text">—</span>
@@ -44,7 +73,16 @@
 
   </div>
 
+  <!-- Command palette. Additive to the nav above, not a substitute for it. -->
+  <div class="cmdk-backdrop" id="cmdkBackdrop" role="dialog" aria-modal="true" aria-label="Command palette">
+    <div class="cmdk">
+      <input id="cmdkInput" type="text" placeholder="Jump to a page, host, or action…"
+             autocomplete="off" spellcheck="false" aria-label="Command palette search" />
+      <div class="cmdk-list" id="cmdkList"></div>
+    </div>
+  </div>
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260725"></script>
 </body>
 </html>

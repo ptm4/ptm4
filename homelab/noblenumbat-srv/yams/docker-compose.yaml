@@ -206,18 +206,17 @@ services:
       yams_network:
         ipv4_address: 172.60.0.19
 
-  # Watchtower is going to keep our instances updated
-  watchtower:
-    image: nickfedor/watchtower
-    container_name: watchtower
-    environment:
-      - WATCHTOWER_CLEANUP=true
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    restart: unless-stopped
-    networks:
-      yams_network:
-        ipv4_address: 172.60.0.20
+  # Watchtower REMOVED 2026-07-25. It auto-updated this whole stack daily with
+  # notifications off and no label filter, so it silently restarted Jellyfin/Bazarr/
+  # Kavita/Lidarr mid-afternoon and could have restarted gluetun (which takes 5
+  # containers down with it). On 2026-07-22 it tried to update *itself*, stopped the
+  # old container mid-update, and the replacement never started — so the stack had
+  # silently received no updates for days with nothing reporting that.
+  #
+  # Replacement: software-inventory reports containers with a newer image available
+  # (read-only, surfaced on the webapp's Reports tab), and updates are applied
+  # deliberately via `docker compose pull` in the deploy workflow.
+  # 172.60.0.20 is now free.
 
   # FlareSolverr bypasses Cloudflare protection for Prowlarr indexers
   flaresolverr:

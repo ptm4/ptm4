@@ -30,6 +30,11 @@ import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    import samba_config  # sibling module; edits the hand-managed [red] share config
+except Exception:  # noqa: BLE001 — never let a fault here take down the control plane
+    samba_config = None
+
 TOOLS_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # homelab/Tools
 AGENT_LOGS_DIR = os.environ.get(
     "HL_AGENT_LOGS_DIR", os.path.join(TOOLS_DIR, "..", "..", "agent-logs")
@@ -48,6 +53,14 @@ AGENTS = {
     "docs-generator":      os.path.join(TOOLS_DIR, "homelab", "docs-generator.py"),
     "leetify-stats":       os.path.join(TOOLS_DIR, "leetify", "leetify-stats.py"),
     "refresh-cs2-knowledge": os.path.join(TOOLS_DIR, "leetify", "refresh-cs2-knowledge.py"),
+}
+
+# Agents that are systemd units rather than python scripts. These need root (mount/remount,
+# rsync onto the NTFS branch), which this daemon deliberately does not have — so Run-now
+# starts the unit via passwordless sudo instead, taking the identical path the timer takes.
+# Same allowlist rule as AGENTS: a fixed dict, never a name from the request.
+UNIT_AGENTS = {
+    "coldcopy": "homelab-coldcopy.service",
 }
 
 # Tools whose workspace wiring can be (re)materialized from the webapp via
@@ -104,8 +117,14 @@ def mark_run(name):
 
 def run_agent(name):
     """Fire-and-forget; child inherits our environment."""
-    subprocess.Popen([sys.executable, AGENTS[name]],
-                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if name in UNIT_AGENTS:
+        # Start the systemd unit rather than the script, so Run-now and the timer take the
+        # exact same path (and the work runs as root, which the dispatcher itself is not).
+        subprocess.Popen(["sudo", "-n", "systemctl", "start", UNIT_AGENTS[name]],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen([sys.executable, AGENTS[name]],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     mark_run(name)
 
 
@@ -136,7 +155,7 @@ def full_state():
     state = load_state()
     return {"agents": {name: {"enabled": state.get(name, {}).get("enabled", True),
                               "last_run": state.get(name, {}).get("last_run")}
-                       for name in AGENTS}}
+                       for name in (*AGENTS, *UNIT_AGENTS)}}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -172,6 +191,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
         if self.path == "/state":
             return self._send(200, full_state())
+        # /samba/*  -> view the hand-managed [red] share config (see samba_config.py)
+        if self.path.startswith("/samba/"):
+            if samba_config is None:
+                return self._send(503, {"error": "samba_config module unavailable"})
+            if self.path == "/samba/config":
+                return self._send(200, samba_config.read_config())
+            if self.path == "/samba/backups":
+                return self._send(200, {"backups": samba_config.list_backups()})
+            if self.path == "/samba/status":
+                return self._send(200, samba_config.status())
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
@@ -181,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
         # /agents/<name>/<action>
         if len(parts) == 3 and parts[0] == "agents":
             name, action = parts[1], parts[2]
-            if name not in AGENTS:
+            if name not in AGENTS and name not in UNIT_AGENTS:
                 return self._send(404, {"error": f"unknown agent: {name}"})
             if action == "enabled":
                 set_enabled(name, self._body().get("enabled", True))
@@ -200,6 +229,22 @@ class Handler(BaseHTTPRequestHandler):
             code, output = wire_tool(tool)
             return self._send(200 if code == 0 else 500,
                               {"tool": tool, "ok": code == 0, "output": output})
+        # /samba/config    -> validate, back up, write, reload, verify (auto-rollback on fail)
+        # /samba/validate  -> dry run: validate only, change nothing
+        # /samba/rollback  -> restore a previous version by stamp
+        if len(parts) == 2 and parts[0] == "samba":
+            if samba_config is None:
+                return self._send(503, {"error": "samba_config module unavailable"})
+            body = self._body()
+            if parts[1] == "validate":
+                ok, out = samba_config.validate(body.get("content", ""))
+                return self._send(200, {"ok": ok, "output": out})
+            if parts[1] == "config":
+                r = samba_config.write_config(body.get("content", ""))
+                return self._send(200 if r.get("ok") else 400, r)
+            if parts[1] == "rollback":
+                r = samba_config.rollback(body.get("stamp", ""))
+                return self._send(200 if r.get("ok") else 400, r)
         # /agentic/<promote|dismiss>/<id>  -> act on a skill/rule proposal
         if len(parts) == 3 and parts[0] == "agentic" and parts[1] in ("promote", "dismiss"):
             code, output = run_propose(parts[1], parts[2])

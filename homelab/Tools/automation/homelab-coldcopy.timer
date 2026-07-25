@@ -1,0 +1,12 @@
+[Unit]
+Description=Run homelab-coldcopy weekly (Sun 04:00)
+
+[Timer]
+# After homelab-autoupdate (02:00) and homelab-autoreboot (03:00), so a reboot
+# never lands in the middle of a sync.
+OnCalendar=Sun *-*-* 04:00:00
+RandomizedDelaySec=600
+Persistent=true
+
+[Install]
+WantedBy=timers.target

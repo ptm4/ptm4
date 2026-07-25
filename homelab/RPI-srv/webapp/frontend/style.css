@@ -1,26 +1,96 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Design tokens ──────────────────────────────────────────────────────────
+   Shared with frontend/architecture/ and frontend/agents/ so the SPA and the two
+   standalone pages speak one visual language. The four chromatic --c-* values are
+   the palette validated with the dataviz skill's validate_palette.js at --pairs all
+   (a map can place any two adjacent); don't change them without re-running it.
+
+   The legacy aliases at the bottom (--surface2/--text/--muted/--green/...) keep the
+   ~800 lines of existing page CSS working while the new components use the fuller
+   scale. Prefer the new names in new code.
+   ------------------------------------------------------------------------- */
 :root {
-  --bg:       #0f1117;
-  --surface:  #1a1d27;
-  --surface2: #20232f;
-  --border:   #2a2d3a;
-  --accent:   #4f8ef7;
-  --green:    #4caf7d;
-  --yellow:   #e0b44a;
-  --red:      #e05c5c;
-  --text:     #e2e4ed;
-  --muted:    #7a7f99;
-  --sidebar-w: 200px;
-  --radius:   8px;
+  /* surfaces & ink */
+  --bg:        #0d0f15;
+  --surface:   #1a1d27;
+  --surface-2: #20232f;
+  --surface-3: #262a38;
+  --border:    #2a2d3a;
+  --border-2:  #363a4b;
+  --ink:       #e6e8f0;
+  --ink-2:     #a8adc2;
+  --ink-3:     #767c93;
+  --accent:    #4f8ef7;
+  --accent-dim: #1d3a6b;
+
+  /* status — reserved, never reused as a category colour */
+  --ok:    #4caf7d;
+  --warn:  #e0b44a;
+  --crit:  #e05c5c;
+
+  /* categorical (validated) */
+  --c-network: #3987e5;
+  --c-storage: #1bab7d;
+  --c-media:   #c98500;
+  --c-apps:    #c4477a;
+
+  /* spacing scale */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* type scale */
+  --fs-xs: 10.5px; --fs-sm: 11.5px; --fs-base: 12.5px; --fs-md: 14px;
+  --fs-lg: 16px;   --fs-xl: 20px;   --fs-2xl: 28px;    --fs-hero: 34px;
+
+  /* radii & elevation */
+  --r-sm: 7px; --r: 10px; --r-lg: 14px;
+  --sh-1: 0 1px 2px rgba(0,0,0,.28);
+  --sh-2: 0 4px 20px rgba(0,0,0,.35);
+
+  --sidebar-w: 248px;   /* 240–280px is the industry norm; was 200 */
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* legacy aliases — existing CSS below still references these */
+  --surface2: var(--surface-2);
+  --text:     var(--ink);
+  --muted:    var(--ink-3);
+  --green:    var(--ok);
+  --yellow:   var(--warn);
+  --red:      var(--crit);
+  --radius:   var(--r-sm);
+}
+
+:root[data-theme="light"] {
+  --bg:        #f2f3f7;
+  --surface:   #ffffff;
+  --surface-2: #f7f8fa;
+  --surface-3: #eef0f5;
+  --border:    #dcdfe8;
+  --border-2:  #c6cad6;
+  --ink:       #14161c;
+  --ink-2:     #4d5262;
+  --ink-3:     #757b8c;
+  --accent:    #2a78d6;
+  --accent-dim: #d6e4f8;
+  --ok:   #0f8a52;
+  --warn: #a3720a;
+  --crit: #c23b3b;
+  --c-network: #2a78d6;
+  --c-storage: #1baf7a;
+  --c-media:   #eda100;
+  --c-apps:    #e87ba4;
+  --sh-1: 0 1px 2px rgba(20,25,40,.06);
+  --sh-2: 0 4px 20px rgba(20,25,40,.12);
 }
 
 body {
   background: var(--bg);
-  color: var(--text);
-  font-family: 'Segoe UI', system-ui, sans-serif;
-  font-size: 14px;
+  color: var(--ink);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: var(--fs-md);
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* ── Layout ──────────────────────────────────────────────────────────────── */
@@ -814,4 +884,206 @@ body {
   border-radius: 3px;
   padding: 0 2px;
   font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Shell v2 — grouped nav, skeletons, bento Home, command palette (2026-07-25)
+   Everything below uses the new token scale. Older sections above still use the
+   legacy aliases and are untouched.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Sidebar: grouped nav ─────────────────────────────────────────────────── */
+.nav-group { margin-bottom: var(--s4); }
+.nav-group-label {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--ink-3); font-weight: 700; padding: 0 var(--s4) var(--s2);
+}
+.nav-links .nav-link {
+  display: flex; align-items: center; gap: var(--s2);
+  font-size: 13px; border-radius: var(--r-sm);
+}
+.nav-link .nav-dot {
+  width: 6px; height: 6px; border-radius: 50%; flex: none;
+  background: var(--border-2); margin-left: auto; transition: background .2s;
+}
+.nav-link .nav-dot[data-s="ok"]   { background: var(--ok); }
+.nav-link .nav-dot[data-s="warn"] { background: var(--warn); }
+.nav-link .nav-dot[data-s="crit"] { background: var(--crit); }
+.nav-link .nav-count {
+  margin-left: auto; font-size: var(--fs-xs); font-weight: 700;
+  background: var(--surface-3); color: var(--ink-2);
+  border-radius: 99px; padding: 1px 6px; min-width: 18px; text-align: center;
+}
+.nav-link .nav-count[data-tone="warn"] { color: var(--warn); }
+.nav-link .nav-count[data-tone="crit"] { color: var(--crit); }
+
+.sidebar-actions { padding: 0 var(--s3) var(--s3); display: flex; gap: var(--s2); }
+.sidebar-actions button {
+  flex: 1; font: inherit; font-size: var(--fs-sm); color: var(--ink-3); cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: var(--s2);
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+}
+.sidebar-actions button:hover { color: var(--ink); border-color: var(--border-2); }
+.sidebar-actions kbd {
+  font-family: var(--mono); font-size: 9.5px; background: var(--surface-3);
+  border: 1px solid var(--border-2); border-radius: 3px; padding: 0 3px;
+}
+
+/* ── Skeletons ────────────────────────────────────────────────────────────── */
+.sk { background: var(--surface-3); border-radius: 5px; position: relative; overflow: hidden; }
+.sk::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,.055), transparent);
+  animation: sk-shimmer 1.25s infinite;
+}
+:root[data-theme="light"] .sk::after {
+  background: linear-gradient(90deg, transparent, rgba(0,0,0,.045), transparent);
+}
+@keyframes sk-shimmer { 100% { transform: translateX(100%); } }
+.sk-line { height: 10px; margin-bottom: var(--s2); }
+.sk-line.w40 { width: 40%; } .sk-line.w60 { width: 60%; } .sk-line.w80 { width: 80%; }
+.sk-tile { height: 100%; min-height: 96px; border-radius: var(--r); }
+@media (prefers-reduced-motion: reduce) { .sk::after { animation: none; } }
+
+/* ── Bento Home ───────────────────────────────────────────────────────────── */
+.bento {
+  display: grid; gap: var(--s3);
+  grid-template-columns: repeat(12, 1fr);
+  align-items: stretch;
+}
+.tile {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: var(--s4);
+  display: flex; flex-direction: column; min-width: 0;
+  box-shadow: var(--sh-1);
+}
+.tile.link { text-decoration: none; color: inherit; transition: border-color .15s, transform .15s; }
+.tile.link:hover { border-color: var(--border-2); transform: translateY(-1px); }
+/* spans — the hierarchy lever: the most important thing is physically biggest */
+.sp3 { grid-column: span 3; } .sp4 { grid-column: span 4; }
+.sp6 { grid-column: span 6; } .sp8 { grid-column: span 8; } .sp12 { grid-column: span 12; }
+
+.tile-head {
+  display: flex; align-items: center; gap: var(--s2);
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 700; margin-bottom: var(--s3);
+}
+.tile-head .spacer { margin-left: auto; }
+.tile-metric { font-size: var(--fs-2xl); font-weight: 650; letter-spacing: -.5px; line-height: 1.1; }
+.tile-metric.hero { font-size: var(--fs-hero); }
+.tile-sub { font-size: var(--fs-base); color: var(--ink-3); margin-top: var(--s1); }
+
+/* host vitals */
+.host-tile .host-name { font-size: var(--fs-lg); font-weight: 650; letter-spacing: -.2px; }
+.host-tile .host-role { font-size: var(--fs-sm); color: var(--ink-3); }
+.vitals { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--s3); margin-top: var(--s4); }
+.vital .vital-label {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .06em;
+  color: var(--ink-3); font-weight: 600;
+}
+.vital .vital-value { font-size: var(--fs-lg); font-weight: 600; margin-top: 1px; }
+.vital .vital-value small { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 400; }
+
+.meter-sm { height: 4px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 5px; }
+.meter-sm > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
+.meter-sm > span[data-tone="ok"]   { background: var(--ok); }
+.meter-sm > span[data-tone="warn"] { background: var(--warn); }
+.meter-sm > span[data-tone="crit"] { background: var(--crit); }
+
+.pill {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  font-size: var(--fs-xs); font-weight: 650; padding: 2px 8px; border-radius: 99px;
+  border: 1px solid var(--border-2); color: var(--ink-2); background: var(--surface-2);
+}
+.pill[data-s="ok"]   { color: var(--ok);   border-color: var(--ok); }
+.pill[data-s="warn"] { color: var(--warn); border-color: var(--warn); }
+.pill[data-s="crit"] { color: var(--crit); border-color: var(--crit); }
+
+.qlinks { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: var(--s2); }
+.qlink {
+  display: flex; align-items: center; gap: var(--s2); text-decoration: none;
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: var(--s2) var(--s3);
+  font-size: var(--fs-base); color: var(--ink-2);
+}
+.qlink:hover { color: var(--ink); border-color: var(--border-2); }
+
+@media (max-width: 1100px) {
+  .sp3, .sp4 { grid-column: span 6; }
+  .sp8 { grid-column: span 12; }
+}
+@media (max-width: 720px) {
+  .sp3, .sp4, .sp6, .sp8 { grid-column: span 12; }
+  .vitals { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── Command palette ──────────────────────────────────────────────────────── */
+.cmdk-backdrop {
+  position: fixed; inset: 0; z-index: 200; display: none;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(2px);
+  padding-top: 12vh; justify-content: center;
+}
+.cmdk-backdrop.open { display: flex; }
+.cmdk {
+  width: min(560px, 92vw); max-height: 60vh; align-self: flex-start;
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-radius: var(--r-lg); box-shadow: var(--sh-2);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.cmdk input {
+  font: inherit; font-size: var(--fs-lg); color: var(--ink);
+  background: none; border: 0; border-bottom: 1px solid var(--border);
+  padding: var(--s4); outline: none;
+}
+.cmdk input::placeholder { color: var(--ink-3); }
+.cmdk-list { overflow-y: auto; padding: var(--s2); }
+.cmdk-item {
+  display: flex; align-items: center; gap: var(--s3); width: 100%;
+  font: inherit; font-size: var(--fs-md); text-align: left; cursor: pointer;
+  background: none; border: 0; color: var(--ink-2);
+  padding: var(--s2) var(--s3); border-radius: var(--r-sm);
+}
+.cmdk-item .ci-icon { width: 18px; text-align: center; flex: none; }
+.cmdk-item .ci-hint { margin-left: auto; font-size: var(--fs-xs); color: var(--ink-3); }
+.cmdk-item[aria-selected="true"] { background: var(--surface-3); color: var(--ink); }
+.cmdk-item:hover { background: var(--surface-2); color: var(--ink); }
+.cmdk-empty { padding: var(--s5); text-align: center; color: var(--ink-3); font-size: var(--fs-base); }
+.cmdk-group {
+  font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .07em;
+  color: var(--ink-3); font-weight: 700; padding: var(--s3) var(--s3) var(--s1);
+}
+
+/* ── Mobile shell ─────────────────────────────────────────────────────────────
+   A 248px fixed sidebar leaves ~127px of content on a 375px phone, which squeezed
+   the Home tiles to 132px wide. Below 860px the sidebar becomes a sticky
+   horizontal nav strip instead. `display: contents` on .nav-group flattens the
+   four groups into one scrolling row (the group labels are hidden — at this width
+   the row reads as tabs and the labels only cost height).
+   ------------------------------------------------------------------------- */
+@media (max-width: 860px) {
+  .layout { flex-direction: column; }
+  .sidebar {
+    width: 100%; min-width: 0; height: auto;
+    position: sticky; top: 0; z-index: 30;
+    flex-direction: row; align-items: center; gap: var(--s2);
+    padding: var(--s2) 0; overflow-x: auto; scrollbar-width: none;
+    border-right: 0; border-bottom: 1px solid var(--border);
+  }
+  .sidebar::-webkit-scrollbar { display: none; }
+  .sidebar-logo {
+    border-bottom: 0; margin-bottom: 0; padding: 0 var(--s3);
+    flex: none; align-self: center;
+  }
+  .nav-group { display: contents; }
+  .nav-group-label { display: none; }
+  .nav-links { display: flex; flex: none; padding: 0; gap: var(--s1); }
+  .nav-links li { margin-bottom: 0; }
+  .nav-link { white-space: nowrap; padding: var(--s2) var(--s3); }
+  .nav-link .nav-dot, .nav-link .nav-count { margin-left: var(--s1); }
+  .sidebar-actions { flex: none; padding: 0 var(--s3); width: auto; }
+  .sidebar-actions button { white-space: nowrap; }
+  .sidebar-footer { display: none; }
+  .view { padding: var(--s4); max-width: 100%; }
+  .page-header { margin-bottom: var(--s4); padding-bottom: var(--s3); }
 }

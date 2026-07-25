@@ -22,14 +22,26 @@ const routes = {
   home:     renderHome,
   security: renderSecurity,
   reports:  renderReports,
-  weather:  renderWeather,
-  healthdigest: renderHealthdigest,
-  jellyfin: renderJellyfin,
-  sports:   renderSports,
-  hltv:     renderHltv,
+  bots:     renderBots,
   leetify:  renderLeetify,
   llm:      renderLlm,
 };
+
+// The five bots were five sidebar entries and five near-identical page shells. They are
+// now one tabbed page. Each bot's *config form* is genuinely different (weather has
+// location, healthdigest has Pi-hole, sports has leagues…) so those renderers are kept
+// as-is — only the surrounding chrome and navigation were unified.
+const BOTS = [
+  { id: 'weather',      label: 'Weather',  icon: '🌤️', render: renderWeather },
+  { id: 'healthdigest', label: 'Health',   icon: '🩺', render: renderHealthdigest },
+  { id: 'jellyfin',     label: 'Jellyfin', icon: '🎬', render: renderJellyfin },
+  { id: 'sports',       label: 'Sports',   icon: '🏟️', render: renderSports },
+  { id: 'hltv',         label: 'HLTV',     icon: '🎯', render: renderHltv },
+];
+
+// Old per-bot hashes stay valid as deep links into the right tab, so existing
+// bookmarks don't 404 into the Home page.
+BOTS.forEach(b => { routes[b.id] = (view) => renderBots(view, b.id); });
 
 // Quick-link shortcuts shown on the Home page. Edit here (could graduate to /api/links later).
 const QUICK_LINKS = [
@@ -53,153 +65,297 @@ function route() {
   renderer(view);
 }
 
-// ── Home page ─────────────────────────────────────────────────────────────────
+// ── Home page (bento) ─────────────────────────────────────────────────────────
+// Rebuilt 2026-07-25. The old Home was a uniform grid of link cards: every tile the
+// same visual weight, no live system state, and a Pi-hole card that had been dead
+// since the v6 upgrade. A homelab dashboard's most valuable content is "are my
+// machines healthy", so that now leads and is physically the biggest thing on screen.
+//
+// All vitals come from reports that already exist (hardware-latest / software-latest /
+// homelab-doctor-latest / network-latest) — this is presentation, not new collection.
+const HOST_ROLES = {
+  rpi:         'DNS · DHCP · web',
+  opti:        'storage · control plane',
+  noblenumbat: 'media stack',
+  android:     'local LLM',
+};
+
+function pct(used, total) {
+  if (!total || used == null) return null;
+  return Math.round((used / total) * 100);
+}
+
+// Shared thresholds so a number means the same thing everywhere on the page.
+function toneFor(p) {
+  if (p == null) return '';
+  return p >= 90 ? 'crit' : p >= 75 ? 'warn' : 'ok';
+}
+
+function meter(p, tone) {
+  if (p == null) return '';
+  return `<div class="meter-sm"><span data-tone="${tone || toneFor(p)}" style="width:${Math.min(100, p)}%"></span></div>`;
+}
+
+function skeletonTile(span = 'sp4') {
+  return `<div class="tile ${span}"><div class="sk sk-line w40"></div>
+    <div class="sk sk-line w80"></div><div class="sk sk-line w60"></div></div>`;
+}
+
 function renderHome(view) {
   view.innerHTML = `
     <div class="page-home">
       <header class="page-header">
         <h1 class="home-title"><img src="favicon.svg" alt="" class="home-title-icon" />Pert's Pocket</h1>
-        <span class="badge-host">rpi · 192.168.1.10</span>
+        <span class="badge-host" id="home-generated">loading…</span>
       </header>
 
-      <section class="cards">
-        <div class="card">
-          <div class="card-icon">🤖</div>
-          <div class="card-body">
-            <h2>Reports</h2>
-            <p>Homelab hardware, software &amp; network reports — status, history, run-now.</p>
-          </div>
-          <a href="#reports" class="card-link">View reports →</a>
+      <div class="bento" id="home-bento">
+        <div class="tile sp12" style="padding:0;border:0;background:none;box-shadow:none">
+          <div class="tile-head" style="margin:0 0 var(--s1)">Hosts</div>
+        </div>
+        <div id="home-hosts" style="display:contents">
+          ${skeletonTile('sp4')}${skeletonTile('sp4')}${skeletonTile('sp4')}
         </div>
 
-        <div class="card">
-          <div class="card-icon">🔒</div>
-          <div class="card-body">
-            <h2>Security Reports</h2>
-            <p>Live results from ARP watch, rogue AP detection, Windows event hunting, and more.</p>
-          </div>
-          <a href="#security" class="card-link">View reports →</a>
+        <div class="tile sp4" id="tile-pihole">
+          <div class="tile-head">Pi-hole<span class="spacer"></span><span id="pihole-pill"></span></div>
+          <div id="pihole-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
         </div>
 
-        <div class="card" id="leetify-card">
-          <div class="card-icon">🎯</div>
-          <div class="card-body">
-            <h2>CS2 / Leetify</h2>
-            <p id="leetify-body">Loading…</p>
-          </div>
-          <a href="#leetify" class="card-link">View analysis →</a>
+        <div class="tile sp4" id="tile-pool">
+          <div class="tile-head">Storage pool<span class="spacer"></span><span class="pill">opti</span></div>
+          <div id="pool-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
         </div>
 
-        <div class="card" id="pihole-card">
-          <div class="card-icon">🛡️</div>
-          <div class="card-body">
-            <h2>Pi-hole</h2>
-            <p id="pihole-body">Loading…</p>
-          </div>
+        <div class="tile sp4" id="tile-vpn">
+          <div class="tile-head">VPN<span class="spacer"></span><span class="pill">noblenumbat</span></div>
+          <div id="vpn-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
         </div>
 
-        <div class="card" id="weather-card">
-          <div class="card-icon">🌤️</div>
-          <div class="card-body">
-            <h2>Weather Bot</h2>
-            <p id="weather-body">Loading…</p>
-          </div>
-          <a href="#weather" class="card-link">Bot settings →</a>
-        </div>
+        <a class="tile link sp3" href="#reports">
+          <div class="tile-head">Reports</div>
+          <div class="tile-metric" id="m-reports">—</div>
+          <div class="tile-sub" id="s-reports">runner status</div>
+        </a>
 
-        <div class="card" id="healthdigest-card">
-          <div class="card-icon">🩺</div>
-          <div class="card-body">
-            <h2>Health Bot</h2>
-            <p id="healthdigest-body">Loading…</p>
-          </div>
-          <a href="#healthdigest" class="card-link">Bot settings →</a>
-        </div>
+        <a class="tile link sp3" href="/agents/">
+          <div class="tile-head">Agent drift</div>
+          <div class="tile-metric" id="m-drift">—</div>
+          <div class="tile-sub" id="s-drift">undescribed vs missing</div>
+        </a>
 
-        <div class="card" id="jellyfinbot-card">
-          <div class="card-icon">🎬</div>
-          <div class="card-body">
-            <h2>Jellyfin Bot</h2>
-            <p id="jellyfinbot-body">Loading…</p>
-          </div>
-          <a href="#jellyfin" class="card-link">Bot settings →</a>
-        </div>
+        <a class="tile link sp3" href="#bots">
+          <div class="tile-head">Bots</div>
+          <div class="tile-metric" id="m-bots">—</div>
+          <div class="tile-sub" id="s-bots">discord fleet</div>
+        </a>
 
-        <div class="card" id="sportsbot-card">
-          <div class="card-icon">🏟️</div>
-          <div class="card-body">
-            <h2>Sports Bot</h2>
-            <p id="sportsbot-body">Loading…</p>
-          </div>
-          <a href="#sports" class="card-link">Bot settings →</a>
-        </div>
+        <a class="tile link sp3" href="#leetify">
+          <div class="tile-head">CS2 / Leetify</div>
+          <div class="tile-metric" id="m-leetify">—</div>
+          <div class="tile-sub" id="leetify-body">loading…</div>
+        </a>
 
-        <div class="card" id="hltvbot-card">
-          <div class="card-icon">🎯</div>
-          <div class="card-body">
-            <h2>HLTV Bot</h2>
-            <p id="hltvbot-body">Loading…</p>
+        <div class="tile sp12">
+          <div class="tile-head">Quick links</div>
+          <div class="qlinks">
+            ${QUICK_LINKS.map(l => `<a class="qlink" href="${l.url}" target="_blank" rel="noopener">
+              <span>${l.icon}</span>${l.label}</a>`).join('')}
           </div>
-          <a href="#hltv" class="card-link">Bot settings →</a>
         </div>
+      </div>
+    </div>`;
 
-        <div class="card">
-          <div class="card-icon">📝</div>
-          <div class="card-body">
-            <h2>Notes</h2>
-            <p>OneNote-style notebook — quick capture, sections &amp; pages.</p>
-          </div>
-          <a href="/notes/" class="card-link">Open notes →</a>
-        </div>
-
-        <div class="card">
-          <div class="card-icon">🗺️</div>
-          <div class="card-body">
-            <h2>Architecture</h2>
-            <p>Every host, container &amp; flow across the homelab — synced live from agent reports.</p>
-          </div>
-          <a href="/architecture/" class="card-link">View map →</a>
-        </div>
-
-        <div class="card card-links">
-          <div class="card-icon">🔗</div>
-          <div class="card-body">
-            <h2>Quick Links</h2>
-            <div class="links-grid">
-              ${QUICK_LINKS.map(l => `<a class="link-item" href="${escHtml(l.url)}" target="_blank" rel="noopener">${l.icon} ${escHtml(l.label)}</a>`).join('')}
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  `;
-  loadLeetify();
+  loadHostVitals();
   loadPihole();
-  loadWeatherCard();
-  loadBotCard('healthdigest', 'healthdigest-body');
-  loadBotCard('jellyfin', 'jellyfinbot-body');
-  loadBotCard('sports', 'sportsbot-body');
-  loadBotCard('hltv', 'hltvbot-body');
+  loadPoolAndVpn();
+  loadHomeCounters();
+  loadLeetify();
 }
 
-async function loadWeatherCard() {
-  const el = document.getElementById('weather-body');
-  if (!el) return;
+// One fetch of hardware+doctor+software drives every host tile.
+async function loadHostVitals() {
+  const wrap = document.getElementById('home-hosts');
+  if (!wrap) return;
+  let hw = {}, doc = {}, sw = {};
   try {
-    const res = await fetch('/api/weather/status');
-    if (!res.ok) { el.textContent = 'Bot unreachable — check discord-weather container.'; return; }
-    const d = await res.json();
-    const next = d.next_post_at
-      ? new Date(d.next_post_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })
-      : null;
-    const last = d.last_status || 'no posts yet';
-    const lastBad = /fail/i.test(last);
-    el.innerHTML = d.enabled
-      ? `Next post: <strong>${escHtml(next || '…')}</strong> · Last: ${lastBad ? `<strong style="color:var(--red)">${escHtml(last)}</strong>` : escHtml(last)}`
-      : 'Daily posts <strong>paused</strong>.';
-  } catch {
-    el.textContent = 'Unavailable.';
+    const [h, d, s] = await Promise.all([
+      fetch('/api/runners/hardware-latest').then(r => r.ok ? r.json() : {}),
+      fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : {}),
+      fetch('/api/runners/software-latest').then(r => r.ok ? r.json() : {}),
+    ]);
+    hw = h; doc = d; sw = s;
+  } catch (_) { /* fall through to the unavailable state below */ }
+
+  const byHost = {};
+  (hw.hosts || []).forEach(h => (byHost[h.host] ||= {}).hw = h);
+  (doc.hosts || []).forEach(h => (byHost[h.host] ||= {}).doc = h);
+  (sw.hosts || []).forEach(h => (byHost[h.host] ||= {}).sw = h);
+
+  // Servers only — android is a phone that is usually off-LAN and would read as a
+  // permanently-broken tile rather than useful information.
+  const order = ['rpi', 'opti', 'noblenumbat'].filter(n => byHost[n]);
+  if (!order.length) {
+    wrap.innerHTML = `<div class="tile sp12"><div class="tile-head">Hosts</div>
+      <div class="tile-sub">No hardware report yet — run the Hardware runner from Reports.</div></div>`;
+    return;
   }
+
+  const stamp = document.getElementById('home-generated');
+  if (stamp) stamp.textContent = hw.run_at ? `report ${relTime(hw.run_at)}` : 'rpi · 192.168.1.10';
+
+  wrap.innerHTML = order.map(name => {
+    const m = byHost[name].hw?.metrics || {};
+    const dm = byHost[name].doc?.metrics || {};
+    const status = byHost[name].doc?.status || byHost[name].hw?.status || 'unknown';
+    const sTone = status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'crit';
+    const sGlyph = status === 'ok' ? '✓' : status === 'warn' ? '!' : '×';
+
+    const disk = (m.disks || [])[0] || {};
+    const diskPct = disk.used_pct ?? null;
+    // memory_gib is an OBJECT ({MemTotal, MemAvailable, SwapTotal, SwapFree}); the
+    // scalar is mem_used_gib. Treating memory_gib as a number rendered
+    // "NaN% of [object Object] GiB".
+    const memTotal = m.memory_gib?.MemTotal ?? null;
+    const memPct = pct(m.mem_used_gib, memTotal);
+    const load1 = Array.isArray(m.load) ? parseFloat(m.load[0]) : null;
+    const cores = parseInt((m.cpu || {})['CPU(s)'], 10) || null;
+    const loadPct = (load1 != null && cores) ? Math.round((load1 / cores) * 100) : null;
+    const temp = pickTemp(m.thermals);
+    const containers = (dm.containers || []).length;
+    const down = (dm.containers || []).filter(c => !/^up/i.test(c.status || '')).length;
+    const updates = byHost[name].sw?.metrics?.image_update_count || 0;
+
+    return `<a class="tile link sp4 host-tile" href="/architecture/">
+      <div class="tile-head" style="margin-bottom:var(--s2)">
+        <span class="host-name">${name}</span>
+        <span class="spacer"></span>
+        <span class="pill" data-s="${sTone}">${sGlyph} ${status}</span>
+      </div>
+      <div class="host-role">${HOST_ROLES[name] || ''}</div>
+      <div class="vitals">
+        <div class="vital">
+          <div class="vital-label">CPU load</div>
+          <div class="vital-value">${load1 != null ? load1.toFixed(2) : '—'}
+            ${cores ? `<small>/ ${cores} cores</small>` : ''}</div>
+          ${meter(loadPct)}
+        </div>
+        <div class="vital">
+          <div class="vital-label">Memory</div>
+          <div class="vital-value">${memPct != null ? memPct + '%' : '—'}
+            ${memTotal ? `<small>of ${memTotal} GiB</small>` : ''}</div>
+          ${meter(memPct)}
+        </div>
+        <div class="vital">
+          <div class="vital-label">Disk</div>
+          <div class="vital-value">${diskPct != null ? diskPct + '%' : '—'}
+            ${disk.size_gb ? `<small>of ${Math.round(disk.size_gb)} GB</small>` : ''}</div>
+          ${meter(diskPct)}
+        </div>
+        <div class="vital">
+          <div class="vital-label">${temp != null ? 'Temp' : 'Uptime'}</div>
+          <div class="vital-value">${temp != null ? temp + '°C' : (m.uptime || '—')}</div>
+          ${temp != null ? `<div class="tile-sub" style="margin-top:2px">${m.uptime || ''}</div>` : ''}
+        </div>
+      </div>
+      <div class="tile-sub" style="margin-top:var(--s3);display:flex;gap:var(--s2);flex-wrap:wrap">
+        ${containers ? `<span>${containers - down}/${containers} containers</span>` : ''}
+        ${down ? `<span style="color:var(--crit)">${down} down</span>` : ''}
+        ${updates ? `<span style="color:var(--warn)">${updates} image update${updates > 1 ? 's' : ''}</span>` : ''}
+      </div>
+    </a>`;
+  }).join('');
+}
+
+// thermals shape varies by host (and by sensor); take the highest plausible CPU reading
+// rather than guessing at a specific key that may not exist on every box.
+function pickTemp(thermals) {
+  if (!thermals) return null;
+  const vals = [];
+  const walk = (v) => {
+    if (typeof v === 'number') { if (v > 0 && v < 130) vals.push(v); return; }
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (v && typeof v === 'object') return Object.values(v).forEach(walk);
+  };
+  walk(thermals);
+  return vals.length ? Math.round(Math.max(...vals)) : null;
+}
+
+function relTime(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const m = Math.round((Date.now() - d.getTime()) / 60000);
+  if (m < 2) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
+async function loadPoolAndVpn() {
+  try {
+    const doc = await fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : {});
+    const opti = (doc.hosts || []).find(h => h.host === 'opti');
+    const pool = opti?.metrics?.pool;
+    const el = document.getElementById('pool-body');
+    if (el) {
+      el.innerHTML = pool
+        ? `<div class="tile-metric">${Math.round(pool.used_pct)}%</div>
+           <div class="tile-sub">${pool.size_gb ? Math.round(pool.size_gb) + ' GB total' : ''}</div>
+           ${meter(Math.round(pool.used_pct))}`
+        : `<div class="tile-sub">Pool data unavailable — check the Homelab Doctor runner.</div>`;
+    }
+  } catch (_) {
+    const el = document.getElementById('pool-body');
+    if (el) el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
+  }
+
+  // VPN comes from the architecture merge, which carries the healer's live view.
+  const vel = document.getElementById('vpn-body');
+  if (!vel) return;
+  try {
+    const d = await fetch('/api/architecture/data').then(r => r.ok ? r.json() : null);
+    const gl = d?.nodes?.find(n => n.id === 'gluetun');
+    const up = gl?._live?.state === 'running';
+    vel.innerHTML = `<div class="tile-metric" style="color:var(--${up ? 'ok' : 'crit'})">${up ? 'Up' : 'Down'}</div>
+      <div class="tile-sub">${gl?.sublabel || 'Gluetun tunnel'}</div>`;
+  } catch (_) {
+    vel.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
+  }
+}
+
+async function loadHomeCounters() {
+  // Reports: how many runners are not OK.
+  try {
+    const d = await fetch('/api/runners').then(r => r.ok ? r.json() : {});
+    const rs = d.runners || [];
+    const bad = rs.filter(r => r.status !== 'ok').length;
+    setText('m-reports', bad ? `${bad}` : '✓');
+    setText('s-reports', bad ? `of ${rs.length} need attention` : `all ${rs.length} healthy`);
+  } catch (_) { setText('s-reports', 'unavailable'); }
+
+  // Agents: total drift across hosts.
+  try {
+    const d = await fetch('/api/agents').then(r => r.ok ? r.json() : {});
+    const hosts = d.hosts || [];
+    const drift = hosts.reduce((n, h) => n + (h.drift_count || 0), 0);
+    const unreachable = hosts.filter(h => !h.reachable).length;
+    setText('m-drift', String(drift));
+    setText('s-drift', unreachable ? `${unreachable} agent unreachable` : `across ${hosts.length} hosts`);
+  } catch (_) { setText('s-drift', 'unavailable'); }
+
+  // Bots: how many are actually enabled/running.
+  try {
+    const states = await Promise.all(BOTS.map(b =>
+      fetch(`/api/${b.id}/status`).then(r => r.ok ? r.json() : null).catch(() => null)));
+    const live = states.filter(Boolean).length;
+    setText('m-bots', `${live}/${BOTS.length}`);
+    setText('s-bots', live === BOTS.length ? 'all reachable' : 'some unreachable');
+  } catch (_) { setText('s-bots', 'unavailable'); }
+}
+
+function setText(id, txt) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = txt;
 }
 
 async function loadLeetify() {
@@ -222,10 +378,12 @@ async function loadPihole() {
     const res = await fetch('/api/runners/network-latest');
     if (!res.ok) { el.textContent = 'No network report yet.'; return; }
     const d = await res.json();
-    // Pi-hole runs on one host (rpi) — find whichever host's metrics carry it.
-    const p = (Array.isArray(d.hosts)
-      ? (d.hosts.find(h => h && h.metrics && h.metrics.pihole) || {}).metrics?.pihole
-      : null) || d.pihole;
+    // Pi-hole runs on rpi. Prefer that host explicitly rather than "first host with a
+    // truthy pihole key" — the key is present (as null) on every host, so any change
+    // that made it falsy-but-not-null would silently pick the wrong machine.
+    const hosts = Array.isArray(d.hosts) ? d.hosts : [];
+    const p = (hosts.find(h => h?.host === 'rpi') || hosts.find(h => h?.metrics?.pihole))
+      ?.metrics?.pihole || d.pihole;
     if (!p) { el.textContent = 'Pi-hole stats unavailable.'; return; }
     const q = p.dns_queries_today ?? p.queries ?? '?';
     const blocked = p.ads_blocked_today ?? p.blocked ?? '?';
@@ -949,7 +1107,7 @@ async function renderWeather(view) {
         <div class="sec-header-actions">
           <button class="btn-view" onclick="weatherPreview(this)">Preview report</button>
           <button class="btn-run" onclick="weatherSendNow(this)">Send now</button>
-          <button class="btn-refresh" onclick="renderWeather(document.getElementById('view'))">↻ Refresh</button>
+          <button class="btn-refresh" onclick="renderWeather(botPanel())">↻ Refresh</button>
         </div>
       </div>
       <div id="weather-page"><div class="sec-loading">Loading bot settings…</div></div>
@@ -1296,7 +1454,7 @@ async function botPreview(bot, btn) {
   document.body.appendChild(overlay);
 }
 
-// Home-page status card body for a bot (same shape as loadWeatherCard).
+// Home-page status card body for a bot.
 async function loadBotCard(bot, elId) {
   const el = document.getElementById(elId);
   if (!el) return;
@@ -1330,7 +1488,7 @@ async function renderHealthdigest(view) {
         <div class="sec-header-actions">
           <button class="btn-view" onclick="botPreview('healthdigest', this)">Preview digest</button>
           <button class="btn-run" onclick="botSendNow('healthdigest', this)">Send now</button>
-          <button class="btn-refresh" onclick="renderHealthdigest(document.getElementById('view'))">↻ Refresh</button>
+          <button class="btn-refresh" onclick="renderHealthdigest(botPanel())">↻ Refresh</button>
         </div>
       </div>
       <div id="hd-page"><div class="sec-loading">Loading bot settings…</div></div>
@@ -1421,7 +1579,7 @@ async function renderJellyfin(view) {
         <div class="sec-header-actions">
           <button class="btn-view" onclick="botPreview('jellyfin', this)">Preview digest</button>
           <button class="btn-run" onclick="botSendNow('jellyfin', this)">Send now</button>
-          <button class="btn-refresh" onclick="renderJellyfin(document.getElementById('view'))">↻ Refresh</button>
+          <button class="btn-refresh" onclick="renderJellyfin(botPanel())">↻ Refresh</button>
         </div>
       </div>
       <div id="jf-page"><div class="sec-loading">Loading bot settings…</div></div>
@@ -1560,7 +1718,7 @@ async function renderSports(view) {
         <div class="sec-header-actions">
           <button class="btn-view" onclick="botPreview('sports', this)">Preview report</button>
           <button class="btn-run" onclick="botSendNow('sports', this)">Send now</button>
-          <button class="btn-refresh" onclick="renderSports(document.getElementById('view'))">↻ Refresh</button>
+          <button class="btn-refresh" onclick="renderSports(botPanel())">↻ Refresh</button>
         </div>
       </div>
       <div id="sp-page"><div class="sec-loading">Loading bot settings…</div></div>
@@ -1721,7 +1879,7 @@ async function renderHltv(view) {
         <div class="sec-header-actions">
           <button class="btn-view" onclick="botPreview('hltv', this)">Preview digest</button>
           <button class="btn-run" onclick="botSendNow('hltv', this)">Send now</button>
-          <button class="btn-refresh" onclick="renderHltv(document.getElementById('view'))">↻ Refresh</button>
+          <button class="btn-refresh" onclick="renderHltv(botPanel())">↻ Refresh</button>
         </div>
       </div>
       <div id="hltv-page"><div class="sec-loading">Loading bot settings…</div></div>
@@ -2179,3 +2337,234 @@ window.addEventListener('load', () => {
   setInterval(checkHealth, 30_000);
   route();
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Shell v2 — bots tab page, nav status dots, theme, command palette (2026-07-25)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Bots: one page, five tabs ────────────────────────────────────────────────
+// Replaces five sidebar entries and five page shells. Each bot's own renderer is
+// reused untouched — it already takes a container element, so it doesn't care that
+// the container is now a tab panel rather than the whole view.
+function botPanel() { return document.getElementById('bot-panel'); }
+
+let activeBotTab = 'weather';
+
+function renderBots(view, initial) {
+  activeBotTab = initial || activeBotTab || BOTS[0].id;
+  view.innerHTML = `
+    <div class="page-security">
+      <div class="sec-header" style="margin-bottom:var(--s4);padding-bottom:var(--s3)">
+        <h1>Discord bots</h1>
+        <div class="sec-header-actions">
+          <span class="sec-refresh-label">${BOTS.length} bots · one config page</span>
+        </div>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Bots" id="bot-tabs"
+           style="display:flex;gap:2px;border-bottom:1px solid var(--border);margin-bottom:var(--s4)">
+        ${BOTS.map(b => `<button class="tab" role="tab" data-bot="${b.id}"
+            aria-selected="${b.id === activeBotTab}"
+            style="font:inherit;font-size:13px;background:none;border:0;border-bottom:2px solid transparent;
+                   padding:9px 14px;cursor:pointer;white-space:nowrap">${b.icon} ${b.label}</button>`).join('')}
+      </div>
+      <div id="bot-panel"></div>
+    </div>`;
+
+  document.querySelectorAll('#bot-tabs .tab').forEach(t => {
+    paintBotTab(t);
+    t.onclick = () => {
+      activeBotTab = t.dataset.bot;
+      // Keep the URL honest so a reload/bookmark lands on the same tab.
+      history.replaceState(null, '', `#${activeBotTab}`);
+      document.querySelectorAll('#bot-tabs .tab').forEach(x => {
+        x.setAttribute('aria-selected', String(x.dataset.bot === activeBotTab));
+        paintBotTab(x);
+      });
+      showBotTab();
+    };
+  });
+  showBotTab();
+}
+
+function paintBotTab(t) {
+  const on = t.getAttribute('aria-selected') === 'true';
+  t.style.color = on ? 'var(--ink)' : 'var(--ink-3)';
+  t.style.borderBottomColor = on ? 'var(--accent)' : 'transparent';
+}
+
+function showBotTab() {
+  const panel = botPanel();
+  const bot = BOTS.find(b => b.id === activeBotTab);
+  if (!panel || !bot) return;
+  panel.innerHTML = `<div class="sec-grid">
+    <div class="tile"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div>
+      <div class="sk sk-line w60"></div></div></div>`;
+  bot.render(panel);
+}
+
+// ── Nav status dots ──────────────────────────────────────────────────────────
+// The sidebar should tell you where to look before you click. Best-effort: a failed
+// fetch leaves the dot neutral rather than implying health.
+async function refreshNavStatus() {
+  try {
+    const d = await fetch('/api/runners').then(r => r.ok ? r.json() : null);
+    if (d) {
+      const rs = d.runners || [];
+      const worst = rs.some(r => r.status === 'critical') ? 'crit'
+                  : rs.some(r => r.status !== 'ok') ? 'warn' : 'ok';
+      setDot('dot-reports', worst);
+    }
+  } catch (_) {}
+  try {
+    const d = await fetch('/api/reports').then(r => r.ok ? r.json() : null);
+    if (d) {
+      const rs = d.reports || [];
+      const worst = rs.some(r => r.status === 'critical') ? 'crit'
+                  : rs.some(r => r.status !== 'ok') ? 'warn' : 'ok';
+      setDot('dot-security', worst);
+    }
+  } catch (_) {}
+  try {
+    const d = await fetch('/api/agents').then(r => r.ok ? r.json() : null);
+    if (d) {
+      const hosts = d.hosts || [];
+      const worst = hosts.some(h => !h.reachable) ? 'crit'
+                  : hosts.some(h => h.drift_count > 0) ? 'warn' : 'ok';
+      setDot('dot-agents', worst);
+    }
+  } catch (_) {}
+  try {
+    const r = await fetch('/api/llama/status');
+    setDot('dot-llm', r.ok ? 'ok' : 'warn');
+  } catch (_) { setDot('dot-llm', 'warn'); }
+}
+
+function setDot(id, state) {
+  const el = document.getElementById(id);
+  if (el && state) el.dataset.s = state;
+}
+
+// ── Theme ────────────────────────────────────────────────────────────────────
+// Shares the `arch-theme` key with the architecture and agents pages so the whole
+// dashboard flips together rather than per-page.
+function initTheme() {
+  let t = null;
+  try { t = localStorage.getItem('arch-theme'); } catch (_) {}
+  if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+}
+
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('arch-theme', t); } catch (_) {}
+}
+
+// ── Command palette ──────────────────────────────────────────────────────────
+// Additive to the (now grouped) nav, not a substitute for it: everything reachable
+// here is also reachable by clicking.
+const CMDK_ITEMS = [
+  { group: 'Go to', icon: '⌂',  label: 'Home',               action: () => (location.hash = '#home') },
+  { group: 'Go to', icon: '▤',  label: 'Reports',            action: () => (location.hash = '#reports') },
+  { group: 'Go to', icon: '🔒', label: 'Security',           action: () => (location.hash = '#security') },
+  { group: 'Go to', icon: '🎯', label: 'CS2 / Leetify',      action: () => (location.hash = '#leetify') },
+  { group: 'Go to', icon: '🧠', label: 'Local LLM',          action: () => (location.hash = '#llm') },
+  { group: 'Go to', icon: '◈',  label: 'Architecture map',   action: () => (location.href = '/architecture/') },
+  { group: 'Go to', icon: '🛰️', label: 'Agents',             action: () => (location.href = '/agents/') },
+  { group: 'Go to', icon: '📝', label: 'Notes',              action: () => (location.href = '/notes/') },
+  { group: 'Go to', icon: '⚙',  label: 'Agentic Workspace',  action: () => (location.href = '/agentic/') },
+  ...BOTS.map(b => ({ group: 'Bots', icon: b.icon, label: `${b.label} bot`,
+                      action: () => { location.hash = `#${b.id}`; } })),
+  { group: 'Actions', icon: '⟳', label: 'Force Sync all agents', hint: 'runs now',
+    action: async () => {
+      try {
+        const r = await fetch('/api/agents/sync-all', { method: 'POST' });
+        const d = await r.json();
+        const ok = (d.results || []).filter(x => x.ok).length;
+        alert(`Force Sync: ${ok}/${(d.results || []).length} hosts synced.`);
+      } catch (e) { alert(`Force Sync failed: ${e.message}`); }
+    } },
+  { group: 'Actions', icon: '◐', label: 'Toggle light / dark', action: toggleTheme },
+];
+
+let cmdkIdx = 0, cmdkMatches = [];
+
+function openCmdk() {
+  const b = document.getElementById('cmdkBackdrop');
+  const i = document.getElementById('cmdkInput');
+  if (!b || !i) return;
+  b.classList.add('open');
+  i.value = '';
+  filterCmdk('');
+  i.focus();
+}
+
+function closeCmdk() {
+  document.getElementById('cmdkBackdrop')?.classList.remove('open');
+}
+
+function filterCmdk(q) {
+  const list = document.getElementById('cmdkList');
+  if (!list) return;
+  const s = q.trim().toLowerCase();
+  cmdkMatches = CMDK_ITEMS.filter(it =>
+    !s || it.label.toLowerCase().includes(s) || it.group.toLowerCase().includes(s));
+  cmdkIdx = 0;
+  if (!cmdkMatches.length) {
+    list.innerHTML = `<div class="cmdk-empty">No matches for “${escHtml(q)}”.</div>`;
+    return;
+  }
+  let html = '', lastGroup = null;
+  cmdkMatches.forEach((it, n) => {
+    if (it.group !== lastGroup) { html += `<div class="cmdk-group">${it.group}</div>`; lastGroup = it.group; }
+    html += `<button class="cmdk-item" data-i="${n}" aria-selected="${n === 0}">
+      <span class="ci-icon">${it.icon}</span>${escHtml(it.label)}
+      ${it.hint ? `<span class="ci-hint">${escHtml(it.hint)}</span>` : ''}</button>`;
+  });
+  list.innerHTML = html;
+  list.querySelectorAll('.cmdk-item').forEach(el => {
+    el.onclick = () => runCmdk(parseInt(el.dataset.i, 10));
+  });
+}
+
+function moveCmdk(delta) {
+  if (!cmdkMatches.length) return;
+  cmdkIdx = (cmdkIdx + delta + cmdkMatches.length) % cmdkMatches.length;
+  const items = document.querySelectorAll('#cmdkList .cmdk-item');
+  items.forEach(el => el.setAttribute('aria-selected', String(parseInt(el.dataset.i, 10) === cmdkIdx)));
+  items[cmdkIdx]?.scrollIntoView({ block: 'nearest' });
+}
+
+function runCmdk(i) {
+  const it = cmdkMatches[i];
+  closeCmdk();
+  if (it) it.action();
+}
+
+function initShell() {
+  initTheme();
+  document.getElementById('themeBtn')?.addEventListener('click', toggleTheme);
+  document.getElementById('cmdkBtn')?.addEventListener('click', openCmdk);
+
+  const input = document.getElementById('cmdkInput');
+  input?.addEventListener('input', () => filterCmdk(input.value));
+  input?.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); moveCmdk(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveCmdk(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); runCmdk(cmdkIdx); }
+    else if (e.key === 'Escape') { closeCmdk(); }
+  });
+  document.getElementById('cmdkBackdrop')?.addEventListener('click', (e) => {
+    if (e.target.id === 'cmdkBackdrop') closeCmdk();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); openCmdk(); }
+    else if (e.key === 'Escape') closeCmdk();
+  });
+
+  refreshNavStatus();
+  setInterval(refreshNavStatus, 5 * 60 * 1000);
+}
+
+initShell();

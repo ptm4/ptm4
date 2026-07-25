@@ -22,6 +22,10 @@ const CATALOG = {
   'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24, order: 2 },
   'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1,  order: 3 },
   'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true, manual: true },
+  // Weekly cold-copy refresh of the ZFS pool onto the retired sda+sdb mergerfs pool.
+  // Driven by homelab-coldcopy.timer on opti; the dispatcher key gives it a Run-now button.
+  // cadence_h 168 => the stale badge appears after two missed weeks.
+  'coldcopy-latest':       { label: 'Cold Copy Backup', agent: 'coldcopy',           cadence_h: 168, order: 4 },
 };
 
 function describe(filename) {

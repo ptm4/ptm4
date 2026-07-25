@@ -80,6 +80,11 @@ app.use('/api/agents', agentsRouter);
 const agenticRouter = require('./routes/agentic');
 app.use('/api/agentic', agenticRouter);
 
+// samba — view/edit the hand-managed [red] share config on opti (proxied to the dispatcher,
+// which owns the validate/backup/write/reload/verify pipeline)
+const sambaRouter = require('./routes/samba');
+app.use('/api/samba', sambaRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

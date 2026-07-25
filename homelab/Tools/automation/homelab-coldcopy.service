@@ -1,0 +1,18 @@
+[Unit]
+# Weekly refresh of the cold second copy (ZFS pool `red` -> old sda+sdb mergerfs pool).
+# Install on opti only:
+#   sudo cp homelab-coldcopy.sh /usr/local/bin/ && sudo chmod +x /usr/local/bin/homelab-coldcopy.sh
+#   sudo cp homelab-coldcopy.service homelab-coldcopy.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now homelab-coldcopy.timer
+Description=Homelab cold copy refresh (red -> attic)
+After=zfs-mount.service network-online.target
+Requires=zfs-mount.service
+RequiresMountsFor=/srv/red
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/hl-agents.env
+ExecStart=/usr/local/bin/homelab-coldcopy.sh
+# The script mounts/unmounts the cold copy and flips the sdb branch rw/ro.
+TimeoutStartSec=6h

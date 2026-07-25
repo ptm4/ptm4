@@ -73,4 +73,6 @@ function attachControls(router) {
   });
 }
 
-module.exports = { AGENT_LOGS_DIR, readState, enabledFor, attachControls };
+// `dispatch` is exported so other routes (routes/samba.js) can reach the opti dispatcher
+// without re-implementing the bearer-token plumbing.
+module.exports = { AGENT_LOGS_DIR, readState, enabledFor, attachControls, dispatch };
