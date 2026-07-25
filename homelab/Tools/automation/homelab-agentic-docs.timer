@@ -1,0 +1,13 @@
+[Unit]
+# Fires daily at 00:20 local — 20 minutes after the architecture agents' 00:00 sync
+# (hl-arch-agent.py on opti/rpi/noblenumbat), so the generated docs reflect the
+# freshest per-host facts rather than racing the ingests.
+Description=Regenerate agentic docs daily (after the architecture agents' midnight sync)
+
+[Timer]
+OnCalendar=*-*-* 00:20:00
+RandomizedDelaySec=120
+Persistent=true
+
+[Install]
+WantedBy=timers.target

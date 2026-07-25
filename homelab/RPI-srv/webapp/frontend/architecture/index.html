@@ -587,6 +587,13 @@ ul.plain li::before { content: "·"; position: absolute; left: 3px; color: var(-
 
 <section class="panel" id="panel-notes" role="tabpanel" aria-label="Observations">
   <div class="pad wrap">
+    <div class="card" id="driftCard" style="margin-bottom:16px; display:none">
+      <h2>Agent sync &amp; drift</h2>
+      <p class="lede">What the per-host architecture agents found that this page doesn't
+        describe yet, and what this page describes that they no longer see running.</p>
+      <div id="syncStatus" class="tbl-scroll" style="margin-bottom:12px"></div>
+      <div id="driftLists"></div>
+    </div>
     <div class="card" style="margin-bottom:16px">
       <h2>What the graph doesn't say</h2>
       <p class="lede" style="margin:0">
@@ -646,16 +653,26 @@ init();
 
 async function init() {
   initTheme();
+  // Prefer the merged endpoint — curated data.json decorated with live facts from the
+  // per-host architecture agents (routes/architecture.js's GET /data). Fall back to the
+  // static file on ANY failure (agent not deployed yet, merge error, dev server with no
+  // backend) so the page always renders the curated baseline rather than going blank.
   try {
-    const res = await fetch('data.json', { cache: 'no-cache' });
+    const res = await fetch('/api/architecture/data', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     S.data = await res.json();
-  } catch (err) {
-    document.body.insertAdjacentHTML('afterbegin',
-      `<div class="pad"><div class="card"><h2>Couldn't load data.json</h2>
-       <p class="lede">${esc(err.message)}. This page renders nothing on its own —
-       every fact comes from that file.</p></div></div>`);
-    return;
+  } catch (_) {
+    try {
+      const res = await fetch('data.json', { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      S.data = await res.json();
+    } catch (err) {
+      document.body.insertAdjacentHTML('afterbegin',
+        `<div class="pad"><div class="card"><h2>Couldn't load architecture data</h2>
+         <p class="lede">${esc(err.message)}. This page renders nothing on its own —
+         every fact comes from data.json or /api/architecture/data.</p></div></div>`);
+      return;
+    }
   }
 
   const d = S.data;
@@ -1024,6 +1041,24 @@ function deselect() {
   closeDrawer();
 }
 
+// The `_live` decoration comes from the architecture agent's fragment, merged in
+// server-side (routes/architecture.js GET /data) — never from the curated file. It is
+// only ever additive, so its absence just means no agent has reported this host yet.
+function renderLiveSection(live) {
+  const rows = [];
+  if (live.state)            rows.push(['State', live.state]);
+  if (live.image)            rows.push(['Image (live)', live.image]);
+  if (live.network_mode)     rows.push(['Network mode', live.network_mode]);
+  if (live.ports?.length)    rows.push(['Published ports',
+    live.ports.map(p => `${p.host_port ?? '?'}→${p.container_port}/${p.proto}`).join(', ')]);
+  if (live.mounts?.length)   rows.push(['Mounts', live.mounts.length + ' bind mount(s)']);
+  if (live.compose_project)  rows.push(['Compose project', live.compose_project]);
+  const when = live.collected_at ? new Date(live.collected_at).toLocaleString() : null;
+  return `<div class="dsec"><h3>Live from agent${when ? ` · ${esc(when)}` : ''}</h3>
+    <dl class="kv">${rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+  </div>`;
+}
+
 function openNode(id) {
   const n = S.nodeById.get(id);
   if (!n) return;
@@ -1060,6 +1095,7 @@ function openNode(id) {
   html += `<div class="dsec"><h3>Facts</h3><dl class="kv">${
     rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl></div>`;
   if (n.notes) html += `<div class="dsec"><h3>Why it matters</h3><p class="note">${esc(n.notes)}</p></div>`;
+  if (n._live) html += renderLiveSection(n._live);
   html += `<div class="dsec"><h3>Connections · ${edges.length}</h3><div class="conn">${
     edges.map(e => {
       const out = e.from === id;
@@ -1395,8 +1431,46 @@ function renderStorage() {
     </div>`;
 }
 
+/* ── Agent sync & drift ─────────────────────────────────────────────────── */
+function renderDrift() {
+  const lm = S.data.live_merge;
+  const card = $('#driftCard');
+  if (!lm || !Object.keys(lm.ingested || {}).length) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+
+  const hosts = Object.entries(lm.ingested);
+  $('#syncStatus').innerHTML = `<table><thead><tr>
+      <th>Host</th><th>Last synced</th><th>Containers seen</th><th>Collection errors</th>
+    </tr></thead><tbody>${hosts.map(([host, i]) => `<tr>
+      <td>${esc(S.hostById.get(host)?.label || host)}</td>
+      <td class="mono">${i.collected_at ? esc(new Date(i.collected_at).toLocaleString()) : '—'}</td>
+      <td>${i.containers}</td>
+      <td class="${Object.keys(i.errors || {}).length ? '' : 'muted'}">${
+        Object.keys(i.errors || {}).length
+          ? esc(Object.entries(i.errors).map(([k, v]) => `${k}: ${v}`).join('; '))
+          : 'none'}</td>
+    </tr>`).join('')}</tbody></table>`;
+
+  const { undescribed = [], missing = [] } = lm.drift || {};
+  const list = (items, empty, render) => items.length
+    ? `<ul class="plain">${items.map(render).join('')}</ul>`
+    : `<p class="muted" style="font-size:12.5px">${empty}</p>`;
+
+  $('#driftLists').innerHTML = `
+    <h3>Running, not described · ${undescribed.length}</h3>
+    ${list(undescribed, 'Everything an agent has seen is already on the map.', d =>
+      `<li><span class="mono">${esc(d.container)}</span> on ${esc(S.hostById.get(d.host)?.label || d.host)}
+        <span class="muted">— ${esc(d.image || 'unknown image')} · ${esc(d.state || 'unknown state')}</span></li>`)}
+    <h3>Described, not detected · ${missing.length}</h3>
+    ${list(missing, 'Nothing described on a synced host is missing.', m =>
+      `<li><span class="mono">${esc(m.container)}</span> on ${esc(S.hostById.get(m.host)?.label || m.host)}
+        <span class="muted">— was "${esc(m.label)}" on the map, no longer seen running</span></li>`)}
+  `;
+}
+
 /* ── Observations ───────────────────────────────────────────────────────── */
 function renderNotes() {
+  renderDrift();
   const sev = {
     warning:  { color: 'var(--warn)',  glyph: '▲', label: 'Watch' },
     critical: { color: 'var(--crit)',  glyph: '■', label: 'Risk'  },

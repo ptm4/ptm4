@@ -1,0 +1,33 @@
+[Unit]
+# Homelab architecture agent — per-host collector + local Force Sync endpoint.
+# Install on opti, rpi, and noblenumbat (each with its own HL_ARCH_AGENT_HOST):
+#   sudo cp hl-arch-agent.py /usr/local/bin/hl-arch-agent.py
+#   sudo chmod +x /usr/local/bin/hl-arch-agent.py
+#   sudo cp hl-arch-agent.service /etc/systemd/system/
+#   sudo cp hl-arch-agent.env.example /etc/hl-arch-agent.env   # then edit it
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hl-arch-agent
+#
+# Unlike the other homelab-* units (autoupdate, autoreboot), this is NOT a
+# timer + oneshot: Force Sync needs a live process to answer at any moment, so the
+# script is a single long-running daemon that both self-schedules the nightly
+# collection and serves GET /status + POST /sync. See hl-arch-agent.py's docstring.
+Description=Homelab architecture agent (per-host collector + Force Sync endpoint)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+# '-' prefix: a missing env file is non-fatal, but the script itself refuses to push
+# with no HL_ARCH_AGENT_HOST set (see main()) — you must create the env file per host.
+EnvironmentFile=-/etc/hl-arch-agent.env
+ExecStart=/usr/bin/python3 /usr/local/bin/hl-arch-agent.py
+Restart=on-failure
+RestartSec=10
+# Root: unprivileged `ss` can't see process names, and `docker inspect` needs either
+# root or docker-group membership. Root also matches this repo's other always-on
+# collector (hl-agent-dispatcher on opti). The script is read-only — see its docstring.
+User=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,5 @@
-// Shared agent-control helpers used by both /api/reports and /api/agents.
+// Shared dispatcher-control helpers used by both /api/reports and /api/runners (renamed
+// from /api/agents 2026-07-25 — see routes/runners.js).
 // - resolves the agent-logs dir (Docker mount /agent-logs, dev fallback)
 // - reads agents-state.json (written by the opti dispatcher)
 // - attaches enable/disable + run-now endpoints that proxy to the dispatcher over the LAN

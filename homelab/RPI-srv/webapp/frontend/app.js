@@ -21,7 +21,7 @@ async function checkHealth() {
 const routes = {
   home:     renderHome,
   security: renderSecurity,
-  agents:   renderAgents,
+  reports:  renderReports,
   weather:  renderWeather,
   healthdigest: renderHealthdigest,
   jellyfin: renderJellyfin,
@@ -66,10 +66,10 @@ function renderHome(view) {
         <div class="card">
           <div class="card-icon">🤖</div>
           <div class="card-body">
-            <h2>Agents</h2>
+            <h2>Reports</h2>
             <p>Homelab hardware, software &amp; network reports — status, history, run-now.</p>
           </div>
-          <a href="#agents" class="card-link">View agents →</a>
+          <a href="#reports" class="card-link">View reports →</a>
         </div>
 
         <div class="card">
@@ -206,7 +206,7 @@ async function loadLeetify() {
   const el = document.getElementById('leetify-body');
   if (!el) return;
   try {
-    const res = await fetch('/api/agents/leetify-latest');
+    const res = await fetch('/api/runners/leetify-latest');
     if (!res.ok) { el.textContent = 'Not configured yet — set LEETIFY_API_KEY + STEAM64_ID on opti.'; return; }
     const d = await res.json();
     el.textContent = d.summary || 'No data yet.';
@@ -219,7 +219,7 @@ async function loadPihole() {
   const el = document.getElementById('pihole-body');
   if (!el) return;
   try {
-    const res = await fetch('/api/agents/network-latest');
+    const res = await fetch('/api/runners/network-latest');
     if (!res.ok) { el.textContent = 'No network report yet.'; return; }
     const d = await res.json();
     // Pi-hole runs on one host (rpi) — find whichever host's metrics carry it.
@@ -254,7 +254,7 @@ async function renderLeetify(view) {
 
   let d;
   try {
-    const res = await fetch('/api/agents/leetify-latest');
+    const res = await fetch('/api/runners/leetify-latest');
     if (!res.ok) {
       // A 500 means the report file exists but won't parse (corrupt/truncated) —
       // distinct from a 404 "no report yet". Show the real reason so it's fixable.
@@ -523,54 +523,80 @@ async function loadSecurityReports() {
   grid.innerHTML = reports.map(r => buildReportCard(r, 'reports')).join('');
 }
 
-// ── Agents page ───────────────────────────────────────────────────────────────
-let agentsRefreshTimer = null;
+// ── Reports page (the 4 scheduled runners: homelab-doctor, hardware, software, network) ──
+let reportsRefreshTimer = null;
 
-async function renderAgents(view) {
-  clearInterval(agentsRefreshTimer);
+async function renderReports(view) {
+  clearInterval(reportsRefreshTimer);
   view.innerHTML = `
     <div class="page-security">
       <div class="sec-header">
-        <h1>Homelab Agents</h1>
+        <h1>Homelab Reports</h1>
         <div class="sec-header-actions">
-          <span id="agt-last-refresh" class="sec-refresh-label">Loading...</span>
-          <button class="btn-refresh" onclick="loadAgents()">↻ Refresh</button>
+          <span id="rpt-last-refresh" class="sec-refresh-label">Loading...</span>
+          <button class="btn-refresh" onclick="loadReports()">↻ Refresh</button>
         </div>
       </div>
-      <div id="agt-grid" class="sec-grid"><div class="sec-loading">Loading agents…</div></div>
+      <div id="rpt-agents-strip" style="margin-bottom:14px"></div>
+      <div id="rpt-grid" class="sec-grid"><div class="sec-loading">Loading reports…</div></div>
     </div>
   `;
-  await loadAgents();
-  agentsRefreshTimer = setInterval(loadAgents, 5 * 60 * 1000);
+  await loadReports();
+  loadAgentsStrip();
+  reportsRefreshTimer = setInterval(loadReports, 5 * 60 * 1000);
 }
 
-async function loadAgents() {
-  const grid = document.getElementById('agt-grid');
-  if (!grid) return;
-
-  let agents;
+// Compact link-out to the Agents config page — a different control plane (per-host
+// collectors) from the runners above, so it gets its own page rather than a card in
+// this grid. Best-effort: any failure just leaves the plain link with no summary.
+async function loadAgentsStrip() {
+  const el = document.getElementById('rpt-agents-strip');
+  if (!el) return;
+  const base = 'border:1px solid var(--border,#2a2d3a);border-radius:8px;padding:10px 14px;'
+             + 'display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted,#7a7f99)';
+  el.innerHTML = `<div style="${base}">🛰️ Architecture agents — <a href="/agents/">view status →</a></div>`;
   try {
     const res = await fetch('/api/agents');
+    if (!res.ok) return;
     const data = await res.json();
-    agents = data.agents ?? [];
+    const hosts = data.hosts || [];
+    const unreachable = hosts.filter(h => !h.reachable).length;
+    const drift = hosts.reduce((n, h) => n + (h.drift_count || 0), 0);
+    const bits = [`${hosts.length} host(s)`];
+    if (unreachable) bits.push(`<span style="color:#e05c5c">${unreachable} unreachable</span>`);
+    if (drift) bits.push(`<span style="color:#e0b44a">${drift} drift</span>`);
+    el.innerHTML = `<div style="${base}">🛰️ Architecture agents — ${bits.join(' · ')}
+      — <a href="/agents/">view status →</a></div>`;
+  } catch (_) { /* strip already shows the plain link */ }
+}
+
+async function loadReports() {
+  const grid = document.getElementById('rpt-grid');
+  if (!grid) return;
+
+  let runners;
+  try {
+    const res = await fetch('/api/runners');
+    const data = await res.json();
+    runners = data.runners ?? [];
   } catch {
-    grid.innerHTML = `<div class="sec-error">Cannot reach /api/agents — is the backend running?</div>`;
+    grid.innerHTML = `<div class="sec-error">Cannot reach /api/runners — is the backend running?</div>`;
     return;
   }
 
-  const label = document.getElementById('agt-last-refresh');
+  const label = document.getElementById('rpt-last-refresh');
   if (label) label.textContent = `Last refresh: ${new Date().toLocaleTimeString()}`;
 
-  if (agents.length === 0) {
+  if (runners.length === 0) {
     grid.innerHTML = `
       <div class="sec-empty">
-        <p>No agent reports yet.</p>
+        <p>No runner reports yet.</p>
         <p class="sec-empty-hint">Run them from opti (GitHub Actions or the dispatcher), or hit “Run now” once reports exist.</p>
       </div>`;
     return;
   }
 
-  grid.innerHTML = agents.map(a => buildReportCard(a, 'agents')).join('');
+  grid.innerHTML = runners.map(a => buildReportCard(a, 'runners')).join('');
 }
 
 function buildReportCard(r, apiBase) {
@@ -580,14 +606,14 @@ function buildReportCard(r, apiBase) {
   const staleBadge = r.stale ? `<span class="sec-stale-badge" title="No fresh run recently">STALE</span>` : '';
   const alertBadge = r.has_alert ? `<span class="agent-alert-badge" title="Alert flagged in this report">ALERT</span>` : '';
   const safeLabel = (r.label || '').replace(/'/g, "\\'");
-  const isAgent = apiBase === 'agents';
+  const isRunner = apiBase === 'runners';
 
   const controls = r.agent ? `
         <button class="btn-toggle ${r.enabled ? 'on' : 'off'}" onclick="toggleAgent('${apiBase}','${r.agent}',${!r.enabled},this)">${r.enabled ? 'Enabled' : 'Disabled'}</button>
         <button class="btn-run" onclick="runAgent('${apiBase}','${r.agent}',this)">Run now</button>` : '';
 
-  // Agents get the full-log viewer ("View latest") + per-run History; security reports keep "View details".
-  const viewBtns = isAgent
+  // Runners get the full-log viewer ("View latest") + per-run History; security reports keep "View details".
+  const viewBtns = isRunner
     ? `<button class="btn-view" onclick="openAgentReport('${r.name}', '${safeLabel}')">View latest</button>
         <button class="btn-view" onclick="openAgentHistory('${r.name}', '${safeLabel}')">History</button>`
     : `<button class="btn-view" onclick="openReportDetail('${r.name}', '${safeLabel}', '${apiBase}')">View details</button>`;
@@ -667,7 +693,7 @@ async function runAgent(apiBase, agent, btn) {
 // ── Agent full-log viewer + history ─────────────────────────────────────────────
 // `date` optional — when set, opens that specific dated report instead of the latest.
 async function openAgentReport(name, label, date) {
-  const url = date ? `/api/agents/${name}/report/${date}` : `/api/agents/${name}`;
+  const url = date ? `/api/runners/${name}/report/${date}` : `/api/runners/${name}`;
   let data;
   try {
     const res = await fetch(url);
@@ -781,7 +807,7 @@ function kvTable(obj) {
 async function openAgentHistory(name, label) {
   let data;
   try {
-    const res = await fetch(`/api/agents/${name}/history`);
+    const res = await fetch(`/api/runners/${name}/history`);
     data = await res.json();
   } catch {
     alert('Could not load history: ' + name);
@@ -1891,7 +1917,7 @@ async function llmRegenDocs(btn) {
   btn.textContent = '⟳ Regenerating…';
   let res, err;
   try {
-    res = await fetch('/api/agents/docs-generator/run', { method: 'POST' });
+    res = await fetch('/api/runners/docs-generator/run', { method: 'POST' });
   } catch (e) { err = e; }
   btn.disabled = false;
   btn.textContent = orig;

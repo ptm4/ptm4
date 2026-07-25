@@ -110,6 +110,9 @@ services:
       # android phone local LLM (llama.cpp + llama-ctl management API)
       LLAMA_URL: ${LLAMA_URL:-http://android.lan:8080}
       LLAMA_CTL_URL: ${LLAMA_CTL_URL:-http://android.lan:8081}
+      # shared secret the per-host architecture agents present on POST /ingest;
+      # see homelab/Tools/arch-agent/hl-arch-agent.env.example on each host
+      HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro
@@ -117,6 +120,10 @@ services:
       # ptm4 repo root (read-only) — the agentic manifest, per-host probe status, and the
       # workspace wiring files (CLAUDE.md, .claude/skills) the /api/agentic route inspects
       - /mnt/opti-fs/ptm/repo/ptm4:/workspace:ro
+      # WRITABLE — the only one. Architecture-agent fragments landed by POST /ingest
+      # (routes/architecture.js). Everything else webapp reads is deliberately :ro so
+      # a bug in this route can't touch anything but its own data.
+      - arch_data:/arch-data
     expose:
       - "3000"
     networks:
@@ -264,3 +271,4 @@ volumes:
   pihole_data:
   dnsmasq_data:
   db_data:
+  arch_data:

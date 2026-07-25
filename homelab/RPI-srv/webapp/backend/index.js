@@ -6,7 +6,10 @@ const app = express();
 const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+// Default 100kb is too small for an architecture-agent fragment (a full docker inspect
+// across ~15 containers runs ~30-60kb) — raised here since this is the outermost parser
+// and any route-level express.json() would just be a no-op after this one runs.
+app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -34,8 +37,11 @@ app.get('/api/health', (req, res) => {
 const reportsRouter = require('./routes/reports');
 app.use('/api/reports', reportsRouter);
 
-const agentsRouter = require('./routes/agents');
-app.use('/api/agents', agentsRouter);
+// The 4 scheduled runners (homelab-doctor, hardware, software, network) — surfaced on
+// the Reports tab. Renamed from /api/agents 2026-07-25 to free that mount for real
+// per-host agents (see routes/architecture.js's /ingest).
+const runnersRouter = require('./routes/runners');
+app.use('/api/runners', runnersRouter);
 
 const weatherRouter = require('./routes/weather');
 app.use('/api/weather', weatherRouter);
@@ -57,9 +63,17 @@ app.use('/api/hltv', hltvRouter);
 const llamaRouter = require('./routes/llama');
 app.use('/api/llama', llamaRouter);
 
-// architecture page's Sync button — live per-host status from the latest agent reports
+// architecture page's Sync button — live per-host status from the latest agent reports,
+// plus /ingest and /data for the per-host architecture agents (routes/agents.js talks
+// to those same agents directly for status + Force Sync)
 const architectureRouter = require('./routes/architecture');
 app.use('/api/architecture', architectureRouter);
+
+// per-host architecture agents — status + Force Sync for the Agents config page.
+// agents.js requires ./architecture itself (Node caches the module either way) to
+// reuse its buildMergedData for drift counts.
+const agentsRouter = require('./routes/agents');
+app.use('/api/agents', agentsRouter);
 
 // agentic workspace manifest — portable skills/rules/runbooks description, read live from
 // opti's homelab/agentic/workspace.json (bind-mounted at /agentic)
