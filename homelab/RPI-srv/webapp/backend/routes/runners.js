@@ -26,6 +26,10 @@ const CATALOG = {
   // Driven by homelab-coldcopy.timer on opti; the dispatcher key gives it a Run-now button.
   // cadence_h 168 => the stale badge appears after two missed weeks.
   'coldcopy-latest':       { label: 'Cold Copy Backup', agent: 'coldcopy',           cadence_h: 168, order: 4 },
+  // Written by the discord-hltv bot, not a dispatcher agent — no run-now button and no
+  // stale badge (manual). Uncatalogued it defaulted to a 24h cadence, showed a permanent
+  // stale badge, and its status:"unknown" leaked into the Home ribbon's fleet rollup.
+  'hltv-watchlist':        { label: 'HLTV Watchlist',   agent: null,                 cadence_h: 168, manual: true, order: 5 },
 };
 
 function describe(filename) {

@@ -60,7 +60,9 @@ a { color: var(--accent); }
 }
 .btn:hover { color: var(--ink); border-color: var(--border-2); background: var(--surface-3); }
 .btn:disabled { opacity: .55; cursor: default; }
-.btn.primary { color: #fff; background: var(--accent); border-color: var(--accent); }
+/* Filled controls use the EMPHASIS token, not --accent: white on #58a6ff is ~2.2:1
+   and fails contrast; #1f6feb is what GitHub itself fills primary buttons with. */
+.btn.primary { color: #fff; background: var(--accent-emphasis, #1f6feb); border-color: var(--accent-emphasis, #1f6feb); }
 .btn.primary:hover { filter: brightness(1.08); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

@@ -13,6 +13,8 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const http = require('http');
+const https = require('https');
 const { AGENT_LOGS_DIR } = require('./controls');
 const architectureRouter = require('./architecture');
 
@@ -93,10 +95,9 @@ router.get('/containers', (req, res) => {
 });
 
 // ── GET /api/timers ──────────────────────────────────────────────────────────
-// systemd timers from the fragments — collected since day one, surfaced here first.
-// The fragment's pre-split `unit` field is unreliable; parse the `raw` list-timers
-// line instead: NEXT / LEFT / LAST / PASSED are fixed columns, unit ends in ".timer".
-const TIMER_RE = /^(.*?\S)\s{2,}(\S.*?ago|-|n\/a)\s+(\S+\.timer)\s+(\S+)?\s*$/;
+// systemd timers from the fragments — collected since day one, surfaced first in the
+// Home "Services & upkeep" tile. The fragment's pre-split `unit` field is unreliable;
+// parse the `raw` list-timers line instead: unit is the token ending in ".timer".
 function parseTimerRaw(raw) {
   // e.g. "Sat 2026-07-25 12:05:44 EDT  1min 14s Sat 2026-07-25 12:03:34 EDT  55s ago vpn-stack-heal.timer vpn-stack-heal.service"
   const unitMatch = raw.match(/(\S+\.timer)/);
@@ -197,8 +198,10 @@ router.get('/activity', (req, res) => {
     });
   } catch (_) { /* /reports unavailable — feed just has fewer sources */ }
 
-  events.sort((a, b) =>
-    String(b.ts || '').localeCompare(String(a.ts || '')) || sevRank(a.severity) - sevRank(b.severity));
+  // Parse timestamps rather than string-comparing them: sources mix "…Z" and
+  // "…+00:00" ISO flavors, and lexicographic order breaks on ties.
+  const t = (e) => Date.parse(e.ts || '') || 0;
+  events.sort((a, b) => t(b) - t(a) || sevRank(a.severity) - sevRank(b.severity));
   res.json({ events: events.slice(0, limit), generated_at: new Date().toISOString() });
 });
 
@@ -226,7 +229,10 @@ router.get('/trends', (req, res) => {
     if (!rep) continue;
     (rep.hosts || []).forEach(h => {
       if (h.host === 'opti' && h.metrics?.pool?.used_pct != null) {
-        pool.push({ date, used_pct: Math.round(h.metrics.pool.used_pct * 10) / 10 });
+        // pool_name marks the storage era (mergerfs → zpool "red"); the chart breaks
+        // its line when it changes rather than drawing a fake cliff between regimes.
+        pool.push({ date, used_pct: Math.round(h.metrics.pool.used_pct * 10) / 10,
+                    pool_name: h.metrics.pool.pool_name || null });
       }
       if (h.metrics?.disk_used_pct != null) {
         (disks[h.host] ||= []).push({ date, used_pct: h.metrics.disk_used_pct });
@@ -234,6 +240,71 @@ router.get('/trends', (req, res) => {
     });
   }
   res.json({ days: dates.length, pool, disks, generated_at: new Date().toISOString() });
+});
+
+// ── GET /api/linkcheck ───────────────────────────────────────────────────────
+// Server-side reachability for the Quick Links page. The browser cannot do this
+// itself: the dashboard is https, the LAN services are http, and fetch() from a
+// secure page to an insecure origin is blocked as mixed content before the request
+// leaves. Probing from Node also lets the self-signed-https services (Cockpit,
+// Vaultwarden) get a real answer, which a browser page never could.
+//
+// The probe list is FIXED here — never taken from the request — so this endpoint
+// cannot be used as an SSRF proxy. One entry per ORIGIN (a 302 from / proves the
+// server is up regardless of which path a bookmark deep-links), and the frontend
+// matches its links to results by origin too — so both Vaultwarden links share one
+// probe. Keep in sync with LINK_GROUPS in frontend/app.js (external links only;
+// internal /pages are same-origin and the frontend probes those itself).
+const PROBE_ORIGINS = [
+  'http://192.168.1.1',            // router — the one IP with no DNS name
+  'http://rpi.lan',                // Pi-hole admin
+  'https://rpi.lan:9090',          // Cockpit (self-signed)
+  'http://opti.lan',               // OpenMediaVault
+  'https://bitwarden.rpi.lan',     // Vaultwarden (self-signed)
+  'http://jellyfin.lan:8096',
+  'http://comics.lan:5000',        // Kavita
+  'http://noblenumbat.lan:9000',   // Portainer
+  'http://noblenumbat.lan:8989',   // Sonarr
+  'http://noblenumbat.lan:7878',   // Radarr
+  'http://noblenumbat.lan:8686',   // Lidarr
+  'http://noblenumbat.lan:6767',   // Bazarr
+  'http://noblenumbat.lan:8090',   // Mylar3
+  'http://noblenumbat.lan:9696',   // Prowlarr
+  'http://noblenumbat.lan:8081',   // qBittorrent
+];
+
+// Any HTTP response counts as "up" — a 401 from the router or a 302 from Jellyfin is
+// a service answering. Only connect errors and timeouts are "down".
+function probe(origin) {
+  return new Promise((resolve) => {
+    const mod = origin.startsWith('https') ? https : http;
+    const req = mod.request(origin + '/', {
+      method: 'HEAD',
+      timeout: 4000,
+      rejectUnauthorized: false,   // LAN self-signed certs are the norm here
+    }, (res) => {
+      res.resume();
+      resolve({ origin, up: true, status: res.statusCode });
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ origin, up: false, error: 'timeout' }); });
+    req.on('error', (e) => resolve({ origin, up: false, error: e.code || e.message }));
+    req.end();
+  });
+}
+
+let linkCache = { at: 0, data: null };
+const LINKCHECK_CACHE_MS = 30_000;
+
+router.get('/linkcheck', async (req, res) => {
+  if (Date.now() - linkCache.at < LINKCHECK_CACHE_MS && linkCache.data) {
+    return res.json(linkCache.data);
+  }
+  const results = await Promise.all(PROBE_ORIGINS.map(probe));
+  const origins = {};
+  for (const r of results) origins[r.origin] = r;
+  const data = { origins, checked_at: new Date().toISOString() };
+  linkCache = { at: Date.now(), data };
+  res.json(data);
 });
 
 module.exports = router;

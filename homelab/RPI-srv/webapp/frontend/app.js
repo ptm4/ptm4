@@ -22,7 +22,10 @@ async function checkHealth() {
 // encode: an action never happens silently and never reports success it didn't verify.
 
 let toastSeq = 0;
-function toast(msg, tone = 'ok', { sticky = false } = {}) {
+// Text-only by default. Callers that want markup pass { allowHtml: true } and are
+// responsible for escHtml()-ing every interpolated value — toast messages routinely
+// carry error strings echoed from reports and agents, which is untrusted text.
+function toast(msg, tone = 'ok', { sticky = false, allowHtml = false } = {}) {
   let stack = document.getElementById('toastStack');
   if (!stack) {
     stack = document.createElement('div');
@@ -35,7 +38,9 @@ function toast(msg, tone = 'ok', { sticky = false } = {}) {
   el.className = 'toast';
   el.dataset.s = tone;
   el.id = `toast-${++toastSeq}`;
-  el.innerHTML = `<span class="toast-msg">${msg}</span><button class="toast-x" aria-label="Dismiss">✕</button>`;
+  el.innerHTML = `<span class="toast-msg"></span><button class="toast-x" aria-label="Dismiss">✕</button>`;
+  const msgEl = el.querySelector('.toast-msg');
+  if (allowHtml) msgEl.innerHTML = msg; else msgEl.textContent = msg;
   const close = () => el.remove();
   el.querySelector('.toast-x').addEventListener('click', close);
   stack.appendChild(el);
@@ -59,27 +64,31 @@ const CRITICAL_CONTAINERS = {
 };
 
 // Promise<boolean>. Reuses the existing .modal styling; adds a danger variant and an
-// optional type-the-name gate for the critical set above.
+// optional type-the-name gate for the critical set above. `body` is caller-built HTML
+// (callers must escHtml() their interpolations); title/labels/typed-name are escaped
+// here. Only one modal at a time — a double-click on an action button used to stack
+// two overlays, and the second answer went nowhere.
 function confirmAction({ title, body, tone = 'warn', confirmLabel = 'Confirm', requireTyped = null }) {
+  if (document.querySelector('.confirm-overlay')) return Promise.resolve(false);
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay open confirm-overlay';
     overlay.innerHTML = `
-      <div class="modal confirm-modal" data-s="${tone}" role="dialog" aria-modal="true" aria-label="${title}">
+      <div class="modal confirm-modal" data-s="${tone}" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
         <div class="modal-header">
-          <span class="modal-title">${title}</span>
+          <span class="modal-title">${escHtml(title)}</span>
           <button class="modal-close" aria-label="Cancel">✕</button>
         </div>
         <div class="modal-body">
           <div class="confirm-body">${body}</div>
           ${requireTyped ? `
-            <label class="confirm-type">Type <code>${requireTyped}</code> to confirm
+            <label class="confirm-type">Type <code>${escHtml(requireTyped)}</code> to confirm
               <input type="text" autocomplete="off" spellcheck="false" />
             </label>` : ''}
         </div>
         <div class="confirm-actions">
           <button class="btn-mini" data-act="cancel">Cancel</button>
-          <button class="btn-mini btn-danger" data-act="ok" ${requireTyped ? 'disabled' : ''}>${confirmLabel}</button>
+          <button class="btn-mini btn-danger" data-act="ok" ${requireTyped ? 'disabled' : ''}>${escHtml(confirmLabel)}</button>
         </div>
       </div>`;
 
@@ -112,56 +121,69 @@ function confirmAction({ title, body, tone = 'warn', confirmLabel = 'Confirm', r
 }
 
 // Restart one container through its host's architecture agent.
+// host/name arrive from data- attributes and reports — treat as untrusted text
+// everywhere they land in HTML.
 async function restartContainer(host, name, btn) {
   const danger = CRITICAL_CONTAINERS[name];
+  const eName = escHtml(name), eHost = escHtml(host);
   const ok = await confirmAction({
     title: `Restart ${name}?`,
     tone: danger ? 'crit' : 'warn',
     confirmLabel: 'Restart',
     requireTyped: danger ? name : null,
-    body: `<p>Restarts <code>${name}</code> on <b>${host}</b>.</p>` +
-          (danger ? `<p class="confirm-danger">⚠ ${danger}</p>` : '<p>Downtime is a few seconds.</p>'),
+    body: `<p>Restarts <code>${eName}</code> on <b>${eHost}</b>.</p>` +
+          (danger ? `<p class="confirm-danger">⚠ ${escHtml(danger)}</p>` : '<p>Downtime is a few seconds.</p>'),
   });
   if (!ok) return;
 
   const orig = btn ? btn.textContent : null;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
-  const pending = toast(`Restarting <b>${name}</b> on ${host}… (~15s)`, 'warn', { sticky: true });
+  const pending = toast(`Restarting <b>${eName}</b> on ${eHost}… (~15s)`, 'warn',
+    { sticky: true, allowHtml: true });
 
   try {
     const res = await fetch(`/api/agents/${encodeURIComponent(host)}/restart-container`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ container: name }),
+      // The backend caps the agent call at 55s; without a client-side cap a wedged
+      // nginx left the sticky toast and disabled button hanging on browser defaults.
+      signal: AbortSignal.timeout(70_000),
     });
     const d = await res.json().catch(() => ({}));
     pending.remove();
     if (res.ok && d.ok) {
-      toast(`<b>${name}</b> restarted on ${host}${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(1)}s` : ''}.`, 'ok');
+      toast(`<b>${eName}</b> restarted on ${eHost}${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(1)}s` : ''}.`,
+        'ok', { allowHtml: true });
       loadContainers();
     } else {
-      toast(restartError(res.status, d, host, name), 'crit', { sticky: true });
+      toast(restartError(res.status, d, host, name), 'crit', { sticky: true, allowHtml: true });
     }
   } catch (e) {
     pending.remove();
     // The dashboard restarting itself kills its own in-flight response; that is not a
     // failure of the restart, so say so rather than claiming an error.
-    toast(name === 'webapp' || name === 'nginx-webapp'
-      ? `Connection dropped — expected when restarting <b>${name}</b>. It is almost certainly back; reload the page.`
-      : `Restart of <b>${name}</b> failed: ${e.message}`, 'warn', { sticky: true });
+    const msg = (name === 'webapp' || name === 'nginx-webapp')
+      ? `Connection dropped — expected when restarting <b>${eName}</b>. It is almost certainly back; reload the page.`
+      : (e.name === 'TimeoutError' || e.name === 'AbortError')
+        ? `No response after 70s — the restart of <b>${eName}</b> may still have completed; check the containers panel.`
+        : `Restart of <b>${eName}</b> failed: ${escHtml(e.message)}`;
+    toast(msg, 'warn', { sticky: true, allowHtml: true });
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = orig; }
   }
 }
 
 // Map a failed restart onto the thing the operator actually has to go fix.
+// Returns HTML (callers pass allowHtml) — every dynamic value is escaped here.
 function restartError(status, d, host, name) {
-  const detail = d.error || `HTTP ${status}`;
-  if (status === 403) return `Restart refused: the agent on ${host} has no token set. Add HL_ARCH_AGENT_TOKEN to /etc/hl-arch-agent.env and restart hl-arch-agent.`;
-  if (status === 401) return `Restart unauthorized: the webapp's HL_ARCH_INGEST_TOKEN doesn't match ${host}'s HL_ARCH_AGENT_TOKEN.`;
-  if (status === 404 && /no container/i.test(detail)) return `${host} has no container named <b>${name}</b> — Force Sync the agent and retry.`;
-  if (status === 404) return `The agent on ${host} is too old for restarts (needs v0.2.0).`;
-  return `Restart of <b>${name}</b> failed: ${detail}`;
+  const detail = escHtml(d.error || `HTTP ${status}`);
+  const eHost = escHtml(host), eName = escHtml(name);
+  if (status === 403) return `Restart refused: the agent on ${eHost} has no token set. Add HL_ARCH_AGENT_TOKEN to /etc/hl-arch-agent.env and restart hl-arch-agent.`;
+  if (status === 401) return `Restart unauthorized: the webapp's HL_ARCH_INGEST_TOKEN doesn't match ${eHost}'s HL_ARCH_AGENT_TOKEN.`;
+  if (status === 404 && /no container/i.test(detail)) return `${eHost} has no container named <b>${eName}</b> — Force Sync the agent and retry.`;
+  if (status === 404) return `The agent on ${eHost} is too old for restarts (needs v0.2.0).`;
+  return `Restart of <b>${eName}</b> failed: ${detail}`;
 }
 
 // Pause / resume Pi-hole ad blocking. Pausing always carries a timer server-side, so
@@ -182,6 +204,7 @@ async function toggleBlocking(enable, seconds = 300) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: enable, seconds }),
+      signal: AbortSignal.timeout(15_000),
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) { toast(`Pi-hole: ${d.error || 'HTTP ' + res.status}`, 'crit', { sticky: true }); return; }
@@ -540,41 +563,59 @@ function renderLinks(view) {
     const first = [...document.querySelectorAll('.link-card')].find(c => c.style.display !== 'none');
     if (first) first.click();
   });
-  input.focus();
+  // Auto-focus is the point on a desktop (type-and-Enter, like the bookmark bar this
+  // replaces) but on a phone it just pops the keyboard over the list.
+  if (matchMedia('(pointer: fine)').matches) input.focus();
 
   checkLinkHealth();
 }
 
-// Colour each card by whether the service actually answers. Internal pages are
-// same-origin so they can be probed honestly; cross-origin LAN services cannot
-// (no CORS headers), so those are probed no-cors — which only ever tells us
-// "something responded", never a status code. A dot that can't be trusted is
-// worse than no dot, so a failed cross-origin probe is left neutral, not red.
+// Colour each card by whether the service actually answers.
+//
+// External services are probed by the BACKEND (/api/linkcheck): this page is https
+// and the services are http, so a browser-side fetch would be blocked as mixed
+// content before it ever left — every dot sat grey forever. Node also probes the
+// self-signed-https services (Cockpit, Vaultwarden) that a browser page can never
+// verify. Results are keyed by origin, so both Vaultwarden links share one probe.
+// Internal /pages are same-origin and cheap to check honestly from here.
 async function checkLinkHealth() {
-  for (const card of document.querySelectorAll('.link-card')) {
-    const dot = card.querySelector('.link-dot');
-    const url = card.getAttribute('href');
-    const internal = !isExternal(url);
-    try {
-      if (internal) {
-        const r = await fetch(url, { method: 'HEAD' });
+  const cards = [...document.querySelectorAll('.link-card')];
+
+  const external = fetch('/api/linkcheck')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if (!d?.origins) return;
+      for (const card of cards) {
+        const url = card.getAttribute('href');
+        if (!isExternal(url)) continue;
+        const dot = card.querySelector('.link-dot');
+        let origin;
+        try { origin = new URL(url).origin; } catch (_) { continue; }
+        const r = d.origins[origin];
+        if (!r) { dot.title = 'not probed'; continue; }
+        dot.dataset.s = r.up ? 'ok' : 'crit';
+        dot.title = r.up ? `responding (HTTP ${r.status})` : `unreachable (${r.error})`;
+      }
+    })
+    .catch(() => { /* dots stay neutral — never invent an outage */ });
+
+  const internal = Promise.allSettled(cards
+    .filter(c => !isExternal(c.getAttribute('href')))
+    .map(async (card) => {
+      const dot = card.querySelector('.link-dot');
+      try {
+        const r = await fetch(card.getAttribute('href'), {
+          method: 'HEAD', signal: AbortSignal.timeout(4000),
+        });
         dot.dataset.s = r.ok ? 'ok' : 'crit';
         dot.title = r.ok ? 'reachable' : `HTTP ${r.status}`;
-      } else {
-        await fetch(url, { mode: 'no-cors', signal: AbortSignal.timeout(3500) });
-        dot.dataset.s = 'ok';
-        dot.title = 'responding';
+      } catch (_) {
+        dot.dataset.s = 'crit';
+        dot.title = 'unreachable';
       }
-    } catch (_) {
-      dot.dataset.s = internal ? 'crit' : 'idle';
-      // Vaultwarden and Cockpit are https with self-signed certs, which the browser
-      // refuses before the request leaves — indistinguishable from "down" to JS, so
-      // name the likely cause instead of implying the service is broken.
-      dot.title = internal ? 'unreachable'
-        : url.startsWith('https://') ? 'no answer — likely the self-signed cert, not an outage'
-        : 'no answer (may still be up — cross-origin)';
-    }
-  }
+    }));
+
+  await Promise.allSettled([external, internal]);
 }
 
 // ── ribbon: fleet rollup + freshness + run-now buttons ─────────────────────────
@@ -587,11 +628,15 @@ async function loadRibbon() {
       fetch('/api/agents').then(x => x.ok ? x.json() : {}),
     ]);
     const runners = r.runners || [];
-    const rank = { critical: 0, warn: 1, unknown: 2, ok: 3 };
-    const worst = runners.reduce((w, x) => (rank[x.status] ?? 2) < (rank[w] ?? 2) ? x.status : w, 'ok');
+    // Only runners that have actually reported drive the fleet pill. A manual or
+    // never-run runner sits at status "unknown" forever — treating that as critical
+    // painted a red "!" over a healthy fleet (hltv-watchlist did exactly this).
+    const reporting = runners.filter(x => x.run_at && x.status && x.status !== 'unknown');
+    const rank = { critical: 0, warn: 1, ok: 2 };
+    const worst = reporting.reduce((w, x) => (rank[x.status] ?? 1) < (rank[w] ?? 2) ? x.status : w, 'ok');
     const tone = worst === 'ok' ? 'ok' : worst === 'warn' ? 'warn' : 'crit';
     const short = { 'Homelab Doctor': 'doctor', 'Hardware Report': 'hw', 'Software Inventory': 'sw', 'Network': 'net', 'Cold Copy Backup': 'backup' };
-    const fresh = runners.map(x => `${short[x.label] || x.name} ${x.run_at ? relTime(x.run_at) : '—'}`).join(' · ');
+    const fresh = reporting.map(x => `${short[x.label] || x.name} ${relTime(x.run_at)}`).join(' · ');
     const agents = (a.hosts || []);
     const reach = agents.filter(h => h.reachable).length;
     el.innerHTML = `<span class="pill" data-s="${tone}">${worst === 'ok' ? '✓ fleet ok' : '! ' + worst}</span>
@@ -651,7 +696,10 @@ async function loadHostVitals() {
   }
 
   const stamp = document.getElementById('home-generated');
-  if (stamp) stamp.textContent = hw.run_at ? `report ${relTime(hw.run_at)}` : 'rpi · 192.168.1.10';
+  // Newest of the three reports — hardware alone runs daily, and stamping with it
+  // read "report 8h ago" while the doctor was minutes old.
+  const newest = [hw.run_at, doc.run_at, sw.run_at].filter(Boolean).sort().pop();
+  if (stamp) stamp.textContent = newest ? `report ${relTime(newest)}` : 'rpi · 192.168.1.10';
 
   wrap.innerHTML = order.map(name => {
     const m = byHost[name].hw?.metrics || {};
@@ -679,7 +727,7 @@ async function loadHostVitals() {
       <div class="tile-head" style="margin-bottom:var(--s2)">
         <span class="host-name">${name}</span>
         <span class="spacer"></span>
-        <span class="pill" data-s="${sTone}">${sGlyph} ${status}</span>
+        <span class="pill" data-s="${sTone}">${sGlyph} ${escHtml(status)}</span>
       </div>
       <div class="host-role">${HOST_ROLES[name] || ''}</div>
       <div class="vitals">
@@ -711,7 +759,7 @@ async function loadHostVitals() {
       <div class="tile-sub" style="margin-top:var(--s3);display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
         ${containers ? `<span>${containers - down}/${containers} containers</span>` : ''}
         ${containers ? `<span class="cstrip">${(dm.containers || []).map(c =>
-          `<span class="cdot" data-s="${/^up/i.test(c.status || '') ? 'ok' : 'crit'}" title="${c.name} — ${c.status || 'unknown'}"></span>`).join('')}</span>` : ''}
+          `<span class="cdot" data-s="${/^up/i.test(c.status || '') ? 'ok' : 'crit'}" title="${escHtml(`${c.name} — ${c.status || 'unknown'}`)}"></span>`).join('')}</span>` : ''}
         ${down ? `<span style="color:var(--crit)">${down} down</span>` : ''}
         ${updates ? `<span style="color:var(--warn)">${updates} image update${updates > 1 ? 's' : ''}</span>` : ''}
       </div>
@@ -810,25 +858,33 @@ async function loadStorageAndVpn() {
         <div style="display:flex;align-items:baseline;gap:8px">
           <div class="tile-metric">${Math.round(pool.used_pct)}%</div>
           <div class="tile-sub" style="margin:0">${pool.size_gb
-            ? `of ${fmtCapacity(pool.size_gb)}${pool.pool_name ? ` · ${pool.pool_name}` : ' pool'}`
+            ? `of ${fmtCapacity(pool.size_gb)}${pool.pool_name ? ` · ${escHtml(pool.pool_name)}` : ' pool'}`
             : 'pool'}</div>
         </div>
         ${meter(Math.round(pool.used_pct))}
         ${pool.avail_gb ? `<div class="tile-sub">${fmtCapacity(pool.avail_gb)} free</div>` : ''}`
         : `<div class="tile-sub">No storage pool detected on opti.</div>`;
 
-      const trendHtml = (trends?.pool?.length > 2) ? `
+      // A pool_name change means a DIFFERENT pool (mergerfs era vs zpool "red"), and
+      // percentages across pools aren't comparable — splicing them made the trend
+      // read "min 15.9 · avg 63". Chart only the current era; it regrows daily.
+      const pts = trends?.pool || [];
+      const currentEra = pts.length ? (pts[pts.length - 1].pool_name || null) : null;
+      let eraStart = pts.length;
+      while (eraStart > 0 && (pts[eraStart - 1].pool_name || null) === currentEra) eraStart--;
+      const eraVals = pts.slice(eraStart).map(p => p.used_pct);
+      const trendHtml = (eraVals.length > 2) ? `
         <div class="spark-cell" style="margin-top:8px">
-          <div class="spark-label">pool, last ${trends.pool.length} days</div>
-          ${sparkline(trends.pool.map(p => p.used_pct), { min: 0, max: 100 })}
+          <div class="spark-label">pool fill, last ${eraVals.length} days${currentEra ? ` (${escHtml(currentEra)})` : ''}</div>
+          ${sparkline(eraVals, { min: 0, max: 100 })}
         </div>` : '';
 
       const sevFor = (d) => (d.health !== 'PASSED') ? 'crit' : (d.reallocated > 0 || d.pending > 0) ? 'severe' : 'ok';
       const smartHtml = Object.keys(smart).length ? `
         <div class="smart-list">${Object.entries(smart).map(([dev, d]) => `
           <div class="smart-row">
-            <span class="mono">${dev}</span>
-            <span class="chip" data-s="${sevFor(d)}">${d.health === 'PASSED' ? (sevFor(d) === 'severe' ? 'worn' : 'ok') : d.health}</span>
+            <span class="mono">${escHtml(dev)}</span>
+            <span class="chip" data-s="${sevFor(d)}">${d.health === 'PASSED' ? (sevFor(d) === 'severe' ? 'worn' : 'ok') : escHtml(d.health)}</span>
             <span class="tile-sub" style="margin:0">
               ${d.reallocated ? `<b style="color:var(--severe)">${d.reallocated} realloc</b> · ` : ''}${d.pending ? `<b style="color:var(--crit)">${d.pending} pending</b> · ` : ''}${d.temp_c ? d.temp_c + '°C · ' : ''}${d.power_on_hours ? Math.round(d.power_on_hours / 24 / 365 * 10) / 10 + 'y on' : ''}
             </span>
@@ -852,11 +908,11 @@ async function loadStorageAndVpn() {
     vel.innerHTML = `
       <div class="tile-metric" style="color:var(--${up ? 'ok' : 'crit'})">${up ? 'Up' : 'Down'}</div>
       <div class="kv-rows">
-        ${vpn.public_ip ? `<div class="kv-row"><span>exit IP</span><span class="mono">${vpn.public_ip}</span></div>` : ''}
-        ${vpn.forwarded_port ? `<div class="kv-row"><span>port fwd</span><span class="mono">${vpn.forwarded_port}
-          <span class="chip" data-s="${portsMatch ? 'ok' : 'warn'}">${portsMatch ? 'qBt ✓' : 'qBt ' + (vpn.qbt_listen_port || '?')}</span></span></div>` : ''}
-        <div class="kv-row"><span>watchdog</span><span>${vpn.status || '—'}${vpn.ts ? ' · ' + relTime(vpn.ts) : ''}</span></div>
-        ${lastAction ? `<div class="kv-row"><span>last heal</span><span>${typeof lastAction === 'string' ? lastAction : (lastAction.action || '')}</span></div>` : ''}
+        ${vpn.public_ip ? `<div class="kv-row"><span>exit IP</span><span class="mono">${escHtml(vpn.public_ip)}</span></div>` : ''}
+        ${vpn.forwarded_port ? `<div class="kv-row"><span>port fwd</span><span class="mono">${escHtml(vpn.forwarded_port)}
+          <span class="chip" data-s="${portsMatch ? 'ok' : 'warn'}">${portsMatch ? 'qBt ✓' : 'qBt ' + escHtml(vpn.qbt_listen_port || '?')}</span></span></div>` : ''}
+        <div class="kv-row"><span>watchdog</span><span>${escHtml(vpn.status || '—')}${vpn.ts ? ' · ' + relTime(vpn.ts) : ''}</span></div>
+        ${lastAction ? `<div class="kv-row"><span>last heal</span><span>${escHtml(typeof lastAction === 'string' ? lastAction : (lastAction.action || ''))}</span></div>` : ''}
       </div>`;
   } catch (_) {
     vel.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
@@ -877,12 +933,12 @@ async function loadContainers() {
       const img = (c.image || '').replace(/^(lscr\.io|ghcr\.io|docker\.io)\//, '').replace(/@sha256.*$/, '');
       return `<tr>
         <td><span class="cdot" data-s="${c.up ? 'ok' : 'crit'}"></span></td>
-        <td class="mono ct-name">${c.name}${c.update_available ? ' <span class="chip" data-s="warn" title="newer image available">update</span>' : ''}</td>
-        <td><span class="chip">${h.host}</span></td>
-        <td class="tile-sub" style="margin:0">${c.up ? 'up ' + since : '<b style="color:var(--crit)">down</b>'}</td>
-        <td class="mono ct-img" title="${c.image || ''}">${img}</td>
-        <td class="ct-act"><button class="btn-icon" title="Restart ${c.name} on ${h.host}"
-          data-host="${h.host}" data-container="${c.name}">⟳</button></td>
+        <td class="mono ct-name">${escHtml(c.name)}${c.update_available ? ' <span class="chip" data-s="warn" title="newer image available">update</span>' : ''}</td>
+        <td><span class="chip">${escHtml(h.host)}</span></td>
+        <td class="tile-sub" style="margin:0">${c.up ? 'up ' + escHtml(since) : '<b style="color:var(--crit)">down</b>'}</td>
+        <td class="mono ct-img" title="${escHtml(c.image || '')}">${escHtml(img)}</td>
+        <td class="ct-act"><button class="btn-icon" title="Restart ${escHtml(c.name)} on ${escHtml(h.host)}"
+          data-host="${escHtml(h.host)}" data-container="${escHtml(c.name)}">⟳</button></td>
       </tr>`;
     }));
     const meta = document.getElementById('ct-meta');
@@ -909,12 +965,12 @@ async function loadNetwork() {
       const m = h.metrics || {};
       const arp = (m.arp_failed || []).length;
       return `<div class="kv-row">
-        <span class="mono">${h.host}</span>
+        <span class="mono">${escHtml(h.host)}</span>
         <span>gw ${ms(m.gateway_avg_ms)} · net ${ms(m.internet_avg_ms)} · ${(m.listening_ports || []).length} ports${arp ? ` · <b style="color:var(--warn)">${arp} arp✕</b>` : ''}</span>
       </div>`;
     }).join('');
     const rpiDns = hosts.find(h => h.host === 'rpi')?.metrics?.dns_lookups_ms || {};
-    const dns = Object.entries(rpiDns).map(([k, v]) => `${k} ${Math.round(v)}ms`).join(' · ');
+    const dns = Object.entries(rpiDns).map(([k, v]) => `${escHtml(k)} ${Math.round(v)}ms`).join(' · ');
     el.innerHTML = `<div class="kv-rows">${rows}</div>
       ${dns ? `<div class="tile-sub" style="margin-top:8px">DNS via Pi-hole: ${dns}</div>` : ''}`;
   } catch (_) {
@@ -927,17 +983,18 @@ async function loadUpkeep() {
   const el = document.getElementById('upkeep-body');
   if (!el) return;
   try {
-    const [doc, sw] = await Promise.all([
+    const [doc, sw, timers] = await Promise.all([
       fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : null),
       fetch('/api/runners/software-latest').then(r => r.ok ? r.json() : null),
+      fetch('/api/timers').then(r => r.ok ? r.json() : null).catch(() => null),
     ]);
     const services = (doc?.services || []).map(s => {
       const cert = s.cert_days_left;
       const certChip = (cert != null && cert < 3000)
         ? ` <span class="chip" data-s="${cert < 14 ? 'crit' : cert < 45 ? 'warn' : ''}">cert ${cert}d</span>` : '';
       return `<div class="kv-row">
-        <span><span class="cdot" data-s="${s.up ? 'ok' : 'crit'}"></span> ${s.name}</span>
-        <span class="tile-sub" style="margin:0">${s.up ? (s.detail || 'up') : '<b style="color:var(--crit)">down</b>'}${certChip}</span>
+        <span><span class="cdot" data-s="${s.up ? 'ok' : 'crit'}"></span> ${escHtml(s.name)}</span>
+        <span class="tile-sub" style="margin:0">${s.up ? escHtml(s.detail || 'up') : '<b style="color:var(--crit)">down</b>'}${certChip}</span>
       </div>`;
     }).join('');
 
@@ -952,11 +1009,25 @@ async function loadUpkeep() {
 
     const cold = (doc || sw) ? await fetch('/api/runners/coldcopy-latest').then(r => r.ok ? r.json() : null).catch(() => null) : null;
     const coldHtml = cold ? `<div class="kv-row"><span>cold copy</span>
-      <span><span class="chip" data-s="${cold.status === 'ok' ? 'ok' : 'warn'}">${cold.status}</span> ${cold.run_at ? relTime(cold.run_at) : ''}</span></div>` : '';
+      <span><span class="chip" data-s="${cold.status === 'ok' ? 'ok' : 'warn'}">${escHtml(cold.status)}</span> ${cold.run_at ? relTime(cold.run_at) : ''}</span></div>` : '';
+
+    // systemd timers from the agent fragments — the homelab's own automation only
+    // (backend already strips distro housekeeping). Shows the last-fired note so a
+    // silently dead watchdog is visible here rather than discovered during an outage.
+    const homelabTimers = /vpn-stack-heal|media-import|homelab-|bb-kavita|podman-auto|coldcopy|agentic/;
+    const timerRows = (timers?.hosts || []).flatMap(h =>
+      (h.timers || [])
+        .filter(t => homelabTimers.test(t.unit))
+        .map(t => `<div class="kv-row">
+          <span class="mono">${escHtml(t.unit.replace('.timer', ''))}</span>
+          <span class="tile-sub" style="margin:0"><span class="chip">${escHtml(h.host)}</span> ${escHtml(t.passed || '—')}</span>
+        </div>`))
+      .slice(0, 7).join('');
 
     el.innerHTML = `<div class="kv-rows">${services}</div>
       ${(posture || coldHtml) ? `<div class="upkeep-sep"></div><div class="kv-rows">${posture}${coldHtml}</div>` : ''}
-      ${!posture ? `<div class="tile-sub" style="margin-top:6px">all hosts patched · no reboots pending</div>` : ''}`;
+      ${!posture ? `<div class="tile-sub" style="margin-top:6px">all hosts patched · no reboots pending</div>` : ''}
+      ${timerRows ? `<div class="upkeep-sep"></div><div class="tile-head" style="margin-bottom:var(--s2)">Timers</div><div class="kv-rows">${timerRows}</div>` : ''}`;
   } catch (_) {
     el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
   }
@@ -971,11 +1042,13 @@ async function loadActivity() {
     const events = d?.events || [];
     if (!events.length) { el.innerHTML = `<div class="tile-sub">Nothing to report — quiet fleet.</div>`; return; }
     const tone = (s) => ['critical', 'high', 'crit'].includes(s) ? 'crit' : ['warn', 'warning', 'medium'].includes(s) ? 'warn' : '';
+    // Finding messages echo raw log lines (nginx access logs, dmesg, apt output) —
+    // the single most attacker-influenced text on this page. Escape everything.
     el.innerHTML = `<div class="feed">${events.map(e => `
       <div class="feed-item">
         <span class="cdot" data-s="${tone(e.severity) || 'idle'}"></span>
-        <span class="feed-msg">${e.message}</span>
-        <span class="feed-meta">${e.host ? `<span class="chip">${e.host}</span>` : ''}${e.source} · ${e.ts ? relTime(e.ts) : ''}</span>
+        <span class="feed-msg">${escHtml(e.message)}</span>
+        <span class="feed-meta">${e.host ? `<span class="chip">${escHtml(e.host)}</span>` : ''}${escHtml(e.source)} · ${e.ts ? relTime(e.ts) : ''}</span>
       </div>`).join('')}</div>`;
   } catch (_) {
     el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;

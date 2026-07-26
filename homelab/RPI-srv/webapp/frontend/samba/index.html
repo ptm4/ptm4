@@ -62,7 +62,8 @@ a { color: var(--accent); }
 .btn { font: 500 13px var(--sans); color: var(--ink); background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--radius-sm); padding: 7px 13px; cursor: pointer; }
 .btn:hover:not(:disabled) { background: var(--surface-3); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+/* Emphasis token for fills — white on --accent (#58a6ff) fails contrast; see tokens.css. */
+.btn.primary { background: var(--accent-emphasis, #1f6feb); border-color: var(--accent-emphasis, #1f6feb); color: #fff; }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.08); }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }

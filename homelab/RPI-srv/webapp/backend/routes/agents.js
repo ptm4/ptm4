@@ -118,6 +118,12 @@ router.post('/sync-all', async (req, res) => {
 // `docker ps -a` and requires a bearer token, so this proxy stays thin.
 // Timeout is generous: a real `docker restart` on a heavy container takes ~10-15s and
 // the agent blocks until it finishes, but stays inside nginx's 60s proxy read timeout.
+//
+// AUTH POSTURE (deliberate, reviewed 2026-07-26 — see webapp/BUGS.md B3): this route,
+// like every other write on this dashboard (samba config save, runner run-now, bot
+// send-now), trusts the LAN. The agent-side bearer token protects the AGENTS from
+// arbitrary LAN callers; the webapp is the intended caller. If the dashboard ever
+// becomes reachable beyond the LAN, gate the POST routes at nginx first.
 router.post('/:host/restart-container', async (req, res) => {
   const cfg = AGENT_HOSTS[req.params.host];
   if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });

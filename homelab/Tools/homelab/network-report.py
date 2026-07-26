@@ -24,7 +24,8 @@ from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
 REPORT_BASE = "network-latest"
 
 # ports we expect to be bound on a host's LAN surface, common to all hosts
-EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099}
+EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
+                  8787}   # hl-arch-agent (/status /vitals /sync /restart), all hosts
 
 # additional per-host expected ports — see homelab-techdoc.md "Remote Access"
 # and "Homelab Agent Platform" sections for what each of these is
@@ -230,7 +231,14 @@ def collect_host(host):
         findings.append({"severity": "critical", "message": f"[{host.name}] DNS resolution failing (github.com)"})
 
     allowed = EXPECTED_PORTS | PER_HOST_EXPECTED_PORTS.get(host.name, set())
-    unexpected = sorted(p for p in ports if p not in allowed)
+    # Only flag sockets reachable from the LAN. Loopback-only listeners (VS Code
+    # remote servers, xrdp-sesman and friends) are ephemeral and local by definition —
+    # flagging them produced permanent "unexpected port" warnings for things no other
+    # machine could ever reach (e.g. code-server picking a fresh 127.0.0.1 port daily).
+    loopback = {"127.0.0.1", "[::1]", "::1", "localhost"}
+    lan_ports = {r["port"] for r in port_rows
+                 if r["addr"].rsplit(":", 1)[0] not in loopback}
+    unexpected = sorted(p for p in lan_ports if p not in allowed)
     if unexpected:
         recs.append({"severity": "warn",
                      "message": f"[{host.name}] Unexpected listening port(s): {', '.join(map(str, unexpected))} — confirm these are intended."})
