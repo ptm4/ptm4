@@ -162,10 +162,13 @@ def host_pool_disk(host):
         ~500 GB), and ZFS reports a dataset's "size" as its own usage plus the
         pool's free space, not the array's capacity. That read as "3% of 3069 GB"
         against an array really ~16% full.
-      * The mount path is not stable. /srv/pool was the mergerfs pool, then a ZFS
-        dataset, and is now a bind mount onto the root ext4 disk while the pool
-        lives at /srv/red — at which point a path-based check silently reported
-        the 456 GB boot disk as "the pool".
+      * The mount path is not stable. /srv/pool was the mergerfs pool; during the
+        migration it became a compatibility bind onto /srv/red/fs, and a boot
+        where that bind was ordered ahead of zfs-mount.service left it pointing
+        at the empty directory *underneath* the dataset — on the boot disk — at
+        which point a path-based check silently reported the 456 GB boot disk as
+        "the pool". /srv/pool has since been removed outright (2026-07-26); the
+        two scripts that still referenced it now use /srv/red/fs directly.
 
     The pool is the pool wherever its datasets happen to be mounted, so measure it
     by name. `df POOL_PATH` remains the fallback for a host with a plain
@@ -296,6 +299,40 @@ def vpn_findings(name, vpn):
     return findings
 
 
+def host_unmounted_datasets(host):
+    """ZFS datasets that should be mounted but aren't — the silent-shadowing check.
+
+    A ZFS mountpoint is an ordinary directory until the dataset mounts over it. If
+    that mount never happens, writes land on whatever filesystem the directory
+    itself lives on — normally the boot disk — and nothing errors: `ls` works, `df`
+    reports a filesystem, the write succeeds. The data is simply invisible to the
+    share, absent from every snapshot, outside every backup, and quietly filling /.
+
+    Caught in the wild 2026-07-26: a bind mount ordered ahead of zfs-mount.service
+    latched onto the empty directory beneath /srv/red/fs and served it for ~15
+    minutes. Nothing in the fleet would have reported it. Hence this check.
+
+    Asks ZFS directly (`mounted` property) rather than inspecting paths, since the
+    whole failure mode is that the path looks fine.
+    """
+    out, rc = run_on(host, ["zfs", "list", "-H", "-o", "name,mountpoint,mounted"],
+                     timeout=15)
+    if rc != 0 or not out.strip():
+        return []  # no ZFS on this host — not an error
+    bad = []
+    for line in out.strip().splitlines():
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        name, mountpoint, mounted = fields[0], fields[1], fields[2]
+        # legacy/none datasets are mounted by fstab (or deliberately not at all)
+        if mountpoint in ("-", "none", "legacy"):
+            continue
+        if mounted != "yes":
+            bad.append({"dataset": name, "mountpoint": mountpoint})
+    return bad
+
+
 def collect_host(host):
     """Per-host disk + docker + VPN watchdog over SSH. Returns (host_dict, findings)."""
     findings = []
@@ -306,6 +343,14 @@ def collect_host(host):
     if pool is not None and pool["used_pct"] >= DISK_WARN_PCT:
         findings.append({"severity": "warn",
                          "message": f"[{host.name}] Pool {POOL_PATH} {pool['used_pct']}% full"})
+    # Critical, not warn: an unmounted dataset means writes are silently landing on
+    # the boot disk instead of the pool, and every symptom otherwise reads as normal.
+    unmounted = host_unmounted_datasets(host)
+    for ds in unmounted:
+        findings.append({"severity": "critical",
+                         "message": (f"[{host.name}] ZFS dataset {ds['dataset']} is NOT mounted at "
+                                     f"{ds['mountpoint']} — writes there are going to the "
+                                     f"underlying disk, invisible to the share and to backups")})
     autoupdate = host_autoupdate(host)
     if autoupdate is not None:
         findings += autoupdate_findings(host.name, autoupdate)

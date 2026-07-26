@@ -160,3 +160,77 @@ Corollary that caught a real error: a shell redirect `>` runs as the *calling* u
 when the command is `sudo`. `sudo diff a b > /root/out` fails with permission denied, the
 output file is never created, and a following `test -s` then reports "no differences" —
 a false clean bill of health on a data-verification step. Use `| sudo tee`.
+
+---
+
+## HAZARD — mount shadowing: the path looks right and the data goes nowhere
+
+**The single most dangerous failure class on opti. Caught live 2026-07-26.**
+
+### Mechanism
+A mountpoint is just a folder. Mounting *hides* what's underneath; it doesn't remove it. So
+`/srv/red/fs` is two different places depending on timing — an empty folder on the boot disk
+before `zfs-mount.service` runs, the ZFS dataset after. A **bind mount resolves once**, at
+creation. This boot did:
+
+```
+[33.05s] Mounted srv-pool.mount   ← bind latched onto the EMPTY FOLDER
+[39.08s] Finished zfs-mount.service
+```
+
+Six seconds too early, and `/srv/pool` pointed at a dead-end folder on the root disk for the
+rest of the boot. Every symptom read as healthy: `ls` worked, `df` showed a filesystem,
+writes succeeded. But the bytes were on the 457 GB boot disk — invisible to the share, absent
+from snapshots, outside every backup, and silently filling `/`.
+
+### Why it is hard to spot
+There is no error. The only tell is the device column:
+```bash
+findmnt -o TARGET,SOURCE /srv/pool
+#  /dev/sda1[/srv/red/fs]   ← WRONG: sourced from the boot disk
+#  red/fs                   ← right
+```
+Definitive check — compare inodes: `[ "$(stat -c %i /srv/pool)" = "$(stat -c %i /srv/red/fs)" ]`
+
+### Defences now in place (all three, deliberately)
+1. **Eliminated** — `/srv/pool` was deleted outright (2026-07-26). The two scripts that used
+   it (`opti-health-digest.sh`, `opti-backup.sh`) now reference `/srv/red/fs` directly. The
+   path no longer exists, so a straggler gets a loud `ENOENT` instead of a silent wrong write.
+2. **Sealed** — the empty stubs *underneath* the mounts (`/srv/red`, `/srv/red/fs`,
+   `/srv/attic`) are `chattr +i`. If a mount ever fails, writes get `EPERM` immediately
+   instead of landing on the boot disk. Verified: mounting over an immutable directory works
+   normally (mount does not write to the dir), and mergerfs still mounts over a sealed
+   `/srv/attic`.
+   To inspect or change them, reach *under* the mounts:
+   ```bash
+   mount --bind / /mnt/rootview     # the root fs without anything mounted on top
+   lsattr -d /mnt/rootview/srv/red  # chattr -i here to unseal
+   umount /mnt/rootview
+   ```
+3. **Detected** — `homelab-doctor` now asks ZFS directly (`zfs list -o name,mountpoint,mounted`)
+   and raises a **critical** for any dataset that should be mounted and isn't. Asking ZFS
+   rather than inspecting the path matters, because the failure mode *is* that the path looks fine.
+
+### Still open
+The boot-ordering fix for the bind was `x-systemd.requires=zfs-mount.service` — now moot since
+the bind is gone. But **any future fstab entry whose source is a ZFS path needs that option**,
+or it will reproduce this exactly.
+
+---
+
+## HAZARD — `find -xdev` silently excludes ZFS child datasets
+
+`red/media` is a separate dataset mounted *inside* `/srv/red/fs`, so `-xdev` stops at that
+boundary. Two things this broke:
+
+- **Migration verification.** The Tier 1 manifest of the copy used `find -xdev` and therefore
+  omitted the entire 527 GB media library, then compared that truncated list against a source
+  manifest that included it. Combined with a `sudo cmd > /root/file` redirect that failed as
+  the calling user (so the diff file was never written and `test -s` found nothing), it
+  reported **"IDENTICAL — every file present"** for a comparison that never ran.
+- **The coldcopy source floor.** `find -xdev` counted 12,971 files while `du` (which *does*
+  cross datasets) reported 608 GiB — the file floor and the byte floor were measuring
+  different trees. Fixed 2026-07-26: no `-xdev`, so both cover all 13,278 files / 608 GiB.
+
+Rule of thumb: on a host with nested datasets, `-xdev` is almost never what you want, and any
+count you can't reconcile against a second independent measure should be treated as wrong.

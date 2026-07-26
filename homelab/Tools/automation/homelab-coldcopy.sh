@@ -130,7 +130,12 @@ root_fsid=$(stat -f -c %i / 2>/dev/null)
 [ "$src_fsid" != "$root_fsid" ] || abort "$SRC resolves to the root filesystem — pool not mounted"
 
 # ── Interlock 2: source floor. THE line that prevents wiping the cold copy ────
-src_files=$(find "$SRC" -xdev -type f 2>/dev/null | wc -l)
+# NO -xdev here, deliberately: red/media is a separate dataset mounted *inside*
+# $SRC, so -xdev would stop at that boundary and count only the ~80 GiB of
+# non-media files while `du` (which does cross) counted all 608 GiB — the floor
+# and the byte check would then be measuring two different trees. The same -xdev
+# trap produced a bogus "identical" result during the migration's verification.
+src_files=$(find "$SRC" -type f 2>/dev/null | wc -l)
 src_bytes=$(du -sb "$SRC" 2>/dev/null | cut -f1)
 : "${src_bytes:=0}"
 
