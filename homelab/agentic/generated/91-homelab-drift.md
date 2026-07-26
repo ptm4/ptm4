@@ -1,7 +1,7 @@
 # Homelab Drift
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/Tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-07-26T04:20:16+00:00`
+> Generated: `2026-07-26T22:16:24+00:00`
 
 
 Where the architecture map and reality disagree, as of the last agent sync. This is a TODO list, not a health report: an empty section means nothing to do, not that everything is fine — cross-check `90-homelab-inventory.md`'s sync ages.

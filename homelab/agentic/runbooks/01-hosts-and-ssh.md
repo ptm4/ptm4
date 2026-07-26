@@ -20,8 +20,11 @@ is reached. Also `ptm.lan` / `tux.lan` in Pi-hole.
 Storage and control plane. Debian 12, Intel i5-3570, 5.7 GiB RAM.
 - **OpenMediaVault** manages the box; web UI on `:80`. **Never hand-edit the Samba config** —
   OMV regenerates it.
-- **mergerfs pool** at `/srv/pool` (~1.1 TB, two branch disks, the large one NTFS via fuseblk),
-  exported as `\\opti\fs`. Everything else in the homelab mounts this.
+- **ZFS pool `red`** (single 4 TB WD Red Plus vdev, migrated from mergerfs 2026-07-25):
+  share root `red/fs` → `/srv/red/fs`, exported as `\\opti\red` via
+  `/etc/homelab/samba-red.conf` (hand-managed — **not** OMV's smb.conf; OMV is UI/monitoring
+  only now). Everything else in the homelab mounts this. The old sda+sdb pair is a `noauto`
+  cold copy ("attic"), refreshed weekly by `homelab-coldcopy.timer` (Sun 04:00).
 - **Agent dispatcher** on `:9099` (`hl-agent-dispatcher.service`) — enable/disable + run-now for
   the runners, driven by the webapp.
 - Self-hosted **x86 CI runner** (`actions.runner.ptm4-ptm4.opti`), xrdp on `:3389`.

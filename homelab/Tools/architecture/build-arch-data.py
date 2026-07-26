@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # When the facts below were last confirmed against the live hosts over SSH.
-PROBED_AT = "2026-07-25T06:20:00Z"
+PROBED_AT = "2026-07-26T22:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = REPO_ROOT / "homelab/RPI-srv/webapp/frontend/architecture/data.json"
@@ -78,7 +78,7 @@ CATEGORIES = [
         "glyph": "▤",
         "light": "#1baf7a",
         "dark": "#1bab7d",
-        "description": "Physical disks, the mergerfs pool, the Samba export and every CIFS mount that consumes it.",
+        "description": "Physical disks, the ZFS pool, the attic cold copy, the Samba export and every CIFS mount that consumes it.",
     },
     {
         "key": "media",
@@ -196,12 +196,14 @@ HOSTS = [
             {"label": "CPU", "value": "Intel i5-3570 · 4 cores"},
             {"label": "RAM", "value": "5.7 GiB"},
             {"label": "Root disk", "value": "457 GB ext4 · 66% used"},
-            {"label": "Pool", "value": "1.1 TB mergerfs · 70% used"},
-            {"label": "Manager", "value": "OpenMediaVault"},
+            {"label": "Pool", "value": "3.6 TB ZFS (red) · 16% used"},
+            {"label": "Share config", "value": "/etc/homelab/samba-red.conf"},
         ],
         "notes": "Every other host mounts its Samba export, so it is the storage "
-                 "single point of failure. OMV owns the Samba config — never hand-edit it. "
-                 "Also hosts the agent control plane and the x86 CI runner.",
+                 "single point of failure. Since the 2026-07-25 ZFS migration the live "
+                 "share [red] is configured in /etc/homelab/samba-red.conf — OMV is "
+                 "UI/monitoring only and no longer owns the share. Also hosts the agent "
+                 "control plane and the x86 CI runner.",
     },
     {
         "id": "noblenumbat",
@@ -366,29 +368,44 @@ NODES = [
       notes="Pinned to [self-hosted, ARM64] because a bare 'self-hosted' label also "
             "matched opti's x86 runner."),
     N("rpi-mount", "/mnt/opti-fs", "rpi", "storage", "platform",
-      sublabel="CIFS 3.0 ← //opti/fs", kind="mount",
+      sublabel="CIFS 3.0 ← //opti/red", kind="mount",
       notes="How the rpi reads agent logs, security reports, TLS certs and the repo. "
             "If opti is down this mount hangs and the webapp's data tabs empty out."),
     N("rpi-sshd", "sshd :22", "rpi", "infra", "platform", kind="service"),
     N("rpi-timers", "systemd timers", "rpi", "infra", "platform",
       sublabel="autoreboot 03:00 · autoupdate", kind="timer"),
 
-    # ── opti · storage plane ─────────────────────────────────────────────────
+    # ── opti · storage plane (ZFS since 2026-07-25; replaced the mergerfs pool) ──
+    N("opti-sdc", "sdc · 4 TB WD Red Plus", "opti", "storage", "disks",
+      sublabel="WD40EFZZ · ZFS vdev", kind="disk",
+      notes="The single vdev backing pool red. One disk = no redundancy; the attic cold "
+            "copy is the only second copy of this data."),
+    N("zfs-red", "ZFS pool · red", "opti", "storage", "disks",
+      sublabel="/srv/red · 3.6 TB · 16% used", kind="volume", critical=True,
+      notes="Replaced the mergerfs pool on 2026-07-25. Datasets: red/fs (the Samba share "
+            "root) and red/media. This is the homelab's primary dataset — media, repo, "
+            "certs, agent logs, security reports all live here. Single-vdev: a scrub "
+            "(clean 2026-07-25) verifies integrity but nothing self-heals without a mirror."),
+    N("samba", "Samba · share [red]", "opti", "storage", "disks",
+      sublabel=":445 → /srv/red/fs", kind="service", critical=True,
+      notes="Exports red/fs as \\\\opti\\red. Config lives in /etc/homelab/samba-red.conf "
+            "— hand-managed since the ZFS migration; OMV no longer owns the live share."),
+    N("attic", "attic · cold copy", "opti", "storage", "disks",
+      sublabel="old sda+sdb pair · noauto · weekly", kind="volume",
+      notes="The retired mergerfs disks, repurposed as a cold second copy. Mounted only "
+            "during the weekly homelab-coldcopy run (rsync --delete red→attic, with an "
+            "empty-source interlock so a failed pool import can't erase the last copy), "
+            "so /srv/attic doesn't exist between runs and nothing can write into it."),
     N("opti-sda", "sda · 466 GB HDD", "opti", "storage", "disks",
-      sublabel="ST500DM002 · ext4 root", kind="disk"),
+      sublabel="ST500DM002 · ext4 root + attic branch", kind="disk"),
     N("opti-sdb", "sdb · 596 GB HDD", "opti", "storage", "disks",
-      sublabel="Hitachi HTS5475 · NTFS data", kind="disk",
-      notes="NTFS via fuseblk, mounted as an OMV data disk and pooled by mergerfs."),
-    N("mergerfs", "mergerfs pool", "opti", "storage", "disks",
-      sublabel="/srv/pool · 1.1 TB · 70% used", kind="volume", critical=True,
-      notes="Unions the branch disks into one namespace. This is the homelab's primary "
-            "dataset — media, repo, certs, agent logs, security reports all live here."),
-    N("samba", "Samba · share [fs]", "opti", "storage", "disks",
-      sublabel=":445 → /srv/pool", kind="service", critical=True,
-      notes="Exports the whole pool as \\\\opti\\fs. Config is generated by "
-            "OpenMediaVault — hand edits get overwritten."),
+      sublabel="Hitachi HTS5475 · NTFS · attic branch (ro)", kind="disk",
+      notes="Held the mergerfs data before the migration; now an attic branch kept ro "
+            "in steady state and flipped rw only during the coldcopy window."),
     N("omv", "OpenMediaVault", "opti", "infra", "platform",
-      sublabel="NAS manager · web UI :80", kind="service"),
+      sublabel="NAS UI/monitoring · web UI :80", kind="service",
+      notes="Demoted at the ZFS migration: disk/SMART monitoring and UI only. The live "
+            "share is NOT in OMV's smb.conf anymore."),
 
     # ── opti · control plane ─────────────────────────────────────────────────
     N("dispatcher", "Agent dispatcher", "opti", "infra", "control",
@@ -464,8 +481,9 @@ NODES = [
       sublabel="Container UI :9000", container="portainer", ports=["9000/tcp"], kind="container"),
     N("nn-docker", "Docker engine", "noblenumbat", "infra", "nn-platform",
       sublabel="13 containers · YAMS compose", kind="daemon",
-      notes="Stack lives at /opt/yams/docker-compose.yaml. A `watchtower` service is "
-            "defined there but is NOT currently running."),
+      notes="Stack lives at /opt/yams/docker-compose.yaml. Watchtower was removed "
+            "2026-07-25; image updates are now report-only (software-inventory) and "
+            "applied deliberately via docker compose pull."),
     N("nn-yams-net", "docker net · yams_network", "noblenumbat", "network", "nn-platform",
       sublabel="172.60.0.0/24", kind="network"),
     N("nn-mounts", "opti CIFS mounts", "noblenumbat", "storage", "nn-platform",
@@ -551,11 +569,13 @@ EDGES = [
     E("e-nginx-certs", "nginx-webapp", "rpi-mount", "TLS cert from the pool", "storage"),
 
     # opti storage
-    E("e-sda-pool", "opti-sda", "mergerfs", "pool branch", "storage"),
-    E("e-sdb-pool", "opti-sdb", "mergerfs", "pool branch", "storage"),
-    E("e-pool-samba", "mergerfs", "samba", "exported as \\\\opti\\fs", "storage"),
-    E("e-omv-pool", "omv", "mergerfs", "manages pool + shares", "control"),
-    E("e-logs-pool", "agent-logs", "mergerfs", "stored on the pool", "storage"),
+    E("e-sdc-pool", "opti-sdc", "zfs-red", "single vdev", "storage"),
+    E("e-pool-samba", "zfs-red", "samba", "red/fs exported as \\\\opti\\red", "storage"),
+    E("e-pool-attic", "zfs-red", "attic", "weekly cold copy · Sun 04:00", "storage"),
+    E("e-sda-attic", "opti-sda", "attic", "attic branch", "storage"),
+    E("e-sdb-attic", "opti-sdb", "attic", "attic branch (ro)", "storage"),
+    E("e-omv-monitor", "omv", "opti-sdc", "SMART / disk monitoring only", "control"),
+    E("e-logs-pool", "agent-logs", "zfs-red", "stored on the pool", "storage"),
 
     # opti control plane
     E("e-dispatch-agents", "dispatcher", "agents", "starts a run", "control"),
@@ -693,7 +713,7 @@ FLOWS = [
             ("e-agents-rpi", "Each agent SSHes out to every host",
              "It collects containers, disks, packages and pool state first-hand."),
             ("e-agents-logs", "Results are written as JSON onto the pool",
-             "homelab-doctor-latest.json and friends land in /srv/pool/ptm/agent-logs/."),
+             "homelab-doctor-latest.json and friends land in /srv/red/fs/ptm/agent-logs/."),
             ("e-webapp-mount", "The webapp reads them read-only",
              "The pool is mounted at /agent-logs inside the container."),
             ("e-nginx-webapp", "Sync fetches /api/architecture/live",
@@ -777,15 +797,19 @@ NETWORK = {
 }
 
 STORAGE = {
-    "summary": "One pool on opti backs essentially everything. Every other host is a CIFS client of it.",
+    "summary": "One ZFS pool on opti backs essentially everything. Every other host is a CIFS "
+               "client of it. Migrated from mergerfs 2026-07-25; the old disks survive as a "
+               "weekly cold copy ('attic').",
     "pool": {
-        "name": "mergerfs-pool → /srv/pool",
-        "size": "1.1 TB",
-        "used": "707 GB (70%)",
-        "free": "307 GB",
+        "name": "zpool red → /srv/red (share root: red/fs → /srv/red/fs)",
+        "size": "3.6 TB",
+        "used": "602 GB (16%)",
+        "free": "2.92 TB",
         "branches": [
-            {"dev": "/dev/sda1", "size": "457 GB", "fs": "ext4", "note": "also the root filesystem"},
-            {"dev": "/dev/sdb2", "size": "580 GB", "fs": "NTFS (fuseblk)", "note": "OMV data disk"},
+            {"dev": "/dev/sdc (WD40EFZZ, 4 TB WD Red Plus)", "size": "3.6 TB", "fs": "ZFS",
+             "note": "single vdev — no redundancy; scrub clean 2026-07-25"},
+            {"dev": "attic: sda1 (ext4) + sdb2 (NTFS)", "size": "~1 TB", "fs": "mixed",
+             "note": "retired mergerfs pair · noauto cold copy, refreshed Sun 04:00"},
         ],
     },
     "layout": [
@@ -806,9 +830,11 @@ STORAGE = {
         {"host": "tux", "mount": "~/opti", "proto": "CIFS 3.1.1", "what": "the whole share, for editing"},
     ],
     "notes": [
-        "OpenMediaVault generates the Samba config — hand edits are overwritten.",
-        "The pool's large branch is NTFS, which is an unusual choice for a Linux NAS and "
-        "means POSIX permissions are emulated rather than native.",
+        "The live share [red] is configured in /etc/homelab/samba-red.conf, hand-managed. "
+        "OMV no longer owns it — its smb.conf is not where the share lives.",
+        "The pool is a single vdev: ZFS checksums detect corruption but cannot self-heal it "
+        "without a mirror. The attic cold copy (weekly, rsync --delete with an empty-source "
+        "interlock) is the recovery path, so worst-case loss is up to a week of changes.",
     ],
 }
 
@@ -847,7 +873,7 @@ OBSERVATIONS = [
     {
         "severity": "warning",
         "title": "opti is the storage single point of failure",
-        "detail": "The rpi, noblenumbat and tux all mount //opti/fs. Jellyfin's libraries, the "
+        "detail": "The rpi, noblenumbat and tux all mount //opti/red. Jellyfin's libraries, the "
                   "webapp's data tabs, the TLS certs and the repo all live there. opti going "
                   "down degrades all three other hosts at once.",
     },
@@ -865,16 +891,19 @@ OBSERVATIONS = [
     },
     {
         "severity": "warning",
-        "title": "The pool's large branch is NTFS",
-        "detail": "/dev/sdb2 is 580 GB of NTFS via fuseblk inside a Linux mergerfs pool. It works, "
-                  "but POSIX ownership is emulated, which is why permission oddities show up on the share.",
+        "title": "The live pool has no redundancy",
+        "detail": "Pool red is a single 4 TB vdev. ZFS checksums catch corruption, but with no "
+                  "mirror nothing self-heals — the weekly attic cold copy is the only second "
+                  "copy, so a disk failure can cost up to a week of changes. A mirror disk is "
+                  "the structural fix (see the opti-drive-onboard skill).",
     },
     {
         "severity": "info",
         "title": "Leftovers worth cleaning up",
         "detail": "A vpn.rpi.lan DNS record and WireGuard peer configs survive a decommissioned "
-                  "service, and a watchtower service is defined in the YAMS compose file but is "
-                  "not running.",
+                  "service, and a stale pre-ZFS copy of the repo sits on opti's old NTFS disk "
+                  "(dev-disk-by-uuid…/fs/ptm/repo/ptm4) — one commit behind and no longer "
+                  "referenced by any unit.",
     },
     {
         "severity": "info",

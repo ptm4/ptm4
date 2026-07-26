@@ -185,7 +185,7 @@ live-data path gets exercised rather than silently falling into its error branch
   on the `internal` docker network and are not published to the host — only the webapp
   can reach them. Manage bots through the webapp, never by editing files on the rpi.
 - **opti is a hard dependency.** The `/agent-logs`, `/reports` and `/workspace` mounts
-  are CIFS to `//opti/fs`. If opti is down those reads hang and the tabs empty out —
+  are CIFS to `//opti/red`. If opti is down those reads hang and the tabs empty out —
   handle fetch failures gracefully rather than rendering a blank page.
 - **nginx timeouts.** The default 60s proxy read timeout is raised only for
   `/api/llama/` (cold LLM prompts). A new slow route needs its own `location` block in

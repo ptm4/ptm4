@@ -115,7 +115,8 @@ Remote access today (§17) is LAN-only: SSH + RDP on opti/noblenumbat, SSH-only 
       security-reports/  ← security agent reports (rpi: /mnt/opti-fs/ptm/security-reports)
       agent-logs/        ← homelab agent logs
       certs/             ← TLS certs for webapp
-/srv/pool                ← bind of /srv/red/fs (compat for stragglers; old union path)
+/srv/pool                ← REMOVED 2026-07-26 (was a compat bind of /srv/red/fs; the last
+                           two scripts using it were repointed and the bind deleted)
 /srv/attic               ← COLD COPY: old sda+sdb mergerfs pool, noauto — mounted only by
                            homelab-coldcopy.timer (Sun 04:00), sdb branch fstab'd ro
 ```

@@ -62,7 +62,11 @@ def _rm_repo_copy(tool, cmd, path):
 
 
 def _samba_or_omv(tool, cmd, path):
-    targets = ("/etc/samba", "smb.conf", "/etc/openmediavault")
+    # /etc/homelab/samba-red.conf is the LIVE share config since the ZFS migration —
+    # a deploy target, not source (source: homelab/opti-srv/samba/samba-red.conf).
+    # `cp` into it is the deploy and stays allowed (_writes_to only matches in-place
+    # editors); editing it in place on the host is the drift trap.
+    targets = ("/etc/samba", "smb.conf", "/etc/openmediavault", "/etc/homelab/samba-red.conf")
     if tool in ("Edit", "Write", "NotebookEdit"):
         return any(t in path for t in targets)
     return tool == "Bash" and any(_writes_to(cmd, t) for t in targets)
@@ -105,9 +109,11 @@ RULES = [
     ),
     (
         "samba-omv-config", "deny", _samba_or_omv,
-        "OpenMediaVault owns the Samba config on opti and regenerates it — a hand edit is "
-        "silently discarded, so this change would appear to work and then vanish. Make the "
-        "change through the OMV web UI on opti:80 instead.",
+        "Since the 2026-07-25 ZFS migration the live share [red] is NOT in OMV's smb.conf — "
+        "it lives in /etc/homelab/samba-red.conf (tracked in the repo as "
+        "homelab/opti-srv/samba/samba-red.conf; edit there and deploy). /etc/samba/* is "
+        "still OMV-generated leftovers: editing it is either silently discarded or, worse, "
+        "quietly resurrects a second share definition. Don't touch either path directly.",
     ),
     (
         "discord-files-on-rpi", "deny", _discord_on_rpi,

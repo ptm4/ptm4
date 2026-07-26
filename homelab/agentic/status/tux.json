@@ -1,13 +1,13 @@
 {
   "host": "tux",
-  "generated_at": "2026-07-26T02:15:42Z",
+  "generated_at": "2026-07-26T22:16:21Z",
   "generated_by": "homelab/agentic/probe.py",
   "workspace": {
     "repo_root": "/home/ptm/opti/ptm/repo/ptm4",
     "repo_root_realpath": "/home/ptm/opti/ptm/repo/ptm4",
     "basename_ok": true,
-    "git_remote": "https://github.com/ptm4/ptm4.git",
-    "git_remote_ok": true,
+    "git_remote": "git@github.com:ptm4/ptm4.git",
+    "git_remote_ok": false,
     "agentic_dir_present": true
   },
   "tools": [
@@ -15,7 +15,7 @@
       "key": "claude",
       "name": "Claude Code",
       "installed": true,
-      "version": "2.1.214",
+      "version": "2.1.220",
       "path": "/home/ptm/.local/bin/claude",
       "extra": {},
       "wireable": true,

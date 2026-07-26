@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 AGENT_LOG_DIRS = [
     "/home/ptm/opti/ptm/agent-logs",
     "/agent-logs",
-    "/srv/pool/ptm/agent-logs",
+    "/srv/red/fs/ptm/agent-logs",
 ]
 READ_TIMEOUT_S = 2.0
 # Past this, the report describes a homelab that may have moved on.

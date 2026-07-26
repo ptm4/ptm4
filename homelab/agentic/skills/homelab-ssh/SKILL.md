@@ -17,9 +17,9 @@ re-check it if a name or role doesn't match what's below:
 
 | Alias | Role |
 |---|---|
-| `opti` | Storage/NAS (OpenMediaVault, mergerfs pool, Samba), CI runner, control plane |
+| `opti` | Storage/NAS (ZFS pool `red` → Samba `\\opti\red`; OMV UI-only), CI runner, control plane |
 | `rpi` | DNS & DHCP (Pi-hole), Discord bot fleet, management webapp |
-| `noblenumbat` | Media stack (Jellyfin/*arr apps); also holds a working copy of this repo |
+| `noblenumbat` | Media stack (Jellyfin/*arr apps) — the repo clone there was deleted 2026-07-22 |
 | `android` | Phone (Termux), SSH on a **non-default port** — check the runbook for the current port and connect string, it changes across reboots |
 
 ## 2. Find the key

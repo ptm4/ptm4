@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/Tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-07-26T04:20:16+00:00`
+> Generated: `2026-07-26T22:16:24+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.2.0 | 4m ago | 13 | none |
-| opti | 0.2.0 | 4m ago | 0 | none |
-| rpi | 0.2.0 | 4m ago | 12 | none |
+| noblenumbat | 0.2.0 | 2h ago | 13 | none |
+| opti | 0.2.0 | 2h ago | 0 | none |
+| rpi | 0.2.0 | 2h ago | 12 | none |
 
 
 ## Nodes
@@ -78,21 +78,23 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | Actions runner (x86) | infra | — | n/a | — | self-hosted · runs the agent workflow |
 | Agent dispatcher | infra | — | n/a | — | Python :9099 · enable/disable + run-now |
 | Homelab agents | infra | — | n/a | — | doctor · hardware · software · network · docs |
-| OpenMediaVault | infra | — | n/a | — | NAS manager · web UI :80 |
+| OpenMediaVault | infra | — | n/a | — | NAS UI/monitoring · web UI :80 |
 | Remote access | infra | — | n/a | — | sshd :22 · xrdp :3389 |
-| Samba · share [fs] | storage | — | n/a | — | :445 → /srv/pool |
+| Samba · share [red] | storage | — | n/a | — | :445 → /srv/red/fs |
+| ZFS pool · red | storage | — | n/a | — | /srv/red · 3.6 TB · 16% used |
 | agent-logs/ | storage | — | n/a | — | JSON reports on the pool |
-| mergerfs pool | storage | — | n/a | — | /srv/pool · 1.1 TB · 70% used |
-| sda · 466 GB HDD | storage | — | n/a | — | ST500DM002 · ext4 root |
-| sdb · 596 GB HDD | storage | — | n/a | — | Hitachi HTS5475 · NTFS data |
-| systemd timers | infra | — | n/a | — | docs 05:16 · health-digest 06:30 · autoreboot |
+| attic · cold copy | storage | — | n/a | — | old sda+sdb pair · noauto · weekly |
+| sda · 466 GB HDD | storage | — | n/a | — | ST500DM002 · ext4 root + attic branch |
+| sdb · 596 GB HDD | storage | — | n/a | — | Hitachi HTS5475 · NTFS · attic branch (ro) |
+| sdc · 4 TB WD Red Plus | storage | — | n/a | — | WD40EFZZ · ZFS vdev |
+| systemd timers | infra | — | n/a | — | docs 05:16 · health-digest 06:30 · autoreboot · coldcopy Sun 04:00 · zfs-scrub monthly |
 
 
 ### rpi
 
 | Node | Plane | Container | State | Image | Summary |
 |---|---|---|---|---|---|
-| /mnt/opti-fs | storage | — | n/a | — | CIFS 3.0 ← //opti/fs |
+| /mnt/opti-fs | storage | — | n/a | — | CIFS 3.0 ← //opti/red |
 | Actions runner (ARM64) | infra | — | n/a | — | self-hosted · deploys the rpi stack |
 | Dashboard webapp | apps | webapp | running | node:lts-alpine | Node/Express :3000 · this page's server |
 | Docker engine | infra | — | n/a | — | 12 containers · compose at /srv/docker/compose |
