@@ -221,14 +221,20 @@ def collect_host(host):
     ports, port_rows = listening_ports(host)
     pihole = pihole_stats(host)
 
+    # android is a phone: Doze parks the radio and it drops off the LAN for hours at a
+    # time by design (see rules/01-homelab-context.md — "Intermittent — often offline").
+    # Its unreachability is expected noise, not an incident, and at `critical` it was
+    # painting the whole network report (and the dashboard's fleet pill) red every time
+    # the phone napped. Real hosts stay critical.
+    reach_sev = "warn" if host.name == "android" else "critical"
     if not gw:
-        findings.append({"severity": "critical", "message": f"[{host.name}] No default gateway configured"})
+        findings.append({"severity": reach_sev, "message": f"[{host.name}] No default gateway configured"})
     elif not gw_up:
-        findings.append({"severity": "critical", "message": f"[{host.name}] Gateway {gw} unreachable"})
+        findings.append({"severity": reach_sev, "message": f"[{host.name}] Gateway {gw} unreachable"})
     if not inet:
-        findings.append({"severity": "critical", "message": f"[{host.name}] No internet (1.1.1.1 unreachable)"})
+        findings.append({"severity": reach_sev, "message": f"[{host.name}] No internet (1.1.1.1 unreachable)"})
     if lookups.get("github.com") is None:
-        findings.append({"severity": "critical", "message": f"[{host.name}] DNS resolution failing (github.com)"})
+        findings.append({"severity": reach_sev, "message": f"[{host.name}] DNS resolution failing (github.com)"})
 
     allowed = EXPECTED_PORTS | PER_HOST_EXPECTED_PORTS.get(host.name, set())
     # Only flag sockets reachable from the LAN. Loopback-only listeners (VS Code

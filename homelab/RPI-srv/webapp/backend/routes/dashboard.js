@@ -104,9 +104,23 @@ function parseTimerRaw(raw) {
   if (!unitMatch) return null;
   const unit = unitMatch[1];
   const before = raw.slice(0, raw.indexOf(unit)).trim();
-  // "…EDT  <left> …EDT  <passed> " — grab the two relative fields between the
-  // absolute timestamps; tolerate '-' for never-run timers.
-  const passed = (before.match(/(\S[\w\s]*?ago|-)\s*$/) || [])[1] || null;
+
+  // PASSED is the duration-token run immediately before "ago" ("55s ago",
+  // "4min 27s ago"). Walk back from "ago" collecting digit-led tokens only — a lazy
+  // regex here used to swallow the tail of the preceding timestamp and produce
+  // garbage like ":05 EDT 20h ago".
+  const toks = before.split(/\s+/);
+  let passed = null;
+  if (toks[toks.length - 1] === 'ago') {
+    const dur = [];
+    for (let i = toks.length - 2; i >= 0 && /^\d/.test(toks[i]) && !toks[i].includes(':'); i--) {
+      dur.unshift(toks[i]);
+    }
+    if (dur.length) passed = dur.join(' ') + ' ago';
+  } else if (toks[toks.length - 1] === '-') {
+    passed = '-';   // never fired
+  }
+
   const next = (before.match(/^(\w{3} \d{4}-\d{2}-\d{2} [\d:]+ \w+)/) || [])[1] || null;
   return { unit, next, passed, raw };
 }

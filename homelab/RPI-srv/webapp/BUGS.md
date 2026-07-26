@@ -21,6 +21,14 @@ Severity-ordered. Line numbers refer to the working tree as of the audit.
 | B13 | **Fixed** — activity sorts on `Date.parse`, not string compare |
 | B14 | **Fixed** — filled buttons use `--accent-emphasis` on agents/samba pages |
 
+Three more surfaced (and were fixed) while verifying the above:
+
+| # | Resolution |
+|---|---|
+| B15 | **Fixed** — inside the webapp container `rpi.lan` resolves to `::1`, so the B1 probes for Pi-hole/Cockpit dialed the container's own loopback and reported them down. Probe entries now carry a `target` (LAN IP) separate from the origin `key` the frontend matches on |
+| B16 | **Fixed** — `/api/timers` "passed" parser swallowed the tail of the preceding timestamp (`:05 EDT 20h ago`); now walks duration tokens back from `ago` |
+| B17 | **Fixed** — android (a phone, documented intermittent) going to sleep marked the whole network report **critical**, turning the fleet pill red. Its reachability findings are now `warn`; real hosts stay `critical` |
+
 ---
 
 ## B1 · HIGH — Link-health dots are dead on the real site (mixed content)
