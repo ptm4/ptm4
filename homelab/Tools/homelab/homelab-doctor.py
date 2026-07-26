@@ -154,47 +154,62 @@ def report_freshness():
 def host_pool_disk(host):
     """Storage-pool usage on `host`. None where the host has no pool.
 
-    When POOL_PATH is a ZFS dataset the pool is measured with `zpool list`, not
-    `df`. Since the 2026-07-25 restructure opti's /srv/pool is one dataset
-    (red/fs) inside the `red` pool, and df on a single dataset answers the wrong
-    question twice: sibling datasets are mounted elsewhere so their usage is
-    invisible (red/media alone holds ~500 GB), and ZFS reports a dataset's "size"
-    as its own usage plus the pool's free space rather than the array's capacity.
-    Together those read as "3% of 3069 GB" while the array was really ~16% of
-    3.6 TB. df stays the path for a plain (mergerfs/ext4) pool.
+    Asks ZFS for the pool rather than running `df` on a path. Two reasons, both
+    learned the hard way during the 2026-07-25 restructure:
+
+      * `df` on a single dataset answers the wrong question — sibling datasets are
+        mounted elsewhere so their usage is invisible (red/media alone holds
+        ~500 GB), and ZFS reports a dataset's "size" as its own usage plus the
+        pool's free space, not the array's capacity. That read as "3% of 3069 GB"
+        against an array really ~16% full.
+      * The mount path is not stable. /srv/pool was the mergerfs pool, then a ZFS
+        dataset, and is now a bind mount onto the root ext4 disk while the pool
+        lives at /srv/red — at which point a path-based check silently reported
+        the 456 GB boot disk as "the pool".
+
+    The pool is the pool wherever its datasets happen to be mounted, so measure it
+    by name. `df POOL_PATH` remains the fallback for a host with a plain
+    (mergerfs/ext4) pool and no ZFS.
     """
-    out, rc = run_on(host, ["df", "--output=source,fstype,size,used,avail,pcent",
-                            POOL_PATH], timeout=15)
+    zout, zrc = run_on(host, ["zpool", "list", "-Hp", "-o", "name,size,alloc"],
+                       timeout=15)
+    if zrc == 0 and zout.strip():
+        # One pool per host here; sum across pools if that ever stops being true.
+        names, size_b, alloc_b = [], 0, 0
+        for line in zout.strip().splitlines():
+            fields = line.split()
+            if len(fields) < 3:
+                continue
+            try:
+                size_b += int(fields[1])
+                alloc_b += int(fields[2])
+            except ValueError:
+                continue
+            names.append(fields[0])
+        if names and size_b > 0:
+            return {"used_pct": round(alloc_b / size_b * 100, 1),
+                    "size_gb": round(size_b / 1024 ** 3, 1),
+                    "avail_gb": round((size_b - alloc_b) / 1024 ** 3, 1),
+                    "pool_name": ",".join(names)}
+
+    # No ZFS on this host — fall back to the historical mergerfs mount point.
+    out, rc = run_on(host, ["df", "-P", POOL_PATH], timeout=15)
     if rc != 0:
         return None
     lines = out.splitlines()
     if len(lines) < 2:
         return None
     parts = lines[1].split()
-    if len(parts) < 6:
+    if len(parts) < 5:
         return None
-    source, fstype = parts[0], parts[1]
-
-    if fstype == "zfs":
-        # Dataset "red/fs" lives in pool "red"; ask that pool for the real numbers.
-        pool_name = source.split("/", 1)[0]
-        zout, zrc = run_on(host, ["zpool", "list", "-Hp", "-o", "size,alloc",
-                                  pool_name], timeout=15)
-        if zrc == 0 and zout.strip():
-            try:
-                size_b, alloc_b = (int(x) for x in zout.split()[:2])
-                if size_b > 0:
-                    return {"used_pct": round(alloc_b / size_b * 100, 1),
-                            "size_gb": round(size_b / 1024 ** 3, 1),
-                            "avail_gb": round((size_b - alloc_b) / 1024 ** 3, 1),
-                            "pool_name": pool_name}
-            except (ValueError, IndexError):
-                pass   # fall through to the df figures rather than losing the metric
-
+    # A bind mount onto the root disk is NOT a pool; reporting the boot device as
+    # pool capacity is exactly the bug this guard exists to prevent.
+    if parts[0].startswith("/dev/") and parts[5:6] == ["/"]:
+        return None
     try:
-        return {"used_pct": float(parts[5].rstrip("%")),
-                "size_gb": round(int(parts[2]) / 1024 / 1024, 1),
-                "avail_gb": round(int(parts[4]) / 1024 / 1024, 1)}
+        return {"used_pct": float(parts[4].rstrip("%")),
+                "size_gb": round(int(parts[1]) / 1024 / 1024, 1),
+                "avail_gb": round(int(parts[3]) / 1024 / 1024, 1)}
     except ValueError:
         return None
 

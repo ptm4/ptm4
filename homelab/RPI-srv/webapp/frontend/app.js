@@ -329,6 +329,12 @@ function durSince(iso) {
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
 }
 
+// Multi-terabyte pools read as noise in GB ("3712 GB"), so switch units past 1 TiB.
+function fmtCapacity(gb) {
+  if (gb == null) return '—';
+  return gb >= 1024 ? `${(gb / 1024).toFixed(1)} TB` : `${Math.round(gb)} GB`;
+}
+
 function fmtRate(bps) {
   if (bps == null) return '—';
   const b = bps * 8;   // bytes/s in, bits/s out — network speeds are quoted in bits
@@ -803,10 +809,13 @@ async function loadStorageAndVpn() {
       const poolHtml = pool ? `
         <div style="display:flex;align-items:baseline;gap:8px">
           <div class="tile-metric">${Math.round(pool.used_pct)}%</div>
-          <div class="tile-sub" style="margin:0">${pool.size_gb ? 'of ' + Math.round(pool.size_gb) + ' GB pool' : 'pool'}</div>
+          <div class="tile-sub" style="margin:0">${pool.size_gb
+            ? `of ${fmtCapacity(pool.size_gb)}${pool.pool_name ? ` · ${pool.pool_name}` : ' pool'}`
+            : 'pool'}</div>
         </div>
-        ${meter(Math.round(pool.used_pct))}`
-        : `<div class="tile-sub">Pool data unavailable.</div>`;
+        ${meter(Math.round(pool.used_pct))}
+        ${pool.avail_gb ? `<div class="tile-sub">${fmtCapacity(pool.avail_gb)} free</div>` : ''}`
+        : `<div class="tile-sub">No storage pool detected on opti.</div>`;
 
       const trendHtml = (trends?.pool?.length > 2) ? `
         <div class="spark-cell" style="margin-top:8px">
