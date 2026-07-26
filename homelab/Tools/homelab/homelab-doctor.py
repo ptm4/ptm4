@@ -152,20 +152,49 @@ def report_freshness():
 
 
 def host_pool_disk(host):
-    """Mergerfs pool usage on `host`. None where the host has no pool."""
-    out, rc = run_on(host, ["df", "-P", POOL_PATH], timeout=15)
+    """Storage-pool usage on `host`. None where the host has no pool.
+
+    When POOL_PATH is a ZFS dataset the pool is measured with `zpool list`, not
+    `df`. Since the 2026-07-25 restructure opti's /srv/pool is one dataset
+    (red/fs) inside the `red` pool, and df on a single dataset answers the wrong
+    question twice: sibling datasets are mounted elsewhere so their usage is
+    invisible (red/media alone holds ~500 GB), and ZFS reports a dataset's "size"
+    as its own usage plus the pool's free space rather than the array's capacity.
+    Together those read as "3% of 3069 GB" while the array was really ~16% of
+    3.6 TB. df stays the path for a plain (mergerfs/ext4) pool.
+    """
+    out, rc = run_on(host, ["df", "--output=source,fstype,size,used,avail,pcent",
+                            POOL_PATH], timeout=15)
     if rc != 0:
         return None
     lines = out.splitlines()
     if len(lines) < 2:
         return None
     parts = lines[1].split()
-    if len(parts) < 5:
+    if len(parts) < 6:
         return None
+    source, fstype = parts[0], parts[1]
+
+    if fstype == "zfs":
+        # Dataset "red/fs" lives in pool "red"; ask that pool for the real numbers.
+        pool_name = source.split("/", 1)[0]
+        zout, zrc = run_on(host, ["zpool", "list", "-Hp", "-o", "size,alloc",
+                                  pool_name], timeout=15)
+        if zrc == 0 and zout.strip():
+            try:
+                size_b, alloc_b = (int(x) for x in zout.split()[:2])
+                if size_b > 0:
+                    return {"used_pct": round(alloc_b / size_b * 100, 1),
+                            "size_gb": round(size_b / 1024 ** 3, 1),
+                            "avail_gb": round((size_b - alloc_b) / 1024 ** 3, 1),
+                            "pool_name": pool_name}
+            except (ValueError, IndexError):
+                pass   # fall through to the df figures rather than losing the metric
+
     try:
-        return {"used_pct": float(parts[4].rstrip("%")),
-                "size_gb": round(int(parts[1]) / 1024 / 1024, 1),
-                "avail_gb": round(int(parts[3]) / 1024 / 1024, 1)}
+        return {"used_pct": float(parts[5].rstrip("%")),
+                "size_gb": round(int(parts[2]) / 1024 / 1024, 1),
+                "avail_gb": round(int(parts[4]) / 1024 / 1024, 1)}
     except ValueError:
         return None
 

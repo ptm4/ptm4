@@ -200,6 +200,7 @@ const routes = {
   bots:     renderBots,
   leetify:  renderLeetify,
   llm:      renderLlm,
+  links:    renderLinks,
 };
 
 // The five bots were five sidebar entries and five near-identical page shells. They are
@@ -219,16 +220,51 @@ const BOTS = [
 BOTS.forEach(b => { routes[b.id] = (view) => renderBots(view, b.id); });
 
 // Quick-link shortcuts shown on the Home page. Edit here (could graduate to /api/links later).
-const QUICK_LINKS = [
-  { label: 'Cockpit',          url: 'https://rpi:9090/',                              icon: '🖥️' },
-  { label: 'Pi-hole',          url: 'http://rpi/admin/login',                          icon: '🛡️' },
-  { label: 'Vaultwarden',      url: 'https://bitwarden.rpi.lan/#/vault',               icon: '🔑' },
-  { label: 'Vaultwarden admin', url: 'https://bitwarden.rpi.lan/admin/users/overview', icon: '⚙️' },
-  { label: 'OMV (opti)',       url: 'http://opti.lan/#/login',                         icon: '🗄️' },
-  { label: 'Portainer',        url: 'http://192.168.1.6:9000/',                        icon: '🐳' },
-  { label: 'Samba',            url: '/samba/',                                         icon: '📁' },
-  { label: 'Notes',            url: '/notes/',                                         icon: '📝' },
+// Every LAN service worth a bookmark, grouped. URLs use the Pi-hole local DNS names
+// (`pihole-FTL --config dns.hosts`) rather than raw IPs, so a host that changes address
+// doesn't break this list — the one exception is the router, which has no DNS record.
+// `fav: true` also surfaces the entry in the compact Home tile.
+const LINK_GROUPS = [
+  { group: 'Infrastructure', links: [
+    { label: 'Router (Archer BE3600)', url: 'http://192.168.1.1/webpages/index.html', icon: '📶' },
+    { label: 'Pi-hole',            url: 'http://rpi.lan/admin',                        icon: '🛡️', fav: true },
+    { label: 'Cockpit (rpi)',      url: 'https://rpi.lan:9090/',                       icon: '🖥️', fav: true },
+    { label: 'OpenMediaVault',     url: 'http://opti.lan/',                            icon: '🗄️', fav: true },
+    { label: 'Portainer',          url: 'http://noblenumbat.lan:9000/',                icon: '🐳', fav: true },
+    { label: 'Vaultwarden',        url: 'https://bitwarden.rpi.lan/#/vault',           icon: '🔑', fav: true },
+    { label: 'Vaultwarden admin',  url: 'https://bitwarden.rpi.lan/admin/users/overview', icon: '⚙️' },
+  ]},
+  { group: 'Media', links: [
+    { label: 'Jellyfin',           url: 'http://jellyfin.lan:8096/',                   icon: '🎬', fav: true },
+    { label: 'Kavita (comics)',    url: 'http://comics.lan:5000/',                     icon: '📚', fav: true },
+  ]},
+  { group: 'Library management', links: [
+    { label: 'Sonarr (TV)',        url: 'http://noblenumbat.lan:8989/',                icon: '📺' },
+    { label: 'Radarr (movies)',    url: 'http://noblenumbat.lan:7878/',                icon: '🎞️' },
+    { label: 'Lidarr (music)',     url: 'http://noblenumbat.lan:8686/',                icon: '🎵' },
+    { label: 'Bazarr (subtitles)', url: 'http://noblenumbat.lan:6767/',                icon: '💬' },
+    { label: 'Mylar3 (comics)',    url: 'http://noblenumbat.lan:8090/',                icon: '🦸' },
+    { label: 'Prowlarr (indexers)', url: 'http://noblenumbat.lan:9696/',               icon: '🔍' },
+  ]},
+  { group: 'Downloads', links: [
+    { label: 'qBittorrent',        url: 'http://noblenumbat.lan:8081/',                icon: '⬇️', fav: true },
+    // FlareSolverr (8191) and the gluetun admin API (8003) are APIs with no UI, so
+    // they are deliberately not listed — a link that renders JSON isn't a bookmark.
+  ]},
+  { group: 'This dashboard', links: [
+    { label: 'Architecture map',   url: '/architecture/',                              icon: '◈' },
+    { label: 'Agents',             url: '/agents/',                                    icon: '🛰️' },
+    { label: 'Samba (opti)',       url: '/samba/',                                     icon: '📁' },
+    { label: 'Notes',              url: '/notes/',                                     icon: '📝' },
+    { label: 'Agentic workspace',  url: '/agentic/',                                   icon: '⚙' },
+  ]},
 ];
+
+const ALL_LINKS = LINK_GROUPS.flatMap(g => g.links.map(l => ({ ...l, group: g.group })));
+const QUICK_LINKS = ALL_LINKS.filter(l => l.fav);
+
+// Internal dashboard pages must not open in a new tab; everything else should.
+const isExternal = (url) => !url.startsWith('/');
 
 function route() {
   const hash = location.hash.replace('#', '') || 'home';
@@ -240,9 +276,9 @@ function route() {
   });
 
   const renderer = routes[hash] ?? renderHome;
-  // Home is the only full-width "mission control" page; text-heavy pages keep the
-  // 1100px reading width (see .view/.view-wide in style.css).
-  view.classList.toggle('view-wide', renderer === renderHome);
+  // Dense board layouts get the full screen; text-heavy pages keep the 1100px
+  // reading width (see .view/.view-wide in style.css).
+  view.classList.toggle('view-wide', renderer === renderHome || renderer === renderLinks);
   renderer(view);
 }
 
@@ -415,9 +451,11 @@ function renderHome(view) {
             </a>
           </div>
           <div class="tile" style="flex:1">
-            <div class="tile-head">Quick links</div>
+            <div class="tile-head">Quick links<span class="spacer"></span>
+              <a href="#links" class="tile-head-link">all ${ALL_LINKS.length} →</a></div>
             <div class="qlinks qlinks-col">
-              ${QUICK_LINKS.map(l => `<a class="qlink" href="${l.url}" target="_blank" rel="noopener">
+              ${QUICK_LINKS.map(l => `<a class="qlink" href="${l.url}"
+                ${isExternal(l.url) ? 'target="_blank" rel="noopener"' : ''}>
                 <span>${l.icon}</span>${l.label}</a>`).join('')}
             </div>
           </div>
@@ -438,6 +476,99 @@ function renderHome(view) {
   loadActivity();
   loadHomeCounters();
   loadLeetify();
+}
+
+// ── Quick links page ──────────────────────────────────────────────────────────
+// A browser-bookmarks replacement: every LAN service, grouped, addressed by its
+// Pi-hole DNS name. Type-to-filter is focused on load so it behaves like the
+// bookmark bar it replaces — start typing, hit Enter, you're there.
+function renderLinks(view) {
+  view.innerHTML = `
+    <div class="page-links">
+      <header class="page-header">
+        <h1 class="home-title"><img src="favicon.svg" alt="" class="home-title-icon" />Quick links</h1>
+        <span class="badge-host">${ALL_LINKS.length} services</span>
+        <span class="spacer"></span>
+        <input id="link-filter" class="link-filter" type="search" placeholder="Filter…  (Enter opens the first match)"
+               autocomplete="off" spellcheck="false" aria-label="Filter links" />
+      </header>
+      <div class="link-groups" id="link-groups">
+        ${LINK_GROUPS.map(g => `
+          <section class="link-group" data-group="${g.group}">
+            <div class="tile-head">${g.group}</div>
+            <div class="link-grid">
+              ${g.links.map(l => `
+                <a class="link-card" href="${l.url}" data-label="${l.label.toLowerCase()}"
+                   ${isExternal(l.url) ? 'target="_blank" rel="noopener"' : ''}>
+                  <span class="link-icon">${l.icon}</span>
+                  <span class="link-text">
+                    <span class="link-label">${l.label}</span>
+                    <span class="link-url">${l.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}</span>
+                  </span>
+                  <span class="link-dot" data-s="idle" title="checking…"></span>
+                </a>`).join('')}
+            </div>
+          </section>`).join('')}
+      </div>
+      <div class="tile-sub" id="link-empty" style="display:none;padding:var(--s5);text-align:center">No match.</div>
+    </div>`;
+
+  const input = document.getElementById('link-filter');
+  const filter = () => {
+    const q = input.value.trim().toLowerCase();
+    let shown = 0;
+    document.querySelectorAll('.link-group').forEach(sec => {
+      let any = 0;
+      sec.querySelectorAll('.link-card').forEach(card => {
+        const hit = !q || card.dataset.label.includes(q) || card.href.toLowerCase().includes(q);
+        card.style.display = hit ? '' : 'none';
+        if (hit) { any++; shown++; }
+      });
+      sec.style.display = any ? '' : 'none';
+    });
+    document.getElementById('link-empty').style.display = shown ? 'none' : '';
+  };
+  input.addEventListener('input', filter);
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const first = [...document.querySelectorAll('.link-card')].find(c => c.style.display !== 'none');
+    if (first) first.click();
+  });
+  input.focus();
+
+  checkLinkHealth();
+}
+
+// Colour each card by whether the service actually answers. Internal pages are
+// same-origin so they can be probed honestly; cross-origin LAN services cannot
+// (no CORS headers), so those are probed no-cors — which only ever tells us
+// "something responded", never a status code. A dot that can't be trusted is
+// worse than no dot, so a failed cross-origin probe is left neutral, not red.
+async function checkLinkHealth() {
+  for (const card of document.querySelectorAll('.link-card')) {
+    const dot = card.querySelector('.link-dot');
+    const url = card.getAttribute('href');
+    const internal = !isExternal(url);
+    try {
+      if (internal) {
+        const r = await fetch(url, { method: 'HEAD' });
+        dot.dataset.s = r.ok ? 'ok' : 'crit';
+        dot.title = r.ok ? 'reachable' : `HTTP ${r.status}`;
+      } else {
+        await fetch(url, { mode: 'no-cors', signal: AbortSignal.timeout(3500) });
+        dot.dataset.s = 'ok';
+        dot.title = 'responding';
+      }
+    } catch (_) {
+      dot.dataset.s = internal ? 'crit' : 'idle';
+      // Vaultwarden and Cockpit are https with self-signed certs, which the browser
+      // refuses before the request leaves — indistinguishable from "down" to JS, so
+      // name the likely cause instead of implying the service is broken.
+      dot.title = internal ? 'unreachable'
+        : url.startsWith('https://') ? 'no answer — likely the self-signed cert, not an outage'
+        : 'no answer (may still be up — cross-origin)';
+    }
+  }
 }
 
 // ── ribbon: fleet rollup + freshness + run-now buttons ─────────────────────────
@@ -3032,6 +3163,16 @@ const CMDK_ITEMS = [
   { group: 'Go to', icon: '🛰️', label: 'Agents',             action: () => (location.href = '/agents/') },
   { group: 'Go to', icon: '🗄', label: 'Samba',              action: () => (location.href = '/samba/') },
   { group: 'Go to', icon: '📝', label: 'Notes',              action: () => (location.href = '/notes/') },
+  { group: 'Go to', icon: '🔗', label: 'Quick Links',        action: () => (location.hash = '#links') },
+  // Every bookmarked service is reachable from the palette — this is the bit that
+  // actually replaces the browser bookmark bar (⌘K, "radarr", Enter).
+  ...ALL_LINKS.map(l => ({
+    group: 'Open', icon: l.icon, label: l.label, hint: l.group,
+    action: () => {
+      if (isExternal(l.url)) window.open(l.url, '_blank', 'noopener');
+      else location.href = l.url;
+    },
+  })),
   { group: 'Go to', icon: '⚙',  label: 'Agentic Workspace',  action: () => (location.href = '/agentic/') },
   ...BOTS.map(b => ({ group: 'Bots', icon: b.icon, label: `${b.label} bot`,
                       action: () => { location.hash = `#${b.id}`; } })),
