@@ -406,7 +406,7 @@ NODES = [
     N("opti-runner", "Actions runner (x86)", "opti", "infra", "control",
       sublabel="self-hosted · runs the agent workflow", kind="service"),
     N("opti-timers", "systemd timers", "opti", "infra", "control",
-      sublabel="docs 05:16 · health-digest 06:30 · autoreboot", kind="timer"),
+      sublabel="docs 05:16 · health-digest 06:30 · autoreboot · coldcopy Sun 04:00 · zfs-scrub monthly", kind="timer"),
     N("opti-remote", "Remote access", "opti", "infra", "control",
       sublabel="sshd :22 · xrdp :3389", kind="service"),
 
@@ -816,6 +816,8 @@ AUTOMATION = [
     {"host": "opti", "unit": "homelab-docs.timer", "when": "daily ~05:16", "what": "Regenerates homelab docs"},
     {"host": "opti", "unit": "opti-health-digest.timer", "when": "daily 06:30", "what": "Feeds the Discord health bot"},
     {"host": "opti", "unit": "hl-agent-dispatcher.service", "when": "always on", "what": "Agent control API on :9099"},
+    {"host": "opti", "unit": "homelab-coldcopy.timer", "when": "Sun 04:00", "what": "Refreshes the cold copy (ZFS red → old mergerfs pair)"},
+    {"host": "opti", "unit": "zfs-scrub-monthly@red.timer", "when": "monthly", "what": "ZFS scrub of the red pool"},
     {"host": "noblenumbat", "unit": "vpn-stack-heal.timer", "when": "every 2 min", "what": "Repairs Gluetun's forwarded port"},
     {"host": "noblenumbat", "unit": "media-import.timer", "when": "every 2 min", "what": "Sweeps the import inbox"},
     {"host": "noblenumbat", "unit": "bb-kavita-sync.timer", "when": "hourly", "what": "Kavita library sync"},

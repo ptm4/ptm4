@@ -17,6 +17,181 @@ async function checkHealth() {
   }
 }
 
+// ── Actions: toasts + confirmation ────────────────────────────────────────────
+// Every state-changing button on the dashboard goes through these two. The rule they
+// encode: an action never happens silently and never reports success it didn't verify.
+
+let toastSeq = 0;
+function toast(msg, tone = 'ok', { sticky = false } = {}) {
+  let stack = document.getElementById('toastStack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toastStack';
+    stack.className = 'toast-stack';
+    stack.setAttribute('aria-live', 'polite');
+    document.body.appendChild(stack);
+  }
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.dataset.s = tone;
+  el.id = `toast-${++toastSeq}`;
+  el.innerHTML = `<span class="toast-msg">${msg}</span><button class="toast-x" aria-label="Dismiss">✕</button>`;
+  const close = () => el.remove();
+  el.querySelector('.toast-x').addEventListener('click', close);
+  stack.appendChild(el);
+  // Errors persist until dismissed — a failure that vanishes on its own is a failure
+  // nobody reads.
+  if (!sticky && tone === 'ok') setTimeout(close, 5000);
+  return el;
+}
+
+// Containers whose restart has blast radius beyond themselves. Restarting these needs
+// the name typed out, and says what will actually break.
+const CRITICAL_CONTAINERS = {
+  pihole: 'Brief LAN-wide DNS blips — Pi-hole is this network\'s only DNS *and* DHCP server.',
+  webapp: 'This dashboard will stop responding for ~15s. The restart still completes.',
+  'nginx-webapp': 'This dashboard goes offline for ~15s while TLS restarts.',
+  bitwarden: 'Vaultwarden is unavailable during the restart — password access included.',
+  'bitwarden-db': 'Vaultwarden\'s database. A restart risks Vaultwarden erroring until it reconnects.',
+  'nginx-bitwarden': 'Vaultwarden\'s TLS front end goes down briefly.',
+  gluetun: 'Tears down the VPN tunnel; every *arr and qBittorrent loses network until it re-establishes, and the forwarded port may change.',
+  'notes-api': 'The Notes app at /notes/ is unavailable during the restart.',
+};
+
+// Promise<boolean>. Reuses the existing .modal styling; adds a danger variant and an
+// optional type-the-name gate for the critical set above.
+function confirmAction({ title, body, tone = 'warn', confirmLabel = 'Confirm', requireTyped = null }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay open confirm-overlay';
+    overlay.innerHTML = `
+      <div class="modal confirm-modal" data-s="${tone}" role="dialog" aria-modal="true" aria-label="${title}">
+        <div class="modal-header">
+          <span class="modal-title">${title}</span>
+          <button class="modal-close" aria-label="Cancel">✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="confirm-body">${body}</div>
+          ${requireTyped ? `
+            <label class="confirm-type">Type <code>${requireTyped}</code> to confirm
+              <input type="text" autocomplete="off" spellcheck="false" />
+            </label>` : ''}
+        </div>
+        <div class="confirm-actions">
+          <button class="btn-mini" data-act="cancel">Cancel</button>
+          <button class="btn-mini btn-danger" data-act="ok" ${requireTyped ? 'disabled' : ''}>${confirmLabel}</button>
+        </div>
+      </div>`;
+
+    const done = (val) => {
+      document.removeEventListener('keydown', onKey);
+      overlay.remove();
+      resolve(val);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') done(false);
+      if (e.key === 'Enter' && !overlay.querySelector('[data-act="ok"]').disabled) done(true);
+    };
+
+    overlay.querySelector('.modal-close').addEventListener('click', () => done(false));
+    overlay.querySelector('[data-act="cancel"]').addEventListener('click', () => done(false));
+    overlay.querySelector('[data-act="ok"]').addEventListener('click', () => done(true));
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) done(false); });
+    document.addEventListener('keydown', onKey);
+
+    const input = overlay.querySelector('.confirm-type input');
+    if (input) {
+      input.addEventListener('input', () => {
+        overlay.querySelector('[data-act="ok"]').disabled = input.value.trim() !== requireTyped;
+      });
+    }
+
+    document.body.appendChild(overlay);
+    (input || overlay.querySelector('[data-act="ok"]')).focus();
+  });
+}
+
+// Restart one container through its host's architecture agent.
+async function restartContainer(host, name, btn) {
+  const danger = CRITICAL_CONTAINERS[name];
+  const ok = await confirmAction({
+    title: `Restart ${name}?`,
+    tone: danger ? 'crit' : 'warn',
+    confirmLabel: 'Restart',
+    requireTyped: danger ? name : null,
+    body: `<p>Restarts <code>${name}</code> on <b>${host}</b>.</p>` +
+          (danger ? `<p class="confirm-danger">⚠ ${danger}</p>` : '<p>Downtime is a few seconds.</p>'),
+  });
+  if (!ok) return;
+
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const pending = toast(`Restarting <b>${name}</b> on ${host}… (~15s)`, 'warn', { sticky: true });
+
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/restart-container`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container: name }),
+    });
+    const d = await res.json().catch(() => ({}));
+    pending.remove();
+    if (res.ok && d.ok) {
+      toast(`<b>${name}</b> restarted on ${host}${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(1)}s` : ''}.`, 'ok');
+      loadContainers();
+    } else {
+      toast(restartError(res.status, d, host, name), 'crit', { sticky: true });
+    }
+  } catch (e) {
+    pending.remove();
+    // The dashboard restarting itself kills its own in-flight response; that is not a
+    // failure of the restart, so say so rather than claiming an error.
+    toast(name === 'webapp' || name === 'nginx-webapp'
+      ? `Connection dropped — expected when restarting <b>${name}</b>. It is almost certainly back; reload the page.`
+      : `Restart of <b>${name}</b> failed: ${e.message}`, 'warn', { sticky: true });
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
+// Map a failed restart onto the thing the operator actually has to go fix.
+function restartError(status, d, host, name) {
+  const detail = d.error || `HTTP ${status}`;
+  if (status === 403) return `Restart refused: the agent on ${host} has no token set. Add HL_ARCH_AGENT_TOKEN to /etc/hl-arch-agent.env and restart hl-arch-agent.`;
+  if (status === 401) return `Restart unauthorized: the webapp's HL_ARCH_INGEST_TOKEN doesn't match ${host}'s HL_ARCH_AGENT_TOKEN.`;
+  if (status === 404 && /no container/i.test(detail)) return `${host} has no container named <b>${name}</b> — Force Sync the agent and retry.`;
+  if (status === 404) return `The agent on ${host} is too old for restarts (needs v0.2.0).`;
+  return `Restart of <b>${name}</b> failed: ${detail}`;
+}
+
+// Pause / resume Pi-hole ad blocking. Pausing always carries a timer server-side, so
+// blocking comes back on its own even if this tab is closed.
+async function toggleBlocking(enable, seconds = 300) {
+  if (!enable) {
+    const ok = await confirmAction({
+      title: 'Pause ad blocking?',
+      tone: 'warn',
+      confirmLabel: `Pause ${seconds / 60} min`,
+      body: `<p>Disables Pi-hole's blocklists for <b>${seconds / 60} minutes</b>, then resumes automatically.</p>
+             <p class="tile-sub">DNS resolution and DHCP are unaffected — only filtering pauses.</p>`,
+    });
+    if (!ok) return;
+  }
+  try {
+    const res = await fetch('/api/pihole/blocking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: enable, seconds }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) { toast(`Pi-hole: ${d.error || 'HTTP ' + res.status}`, 'crit', { sticky: true }); return; }
+    toast(enable ? 'Ad blocking resumed.' : `Ad blocking paused — resumes in ${Math.round((d.timer || seconds) / 60)} min.`, 'ok');
+    loadPihole();
+  } catch (e) {
+    toast(`Pi-hole request failed: ${e.message}`, 'crit', { sticky: true });
+  }
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 const routes = {
   home:     renderHome,
@@ -50,6 +225,9 @@ const QUICK_LINKS = [
   { label: 'Vaultwarden',      url: 'https://bitwarden.rpi.lan/#/vault',               icon: '🔑' },
   { label: 'Vaultwarden admin', url: 'https://bitwarden.rpi.lan/admin/users/overview', icon: '⚙️' },
   { label: 'OMV (opti)',       url: 'http://opti.lan/#/login',                         icon: '🗄️' },
+  { label: 'Portainer',        url: 'http://192.168.1.6:9000/',                        icon: '🐳' },
+  { label: 'Samba',            url: '/samba/',                                         icon: '📁' },
+  { label: 'Notes',            url: '/notes/',                                         icon: '📝' },
 ];
 
 function route() {
@@ -62,6 +240,9 @@ function route() {
   });
 
   const renderer = routes[hash] ?? renderHome;
+  // Home is the only full-width "mission control" page; text-heavy pages keep the
+  // 1100px reading width (see .view/.view-wide in style.css).
+  view.classList.toggle('view-wide', renderer === renderHome);
   renderer(view);
 }
 
@@ -101,76 +282,207 @@ function skeletonTile(span = 'sp4') {
     <div class="sk sk-line w80"></div><div class="sk sk-line w60"></div></div>`;
 }
 
+// Duration since an ISO timestamp, phrased as an age ("12h", "7d") rather than an
+// event ("12h ago") — used for container uptime, where "up 12h ago" reads wrong.
+function durSince(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const m = Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+  if (m < 60) return `${m}m`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
+}
+
+function fmtRate(bps) {
+  if (bps == null) return '—';
+  const b = bps * 8;   // bytes/s in, bits/s out — network speeds are quoted in bits
+  if (b >= 1e9) return (b / 1e9).toFixed(1) + ' Gb/s';
+  if (b >= 1e6) return (b / 1e6).toFixed(1) + ' Mb/s';
+  if (b >= 1e3) return Math.round(b / 1e3) + ' kb/s';
+  return Math.round(b) + ' b/s';
+}
+
+// Hand-rolled SVG sparkline — no chart library, no build step (see CLAUDE.md: this app
+// is deliberately dependency-free). One series per chart, so there is no legend: the
+// label and latest value sit beside it in ink, never in the series colour.
+// nulls BREAK the line rather than interpolating — a gap is a real fact (agent down),
+// and drawing through it would invent data.
+function sparkline(values, o = {}) {
+  const w = o.w ?? 120, h = o.h ?? 30, pad = 2;
+  const nums = values.filter(v => v != null && Number.isFinite(v));
+  if (nums.length < 2) return `<svg class="spark" viewBox="0 0 ${w} ${h}" aria-hidden="true"></svg>`;
+
+  const lo = o.min ?? Math.min(...nums);
+  const hiRaw = o.max ?? Math.max(...nums);
+  const hi = hiRaw === lo ? lo + 1 : hiRaw;   // flat series still draws a centred line
+  const x = (i) => pad + i * (w - 2 * pad) / Math.max(1, values.length - 1);
+  const y = (v) => pad + (h - 2 * pad) * (1 - (Math.min(Math.max(v, lo), hi) - lo) / (hi - lo));
+
+  let d = '', drawing = false, lastPt = null;
+  values.forEach((v, i) => {
+    if (v == null || !Number.isFinite(v)) { drawing = false; return; }
+    d += `${drawing ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)} `;
+    drawing = true;
+    lastPt = [x(i), y(v)];
+  });
+
+  const stroke = o.tone ? `var(--${o.tone})` : 'var(--brand)';
+  const area = o.area === false ? '' :
+    `<path d="${d}L${lastPt[0].toFixed(1)} ${h - pad} L${pad} ${h - pad} Z" fill="${stroke}" opacity=".08" stroke="none"/>`;
+  const avg = nums.reduce((a, b) => a + b, 0) / nums.length;
+  const title = `min ${Math.round(Math.min(...nums) * 10) / 10} · avg ${Math.round(avg * 10) / 10} · now ${Math.round(nums[nums.length - 1] * 10) / 10}`;
+
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><title>${title}</title>
+    ${area}<path d="${d}" fill="none" stroke="${stroke}" stroke-width="1.5"
+      vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${lastPt[0].toFixed(1)}" cy="${lastPt[1].toFixed(1)}" r="1.8" fill="${stroke}"/></svg>`;
+}
+
 function renderHome(view) {
   view.innerHTML = `
     <div class="page-home">
       <header class="page-header">
         <h1 class="home-title"><img src="favicon.svg" alt="" class="home-title-icon" />Pert's Pocket</h1>
         <span class="badge-host" id="home-generated">loading…</span>
+        <span class="spacer"></span>
+        <span class="ribbon" id="home-ribbon"></span>
+        <button class="btn-mini" id="rb-doctor" title="Run the Homelab Doctor collector now">▶ Doctor</button>
+        <button class="btn-mini" id="rb-sync" title="Force all three architecture agents to collect fresh data">⟳ Agents</button>
       </header>
 
       <div class="bento" id="home-bento">
-        <div class="tile sp12" style="padding:0;border:0;background:none;box-shadow:none">
-          <div class="tile-head" style="margin:0 0 var(--s1)">Hosts</div>
-        </div>
         <div id="home-hosts" style="display:contents">
           ${skeletonTile('sp4')}${skeletonTile('sp4')}${skeletonTile('sp4')}
         </div>
 
-        <div class="tile sp4" id="tile-pihole">
-          <div class="tile-head">Pi-hole<span class="spacer"></span><span id="pihole-pill"></span></div>
-          <div id="pihole-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
+        <div class="tile sp8" id="tile-containers">
+          <div class="tile-head">Containers<span class="spacer"></span><span id="ct-meta" class="tile-sub" style="margin:0"></span></div>
+          <div id="containers-body" class="scrollbody"><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div><div class="sk sk-line w80"></div></div>
         </div>
 
-        <div class="tile sp4" id="tile-pool">
-          <div class="tile-head">Storage pool<span class="spacer"></span><span class="pill">opti</span></div>
-          <div id="pool-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
+        <div class="tile-col sp4">
+          <div class="tile" id="tile-pihole">
+            <div class="tile-head">Pi-hole<span class="spacer"></span><span id="pihole-pill"></span></div>
+            <div id="pihole-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
+          </div>
+          <div class="tile" id="tile-vpn" style="flex:1">
+            <div class="tile-head">VPN<span class="spacer"></span><span class="pill">noblenumbat</span></div>
+            <div id="vpn-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
+          </div>
         </div>
 
-        <div class="tile sp4" id="tile-vpn">
-          <div class="tile-head">VPN<span class="spacer"></span><span class="pill">noblenumbat</span></div>
-          <div id="vpn-body"><div class="sk sk-line w60"></div><div class="sk sk-line w40"></div></div>
+        <div class="tile sp4" id="tile-storage">
+          <div class="tile-head">Storage &amp; disks<span class="spacer"></span><span class="pill">opti</span></div>
+          <div id="storage-body"><div class="sk sk-line w60"></div><div class="sk sk-line w80"></div></div>
         </div>
 
-        <a class="tile link sp3" href="#reports">
-          <div class="tile-head">Reports</div>
-          <div class="tile-metric" id="m-reports">—</div>
-          <div class="tile-sub" id="s-reports">runner status</div>
-        </a>
+        <div class="tile sp4" id="tile-network">
+          <div class="tile-head">Network</div>
+          <div id="network-body"><div class="sk sk-line w60"></div><div class="sk sk-line w80"></div></div>
+        </div>
 
-        <a class="tile link sp3" href="/agents/">
-          <div class="tile-head">Agent drift</div>
-          <div class="tile-metric" id="m-drift">—</div>
-          <div class="tile-sub" id="s-drift">undescribed vs missing</div>
-        </a>
+        <div class="tile sp4" id="tile-upkeep">
+          <div class="tile-head">Services &amp; upkeep</div>
+          <div id="upkeep-body"><div class="sk sk-line w60"></div><div class="sk sk-line w80"></div></div>
+        </div>
 
-        <a class="tile link sp3" href="#bots">
-          <div class="tile-head">Bots</div>
-          <div class="tile-metric" id="m-bots">—</div>
-          <div class="tile-sub" id="s-bots">discord fleet</div>
-        </a>
+        <div class="tile sp8" id="tile-activity">
+          <div class="tile-head">Activity<span class="spacer"></span><span class="tile-sub" style="margin:0">from latest reports</span></div>
+          <div id="activity-body" class="scrollbody"><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div></div>
+        </div>
 
-        <a class="tile link sp3" href="#leetify">
-          <div class="tile-head">CS2 / Leetify</div>
-          <div class="tile-metric" id="m-leetify">—</div>
-          <div class="tile-sub" id="leetify-body">loading…</div>
-        </a>
-
-        <div class="tile sp12">
-          <div class="tile-head">Quick links</div>
-          <div class="qlinks">
-            ${QUICK_LINKS.map(l => `<a class="qlink" href="${l.url}" target="_blank" rel="noopener">
-              <span>${l.icon}</span>${l.label}</a>`).join('')}
+        <div class="tile-col sp4">
+          <div class="mini-grid">
+            <a class="tile link" href="#reports">
+              <div class="tile-head">Reports</div>
+              <div class="tile-metric" id="m-reports">—</div>
+              <div class="tile-sub" id="s-reports">runner status</div>
+            </a>
+            <a class="tile link" href="/agents/">
+              <div class="tile-head">Agent drift</div>
+              <div class="tile-metric" id="m-drift">—</div>
+              <div class="tile-sub" id="s-drift">undescribed vs missing</div>
+            </a>
+            <a class="tile link" href="#bots">
+              <div class="tile-head">Bots</div>
+              <div class="tile-metric" id="m-bots">—</div>
+              <div class="tile-sub" id="s-bots">discord fleet</div>
+            </a>
+            <a class="tile link" href="#leetify">
+              <div class="tile-head">CS2 / Leetify</div>
+              <div class="tile-metric" id="m-leetify">—</div>
+              <div class="tile-sub" id="leetify-body">loading…</div>
+            </a>
+          </div>
+          <div class="tile" style="flex:1">
+            <div class="tile-head">Quick links</div>
+            <div class="qlinks qlinks-col">
+              ${QUICK_LINKS.map(l => `<a class="qlink" href="${l.url}" target="_blank" rel="noopener">
+                <span>${l.icon}</span>${l.label}</a>`).join('')}
+            </div>
           </div>
         </div>
       </div>
     </div>`;
 
+  document.getElementById('rb-doctor')?.addEventListener('click', (e) => ribbonRun(e.currentTarget));
+  document.getElementById('rb-sync')?.addEventListener('click', (e) => ribbonSync(e.currentTarget));
+
+  loadRibbon();
   loadHostVitals();
+  loadContainers();
   loadPihole();
-  loadPoolAndVpn();
+  loadStorageAndVpn();
+  loadNetwork();
+  loadUpkeep();
+  loadActivity();
   loadHomeCounters();
   loadLeetify();
+}
+
+// ── ribbon: fleet rollup + freshness + run-now buttons ─────────────────────────
+async function loadRibbon() {
+  const el = document.getElementById('home-ribbon');
+  if (!el) return;
+  try {
+    const [r, a] = await Promise.all([
+      fetch('/api/runners').then(x => x.ok ? x.json() : {}),
+      fetch('/api/agents').then(x => x.ok ? x.json() : {}),
+    ]);
+    const runners = r.runners || [];
+    const rank = { critical: 0, warn: 1, unknown: 2, ok: 3 };
+    const worst = runners.reduce((w, x) => (rank[x.status] ?? 2) < (rank[w] ?? 2) ? x.status : w, 'ok');
+    const tone = worst === 'ok' ? 'ok' : worst === 'warn' ? 'warn' : 'crit';
+    const short = { 'Homelab Doctor': 'doctor', 'Hardware Report': 'hw', 'Software Inventory': 'sw', 'Network': 'net', 'Cold Copy Backup': 'backup' };
+    const fresh = runners.map(x => `${short[x.label] || x.name} ${x.run_at ? relTime(x.run_at) : '—'}`).join(' · ');
+    const agents = (a.hosts || []);
+    const reach = agents.filter(h => h.reachable).length;
+    el.innerHTML = `<span class="pill" data-s="${tone}">${worst === 'ok' ? '✓ fleet ok' : '! ' + worst}</span>
+      <span class="ribbon-fresh" title="report ages">${fresh}</span>
+      <span class="ribbon-fresh">· ${reach}/${agents.length || 3} agents</span>`;
+  } catch (_) {
+    el.innerHTML = `<span class="tile-sub">status unavailable</span>`;
+  }
+}
+
+async function ribbonRun(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'running…';
+  try {
+    const res = await fetch('/api/runners/homelab-doctor/run', { method: 'POST' });
+    btn.textContent = res.ok ? 'started ✓' : 'failed ✕';
+  } catch (_) { btn.textContent = 'failed ✕'; }
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; loadRibbon(); }, 4000);
+}
+
+async function ribbonSync(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true; btn.textContent = 'syncing…';
+  try {
+    const res = await fetch('/api/agents/sync-all', { method: 'POST' });
+    btn.textContent = res.ok ? 'synced ✓' : 'failed ✕';
+  } catch (_) { btn.textContent = 'failed ✕'; }
+  setTimeout(() => { btn.textContent = orig; btn.disabled = false; loadContainers(); }, 2500);
 }
 
 // One fetch of hardware+doctor+software drives every host tile.
@@ -258,13 +570,63 @@ async function loadHostVitals() {
           ${temp != null ? `<div class="tile-sub" style="margin-top:2px">${m.uptime || ''}</div>` : ''}
         </div>
       </div>
-      <div class="tile-sub" style="margin-top:var(--s3);display:flex;gap:var(--s2);flex-wrap:wrap">
+      <div class="sparks" id="sparks-${name}"></div>
+      <div class="tile-sub" style="margin-top:var(--s3);display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap">
         ${containers ? `<span>${containers - down}/${containers} containers</span>` : ''}
+        ${containers ? `<span class="cstrip">${(dm.containers || []).map(c =>
+          `<span class="cdot" data-s="${/^up/i.test(c.status || '') ? 'ok' : 'crit'}" title="${c.name} — ${c.status || 'unknown'}"></span>`).join('')}</span>` : ''}
         ${down ? `<span style="color:var(--crit)">${down} down</span>` : ''}
         ${updates ? `<span style="color:var(--warn)">${updates} image update${updates > 1 ? 's' : ''}</span>` : ''}
       </div>
     </a>`;
   }).join('');
+
+  loadSparks(order);
+}
+
+// Host-tile sparklines. Phase 3 wires /api/vitals (30s live series from the arch
+// agents); until that backend exists this quietly renders nothing — the tiles are
+// complete without it, so an older backend never shows a broken strip.
+async function loadSparks(hostNames) {
+  for (const name of hostNames) {
+    const el = document.getElementById(`sparks-${name}`);
+    if (!el) continue;
+    try {
+      const res = await fetch(`/api/vitals/${name}?points=240`);
+      if (!res.ok) continue;
+      const d = await res.json();
+      const s = d.samples || [];
+      if (s.length < 2) {
+        // Distinguish "no data yet" from "this agent can't provide it" — an agent
+        // still on v0.1.x has no /vitals, and it will never "warm up".
+        const stale = /404/.test(d.error || '');
+        el.innerHTML = `<div class="tile-sub" style="margin:6px 0 0">${stale
+          ? 'live charts need arch-agent v0.2.0 on this host'
+          : d.error ? `live charts unavailable — ${d.error}` : 'live charts warming up…'}</div>`;
+        continue;
+      }
+      const series = (k) => s.map(x => x[k] ?? null);
+      const last = (k) => { const v = series(k).filter(x => x != null); return v.length ? v[v.length - 1] : null; };
+      const spark = (k, label, unit, opts) => {
+        const latest = last(k);
+        if (latest == null) return '';
+        return `<div class="spark-cell">
+          <div class="spark-label">${label} <b>${typeof latest === 'number' ? Math.round(latest * 10) / 10 : latest}${unit}</b></div>
+          ${sparkline(series(k), { tone: opts?.pct ? toneFor(latest) : null, min: opts?.pct ? 0 : undefined, max: opts?.pct ? 100 : undefined })}
+        </div>`;
+      };
+      const net = s.map(x => (x.rx_bps != null && x.tx_bps != null) ? x.rx_bps + x.tx_bps : null);
+      const netLatest = [...net].reverse().find(v => v != null);
+      el.innerHTML = `<div class="spark-grid">
+        ${spark('cpu_pct', 'CPU', '%', { pct: true })}
+        ${spark('mem_pct', 'Mem', '%', { pct: true })}
+        ${spark('temp_c', 'Temp', '°C')}
+        ${netLatest != null ? `<div class="spark-cell">
+          <div class="spark-label">Net <b>${fmtRate(netLatest)}</b></div>
+          ${sparkline(net, {})}</div>` : ''}
+      </div>`;
+    } catch (_) { /* vitals endpoint absent — tile is fine without sparks */ }
+  }
 }
 
 // thermals shape varies by host (and by sensor); take the highest plausible CPU reading
@@ -291,35 +653,192 @@ function relTime(iso) {
   return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
 }
 
-async function loadPoolAndVpn() {
-  try {
-    const doc = await fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : {});
-    const opti = (doc.hosts || []).find(h => h.host === 'opti');
-    const pool = opti?.metrics?.pool;
-    const el = document.getElementById('pool-body');
-    if (el) {
-      el.innerHTML = pool
-        ? `<div class="tile-metric">${Math.round(pool.used_pct)}%</div>
-           <div class="tile-sub">${pool.size_gb ? Math.round(pool.size_gb) + ' GB total' : ''}</div>
-           ${meter(Math.round(pool.used_pct))}`
-        : `<div class="tile-sub">Pool data unavailable — check the Homelab Doctor runner.</div>`;
+// ── Storage & disks (pool + SMART + 30-day trend) and VPN detail ─────────────
+async function loadStorageAndVpn() {
+  let doc = null;
+  try { doc = await fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : null); } catch (_) {}
+
+  const sel = document.getElementById('storage-body');
+  if (sel) {
+    try {
+      const [hw, trends] = await Promise.all([
+        fetch('/api/runners/hardware-latest').then(r => r.ok ? r.json() : null),
+        fetch('/api/trends?days=30').then(r => r.ok ? r.json() : null).catch(() => null),
+      ]);
+      const opti = doc?.hosts?.find(h => h.host === 'opti');
+      const pool = opti?.metrics?.pool;
+      const smart = hw?.hosts?.find(h => h.host === 'opti')?.metrics?.smart || {};
+
+      const poolHtml = pool ? `
+        <div style="display:flex;align-items:baseline;gap:8px">
+          <div class="tile-metric">${Math.round(pool.used_pct)}%</div>
+          <div class="tile-sub" style="margin:0">${pool.size_gb ? 'of ' + Math.round(pool.size_gb) + ' GB pool' : 'pool'}</div>
+        </div>
+        ${meter(Math.round(pool.used_pct))}`
+        : `<div class="tile-sub">Pool data unavailable.</div>`;
+
+      const trendHtml = (trends?.pool?.length > 2) ? `
+        <div class="spark-cell" style="margin-top:8px">
+          <div class="spark-label">pool, last ${trends.pool.length} days</div>
+          ${sparkline(trends.pool.map(p => p.used_pct), { min: 0, max: 100 })}
+        </div>` : '';
+
+      const sevFor = (d) => (d.health !== 'PASSED') ? 'crit' : (d.reallocated > 0 || d.pending > 0) ? 'severe' : 'ok';
+      const smartHtml = Object.keys(smart).length ? `
+        <div class="smart-list">${Object.entries(smart).map(([dev, d]) => `
+          <div class="smart-row">
+            <span class="mono">${dev}</span>
+            <span class="chip" data-s="${sevFor(d)}">${d.health === 'PASSED' ? (sevFor(d) === 'severe' ? 'worn' : 'ok') : d.health}</span>
+            <span class="tile-sub" style="margin:0">
+              ${d.reallocated ? `<b style="color:var(--severe)">${d.reallocated} realloc</b> · ` : ''}${d.pending ? `<b style="color:var(--crit)">${d.pending} pending</b> · ` : ''}${d.temp_c ? d.temp_c + '°C · ' : ''}${d.power_on_hours ? Math.round(d.power_on_hours / 24 / 365 * 10) / 10 + 'y on' : ''}
+            </span>
+          </div>`).join('')}</div>` : '';
+
+      sel.innerHTML = poolHtml + trendHtml + smartHtml;
+    } catch (_) {
+      sel.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
     }
-  } catch (_) {
-    const el = document.getElementById('pool-body');
-    if (el) el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
   }
 
-  // VPN comes from the architecture merge, which carries the healer's live view.
+  // VPN detail straight from the doctor's healer block (public IP, port match, watchdog).
   const vel = document.getElementById('vpn-body');
   if (!vel) return;
   try {
-    const d = await fetch('/api/architecture/data').then(r => r.ok ? r.json() : null);
-    const gl = d?.nodes?.find(n => n.id === 'gluetun');
-    const up = gl?._live?.state === 'running';
-    vel.innerHTML = `<div class="tile-metric" style="color:var(--${up ? 'ok' : 'crit'})">${up ? 'Up' : 'Down'}</div>
-      <div class="tile-sub">${gl?.sublabel || 'Gluetun tunnel'}</div>`;
+    const vpn = doc?.hosts?.find(h => h.host === 'noblenumbat')?.metrics?.vpn;
+    if (!vpn) { vel.innerHTML = `<div class="tile-sub">No VPN data in the doctor report.</div>`; return; }
+    const up = vpn.gluetun_running !== false && vpn.status !== 'down';
+    const portsMatch = vpn.forwarded_port && vpn.forwarded_port === vpn.qbt_listen_port;
+    const lastAction = (vpn.actions || [])[0];
+    vel.innerHTML = `
+      <div class="tile-metric" style="color:var(--${up ? 'ok' : 'crit'})">${up ? 'Up' : 'Down'}</div>
+      <div class="kv-rows">
+        ${vpn.public_ip ? `<div class="kv-row"><span>exit IP</span><span class="mono">${vpn.public_ip}</span></div>` : ''}
+        ${vpn.forwarded_port ? `<div class="kv-row"><span>port fwd</span><span class="mono">${vpn.forwarded_port}
+          <span class="chip" data-s="${portsMatch ? 'ok' : 'warn'}">${portsMatch ? 'qBt ✓' : 'qBt ' + (vpn.qbt_listen_port || '?')}</span></span></div>` : ''}
+        <div class="kv-row"><span>watchdog</span><span>${vpn.status || '—'}${vpn.ts ? ' · ' + relTime(vpn.ts) : ''}</span></div>
+        ${lastAction ? `<div class="kv-row"><span>last heal</span><span>${typeof lastAction === 'string' ? lastAction : (lastAction.action || '')}</span></div>` : ''}
+      </div>`;
   } catch (_) {
     vel.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
+  }
+}
+
+// ── Containers fleet table ─────────────────────────────────────────────────────
+async function loadContainers() {
+  const el = document.getElementById('containers-body');
+  if (!el) return;
+  try {
+    const d = await fetch('/api/containers').then(r => r.ok ? r.json() : null);
+    if (!d?.hosts?.length) { el.innerHTML = `<div class="tile-sub">No container data yet.</div>`; return; }
+    let total = 0, up = 0, updates = 0;
+    const rows = d.hosts.flatMap(h => h.containers.map(c => {
+      total++; if (c.up) up++; if (c.update_available) updates++;
+      const since = c.status_since ? durSince(c.status_since) : (c.status || '');
+      const img = (c.image || '').replace(/^(lscr\.io|ghcr\.io|docker\.io)\//, '').replace(/@sha256.*$/, '');
+      return `<tr>
+        <td><span class="cdot" data-s="${c.up ? 'ok' : 'crit'}"></span></td>
+        <td class="mono ct-name">${c.name}${c.update_available ? ' <span class="chip" data-s="warn" title="newer image available">update</span>' : ''}</td>
+        <td><span class="chip">${h.host}</span></td>
+        <td class="tile-sub" style="margin:0">${c.up ? 'up ' + since : '<b style="color:var(--crit)">down</b>'}</td>
+        <td class="mono ct-img" title="${c.image || ''}">${img}</td>
+        <td class="ct-act"><button class="btn-icon" title="Restart ${c.name} on ${h.host}"
+          data-host="${h.host}" data-container="${c.name}">⟳</button></td>
+      </tr>`;
+    }));
+    const meta = document.getElementById('ct-meta');
+    if (meta) meta.textContent = `${up}/${total} up${updates ? ` · ${updates} updates` : ''}`;
+    el.innerHTML = `<table class="ctable"><tbody>${rows.join('')}</tbody></table>`;
+    el.querySelectorAll('.btn-icon[data-container]').forEach(b => {
+      b.addEventListener('click', () => restartContainer(b.dataset.host, b.dataset.container, b));
+    });
+  } catch (_) {
+    el.innerHTML = `<div class="tile-sub">Unavailable — is opti reachable?</div>`;
+  }
+}
+
+// ── Network panel ──────────────────────────────────────────────────────────────
+async function loadNetwork() {
+  const el = document.getElementById('network-body');
+  if (!el) return;
+  try {
+    const d = await fetch('/api/runners/network-latest').then(r => r.ok ? r.json() : null);
+    if (!d?.hosts?.length) { el.innerHTML = `<div class="tile-sub">No network report yet.</div>`; return; }
+    const hosts = d.hosts.filter(h => h.host !== 'android');
+    const ms = (v) => v == null ? '—' : (Math.round(v * 10) / 10) + '<small>ms</small>';
+    const rows = hosts.map(h => {
+      const m = h.metrics || {};
+      const arp = (m.arp_failed || []).length;
+      return `<div class="kv-row">
+        <span class="mono">${h.host}</span>
+        <span>gw ${ms(m.gateway_avg_ms)} · net ${ms(m.internet_avg_ms)} · ${(m.listening_ports || []).length} ports${arp ? ` · <b style="color:var(--warn)">${arp} arp✕</b>` : ''}</span>
+      </div>`;
+    }).join('');
+    const rpiDns = hosts.find(h => h.host === 'rpi')?.metrics?.dns_lookups_ms || {};
+    const dns = Object.entries(rpiDns).map(([k, v]) => `${k} ${Math.round(v)}ms`).join(' · ');
+    el.innerHTML = `<div class="kv-rows">${rows}</div>
+      ${dns ? `<div class="tile-sub" style="margin-top:8px">DNS via Pi-hole: ${dns}</div>` : ''}`;
+  } catch (_) {
+    el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
+  }
+}
+
+// ── Services & upkeep (uptime board + cert countdown + patch posture) ─────────
+async function loadUpkeep() {
+  const el = document.getElementById('upkeep-body');
+  if (!el) return;
+  try {
+    const [doc, sw] = await Promise.all([
+      fetch('/api/runners/homelab-doctor-latest').then(r => r.ok ? r.json() : null),
+      fetch('/api/runners/software-latest').then(r => r.ok ? r.json() : null),
+    ]);
+    const services = (doc?.services || []).map(s => {
+      const cert = s.cert_days_left;
+      const certChip = (cert != null && cert < 3000)
+        ? ` <span class="chip" data-s="${cert < 14 ? 'crit' : cert < 45 ? 'warn' : ''}">cert ${cert}d</span>` : '';
+      return `<div class="kv-row">
+        <span><span class="cdot" data-s="${s.up ? 'ok' : 'crit'}"></span> ${s.name}</span>
+        <span class="tile-sub" style="margin:0">${s.up ? (s.detail || 'up') : '<b style="color:var(--crit)">down</b>'}${certChip}</span>
+      </div>`;
+    }).join('');
+
+    const posture = (sw?.hosts || []).filter(h => h.host !== 'android').map(h => {
+      const m = h.metrics || {};
+      const bits = [];
+      if (m.pending_count) bits.push(`${m.pending_count} pkg${m.security_count ? ` (<b style="color:var(--crit)">${m.security_count} sec</b>)` : ''}`);
+      if (m.reboot_required) bits.push('<b style="color:var(--warn)">reboot req</b>');
+      if (m.image_update_count) bits.push(`${m.image_update_count} image${m.image_update_count > 1 ? 's' : ''}`);
+      return bits.length ? `<div class="kv-row"><span class="mono">${h.host}</span><span>${bits.join(' · ')}</span></div>` : '';
+    }).join('');
+
+    const cold = (doc || sw) ? await fetch('/api/runners/coldcopy-latest').then(r => r.ok ? r.json() : null).catch(() => null) : null;
+    const coldHtml = cold ? `<div class="kv-row"><span>cold copy</span>
+      <span><span class="chip" data-s="${cold.status === 'ok' ? 'ok' : 'warn'}">${cold.status}</span> ${cold.run_at ? relTime(cold.run_at) : ''}</span></div>` : '';
+
+    el.innerHTML = `<div class="kv-rows">${services}</div>
+      ${(posture || coldHtml) ? `<div class="upkeep-sep"></div><div class="kv-rows">${posture}${coldHtml}</div>` : ''}
+      ${!posture ? `<div class="tile-sub" style="margin-top:6px">all hosts patched · no reboots pending</div>` : ''}`;
+  } catch (_) {
+    el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
+  }
+}
+
+// ── Activity feed ──────────────────────────────────────────────────────────────
+async function loadActivity() {
+  const el = document.getElementById('activity-body');
+  if (!el) return;
+  try {
+    const d = await fetch('/api/activity?limit=40').then(r => r.ok ? r.json() : null);
+    const events = d?.events || [];
+    if (!events.length) { el.innerHTML = `<div class="tile-sub">Nothing to report — quiet fleet.</div>`; return; }
+    const tone = (s) => ['critical', 'high', 'crit'].includes(s) ? 'crit' : ['warn', 'warning', 'medium'].includes(s) ? 'warn' : '';
+    el.innerHTML = `<div class="feed">${events.map(e => `
+      <div class="feed-item">
+        <span class="cdot" data-s="${tone(e.severity) || 'idle'}"></span>
+        <span class="feed-msg">${e.message}</span>
+        <span class="feed-meta">${e.host ? `<span class="chip">${e.host}</span>` : ''}${e.source} · ${e.ts ? relTime(e.ts) : ''}</span>
+      </div>`).join('')}</div>`;
+  } catch (_) {
+    el.innerHTML = `<div class="tile-sub">Unavailable.</div>`;
   }
 }
 
@@ -371,28 +890,68 @@ async function loadLeetify() {
   }
 }
 
+// Live FTL stats (/api/pihole/summary), falling back to the network report's snapshot.
+// The report's pihole block has gone null before (v6 API/session issues), which is what
+// left this tile reading "unavailable" — the live route is now the primary source.
 async function loadPihole() {
   const el = document.getElementById('pihole-body');
+  const pill = document.getElementById('pihole-pill');
   if (!el) return;
+
+  let p = null, live = false;
   try {
-    const res = await fetch('/api/runners/network-latest');
-    if (!res.ok) { el.textContent = 'No network report yet.'; return; }
-    const d = await res.json();
-    // Pi-hole runs on rpi. Prefer that host explicitly rather than "first host with a
-    // truthy pihole key" — the key is present (as null) on every host, so any change
-    // that made it falsy-but-not-null would silently pick the wrong machine.
-    const hosts = Array.isArray(d.hosts) ? d.hosts : [];
-    const p = (hosts.find(h => h?.host === 'rpi') || hosts.find(h => h?.metrics?.pihole))
-      ?.metrics?.pihole || d.pihole;
-    if (!p) { el.textContent = 'Pi-hole stats unavailable.'; return; }
-    const q = p.dns_queries_today ?? p.queries ?? '?';
-    const blocked = p.ads_blocked_today ?? p.blocked ?? '?';
-    const pct = p.ads_percentage_today ?? p.percent_blocked;
-    const clients = p.unique_clients ?? p.clients ?? '?';
-    el.innerHTML = `${q} queries today · <strong>${typeof pct === 'number' ? pct.toFixed(1) : pct}%</strong> blocked (${blocked}) · ${clients} clients`;
-  } catch {
-    el.textContent = 'Unavailable.';
+    const res = await fetch('/api/pihole/summary');
+    if (res.ok) { p = await res.json(); live = true; }
+  } catch (_) { /* fall through to the report */ }
+
+  if (!p) {
+    try {
+      const d = await fetch('/api/runners/network-latest').then(r => r.ok ? r.json() : null);
+      const hosts = Array.isArray(d?.hosts) ? d.hosts : [];
+      // Pi-hole runs on rpi. Prefer that host explicitly rather than "first host with a
+      // truthy pihole key" — the key is present (as null) on every host, so any change
+      // that made it falsy-but-not-null would silently pick the wrong machine.
+      p = (hosts.find(h => h?.host === 'rpi') || hosts.find(h => h?.metrics?.pihole))
+        ?.metrics?.pihole || d?.pihole || null;
+    } catch (_) { /* nothing left to try */ }
   }
+
+  if (!p) {
+    el.innerHTML = `<div class="tile-sub">Stats unavailable — check PIHOLE_WEB_PASSWORD in the webapp env, or the network runner.</div>`;
+    return;
+  }
+
+  const q = p.dns_queries_today ?? p.queries ?? null;
+  const blocked = p.ads_blocked_today ?? p.blocked ?? null;
+  const pct = p.ads_percentage_today ?? p.percent_blocked;
+  const clients = p.unique_clients ?? p.clients ?? null;
+  const blockingOn = p.blocking ? p.blocking.enabled : true;
+
+  if (pill) pill.innerHTML = live
+    ? `<span class="pill" data-s="${blockingOn ? 'ok' : 'warn'}">${blockingOn ? '✓ blocking' : '⏸ paused'}</span>`
+    : `<span class="pill">from report</span>`;
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <div class="tile-metric">${typeof pct === 'number' ? pct.toFixed(1) + '%' : '—'}</div>
+      <div class="tile-sub" style="margin:0">blocked today</div>
+    </div>
+    ${meter(typeof pct === 'number' ? Math.round(pct) : null, 'ok')}
+    <div class="kv-rows" style="margin-top:8px">
+      <div class="kv-row"><span>queries</span><span class="mono">${q != null ? q.toLocaleString() : '—'}</span></div>
+      <div class="kv-row"><span>blocked</span><span class="mono">${blocked != null ? blocked.toLocaleString() : '—'}</span></div>
+      <div class="kv-row"><span>clients</span><span class="mono">${clients ?? '—'}</span></div>
+      ${p.queries_cached != null ? `<div class="kv-row"><span>cached</span><span class="mono">${p.queries_cached.toLocaleString()}</span></div>` : ''}
+      ${p.gravity_domains != null ? `<div class="kv-row"><span>blocklist</span><span class="mono">${p.gravity_domains.toLocaleString()} domains</span></div>` : ''}
+    </div>
+    ${live ? `<div class="tile-actions">
+      ${blockingOn
+        ? `<button class="btn-mini" id="ph-pause">⏸ Pause 5 min</button>`
+        : `<button class="btn-mini" id="ph-resume">▶ Resume blocking${p.blocking?.timer ? ` (auto in ${Math.round(p.blocking.timer / 60)}m)` : ''}</button>`}
+    </div>` : ''}`;
+
+  document.getElementById('ph-pause')?.addEventListener('click', () => toggleBlocking(false, 300));
+  document.getElementById('ph-resume')?.addEventListener('click', () => toggleBlocking(true));
 }
 
 // ── Leetify page ────────────────────────────────────────────────────────────────
@@ -710,8 +1269,8 @@ async function renderReports(view) {
 async function loadAgentsStrip() {
   const el = document.getElementById('rpt-agents-strip');
   if (!el) return;
-  const base = 'border:1px solid var(--border,#2a2d3a);border-radius:8px;padding:10px 14px;'
-             + 'display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted,#7a7f99)';
+  const base = 'border:1px solid var(--border);border-radius:8px;padding:10px 14px;'
+             + 'display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--muted)';
   el.innerHTML = `<div style="${base}">🛰️ Architecture agents — <a href="/agents/">view status →</a></div>`;
   try {
     const res = await fetch('/api/agents');
@@ -721,8 +1280,8 @@ async function loadAgentsStrip() {
     const unreachable = hosts.filter(h => !h.reachable).length;
     const drift = hosts.reduce((n, h) => n + (h.drift_count || 0), 0);
     const bits = [`${hosts.length} host(s)`];
-    if (unreachable) bits.push(`<span style="color:#e05c5c">${unreachable} unreachable</span>`);
-    if (drift) bits.push(`<span style="color:#e0b44a">${drift} drift</span>`);
+    if (unreachable) bits.push(`<span style="color:var(--crit)">${unreachable} unreachable</span>`);
+    if (drift) bits.push(`<span style="color:var(--warn)">${drift} drift</span>`);
     el.innerHTML = `<div style="${base}">🛰️ Architecture agents — ${bits.join(' · ')}
       — <a href="/agents/">view status →</a></div>`;
   } catch (_) { /* strip already shows the plain link */ }
@@ -2471,19 +3030,34 @@ const CMDK_ITEMS = [
   { group: 'Go to', icon: '🧠', label: 'Local LLM',          action: () => (location.hash = '#llm') },
   { group: 'Go to', icon: '◈',  label: 'Architecture map',   action: () => (location.href = '/architecture/') },
   { group: 'Go to', icon: '🛰️', label: 'Agents',             action: () => (location.href = '/agents/') },
+  { group: 'Go to', icon: '🗄', label: 'Samba',              action: () => (location.href = '/samba/') },
   { group: 'Go to', icon: '📝', label: 'Notes',              action: () => (location.href = '/notes/') },
   { group: 'Go to', icon: '⚙',  label: 'Agentic Workspace',  action: () => (location.href = '/agentic/') },
   ...BOTS.map(b => ({ group: 'Bots', icon: b.icon, label: `${b.label} bot`,
                       action: () => { location.hash = `#${b.id}`; } })),
   { group: 'Actions', icon: '⟳', label: 'Force Sync all agents', hint: 'runs now',
     action: async () => {
+      const pending = toast('Syncing all agents…', 'warn', { sticky: true });
       try {
         const r = await fetch('/api/agents/sync-all', { method: 'POST' });
         const d = await r.json();
-        const ok = (d.results || []).filter(x => x.ok).length;
-        alert(`Force Sync: ${ok}/${(d.results || []).length} hosts synced.`);
-      } catch (e) { alert(`Force Sync failed: ${e.message}`); }
+        const results = d.results || [];
+        const ok = results.filter(x => x.ok).length;
+        pending.remove();
+        toast(`Force Sync: ${ok}/${results.length} hosts synced.`,
+              ok === results.length ? 'ok' : 'warn', { sticky: ok !== results.length });
+      } catch (e) { pending.remove(); toast(`Force Sync failed: ${e.message}`, 'crit', { sticky: true }); }
     } },
+  { group: 'Actions', icon: '▶', label: 'Run Homelab Doctor now', hint: 'collector',
+    action: async () => {
+      try {
+        const r = await fetch('/api/runners/homelab-doctor/run', { method: 'POST' });
+        toast(r.ok ? 'Homelab Doctor started — results land in a minute.' : 'Could not start the Doctor runner.',
+              r.ok ? 'ok' : 'crit', { sticky: !r.ok });
+      } catch (e) { toast(`Run failed: ${e.message}`, 'crit', { sticky: true }); }
+    } },
+  { group: 'Actions', icon: '⏸', label: 'Pause Pi-hole blocking (5 min)', hint: 'auto-resumes',
+    action: () => toggleBlocking(false, 300) },
   { group: 'Actions', icon: '◐', label: 'Toggle light / dark', action: toggleTheme },
 ];
 

@@ -73,6 +73,7 @@ CLI:
 """
 
 import argparse
+import glob
 import json
 import os
 import socket
@@ -86,7 +87,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "0.2.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -176,6 +177,96 @@ def collect_uptime():
             return float(f.read().split()[0])
     except (OSError, ValueError, IndexError):
         return None
+
+
+# ── vitals (v0.2.0) ────────────────────────────────────────────────────────────
+# Cheap sub-minute sample for the dashboard's live sparklines. Deliberately:
+#   - /proc and /sys reads only, no subprocesses — this is polled every 30s per host,
+#     so it must cost effectively nothing.
+#   - CPU and network are exposed as RAW CUMULATIVE COUNTERS. The agent stays
+#     stateless; the webapp diffs consecutive samples. That way a restarted agent
+#     never emits a bogus spike, and two consumers can poll independently.
+_NET_SKIP = ("lo", "veth", "docker", "br-", "virbr", "tun", "tap")
+
+
+def _read_first_line(path):
+    with open(path) as f:
+        return f.readline().strip()
+
+
+def collect_cpu_counters():
+    """Aggregate jiffies from /proc/stat's first line: total and idle (idle+iowait)."""
+    fields = _read_first_line("/proc/stat").split()
+    if not fields or fields[0] != "cpu":
+        return None
+    vals = [int(x) for x in fields[1:]]
+    idle = vals[3] + (vals[4] if len(vals) > 4 else 0)   # idle + iowait
+    return {"total": sum(vals), "idle": idle}
+
+
+def collect_temp():
+    """Highest plausible on-die reading. Sensor naming differs per host (rpi exposes
+    thermal_zone0, opti acpitz/x86_pkg_temp via hwmon), so scan both trees and take the
+    max in a sane range rather than guessing a path that won't exist elsewhere."""
+    temps = []
+    for pattern in ("/sys/class/thermal/thermal_zone*/temp",
+                    "/sys/class/hwmon/hwmon*/temp*_input"):
+        for path in glob.glob(pattern):
+            try:
+                milli = float(_read_first_line(path))
+            except (OSError, ValueError):
+                continue
+            c = milli / 1000.0
+            if 0 < c < 130:
+                temps.append(c)
+    return round(max(temps), 1) if temps else None
+
+
+def collect_net_counters():
+    """Per-interface cumulative rx/tx bytes, physical interfaces only."""
+    out = {}
+    try:
+        with open("/proc/net/dev") as f:
+            lines = f.readlines()[2:]
+    except OSError:
+        return out
+    for line in lines:
+        name, _, rest = line.partition(":")
+        name = name.strip()
+        if not name or name.startswith(_NET_SKIP):
+            continue
+        parts = rest.split()
+        if len(parts) >= 9:
+            out[name] = {"rx_bytes": int(parts[0]), "tx_bytes": int(parts[8])}
+    return out
+
+
+def collect_vitals():
+    errors = {}
+    loadavg = None
+    try:
+        loadavg = [float(x) for x in _read_first_line("/proc/loadavg").split()[:3]]
+    except (OSError, ValueError, IndexError) as exc:
+        errors["loadavg"] = str(exc)
+    return {
+        "host": HOST,
+        "t": time.time(),
+        "loadavg": loadavg,
+        "cpu": _section(collect_cpu_counters, errors, "cpu"),
+        "cores": (_section(collect_cpu_cores, errors, "cores") or None),
+        "mem": _section(collect_mem, errors, "mem"),
+        "temp_c": _section(collect_temp, errors, "temp"),
+        "net": _section(collect_net_counters, errors, "net"),
+        "uptime_s": collect_uptime(),
+        "agent_version": AGENT_VERSION,
+        "errors": errors,
+    }
+
+
+def collect_cpu_cores():
+    """Core count without shelling out to lscpu (collect_cpu does that once a night;
+    vitals runs every 30s)."""
+    return os.cpu_count()
 
 
 def collect_disks():
@@ -438,6 +529,33 @@ def scheduler_loop(stop_event):
             do_run()
 
 
+# ── container restart (v0.2.0) ─────────────────────────────────────────────────
+def restart_container(name):
+    """Restart one container by exact name. Returns (http_code, body).
+
+    The name is validated by EXISTENCE — it must appear verbatim in `docker ps -a`
+    output — and is then passed as its own argv element. It is never interpolated
+    into a shell string, so there is no injection surface even if validation changed.
+    Blocking, like /sync: the caller gets the real result, never "queued"."""
+    if not isinstance(name, str) or not name.strip():
+        return 400, {"ok": False, "error": "body.container is required"}
+    name = name.strip()
+
+    out, err = _run(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout=15)
+    if err:
+        return 502, {"ok": False, "error": f"cannot list containers: {err}"}
+    if name not in out.split():
+        return 404, {"ok": False, "error": f"no container named {name!r} on {HOST}"}
+
+    started = time.time()
+    _, err = _run(["docker", "restart", name], timeout=45)
+    took_ms = int((time.time() - started) * 1000)
+    if err:
+        return 502, {"ok": False, "container": name, "host": HOST,
+                     "took_ms": took_ms, "error": err}
+    return 200, {"ok": True, "container": name, "host": HOST, "took_ms": took_ms}
+
+
 # ── local HTTP endpoint ──────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
@@ -454,7 +572,8 @@ class Handler(BaseHTTPRequestHandler):
         return self.headers.get("Authorization") == f"Bearer {TOKEN}"
 
     def do_GET(self):
-        if self.path.rstrip("/") == "/status":
+        path = self.path.rstrip("/")
+        if path == "/status":
             state = load_state()
             self._json(200, {
                 "host": HOST, "agent_version": AGENT_VERSION,
@@ -462,16 +581,40 @@ class Handler(BaseHTTPRequestHandler):
                 "next_scheduled": next_run_at().isoformat(),
             })
             return
+        if path == "/vitals":
+            # Unauthenticated like /status: read-only counters, LAN-only listener.
+            self._json(200, collect_vitals())
+            return
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path.rstrip("/") == "/sync":
+        path = self.path.rstrip("/")
+        if path == "/sync":
             if not self._authorized():
                 self._json(401, {"error": "unauthorized"})
                 return
             result = do_run()
             self._json(200 if result["ok"] else 502, result)
             return
+
+        if path == "/restart":
+            # Unlike /sync, this ALWAYS requires a token — a tokenless agent must never
+            # expose container restarts to anything that can reach port 8787.
+            if not TOKEN:
+                self._json(403, {"error": "restart requires HL_ARCH_AGENT_TOKEN to be set"})
+                return
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or "{}")
+            except (ValueError, OSError) as exc:
+                self._json(400, {"error": f"bad request body: {exc}"})
+                return
+            self._json(*restart_container(body.get("container")))
+            return
+
         self._json(404, {"error": "not found"})
 
     def log_message(self, fmt, *args):

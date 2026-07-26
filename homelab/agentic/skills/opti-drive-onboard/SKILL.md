@@ -1,104 +1,73 @@
 ---
 name: opti-drive-onboard
-description: Onboard a new physical drive into the opti server (192.168.1.11) mergerfs pool /srv/pool. Use when the user says they installed a new drive in opti, wants to add a disk to the pool/share, or expand opti storage. Walks through identify → SMART → wipe → ext4 → OMV mount → mergerfs branch add → verify.
+description: Onboard a new physical drive into the opti server (192.168.1.11). Use when the user says they installed a new drive in opti or wants to expand opti storage. Since 2026-07-25 the live storage is ZFS pool `red` — a new drive is either a mirror for it (preferred) or a pool expansion, NOT a mergerfs branch.
 ---
 
-# Onboard a new drive into the opti mergerfs pool
+# Onboard a new drive into opti
 
 Target: `ptm@192.168.1.11` via `ssh -i ~/.claude/opti_key ptm@192.168.1.11` (passwordless sudo).
-Tools live in `/usr/sbin` (not in the non-login PATH) — call them as `sudo /usr/sbin/<tool>` or `sudo <tool>`.
+Tools live in `/usr/sbin` — call as `sudo <tool>`.
 
 **RULES (non-negotiable):**
-- Propose every server-side write and get explicit user agreement before running it (see memory: discuss-before-deploy).
-- The wipe step destroys data. Show the disk's model, serial, size, and current partitions and get the user to confirm THAT disk before wiping.
-- Never hand-edit anything between `# >>> [openmediavault]` / `# <<< [openmediavault]` markers in `/etc/fstab`, nor `/etc/samba/smb.conf` or `/etc/exports` — OMV regenerates them. The mergerfs line lives OUTSIDE the OMV markers and is ours to edit.
+- Propose every server-side write and get explicit user agreement before running it.
+- Wipes destroy data: show the disk's model, serial, size, partitions and have the user
+  confirm THAT disk before touching it.
+- Never hand-edit `/etc/samba/smb.conf` or anything in `/etc/openmediavault` — OMV
+  regenerates them. The `[red]` share config is `/etc/homelab/samba-red.conf` (ours).
 
-## Known state (baseline as of 2026-07-07 — re-verify live, don't trust blindly)
+## Known state (baseline 2026-07-25 — the ZFS migration; re-verify live)
 
-- OMV 7.7.x, mergerfs 2.33.5. No OMV mergerfs plugin: the pool is a hand-maintained fstab entry.
-- Existing disks (serials — anything NOT in this list is a candidate new drive):
-  - `sda` ST500DM002-1BD142, serial `Z6E9H7VE`, 465 GB — root ext4; branch is the **directory** `/srv/sda-pool` on the root fs.
-  - `sdb` Hitachi HTS547564A9E384, serial `110926J2380053CXKRHC`, 596 GB — NTFS partition mounted by OMV at `/srv/dev-disk-by-uuid-C682C2DE82C2D1DB`; branch is its `fs/` subdir.
-- Current fstab mergerfs line (one line):
-  ```
-  /srv/sda-pool:/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs /srv/pool fuse.mergerfs defaults,allow_other,use_ino,category.create=mfs,minfreespace=30G,fsname=mergerfs-pool,nofail,x-systemd.requires=/srv/dev-disk-by-uuid-C682C2DE82C2D1DB 0 0
-  ```
-- Pool root perms: `ptm:users`, mode `2775` (rwxrwsr-x). New branches must match.
-- Samba: `[fs]` share currently points at the sdb branch dir (`/srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/`), a second share points at `/srv/pool/`. Pool growth needs no Samba change. 6 SATA ports (ata1–6); chassis/PSU realistically maxes at 2 more drives.
+- **Live storage: ZFS pool `red`** — single 4 TB WD Red Plus (`WD-WX32D163WV1V`),
+  whole-disk, `ashift=12`, datasets `red/fs` (zstd, share root `/srv/red/fs`) and
+  `red/media` (recordsize=1M, no compression, mounted at `/srv/red/fs/ptm/Media`).
+  zfs-dkms **2.3.2 from bookworm-backports** (base-repo 2.1.11 does not build on the
+  6.12 backport kernel). ARC capped 1.5 GiB (`/etc/modprobe.d/zfs.conf`).
+- Samba `\\opti\red` = `/srv/red/fs`, defined in `/etc/homelab/samba-red.conf`
+  (repo: `homelab/opti-srv/samba/samba-red.conf`), included from OMV's SMB "Extra
+  options". Editable at `https://webapp.rpi.lan:8443/samba/`.
+- Clients: tux `/home/ptm/opti`, rpi `/mnt/opti-fs`, noblenumbat
+  `/mnt/opti-{shows,library,media}` — all on `//192.168.1.11/red`.
+- **Cold copy**: the retired mergerfs union (sda dir `/srv/sda-pool` + sdb NTFS Hitachi,
+  10.6k hours, 3 reallocated sectors) at `/srv/attic`, `noauto`, sdb fstab'd `ro`.
+  Refreshed weekly by `homelab-coldcopy.timer` (Sun 04:00) — see
+  `homelab/Tools/automation/homelab-coldcopy.sh` for its interlocks.
+- `/srv/pool` is a bind of `/srv/red/fs` (compat; old union path).
+- SATA: 6 ports, sda+sdb+sdc used, **3 free**. Chassis/PSU realistically fits ~2 more drives.
 
-## Procedure
+## Procedure for a NEW drive
 
-### 1. Identify the new disk
+### 1. Identify + SMART gate
 ```bash
-lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL,SERIAL
+lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL,SERIAL   # new = serial not in baseline
+sudo smartctl -i -H /dev/sdX && sudo smartctl -t short /dev/sdX   # ~2 min, then -a:
+# gate: PASSED, Reallocated_Sector_Ct=0, Current_Pending_Sector=0
 ```
-The new drive is the one whose serial is not in the baseline list above. Confirm device node (e.g. `/dev/sdc`), model, serial, and size with the user. Device letters can shuffle across reboots — from here on prefer by-id/by-uuid paths for anything persistent.
+If the drive may carry data, STOP and confirm with the user before any wipe.
 
-### 2. SMART baseline
-```bash
-sudo smartctl -i -H /dev/sdX
-sudo smartctl -t short /dev/sdX   # ~2 min, then:
-sudo smartctl -a /dev/sdX         # check: SMART overall-health PASSED, Reallocated_Sector_Ct=0, Current_Pending_Sector=0
-```
-For a brand-new large drive, offer (don't force) a long test (`-t long`, hours) or a full `badblocks`-style burn-in; short test is the minimum gate.
+### 2. Decide the role (ask the user, recommend in this order)
+1. **Mirror for `red`** (preferred once a second ≥4 TB drive exists): converts the pool
+   to self-healing RAID1 — scrub then *repairs* corruption instead of reporting it.
+   ```bash
+   DISK=/dev/disk/by-id/ata-<MODEL>_<SERIAL>     # always by-id, never /dev/sdX
+   sudo zpool attach red ata-WDC_WD40EFZZ-68CPAN0_WD-WX32D163WV1V $DISK
+   sudo zpool status red    # wait for the resilver; then it's a mirror
+   ```
+2. **Replace the cold-copy pair**: retire the aging sdb Hitachi — new drive becomes a
+   plain ext4 cold target; update `homelab-coldcopy.sh`'s destination constants.
+3. **Capacity expansion** (`zpool add` = a stripe): AVOID — one drive lost = pool lost.
+   Only with the user's eyes-open consent.
 
-### 3. Partition + filesystem (DESTRUCTIVE — confirm first)
+### 3. Verify + document
 ```bash
-sudo wipefs -a /dev/sdX
-sudo parted -s /dev/sdX mklabel gpt mkpart primary ext4 0% 100%
-sudo mkfs.ext4 -m 0 -L pool-4tb-N /dev/sdX1   # N = 1, 2, ... ; -m 0: no root reserve on a data disk
-sudo blkid /dev/sdX1                          # record the UUID
+sudo zpool status red && zfs list
 ```
+Update `homelab/homelab-techdoc.md` (§2 opti table, §10 storage) and this baseline.
+User commits — never commit for them.
 
-### 4. Mount it the OMV way (so the UI/DB tracks it)
-Preferred — OMV RPC (creates the DB entry, fstab entry inside OMV markers, and mounts):
-```bash
-sudo omv-rpc -u admin "FileSystemMgmt" "mount" '{"id":"/dev/disk/by-uuid/<UUID>","fstab":true}'
-sudo omv-salt deploy run fstab
-```
-If the RPC signature errors (verify with `sudo omv-rpc -u admin "FileSystemMgmt" "enumerateMountedFilesystems" '{"includeroot":false}'` and adjust), fall back to: user mounts it in the OMV web UI (Storage → File Systems → ▸ Mount existing). Either way the result must be a mount at `/srv/dev-disk-by-uuid-<UUID>` and an entry inside the OMV fstab markers. Verify:
-```bash
-findmnt /srv/dev-disk-by-uuid-<UUID>
-sudo omv-confdbadm read conf.system.filesystem.mountpoint
-```
+## History
 
-### 5. Create the branch directory
-Branch is a subdir, not the fs root (keeps `lost+found` out of the pool):
-```bash
-sudo mkdir -p /srv/dev-disk-by-uuid-<UUID>/fs
-sudo chown ptm:users /srv/dev-disk-by-uuid-<UUID>/fs
-sudo chmod 2775 /srv/dev-disk-by-uuid-<UUID>/fs
-```
-
-### 6. Persist the branch in fstab (propose diff first)
-Edit ONLY the mergerfs line (outside OMV markers): append `:/srv/dev-disk-by-uuid-<UUID>/fs` to the branch list, and append `,x-systemd.requires=/srv/dev-disk-by-uuid-<UUID>` to the options. Show the user the exact before/after line, get agreement, apply with a targeted `sudo sed -i.bak` or a heredoc rewrite of that line, then:
-```bash
-sudo systemctl daemon-reload
-```
-
-### 7. Add the branch to the live pool (no unmount)
-mergerfs ≥2.33 runtime API via the control file:
-```bash
-sudo setfattr -n user.mergerfs.branches -v '+>/srv/dev-disk-by-uuid-<UUID>/fs' /srv/pool/.mergerfs   # +> appends
-sudo getfattr -n user.mergerfs.branches /srv/pool/.mergerfs                                          # confirm
-```
-If setfattr/xattr is unavailable, fall back to a brief remount (warn user: closes open Samba handles):
-```bash
-sudo umount /srv/pool && sudo mount /srv/pool
-```
-
-### 8. Verify
-```bash
-df -h /srv/pool                      # size grew by ~the new drive
-touch /srv/pool/.onboard-test && ls /srv/dev-disk-by-uuid-<UUID>/fs/   # with category.create=mfs the new (emptiest) branch should receive it
-rm /srv/pool/.onboard-test
-```
-Then have the user (or check from a client) confirm the `\\opti` Samba share still lists content. Optionally reboot opti once during a quiet window to prove the fstab entry survives boot ordering (`nofail` + `x-systemd.requires` should handle it).
-
-### 9. Documentation
-Update `homelab/homelab-techdoc.md` (opti hardware table, section 10 storage: new disk model/serial/UUID, new pool size) and the "Known state" baseline in this skill file. Remind the user to commit (never commit yourself).
-
-## Notes / future work
-- `category.create=mfs` = new files go to the branch with most free space, so new 4 TB drives naturally absorb writes. `minfreespace=30G` stays sane.
-- Once both 4 TB drives are in, consider evacuating the two legacy branches: the NTFS Hitachi laptop drive (ntfs-3g FUSE = slow, no POSIX perms, weakest disk in the pool) and `/srv/sda-pool` (shares the OS root disk). Evacuate with rsync branch→branch, then remove the branch from fstab + runtime (`-<` xattr value removes), then retire/repurpose the disk.
-- The Samba `[fs]` share points at the sdb *branch*, not `/srv/pool` — clients on that share can't see files placed on other branches. Worth repointing to `/srv/pool` via the OMV UI (shared folder → filesystem) at some point; discuss with user first.
+The pre-2026-07-25 version of this skill onboarded drives as mergerfs branches under
+`/srv/pool` with OMV-managed ext4 mounts. That architecture (and its
+`path = /srv/pool/` Samba override, which lived in the share's OMV `extraoptions`) was
+retired by the ZFS migration; the old pool survives intact as the cold copy. Full
+migration record: plan `so-lets-do-both-dazzling-frog` (2026-07-25/26 session).

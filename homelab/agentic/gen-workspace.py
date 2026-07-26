@@ -50,7 +50,7 @@ WORKSPACE = {
 # LAN-only facts. No secrets — SSH keys/tokens are referenced by location elsewhere.
 HOSTS = [
     {"alias": "opti", "ip": "192.168.1.11",
-     "role": "Storage/NAS (OpenMediaVault, mergerfs pool /srv/pool, Samba), CI runner, control plane / agent dispatcher"},
+     "role": "Storage/NAS (ZFS pool red -> Samba \\\\opti\\red; OMV UI-only; cold copy on old mergerfs pair), CI runner, control plane / agent dispatcher"},
     {"alias": "rpi", "ip": "192.168.1.10",
      "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.rpi.lan), Vaultwarden"},
     {"alias": "noblenumbat", "ip": "192.168.1.6",

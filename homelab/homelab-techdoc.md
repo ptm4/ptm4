@@ -13,7 +13,7 @@
 7. [Vaultwarden + Nginx — Password Manager](#7-vaultwarden--nginx--password-manager)
 8. [MariaDB — Vaultwarden Database](#8-mariadb--vaultwarden-database)
 9. [Samba — File Server](#9-samba--file-server)
-10. [Storage — mergerfs + NFS](#10-storage--mergerfs--nfs)
+10. [Storage — ZFS pool `red` + Samba/CIFS](#10-storage--zfs-pool-red--sambacifs-cold-copy-on-the-old-mergerfs-pair)
 11. [CI/CD — GitHub Actions Runner](#11-cicd--github-actions-runner)
 12. [Log Management](#12-log-management)
 13. [Useful Commands & Diagnostics](#13-useful-commands--diagnostics)
@@ -28,7 +28,7 @@
 ## 1. Network Topology
 
 **Host roles, at a glance:**
-- **opti** — FS/storage (OpenMediaVault, mergerfs pool, Samba/CIFS server for the whole homelab)
+- **opti** — FS/storage (ZFS pool `red` on a 4 TB WD Red Plus, Samba/CIFS server for the whole homelab; OMV for UI/monitoring only)
 - **noblenumbat** — YAMS media operation (Jellyfin + arr stack + qBittorrent/VPN)
 - **rpi** — DNS & webapp (Pi-hole, Vaultwarden, the homelab dashboard webapp)
 
@@ -41,7 +41,7 @@ Router / Gateway — 192.168.1.1
     |
     ├── rpi.lan          192.168.1.10   Raspberry Pi 4 — DNS & webapp (Pi-hole, Vaultwarden)
     ├── noblenumbat.lan  192.168.1.6    Dell Latitude 7400 — YAMS media operation
-    └── opti.lan         192.168.1.11   Custom x86 tower — FS/storage (OpenMediaVault, agent orchestration, Samba \\opti\fs)
+    └── opti.lan         192.168.1.11   Custom x86 tower — FS/storage (ZFS `red`, agent orchestration, Samba \\opti\red)
 ```
 
 **No VPN currently exists.** WireGuard (§6) and its peer-manager web UI (§14) were both
@@ -99,24 +99,32 @@ Remote access today (§17) is LAN-only: SSH + RDP on opti/noblenumbat, SSH-only 
 |---|---|
 | CPU | i5-3570 · 4c/4t · 3.4 GHz · Intel HD 2500 (QuickSync H.264) |
 | RAM | 5.7 GB |
-| Disk | 457 GB root · mergerfs pool `/srv/pool` (~1.1 TB, ~858 GB free) |
+| Disk | 457 GB root (sda) · **ZFS pool `red`** on 4 TB WD Red Plus (sdc, serial WD-WX32D163WV1V) · cold-copy pair sda-dir + 596 GB Hitachi NTFS (sdb, ro) |
 | GPU | `/dev/dri/renderD128` · render gid **106** |
-| OS | Debian 12 (Bookworm) |
+| OS | Debian 12 (Bookworm) · zfs-dkms 2.3.2 from bookworm-backports (ARC capped 1.5 GiB) |
 | IP | `192.168.1.11` (DHCP) |
-| Role | **OpenMediaVault** NAS · Samba share `\\opti\fs` = `/srv/pool` · homelab agent orchestration · self-hosted GitHub Actions runner (`label: opti`) |
+| Role | **OpenMediaVault** NAS (UI/monitoring only — not in the live data path) · Samba share `\\opti\red` = `/srv/red/fs` (ZFS) · homelab agent orchestration · self-hosted GitHub Actions runner (`label: opti`) |
 
-**opti storage map:**
+**opti storage map (since 2026-07-25 migration):**
 ```
-/srv/pool/               ← OMV mergerfs pool (~1.1 TB total)
-  ptm/
-    Media/Movies/        ← Jellyfin MOVIE LIBRARY (primary storage; noblenumbat mounts at /mnt/opti-library)
-    Media-Import/        ← file-drop inbox for Jellyfin (\\opti\fs\ptm\Media-Import\)
-    security-reports/    ← security agent reports (Pi mounts as /mnt/opti-fs/ptm/security-reports)
-    agent-logs/          ← homelab agent logs
-    certs/               ← TLS certs for webapp
+/srv/red/                ← ZFS pool `red` (3.6 TB, datasets red/fs + red/media)
+  fs/                    ← share root of \\opti\red  (ptm:users 2775)
+    ptm/
+      Media/Movies|Shows ← Jellyfin library, dataset red/media (recordsize=1M, no compression)
+      Media-Import/      ← file-drop inbox
+      security-reports/  ← security agent reports (rpi: /mnt/opti-fs/ptm/security-reports)
+      agent-logs/        ← homelab agent logs
+      certs/             ← TLS certs for webapp
+/srv/pool                ← bind of /srv/red/fs (compat for stragglers; old union path)
+/srv/attic               ← COLD COPY: old sda+sdb mergerfs pool, noauto — mounted only by
+                           homelab-coldcopy.timer (Sun 04:00), sdb branch fstab'd ro
 ```
 
-**Note:** OMV manages Samba config on opti — do NOT hand-edit it directly.
+**Note:** OMV manages `/etc/samba/smb.conf` — do NOT hand-edit it. The `[red]` share
+lives in **`/etc/homelab/samba-red.conf`** (repo: `homelab/opti-srv/samba/samba-red.conf`),
+pulled in via an `include =` stored in OMV's SMB "Extra options" field, and is editable
+from the webapp Samba page (`https://webapp.rpi.lan:8443/samba/`). OMV cannot model ZFS,
+which is why the share is out of its hands.
 
 **NFS:** removed 2026-07-11. `nfs-kernel-server` (plus `rpcbind`/`rpc-statd`) was installed
 and running on opti but exported nothing — `/etc/exports` was empty, and the fstab entry
@@ -138,7 +146,7 @@ left idle, to shrink unused attack surface.
 /srv/docker/compose/bitwarden-db/data/   # MariaDB data (bind mount)
 /srv/docker/compose/vaultwarden-data/    # Vaultwarden data (bind mount)
 /srv/docker/compose/data/wireguard*/      # orphaned WireGuard config — service decommissioned, see §6
-/mnt/opti-fs/                            # CIFS mount of \\opti\fs — the real shared storage (see §10)
+/mnt/opti-fs/                            # CIFS mount of \\opti\red — the real shared storage (see §10)
 /mnt/opti-fs/ptm/logging/                # Deploy & stack logs
 /mnt/opti-fs/ptm/security-reports/       # Security agent reports (see §15)
 /mnt/opti-fs/ptm/agent-logs/             # Homelab agent reports (see §15)
@@ -378,43 +386,60 @@ docker logs samba --tail=50
 
 ---
 
-## 10. Storage — mergerfs + Samba/CIFS
+## 10. Storage — ZFS pool `red` + Samba/CIFS (cold copy on the old mergerfs pair)
 
-### Architecture
+### Architecture (since the 2026-07-25 migration)
 
-**opti is the single source of truth for shared storage.** An OMV-managed mergerfs pool
-on opti unifies its local disk(s), and everything else in the homelab reaches it over
-Samba/CIFS — there is no NFS anywhere in this stack (see §2 "NFS: removed 2026-07-11" for
-why; a partial NFS setup was planned early on and never finished, so it's been fully
-removed rather than left as unused surface).
+**opti is the single source of truth for shared storage.** The live filesystem is a ZFS
+pool (`red`) on a single 4 TB WD Red Plus; the previous mergerfs pool (sda dir + sdb NTFS)
+was **not wiped** — it holds a complete second copy, refreshed weekly. Everything else in
+the homelab reaches storage over Samba/CIFS — there is no NFS anywhere in this stack
+(see §2 "NFS: removed 2026-07-11").
 
 ```
-opti — /srv/pool/                    ← OMV mergerfs pool (~1.1 TB total)
+opti — /srv/red/fs                   ← ZFS pool `red` (3.6 TB), share root
   ptm/
-    Media/Movies/, Media/Shows/      ← Jellyfin library (noblenumbat mounts these)
+    Media/Movies/, Media/Shows/      ← Jellyfin library (dataset red/media)
     Media-Import/                    ← file-drop inbox
     security-reports/, agent-logs/   ← homelab agent reports
     certs/, logging/, repo/, ...
 
-    │  Samba (\\opti\fs)
+    │  Samba (\\opti\red)
     ▼
-  ├── rpi        mounts the whole share at /mnt/opti-fs
-  └── noblenumbat mounts specific subfolders: /mnt/opti-library, /mnt/opti-shows,
+  ├── tux         mounts the whole share at /home/ptm/opti
+  ├── rpi         mounts the whole share at /mnt/opti-fs
+  └── noblenumbat mounts subfolders: /mnt/opti-library, /mnt/opti-shows,
                   /mnt/opti-media (see §16 storage layout)
+
+/srv/attic  ← COLD COPY (old mergerfs union, noauto): refreshed by homelab-coldcopy.timer
+              (Sun 04:00, report → agent-logs/coldcopy-latest.json, webapp Reports card).
+              sdb branch is fstab'd read-only outside the sync window.
 ```
 
-### mergerfs (on opti)
+### ZFS (on opti)
 
-**Check pool status:**
 ```bash
-df -h /srv/pool
-ls /srv/pool
+zpool status red                 # health; scrub runs monthly (zfs-scrub-monthly@red.timer)
+zfs list -o name,used,avail,compressratio
+zfs list -t snapshot | tail      # zfs-auto-snapshot: hourly/daily/weekly/monthly
 ```
 
-**Check policy** (mergerfs uses `ff` / `mfs` / `lfs` etc. for placement — check `/etc/fstab` or systemd unit for the mount options):
-```bash
-cat /proc/mounts | grep mergerfs
-```
+Snapshots are exposed to SMB clients as Windows "Previous Versions" (shadow_copy2).
+Restore a file: right-click → Previous Versions on Windows, or copy from
+`/srv/red/fs/.zfs/snapshot/<snap>/...` on opti.
+
+**DKMS caveat:** ZFS is out-of-tree (zfs-dkms 2.3.2, bookworm-backports — the base-repo
+2.1.11 does NOT build against kernel 6.12). `homelab-autoreboot.sh` refuses to reboot if
+the newest installed kernel has no zfs module built. Check after any manual
+`dist-upgrade`: `dkms status && modinfo -k $(ls /lib/modules | sort -V | tail -1) zfs`.
+
+### Cold copy (`homelab-coldcopy`)
+
+Weekly rsync `red → attic` with layered interlocks (source-floor, branch-count, deletion
+threshold, flock, ro-restore trap). Direction is hardcoded. Manual run:
+`systemctl start homelab-coldcopy.service` or the webapp Reports card Run-now button.
+The mergerfs pool remains mountable stand-alone — a total ZFS failure never blocks access
+to the data.
 
 ### CIFS mounts (client side)
 
@@ -424,14 +449,14 @@ down opti never hangs a client's boot — the mount just fails/degrades graceful
 
 **rpi** (`/etc/fstab`):
 ```fstab
-//192.168.1.11/fs  /mnt/opti-fs  cifs  credentials=/etc/opti-creds,uid=1000,gid=1003,_netdev,nofail,iocharset=utf8,vers=3.0  0  0
+//192.168.1.11/red  /mnt/opti-fs  cifs  credentials=/etc/opti-creds,uid=1000,gid=1003,_netdev,nofail,iocharset=utf8,vers=3.0  0  0
 ```
 
 **noblenumbat** (`/etc/fstab`, three separate sub-mounts):
 ```fstab
-//192.168.1.11/fs/ptm/Media-Import  /mnt/opti-media    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
-//192.168.1.11/fs/ptm/Media/Movies  /mnt/opti-library  cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
-//192.168.1.11/fs/ptm/Media/Shows   /mnt/opti-shows    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+//192.168.1.11/red/ptm/Media-Import  /mnt/opti-media    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+//192.168.1.11/red/ptm/Media/Movies  /mnt/opti-library  cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
+//192.168.1.11/red/ptm/Media/Shows   /mnt/opti-shows    cifs  credentials=/root/.smb-opti,...,_netdev,nofail,x-systemd.automount  0  0
 ```
 
 **Verify a mount:**
@@ -842,11 +867,11 @@ Full YAMS installation on noblenumbat (192.168.1.6) — Jellyfin + arr stack + q
   staging/         ← media-import drop zone → Radarr DownloadedMoviesScan
   blackhole/       ← torrent blackhole (qBittorrent watch folder, fed by media-import.sh)
 
-/mnt/opti-library/ ← MOVIE LIBRARY — CIFS mount of \\opti\fs\ptm\Media\Movies (opti mergerfs pool).
+/mnt/opti-library/ ← MOVIE LIBRARY — CIFS mount of \\opti\red\ptm\Media\Movies (opti ZFS pool `red`).
                      Bind-mounted over /data/movies in jellyfin/radarr/bazarr via
                      docker-compose.custom.yaml, so containers still see /data/movies.
                      Radarr imports are cross-device → copy fallback (no hardlinks).
-/mnt/opti-shows/   ← TV LIBRARY — CIFS mount of \\opti\fs\ptm\Media\Shows (opti mergerfs pool).
+/mnt/opti-shows/   ← TV LIBRARY — CIFS mount of \\opti\red\ptm\Media\Shows (opti ZFS pool `red`).
                      Bind-mounted over /data/tvshows in jellyfin/sonarr/bazarr, same pattern as
                      movies. Migrated 2026-07-08 (85 episode files / ~37 GB, diff-verified against
                      source before the local copy was deleted).

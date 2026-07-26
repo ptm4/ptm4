@@ -113,6 +113,11 @@ services:
       # shared secret the per-host architecture agents present on POST /ingest;
       # see homelab/Tools/arch-agent/hl-arch-agent.env.example on each host
       HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
+      # live Pi-hole tile + pause/resume (routes/pihole.js). Pi-hole is host-network on
+      # this rpi; the webapp container reaches it via the host's LAN IP. The password
+      # already lives in this same .env for Pi-hole itself.
+      PIHOLE_URL: ${PIHOLE_URL:-http://192.168.1.10}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro

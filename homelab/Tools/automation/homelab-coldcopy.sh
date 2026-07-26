@@ -76,9 +76,27 @@ cleanup() {
   if mountpoint -q "$ATTIC" 2>/dev/null; then
     umount "$ATTIC" 2>/dev/null && log "unmounted $ATTIC" || log "WARN: could not unmount $ATTIC"
   fi
-  if mount | grep -q " $SDB_MNT .*[(,]rw[,)]"; then
-    mount -o remount,ro "$SDB_MNT" 2>/dev/null && log "restored $SDB_MNT to ro" \
-      || finding high "could not restore $SDB_MNT to read-only — do this by hand"
+  if findmnt -n -o OPTIONS "$SDB_MNT" 2>/dev/null | grep -q '^rw'; then
+    umount "$SDB_MNT" 2>/dev/null
+  fi
+  if ! findmnt -n "$SDB_MNT" >/dev/null 2>&1; then
+    # fstab carries ro for this mntent, so a plain re-mount restores read-only.
+    # Retried because the mergerfs teardown can hold the branch for a moment.
+    # Mount via the systemd unit, NOT mount(8): a FUSE mount started by this script
+    # puts the ntfs-3g daemon in our service cgroup, and systemd kills it (and thereby
+    # the mount) the moment the oneshot service exits. The .mount unit owns it instead.
+    sdb_unit=$(systemd-escape -p --suffix=mount "$SDB_MNT")
+    restored=""
+    for _ in 1 2 3 4 5; do
+      systemctl start "$sdb_unit" 2>/dev/null && restored=1 && break
+      sleep 3
+    done
+    if [ -n "$restored" ]; then
+      log "restored $SDB_MNT to ro"
+    else
+      STATUS=degraded
+      finding high "could not restore $SDB_MNT to read-only — do this by hand"
+    fi
   fi
   write_report
   exit $rc
@@ -137,11 +155,11 @@ root_free_gb=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
 # ── Mount the cold copy for our window ────────────────────────────────────────
 mountpoint -q "$SDB_MNT" || abort "$SDB_MNT is not mounted — cold copy is incomplete"
 
-if ! mount -o remount,rw "$SDB_MNT" 2>/dev/null; then
-  abort "could not remount $SDB_MNT read-write — cannot refresh the cold copy"
-fi
-mount | grep -q " $SDB_MNT .*[(,]rw[,)]" || abort "$SDB_MNT did not actually become read-write"
-log "remounted $SDB_MNT rw"
+# ntfs-3g cannot remount in place: cycle the mount with explicit rw options.
+umount "$SDB_MNT" 2>/dev/null || abort "could not umount $SDB_MNT for the rw window"
+mount -t ntfs-3g -o rw,big_writes /dev/disk/by-uuid/C682C2DE82C2D1DB "$SDB_MNT"   || abort "could not mount $SDB_MNT read-write — cannot refresh the cold copy"
+findmnt -n -o OPTIONS "$SDB_MNT" | grep -q '^rw' || abort "$SDB_MNT did not come back read-write"
+log "mounted $SDB_MNT rw for the sync window"
 
 mount "$ATTIC" 2>/dev/null || abort "could not mount $ATTIC (mergerfs cold copy)"
 mountpoint -q "$ATTIC" || abort "$ATTIC did not mount"

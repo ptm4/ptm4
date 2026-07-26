@@ -1,93 +1,15 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ── Design tokens ──────────────────────────────────────────────────────────
-   Shared with frontend/architecture/ and frontend/agents/ so the SPA and the two
-   standalone pages speak one visual language. The four chromatic --c-* values are
-   the palette validated with the dataviz skill's validate_palette.js at --pairs all
-   (a map can place any two adjacent); don't change them without re-running it.
-
-   The legacy aliases at the bottom (--surface2/--text/--muted/--green/...) keep the
-   ~800 lines of existing page CSS working while the new components use the fuller
-   scale. Prefer the new names in new code.
+/* ── Design tokens live in tokens.css ───────────────────────────────────────
+   Every page (SPA + standalones) <link>s /tokens.css BEFORE its own styles.
+   Do not declare palette values here — that's how the old five-copy drift
+   happened. GitHub Dark/Light Default, purple-as-positive; see tokens.css.
    ------------------------------------------------------------------------- */
-:root {
-  /* surfaces & ink */
-  --bg:        #0d0f15;
-  --surface:   #1a1d27;
-  --surface-2: #20232f;
-  --surface-3: #262a38;
-  --border:    #2a2d3a;
-  --border-2:  #363a4b;
-  --ink:       #e6e8f0;
-  --ink-2:     #a8adc2;
-  --ink-3:     #767c93;
-  --accent:    #4f8ef7;
-  --accent-dim: #1d3a6b;
-
-  /* status — reserved, never reused as a category colour */
-  --ok:    #4caf7d;
-  --warn:  #e0b44a;
-  --crit:  #e05c5c;
-
-  /* categorical (validated) */
-  --c-network: #3987e5;
-  --c-storage: #1bab7d;
-  --c-media:   #c98500;
-  --c-apps:    #c4477a;
-
-  /* spacing scale */
-  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
-  --s5: 24px; --s6: 32px; --s7: 48px;
-
-  /* type scale */
-  --fs-xs: 10.5px; --fs-sm: 11.5px; --fs-base: 12.5px; --fs-md: 14px;
-  --fs-lg: 16px;   --fs-xl: 20px;   --fs-2xl: 28px;    --fs-hero: 34px;
-
-  /* radii & elevation */
-  --r-sm: 7px; --r: 10px; --r-lg: 14px;
-  --sh-1: 0 1px 2px rgba(0,0,0,.28);
-  --sh-2: 0 4px 20px rgba(0,0,0,.35);
-
-  --sidebar-w: 248px;   /* 240–280px is the industry norm; was 200 */
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-
-  /* legacy aliases — existing CSS below still references these */
-  --surface2: var(--surface-2);
-  --text:     var(--ink);
-  --muted:    var(--ink-3);
-  --green:    var(--ok);
-  --yellow:   var(--warn);
-  --red:      var(--crit);
-  --radius:   var(--r-sm);
-}
-
-:root[data-theme="light"] {
-  --bg:        #f2f3f7;
-  --surface:   #ffffff;
-  --surface-2: #f7f8fa;
-  --surface-3: #eef0f5;
-  --border:    #dcdfe8;
-  --border-2:  #c6cad6;
-  --ink:       #14161c;
-  --ink-2:     #4d5262;
-  --ink-3:     #757b8c;
-  --accent:    #2a78d6;
-  --accent-dim: #d6e4f8;
-  --ok:   #0f8a52;
-  --warn: #a3720a;
-  --crit: #c23b3b;
-  --c-network: #2a78d6;
-  --c-storage: #1baf7a;
-  --c-media:   #eda100;
-  --c-apps:    #e87ba4;
-  --sh-1: 0 1px 2px rgba(20,25,40,.06);
-  --sh-2: 0 4px 20px rgba(20,25,40,.12);
-}
 
 body {
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: var(--sans);
   font-size: var(--fs-md);
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
@@ -103,7 +25,7 @@ body {
 .sidebar {
   width: var(--sidebar-w);
   min-width: var(--sidebar-w);
-  background: var(--surface);
+  background: var(--bg-inset); /* GitHub's darker left rail */
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -125,9 +47,20 @@ body {
 .logo-text {
   font-size: 15px;
   font-weight: 600;
-  font-family: monospace;
-  color: var(--accent);
+  font-family: var(--mono);
+  color: var(--brand); /* identity purple, pairs with the raspberry slice */
   letter-spacing: 0.5px;
+}
+
+.logo-slice {
+  width: 18px;
+  height: 18px;
+  display: block;
+  flex-shrink: 0;
+  transition: filter 0.2s;
+}
+.sidebar-logo:hover .logo-slice {
+  filter: drop-shadow(0 0 6px rgba(163,113,247,.45));
 }
 
 .health-dot {
@@ -158,8 +91,12 @@ body {
   font-weight: 500;
   transition: background 0.12s, color 0.12s;
 }
-.nav-link:hover { background: var(--surface2); color: var(--text); }
-.nav-link.active { background: rgba(79,142,247,0.12); color: var(--accent); }
+.nav-link:hover { background: var(--surface-2); color: var(--text); }
+.nav-link.active { background: var(--accent-dim); color: var(--accent); }
+.nav-link:focus-visible {
+  outline: 2px solid var(--accent-emphasis);
+  outline-offset: -2px;
+}
 
 .nav-placeholder {
   display: flex;
@@ -190,13 +127,17 @@ body {
   color: var(--muted);
 }
 
-/* ── Main view ───────────────────────────────────────────────────────────── */
+/* ── Main view ───────────────────────────────────────────────────────────────
+   Text-heavy pages keep a reading width. Home is "mission control" and opts into
+   the full screen via .view-wide (set by route() in app.js), capped so meters and
+   tables don't stretch absurdly on an ultrawide. */
 .view {
   flex: 1;
   overflow-y: auto;
   padding: 32px 32px;
   max-width: 1100px;
 }
+.view.view-wide { max-width: 1760px; }
 
 /* ── Home page ───────────────────────────────────────────────────────────── */
 .page-header {
@@ -237,7 +178,7 @@ body {
   gap: 10px;
   transition: border-color 0.15s;
 }
-.card:hover { border-color: #3a3d4a; }
+.card:hover { border-color: var(--border-2); }
 .card-placeholder { border-style: dashed; opacity: 0.5; }
 .card-icon { font-size: 22px; }
 .card-body h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
@@ -277,7 +218,7 @@ body {
   cursor: pointer;
   transition: background 0.12s;
 }
-.btn-refresh:hover { background: #2a2d3a; }
+.btn-refresh:hover { background: var(--surface-3); }
 
 .sec-grid {
   display: grid;
@@ -366,8 +307,8 @@ body {
 }
 
 .btn-view {
-  background: rgba(79,142,247,0.1);
-  border: 1px solid rgba(79,142,247,0.3);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-muted);
   border-radius: 5px;
   color: var(--accent);
   font-size: 12px;
@@ -375,7 +316,7 @@ body {
   cursor: pointer;
   transition: background 0.12s;
 }
-.btn-view:hover { background: rgba(79,142,247,0.2); }
+.btn-view:hover { background: var(--accent-muted); }
 
 /* Agent control buttons (enable/disable + run-now) */
 .btn-toggle, .btn-run {
@@ -388,12 +329,12 @@ body {
 }
 .btn-toggle.on  { color: var(--green); border: 1px solid var(--green); }
 .btn-toggle.off { color: var(--muted); border: 1px solid var(--border); }
-.btn-toggle:hover { background: rgba(255,255,255,0.05); }
+.btn-toggle:hover { background: var(--surface-2); }
 .btn-run {
   color: var(--yellow);
-  border: 1px solid rgba(229,192,123,0.4);
+  border: 1px solid var(--warn-muted);
 }
-.btn-run:hover { background: rgba(229,192,123,0.12); }
+.btn-run:hover { background: var(--warn-dim); }
 .btn-toggle:disabled, .btn-run:disabled { opacity: 0.6; cursor: default; }
 
 .sec-stale-badge {
@@ -403,7 +344,7 @@ body {
   padding: 1px 7px;
   border-radius: 4px;
   color: var(--yellow);
-  border: 1px solid rgba(229,192,123,0.5);
+  border: 1px solid var(--warn-muted);
 }
 
 .sec-card.card-disabled { opacity: 0.55; }
@@ -494,7 +435,7 @@ body {
   flex-shrink: 0;
   padding: 2px 6px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.06);
+  background: var(--surface-2);
   margin-top: 1px;
 }
 .finding-msg { color: var(--text); line-height: 1.5; }
@@ -555,8 +496,8 @@ body {
   padding: 1px 6px;
   font-size: 10px;
   font-weight: 700;
-  background: var(--red);
-  color: #fff;
+  background: var(--crit);
+  color: var(--bg);
   border-radius: 4px;
   letter-spacing: 0.5px;
 }
@@ -618,22 +559,22 @@ body {
 .demo-map  { font-weight: 600; }
 .demo-date { font-size: 11px; color: var(--muted); font-family: monospace; font-weight: 400; }
 .demo-result { font-size: 12px; font-family: monospace; font-weight: 700; margin-left: auto; }
-.demo-win  { color: #4caf50; }
-.demo-loss { color: #ef5350; }
+.demo-win  { color: var(--ok); }
+.demo-loss { color: var(--crit); }
 .demo-stats { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
 
 /* ── AI coaching headline block ───────────────────────────────────────────── */
 .coaching-block {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent, #6c8cff);
+  border-left: 3px solid var(--accent);
   border-radius: var(--radius);
   padding: 4px 20px;
   margin: 16px 0 20px;
 }
 .coaching-missing {
-  border-left: 3px solid #ef5350;
-  background: rgba(239, 83, 80, 0.06);
+  border-left: 3px solid var(--crit);
+  background: var(--crit-dim);
   border-radius: var(--radius);
   padding: 14px 20px;
   margin: 8px 0 16px;
@@ -645,7 +586,7 @@ body {
 
 /* ── HLTV VRS "players to watch" ───────────────────────────────────────────── */
 .watchlist-block { margin: 16px 0 20px; }
-.watchlist-block .pos-card { border-left: 3px solid var(--accent, #6c8cff); }
+.watchlist-block .pos-card { border-left: 3px solid var(--accent); }
 /* Summary row: labeled my_roles / vrs_as_of, readable at a glance. */
 .wl-summary {
   display: flex; flex-wrap: wrap; gap: 8px 20px;
@@ -659,7 +600,7 @@ body {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--muted); font-weight: 600;
 }
-.wl-summary-val { font-size: 13px; color: var(--text, #e6e6e6); }
+.wl-summary-val { font-size: 13px; color: var(--text); }
 .wl-players { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .wl-players li { font-size: 13px; }
 .wl-player { font-weight: 600; }
@@ -699,10 +640,10 @@ body {
 .deep-table { margin-top: 10px; font-size: 12px; }
 .deep-table td, .deep-table th { padding: 3px 8px; }
 .round-wl { font-weight: 700; font-family: monospace; }
-.round-won  { background: rgba(76, 175, 80, 0.08); }
-.round-lost { background: rgba(239, 83, 80, 0.08); }
-.round-won  .round-wl { color: #4caf50; }
-.round-lost .round-wl { color: #ef5350; }
+.round-won  { background: var(--ok-dim); }
+.round-lost { background: var(--crit-dim); }
+.round-won  .round-wl { color: var(--ok); }
+.round-lost .round-wl { color: var(--crit); }
 
 /* ── Home: Quick Links tile ───────────────────────────────────────────────── */
 .card-links { grid-column: span 1; }
@@ -819,7 +760,7 @@ body {
   cursor: pointer;
   padding: 2px 8px;
 }
-.w-loc-del:hover { background: rgba(224,92,92,0.12); }
+.w-loc-del:hover { background: var(--crit-dim); }
 
 .w-geo-result {
   display: block;
@@ -852,17 +793,20 @@ body {
 .llm-response:empty { display: none; }
 .llm-response pre { white-space: pre-wrap; word-break: break-word; }
 
-/* Discord-style embed preview (modal) */
+/* Discord-style embed preview (modal).
+   Deliberately hardcoded: this block imitates Discord's own dark chrome so the
+   preview looks like the real post. It must NOT follow the app theme. */
 .embed-preview {
   background: #2b2d31;
   border-left: 4px solid #58b9ff;
   border-radius: 4px;
   padding: 12px 16px;
   max-width: 440px;
+  color: #dbdee1; /* Discord's own ink — bg is hardcoded dark, so text must be too */
 }
-.embed-author { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+.embed-author { font-size: 12px; font-weight: 600; color: #b5bac1; margin-bottom: 6px; }
 .embed-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-.embed-desc { font-size: 14px; color: var(--text); margin-bottom: 8px; }
+.embed-desc { font-size: 14px; color: #dbdee1; margin-bottom: 8px; }
 .embed-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -874,7 +818,7 @@ body {
 .embed-field:not(.inline) { grid-column: 1 / -1; }
 .embed-field-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
 .embed-field-value { font-size: 13px; line-height: 1.45; }
-.embed-footer { font-size: 11px; color: var(--muted); margin-top: 10px; }
+.embed-footer { font-size: 11px; color: #b5bac1; margin-top: 10px; }
 
 /* message text above the embed in the preview modal */
 .msg-content { font-size: 14px; margin-bottom: 8px; max-width: 440px; }
@@ -1018,6 +962,193 @@ body {
   .vitals { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mission-control Home (2026-07-25) — full-width panels over the same 12-col
+   bento. Everything below is fed by /api/containers, /api/activity, /api/trends,
+   /api/pihole/summary and the existing runner reports.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* A transparent column that spans like a tile, so short tiles can stack beside a
+   tall one without the grid stretching them to equal height. */
+.tile-col { display: flex; flex-direction: column; gap: var(--s3); min-width: 0; }
+.mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); }
+.mini-grid .tile { padding: var(--s3); }
+.mini-grid .tile-metric { font-size: var(--fs-xl); }
+
+/* status ribbon in the page header */
+.page-header .spacer { margin-left: auto; }
+.ribbon { display: inline-flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.ribbon-fresh { font-size: var(--fs-xs); color: var(--ink-3); font-family: var(--mono); }
+.btn-mini {
+  font: inherit; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap;
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--ink-2); border-radius: var(--r-sm); padding: 3px 10px;
+}
+.btn-mini:hover:not(:disabled) { color: var(--ink); border-color: var(--border-2); background: var(--surface-3); }
+.btn-mini:disabled { opacity: .6; cursor: default; }
+.btn-mini:focus-visible { outline: 2px solid var(--accent-emphasis); outline-offset: 1px; }
+
+/* container status squares (host tiles) */
+.cstrip { display: inline-flex; gap: 2px; flex-wrap: wrap; }
+.cdot {
+  display: inline-block; width: 7px; height: 7px; border-radius: 2px;
+  background: var(--border-2); flex: none;
+}
+.cdot[data-s="ok"] { background: var(--ok); }
+.cdot[data-s="warn"] { background: var(--warn); }
+.cdot[data-s="crit"] { background: var(--crit); }
+.cdot[data-s="idle"] { background: var(--border-2); }
+
+/* small labelled chips used across the new panels */
+.chip {
+  display: inline-flex; align-items: center; font-size: var(--fs-xs); font-weight: 600;
+  padding: 0 6px; border-radius: 99px; border: 1px solid var(--border-2);
+  color: var(--ink-3); background: var(--surface-2); white-space: nowrap;
+}
+.chip[data-s="ok"]     { color: var(--ok);     border-color: var(--ok-muted); }
+.chip[data-s="warn"]   { color: var(--warn);   border-color: var(--warn-muted); }
+.chip[data-s="crit"]   { color: var(--crit);   border-color: var(--crit-muted); }
+.chip[data-s="severe"] { color: var(--severe); border-color: var(--severe); }
+
+/* key/value rows — VPN, network, upkeep panels */
+.kv-rows { display: flex; flex-direction: column; gap: 5px; margin-top: var(--s2); }
+.kv-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s3);
+  font-size: var(--fs-base); color: var(--ink-2); min-width: 0;
+}
+.kv-row > span:first-child { color: var(--ink-3); flex: none; display: inline-flex; align-items: center; gap: 6px; }
+.kv-row > span:last-child { text-align: right; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.kv-row small { color: var(--ink-3); }
+.upkeep-sep { height: 1px; background: var(--border); margin: var(--s3) 0 var(--s2); }
+.mono { font-family: var(--mono); }
+
+/* SMART disk rows */
+.smart-list { display: flex; flex-direction: column; gap: 4px; margin-top: var(--s3); }
+.smart-row { display: flex; align-items: center; gap: var(--s2); font-size: var(--fs-base); }
+.smart-row .mono { color: var(--ink-2); min-width: 34px; }
+
+/* sparklines */
+.sparks { margin-top: var(--s3); }
+.spark-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2) var(--s3); }
+.spark-cell { min-width: 0; }
+.spark-label { font-size: var(--fs-xs); color: var(--ink-3); letter-spacing: .04em; }
+.spark-label b { color: var(--ink-2); font-weight: 650; }
+.spark { width: 100%; height: 30px; display: block; }
+
+/* containers table + activity feed share a bounded scroll area so one long list
+   can't set the height of the whole row */
+.scrollbody { overflow-y: auto; max-height: 340px; margin: 0 calc(var(--s4) * -1) calc(var(--s4) * -1); padding: 0 var(--s4) var(--s4); }
+.ctable { width: 100%; border-collapse: collapse; font-size: var(--fs-base); }
+.ctable td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.ctable tr:last-child td { border-bottom: 0; }
+.ctable td:first-child { width: 12px; padding-right: 6px; }
+.ct-name { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.ct-img { color: var(--ink-3); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.feed { display: flex; flex-direction: column; }
+.feed-item {
+  display: flex; align-items: baseline; gap: var(--s2);
+  padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--fs-base);
+}
+.feed-item:last-child { border-bottom: 0; }
+.feed-item .cdot { align-self: center; }
+.feed-msg { color: var(--ink-2); flex: 1; min-width: 0; }
+.feed-meta { font-size: var(--fs-xs); color: var(--ink-3); font-family: var(--mono); flex: none; display: inline-flex; align-items: center; gap: 5px; }
+
+.qlinks-col { grid-template-columns: 1fr 1fr; }
+
+/* per-row action button in the containers table */
+.ctable td.ct-act { width: 26px; text-align: right; padding-right: 0; }
+.btn-icon {
+  font: inherit; font-size: var(--fs-base); line-height: 1; cursor: pointer;
+  background: none; border: 1px solid transparent; color: var(--ink-3);
+  border-radius: var(--r-sm); padding: 2px 5px;
+}
+.ctable tr:hover .btn-icon { border-color: var(--border); color: var(--ink-2); }
+.btn-icon:hover:not(:disabled) { background: var(--surface-3); color: var(--accent); border-color: var(--border-2); }
+.btn-icon:disabled { opacity: .5; cursor: default; }
+.btn-icon:focus-visible { outline: 2px solid var(--accent-emphasis); outline-offset: 1px; }
+
+.tile-actions { display: flex; gap: var(--s2); margin-top: var(--s3); }
+
+/* ── Toasts ────────────────────────────────────────────────────────────────── */
+.toast-stack {
+  position: fixed; right: var(--s4); bottom: var(--s4); z-index: 300;
+  display: flex; flex-direction: column; gap: var(--s2); max-width: min(420px, 92vw);
+}
+.toast {
+  display: flex; align-items: flex-start; gap: var(--s3);
+  background: var(--surface); border: 1px solid var(--border-2);
+  border-left: 3px solid var(--ink-3);
+  border-radius: var(--r); box-shadow: var(--sh-2);
+  padding: var(--s3) var(--s3) var(--s3) var(--s4);
+  font-size: var(--fs-base); color: var(--ink-2);
+  animation: toast-in .18s ease-out;
+}
+.toast[data-s="ok"]   { border-left-color: var(--ok); }
+.toast[data-s="warn"] { border-left-color: var(--warn); }
+.toast[data-s="crit"] { border-left-color: var(--crit); }
+.toast-msg { flex: 1; line-height: 1.45; }
+.toast-msg b { color: var(--ink); }
+.toast-x {
+  font: inherit; background: none; border: 0; color: var(--ink-3);
+  cursor: pointer; padding: 0 2px; line-height: 1;
+}
+.toast-x:hover { color: var(--ink); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+/* ── Confirmation modal ────────────────────────────────────────────────────── */
+.confirm-overlay { display: flex; align-items: center; justify-content: center; }
+.confirm-modal { max-width: 460px; width: min(460px, 92vw); }
+.confirm-modal[data-s="crit"] { border-color: var(--crit-muted); }
+.confirm-body { font-size: var(--fs-md); color: var(--ink-2); line-height: 1.55; }
+.confirm-body p { margin-bottom: var(--s2); }
+.confirm-body code {
+  font-family: var(--mono); font-size: var(--fs-base);
+  background: var(--bg-inset); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; color: var(--ink);
+}
+.confirm-danger {
+  color: var(--crit); background: var(--crit-dim);
+  border-radius: var(--r-sm); padding: var(--s2) var(--s3); margin-top: var(--s3);
+}
+.confirm-type {
+  display: block; margin-top: var(--s3);
+  font-size: var(--fs-base); color: var(--ink-3);
+}
+.confirm-type input {
+  display: block; width: 100%; margin-top: 5px;
+  font: inherit; font-family: var(--mono); font-size: var(--fs-md);
+  background: var(--bg-inset); border: 1px solid var(--border-2);
+  border-radius: var(--r-sm); color: var(--ink); padding: 6px 9px;
+}
+.confirm-type input:focus { outline: 2px solid var(--accent-emphasis); outline-offset: -1px; border-color: var(--accent); }
+.confirm-actions {
+  display: flex; justify-content: flex-end; gap: var(--s2);
+  padding: var(--s3) var(--s4) var(--s4);
+}
+.btn-danger { color: var(--crit); border-color: var(--crit-muted); }
+.btn-danger:hover:not(:disabled) { background: var(--crit-dim); color: var(--crit); border-color: var(--crit); }
+
+/* Wide screens get the full 12 columns; the intermediate step keeps the big
+   panels readable rather than letting them halve into narrow strips. */
+@media (max-width: 1400px) {
+  .view-wide .sp8 { grid-column: span 12; }
+  .view-wide .tile-col.sp4 { grid-column: span 6; }
+  .spark-grid { grid-template-columns: repeat(4, 1fr); }
+}
+@media (max-width: 1100px) {
+  .view-wide .tile-col.sp4 { grid-column: span 12; }
+  .mini-grid { grid-template-columns: repeat(4, 1fr); }
+  .spark-grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 720px) {
+  .mini-grid { grid-template-columns: 1fr 1fr; }
+  .ct-img { display: none; }
+  .feed-item { flex-wrap: wrap; }
+}
+
 /* ── Command palette ──────────────────────────────────────────────────────── */
 .cmdk-backdrop {
   position: fixed; inset: 0; z-index: 200; display: none;
@@ -1033,7 +1164,7 @@ body {
 }
 .cmdk input {
   font: inherit; font-size: var(--fs-lg); color: var(--ink);
-  background: none; border: 0; border-bottom: 1px solid var(--border);
+  background: var(--bg-inset); border: 0; border-bottom: 1px solid var(--border);
   padding: var(--s4); outline: none;
 }
 .cmdk input::placeholder { color: var(--ink-3); }

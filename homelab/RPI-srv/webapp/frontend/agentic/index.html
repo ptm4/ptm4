@@ -1,16 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Agentic Workspace</title>
+<link rel="icon" type="image/svg+xml" href="../favicon.svg" />
 <style>
+  /* Canonical palette lives in /tokens.css (linked AFTER this block, so it
+     wins). Minimal dark fallback + page-local aliases only — this page's old
+     inline gold palette is exactly the drift tokens.css exists to prevent. */
   :root{
-    --bg:#0f1117; --surface:#1a1d27; --surface2:#20232f; --border:#2a2d3a;
-    --text:#e2e4ed; --muted:#7a7f99; --accent:#e0b44a; --ok:#4caf7d; --bad:#e05c5c;
+    /* fallback only — canonical values live in /tokens.css */
+    --bg:#0d1117; --surface:#161b22; --surface2:#21262d; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    /* page-local alias: this page's CSS/JS says --bad; the shared token is --crit */
+    --bad: var(--crit, #f85149);
   }
+</style>
+<link rel="stylesheet" href="/tokens.css?v=20260726" />
+<script>
+  // Follow the dashboard theme (shared 'arch-theme' key, same as the SPA and
+  // the architecture/agents pages). Runs before first paint to avoid a flash.
+  (function () {
+    let t = null;
+    try { t = localStorage.getItem('arch-theme'); } catch (_) {}
+    if (t !== 'light' && t !== 'dark')
+      t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-  body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.5;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;line-height:1.5;}
   a{color:var(--accent);}
   code,.mono{font-family:ui-monospace,'Cascadia Code',Consolas,monospace;font-size:12px;}
   #back{position:fixed;top:14px;left:14px;z-index:20;background:var(--surface2);border:1px solid var(--border);
@@ -22,7 +43,7 @@
   #sync-btn:hover{border-color:var(--accent);} #sync-btn:disabled{opacity:.5;cursor:default;}
   .wire-btn{margin-left:auto;background:var(--surface);border:1px solid var(--accent);color:var(--accent);
     padding:4px 10px;border-radius:6px;font-size:11px;cursor:pointer;}
-  .wire-btn:hover{background:var(--accent);color:#0f1117;} .wire-btn:disabled{opacity:.5;cursor:default;}
+  .wire-btn:hover{background:var(--accent);color:var(--bg);} .wire-btn:disabled{opacity:.5;cursor:default;}
   #sync-status{font-size:11px;color:var(--muted);}
   header.page-head{padding:56px 24px 8px;max-width:1080px;}
   header.page-head h1{font-size:20px;margin-bottom:6px;}
@@ -38,13 +59,13 @@
   th{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.4px;}
   tr:last-child td{border-bottom:none;}
   .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);}
-  .tag.stub{color:var(--accent);border-color:var(--accent);}
+  .tag.stub{color:var(--brand);border-color:var(--brand);}
   .tag.ok{color:var(--ok);border-color:var(--ok);} .tag.bad{color:var(--bad);border-color:var(--bad);}
   ul.clean{list-style:none;display:flex;flex-direction:column;gap:6px;}
-  ul.clean li{padding-left:16px;position:relative;} ul.clean li::before{content:"▸";position:absolute;left:0;color:var(--accent);}
+  ul.clean li{padding-left:16px;position:relative;} ul.clean li::before{content:"▸";position:absolute;left:0;color:var(--brand);}
   .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
   @media(max-width:720px){.cols{grid-template-columns:1fr;}.kv{grid-template-columns:1fr;}}
-  #err{background:#2a1d1d;border:1px solid var(--bad);color:#ffb4b4;padding:14px;border-radius:8px;margin-top:16px;}
+  #err{background:var(--crit-dim, rgba(248,81,73,.15));border:1px solid var(--bad);color:var(--crit, #f85149);padding:14px;border-radius:8px;margin-top:16px;}
   .muted{color:var(--muted);}
   .tool-card{border:1px solid var(--border);border-radius:8px;padding:12px 14px;background:var(--surface2);margin-bottom:10px;}
   .tool-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}

@@ -7,9 +7,10 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <!-- ?v= is a cache-buster: nginx serves these static and browsers hold onto them, so
        without it a deploy can leave someone on new HTML with the old CSS/JS (which looks
-       like a broken layout rather than a caching problem). Bump the date on any change
-       to style.css or app.js. -->
-  <link rel="stylesheet" href="style.css?v=20260725" />
+       like a broken layout rather than a caching problem). Bump the suffix on any change
+       to tokens.css, style.css or app.js. -->
+  <link rel="stylesheet" href="/tokens.css?v=20260726" />
+  <link rel="stylesheet" href="style.css?v=20260726" />
 </head>
 <body>
   <div class="layout">
@@ -17,6 +18,7 @@
     <!-- Sidebar navigation -->
     <nav class="sidebar">
       <div class="sidebar-logo">
+        <img src="/favicon.svg" alt="" class="logo-slice" />
         <span class="logo-text">rpi.lan</span>
         <span id="healthDot" class="health-dot" title="API health"></span>
       </div>
@@ -47,6 +49,7 @@
           <li><a href="#bots" class="nav-link" data-route="bots">Bots<span class="nav-count" id="count-bots">5</span></a></li>
           <li><a href="#leetify" class="nav-link" data-route="leetify">CS2 / Leetify</a></li>
           <li><a href="#llm" class="nav-link" data-route="llm">Local LLM<span class="nav-dot" id="dot-llm"></span></a></li>
+          <li><a href="/samba/" class="nav-link">Samba</a></li>
           <li><a href="/notes/" class="nav-link">Notes</a></li>
         </ul>
       </div>
@@ -83,6 +86,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="app.js?v=20260725"></script>
+  <script src="app.js?v=20260726"></script>
 </body>
 </html>

@@ -85,6 +85,20 @@ app.use('/api/agentic', agenticRouter);
 const sambaRouter = require('./routes/samba');
 app.use('/api/samba', sambaRouter);
 
+// mission-control Home read-model — /api/containers, /api/timers, /api/activity,
+// /api/trends (all read-only reshapes of data already on disk; see routes/dashboard.js)
+const dashboardRouter = require('./routes/dashboard');
+app.use('/api', dashboardRouter);
+
+// live Pi-hole v6 stats (+ pause/resume) — needs PIHOLE_WEB_PASSWORD in env
+const piholeRouter = require('./routes/pihole');
+app.use('/api/pihole', piholeRouter);
+
+// live host vitals — polls each arch agent's /vitals every 30s into a ring buffer and
+// serves it as the Home sparkline series (the daily hardware report is far too coarse)
+const vitalsRouter = require('./routes/vitals');
+app.use('/api/vitals', vitalsRouter);
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, () => console.log(`webapp listening on :${PORT}`));

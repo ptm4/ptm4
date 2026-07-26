@@ -26,10 +26,15 @@ const TOKEN = process.env.HL_ARCH_INGEST_TOKEN || '';
 const STATUS_TIMEOUT_MS = 4000;
 const SYNC_TIMEOUT_MS = 20000;   // a real collection + push, not just a status read
 
-async function agentFetch(url, { method = 'GET', timeoutMs = STATUS_TIMEOUT_MS } = {}) {
+async function agentFetch(url, { method = 'GET', timeoutMs = STATUS_TIMEOUT_MS, body } = {}) {
   const headers = {};
   if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
-  const res = await fetch(url, { method, headers, signal: AbortSignal.timeout(timeoutMs) });
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const res = await fetch(url, {
+    method, headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(timeoutMs),
+  });
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
@@ -107,5 +112,39 @@ router.post('/sync-all', async (req, res) => {
   }));
   res.json({ results, checked_at: new Date().toISOString() });
 });
+
+// POST /api/agents/:host/restart-container — restart one container on that host via
+// its agent's /restart (agent v0.2.0+). The agent validates the name against its own
+// `docker ps -a` and requires a bearer token, so this proxy stays thin.
+// Timeout is generous: a real `docker restart` on a heavy container takes ~10-15s and
+// the agent blocks until it finishes, but stays inside nginx's 60s proxy read timeout.
+router.post('/:host/restart-container', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  const container = req.body?.container;
+  if (typeof container !== 'string' || !container.trim()) {
+    return res.status(400).json({ error: 'body.container is required' });
+  }
+
+  try {
+    const r = await agentFetch(`${cfg.base}/restart`, {
+      method: 'POST', timeoutMs: 55000, body: { container: container.trim() },
+    });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    // Distinguish "the agent never answered" from "the agent said no" — the frontend
+    // maps these to different toasts.
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: /abort|timeout/i.test(e.message)
+        ? `agent on ${req.params.host} did not respond in time (restart may still be running)`
+        : `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// AGENT_HOSTS is the single source of truth for "which hosts run an agent";
+// routes/vitals.js polls the same list rather than duplicating the IPs.
+router.AGENT_HOSTS = AGENT_HOSTS;
 
 module.exports = router;

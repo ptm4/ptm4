@@ -14,7 +14,7 @@ LAN is `192.168.1.0/24`, gateway `.1`. All four hosts are SSH-able by alias.
 | Alias | IP | OS | Role — what it contains |
 |---|---|---|---|
 | `tux` | .3 | CachyOS | **You are usually here.** Workstation. No services; nothing depends on it. |
-| `opti` | .11 | Debian 12 | **Storage + control plane.** OpenMediaVault; mergerfs pool `/srv/pool` (1.1 TB) exported as Samba `\\opti\fs`; agent dispatcher `:9099`; x86 CI runner; xrdp `:3389`. |
+| `opti` | .11 | Debian 12 | **Storage + control plane.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; x86 CI runner; xrdp `:3389`. |
 | `rpi` | .10 | Ubuntu 22.04 (RPi 4) | **DNS + web.** Pi-hole (DNS *and* DHCP for the whole LAN); dashboard webapp `:8443`; Vaultwarden `:443`; notes `:3002`; 5 `discord-*` bots; ARM64 CI runner. ~12 containers. |
 | `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. ~13 containers. YAMS compose at `/opt/yams/`. |
 | `android` | .54 | Termux | Galaxy S10. llama.cpp `:8080` (local LLM). **Intermittent — often offline.** |

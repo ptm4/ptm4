@@ -29,9 +29,11 @@ Three kinds of addition. Pick by how much chrome the thing needs:
 | **SPA tab** | Fits the dashboard's existing sidebar + card idiom | a route in `frontend/app.js`, rendered into `#view` |
 | **API route only** | Just exposing data (proxying a service, reading a file) | `backend/routes/<name>.js` |
 
-Existing standalone pages: `frontend/architecture/`, `frontend/agentic/`, and
-`notes-app/web/` (served separately at `/notes/`). Existing SPA tabs: home, security,
-agents, the five bots, leetify, llm — all in `app.js`.
+Existing standalone pages: `frontend/architecture/`, `frontend/agentic/`,
+`frontend/samba/` (editor for opti's `[red]` share config — proxies the dispatcher's
+`/samba/*` endpoints, whose validate→backup→write→reload→verify pipeline lives on opti in
+`Tools/automation/samba_config.py`), and `notes-app/web/` (served separately at `/notes/`).
+Existing SPA tabs: home, security, agents, the five bots, leetify, llm — all in `app.js`.
 
 **Prefer a standalone page for anything visual.** It keeps a large `<style>`/`<script>`
 out of the 2000-line `app.js`, and it can be opened directly.
@@ -40,14 +42,21 @@ out of the 2000-line `app.js`, and it can be opened directly.
 
 ### Standalone page
 
-Create `frontend/<name>/index.html`. Keep it self-contained (inline CSS/JS) — there is
-no bundler. Match the dashboard's tokens so it doesn't look foreign:
+Create `frontend/<name>/index.html`. Keep the page's own CSS/JS inline — there is
+no bundler — but **do NOT inline the palette**. The theme (GitHub Dark/Light Default,
+purple-as-positive) lives in one shared file; link it before your page styles:
 
-```css
---bg:#0d0f15; --surface:#1a1d27; --surface-2:#20232f; --border:#2a2d3a;
---ink:#e6e8f0; --ink-2:#a8adc2; --ink-3:#767c93; --accent:#4f8ef7;
---ok:#4caf7d; --warn:#e0b44a; --crit:#e05c5c;
+```html
+<link rel="stylesheet" href="/tokens.css" />
 ```
+
+That provides `--bg --bg-inset --surface --surface-2 --surface-3 --border --border-2
+--ink --ink-2 --ink-3 --accent --accent-emphasis --accent-dim --brand --ok --warn
+--severe --crit` (+ `-dim`/`-muted` variants), fonts (`--sans`/`--mono`), spacing,
+radii, and the light theme. Never re-declare palette hexes in a page — five inline
+copies drifting apart is why tokens.css exists. A ~6-line dark fallback `:root` placed
+*before* the link is fine for resilience. Theme is `data-theme` on `<html>`, persisted
+in localStorage key `arch-theme` (copy the init snippet from `frontend/agentic/index.html`).
 
 Include a way back: `<a href="/">← rpi.lan</a>`.
 
@@ -90,6 +99,23 @@ Data already available inside the container (read-only mounts from opti's pool):
 | `/agent-logs` | agent JSON reports (`homelab-doctor-latest.json`, `hardware-latest.json`, …) |
 | `/reports` | security agent reports |
 | `/workspace` | the whole `ptm4` repo, incl. `homelab/agentic/workspace.json` |
+| `/arch-data` | **the only writable mount** — arch-agent fragments + the vitals ring buffer |
+
+**Check these read-models before writing a new one** — most "I need per-host X" questions
+are already answered:
+
+| Endpoint | Gives you |
+|---|---|
+| `/api/containers` | every container across hosts: state, uptime, image, compose project, `update_available` |
+| `/api/activity` | unified newest-first feed of findings, VPN watchdog actions, autoupdate, backups, security |
+| `/api/trends?days=30` | daily pool/disk series from the dated doctor history |
+| `/api/timers` | systemd timers per host (parsed from the agent fragments) |
+| `/api/vitals/:host` | ~6h of 30s-resolution CPU / memory / temp / network, for sparklines |
+| `/api/pihole/summary` | live FTL stats + blocking state (needs `PIHOLE_WEB_PASSWORD` in the container env) |
+
+Note the collector cadence when deciding what to trust: **homelab-doctor and network run
+every 30 min, but hardware and software run only once a day** — so anything CPU/memory
+shaped from `hardware-latest` can be ~24h stale. Use `/api/vitals` for live numbers.
 
 Prefer reading those files over new SSH round trips — `routes/architecture.js` reshapes
 the newest doctor report and is the cheap-live-status pattern to copy.

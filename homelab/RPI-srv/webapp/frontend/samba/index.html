@@ -23,40 +23,25 @@
       is cheaper than discovering it after the next deploy reverts your change.
 -->
 <style>
+/* Canonical palette lives in /tokens.css (linked AFTER this block, so it wins).
+   Below: minimal dark fallback + page-local radii only. Do not re-declare
+   shared palette values here. */
 :root {
-  --bg:        #0d0f15;
-  --surface:   #1a1d27;
-  --surface-2: #20232f;
-  --surface-3: #262a38;
-  --border:    #2a2d3a;
-  --border-2:  #363a4b;
-  --ink:       #e6e8f0;
-  --ink-2:     #a8adc2;
-  --ink-3:     #767c93;
-  --accent:    #4f8ef7;
-  --ok:    #4caf7d;
-  --warn:  #e0b44a;
-  --crit:  #e05c5c;
-  --radius: 10px;
-  --radius-sm: 7px;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* fallback only — canonical values live in /tokens.css */
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #30363d;
+  --ink:     #e6edf3;
+  --ink-2:   #8b949e;
+  --ink-3:   #6e7681;
+  --accent:  #58a6ff;
+
+  --radius: 6px;
+  --radius-sm: 6px;
 }
-:root[data-theme="light"] {
-  --bg:        #f2f3f7;
-  --surface:   #ffffff;
-  --surface-2: #f7f8fa;
-  --surface-3: #eef0f5;
-  --border:    #dcdfe8;
-  --border-2:  #c6cad6;
-  --ink:       #14161c;
-  --ink-2:     #4d5262;
-  --ink-3:     #757b8c;
-  --accent:    #2a78d6;
-  --ok:    #0f8a52;
-  --warn:  #a3720a;
-  --crit:  #c23b3b;
-}
+</style>
+<link rel="stylesheet" href="/tokens.css?v=20260726" />
+<style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); min-height: 100vh; -webkit-font-smoothing: antialiased; }
 a { color: var(--accent); }

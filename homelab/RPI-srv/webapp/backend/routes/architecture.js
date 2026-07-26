@@ -221,5 +221,8 @@ router.get('/data', (req, res) => {
 // per-host drift counts) without duplicating the merge or standing up a second HTTP
 // round trip just to read data this process already has on disk.
 router.buildMergedData = buildMergedData;
+// routes/dashboard.js joins fragments with the doctor report for /api/containers and
+// /api/timers — same sharing rationale as buildMergedData above.
+router.readFragments = readFragments;
 
 module.exports = router;

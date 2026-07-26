@@ -31,65 +31,41 @@
   re-running the validator.
 -->
 <style>
-/* ── Tokens ──────────────────────────────────────────────────────────────── */
+/* ── Tokens ──────────────────────────────────────────────────────────────────
+   Canonical palette lives in /tokens.css (linked AFTER this block, so it wins
+   the cascade). This block holds only (a) a minimal dark fallback so the page
+   isn't unreadable if that link ever breaks, and (b) page-local tokens that
+   exist nowhere else: the three categorical NEUTRALS for the map (--c-infra/
+   --c-external/--c-client — the chromatic four now come from tokens.css) and
+   local radii/shadow. Do not re-declare shared palette values here. */
 :root {
-  --bg:        #0d0f15;
-  --surface:   #1a1d27;
-  --surface-2: #20232f;
-  --surface-3: #262a38;
-  --border:    #2a2d3a;
-  --border-2:  #363a4b;
-  --ink:       #e6e8f0;
-  --ink-2:     #a8adc2;
-  --ink-3:     #767c93;
-  --accent:    #4f8ef7;
+  /* fallback only — canonical values live in /tokens.css */
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #30363d;
+  --ink:     #e6edf3;
+  --ink-2:   #8b949e;
+  --ink-3:   #6e7681;
+  --accent:  #58a6ff;
 
-  /* categorical — dark steps, validated against surface #1a1d27 */
-  --c-network: #3987e5;
-  --c-storage: #1bab7d;
-  --c-media:   #c98500;
-  --c-apps:    #c4477a;
+  /* page-local: categorical neutrals — validated alongside the chromatic four */
   --c-infra:   #8b93a7;
   --c-external:#6e768a;
   --c-client:  #7f8798;
 
-  /* status — reserved, never reused for a category */
-  --ok:    #4caf7d;
-  --warn:  #e0b44a;
-  --crit:  #e05c5c;
-
-  --radius: 10px;
-  --radius-sm: 7px;
-  --shadow: 0 4px 20px rgba(0,0,0,.35);
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
-  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 6px;
+  --radius-sm: 6px;
+  --shadow: 0 8px 24px rgba(1,4,9,.5);
 }
 :root[data-theme="light"] {
-  --bg:        #f2f3f7;
-  --surface:   #ffffff;
-  --surface-2: #f7f8fa;
-  --surface-3: #eef0f5;
-  --border:    #dcdfe8;
-  --border-2:  #c6cad6;
-  --ink:       #14161c;
-  --ink-2:     #4d5262;
-  --ink-3:     #757b8c;
-  --accent:    #2a78d6;
-
-  /* categorical — light steps, validated against surface #f7f8fa */
-  --c-network: #2a78d6;
-  --c-storage: #1baf7a;
-  --c-media:   #eda100;
-  --c-apps:    #e87ba4;
   --c-infra:   #6b7280;
   --c-external:#9aa1ae;
   --c-client:  #7c8698;
-
-  --ok:    #0f8a52;
-  --warn:  #a3720a;
-  --crit:  #c23b3b;
-  --shadow: 0 4px 20px rgba(20,25,40,.12);
+  --shadow: 0 8px 24px rgba(31,35,40,.12);
 }
+</style>
+<link rel="stylesheet" href="/tokens.css?v=20260726" />
+<style>
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -1161,22 +1137,68 @@ function closeDrawer() { $('#drawer').classList.remove('open'); }
 
 /* ── Live overlay ───────────────────────────────────────────────────────────
    Container names in data.json must match `docker ps` for a node to light up.  */
-async function sync() {
+// Two different things were both called "sync" here. This one now does what the button
+// says: `collect` true means "go make the host agents gather fresh data, then re-read"
+// (the button); false means "just re-read what's on disk" (the opportunistic call on
+// page load, which must stay cheap and must not fire three collections on every visit).
+//
+// Before 2026-07-25 the button only ever re-read the same files, so pressing it changed
+// nothing on screen and looked broken.
+async function sync(collect = false) {
   const pill = $('#livePill'), text = $('#liveText'), btn = $('#syncBtn');
-  pill.className = 'live busy'; text.textContent = 'Syncing…'; btn.disabled = true;
+  pill.className = 'live busy'; btn.disabled = true;
+  text.textContent = collect ? 'Collecting from agents…' : 'Syncing…';
+
+  let agentNote = '';
+  if (collect) {
+    try {
+      const r = await fetch('/api/agents/sync-all', { method: 'POST' });
+      const d = await r.json().catch(() => null);
+      const results = d?.results || d?.hosts || [];
+      const okCount = results.filter(x => x.ok ?? x.reachable).length;
+      if (results.length) {
+        agentNote = okCount === results.length
+          ? `${okCount} agents fresh`
+          : `${okCount}/${results.length} agents synced`;
+      } else if (!r.ok) {
+        agentNote = 'agent sync failed';
+      }
+    } catch (err) {
+      agentNote = 'agent sync failed';
+    }
+  }
+
   try {
+    // Re-read both: /live drives the node dots, /data carries the drift lists, and a
+    // fresh collection can change either.
     const res = await fetch(S.data.meta.liveEndpoint || '/api/architecture/live', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     S.live = await res.json();
     applyLive();
+
+    if (collect) {
+      try {
+        const dres = await fetch('/api/architecture/data', { cache: 'no-store' });
+        if (dres.ok) {
+          const merged = await dres.json();
+          if (merged && Array.isArray(merged.nodes)) {
+            S.data.live_merge = merged.live_merge;
+            renderDrift();
+          }
+        }
+      } catch (_) { /* drift panel keeps its previous contents */ }
+    }
+
     const when = S.live.run_at ? new Date(S.live.run_at) : null;
     const sum = S.live.doctor_summary || 'synced';
-    pill.className = 'live ' + (/critical/i.test(sum) ? 'crit' : /flag|warn/i.test(sum) ? 'warn' : 'ok');
-    text.textContent = when ? `${sum} · ${rel(when)}` : sum;
+    const bad = agentNote.includes('failed') || (agentNote && !agentNote.includes('fresh'));
+    pill.className = 'live ' + (/critical/i.test(sum) ? 'crit'
+      : (bad || /flag|warn/i.test(sum)) ? 'warn' : 'ok');
+    text.textContent = [agentNote, when ? `${sum} · ${rel(when)}` : sum].filter(Boolean).join(' · ');
     pill.title = when ? `Agent report from ${when.toLocaleString()}` : '';
   } catch (err) {
     pill.className = 'live warn';
-    text.textContent = 'Live status unavailable';
+    text.textContent = agentNote ? `${agentNote} · report unavailable` : 'Live status unavailable';
     pill.title = String(err.message || err);
   } finally {
     btn.disabled = false;
@@ -1563,7 +1585,8 @@ function revealNode(id) {
 function wireEvents() {
   $$('.tab').forEach(t => t.onclick = () => setTab(t.dataset.tab));
   $('#themeBtn').onclick = toggleTheme;
-  $('#syncBtn').onclick = sync;
+  // The button collects; the page-load call at init() does not (see sync()).
+  $('#syncBtn').onclick = () => sync(true);
   $('#dClose').onclick = () => deselect();
   $('#zoomIn').onclick  = () => zoomAt(1.2);
   $('#zoomOut').onclick = () => zoomAt(1 / 1.2);

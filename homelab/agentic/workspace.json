@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-07-25T14:11:07Z",
+  "generated_at": "2026-07-26T01:21:04Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
   "workspace": {
@@ -43,7 +43,7 @@
     {
       "alias": "opti",
       "ip": "192.168.1.11",
-      "role": "Storage/NAS (OpenMediaVault, mergerfs pool /srv/pool, Samba), CI runner, control plane / agent dispatcher"
+      "role": "Storage/NAS (ZFS pool red -> Samba \\\\opti\\red; OMV UI-only; cold copy on old mergerfs pair), CI runner, control plane / agent dispatcher"
     },
     {
       "alias": "rpi",
@@ -81,7 +81,7 @@
       },
       {
         "name": "opti-drive-onboard",
-        "description": "Onboard a new physical drive into the opti server (192.168.1.11) mergerfs pool /srv/pool. Use when the user says they installed a new drive in opti, wants to add a disk to the pool/share, or expand opti storage. Walks through identify → SMART → wipe → ext4 → OMV mount → mergerfs branch add → verify.",
+        "description": "Onboard a new physical drive into the opti server (192.168.1.11). Use when the user says they installed a new drive in opti or wants to expand opti storage. Since 2026-07-25 the live storage is ZFS pool `red` — a new drive is either a mirror for it (preferred) or a pool expansion, NOT a mergerfs branch.",
         "path": "homelab/agentic/skills/opti-drive-onboard",
         "files": [
           "SKILL.md"
