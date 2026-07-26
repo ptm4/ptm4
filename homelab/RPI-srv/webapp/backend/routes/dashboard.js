@@ -255,39 +255,45 @@ router.get('/trends', (req, res) => {
 // matches its links to results by origin too — so both Vaultwarden links share one
 // probe. Keep in sync with LINK_GROUPS in frontend/app.js (external links only;
 // internal /pages are same-origin and the frontend probes those itself).
+// `key` is the origin exactly as LINK_GROUPS writes it (what the frontend matches on);
+// `target` is what this container actually dials when that differs. It differs for the
+// services on THIS rpi: inside the container `rpi.lan` resolves to ::1 (docker's
+// embedded DNS answers from the host's own view of its name), so those are dialed by
+// LAN IP. Every other host's name resolves correctly via Pi-hole.
 const PROBE_ORIGINS = [
-  'http://192.168.1.1',            // router — the one IP with no DNS name
-  'http://rpi.lan',                // Pi-hole admin
-  'https://rpi.lan:9090',          // Cockpit (self-signed)
-  'http://opti.lan',               // OpenMediaVault
-  'https://bitwarden.rpi.lan',     // Vaultwarden (self-signed)
-  'http://jellyfin.lan:8096',
-  'http://comics.lan:5000',        // Kavita
-  'http://noblenumbat.lan:9000',   // Portainer
-  'http://noblenumbat.lan:8989',   // Sonarr
-  'http://noblenumbat.lan:7878',   // Radarr
-  'http://noblenumbat.lan:8686',   // Lidarr
-  'http://noblenumbat.lan:6767',   // Bazarr
-  'http://noblenumbat.lan:8090',   // Mylar3
-  'http://noblenumbat.lan:9696',   // Prowlarr
-  'http://noblenumbat.lan:8081',   // qBittorrent
+  { key: 'http://192.168.1.1' },                                          // router — no DNS name
+  { key: 'http://rpi.lan', target: 'http://192.168.1.10' },               // Pi-hole admin
+  { key: 'https://rpi.lan:9090', target: 'https://192.168.1.10:9090' },   // Cockpit (self-signed)
+  { key: 'https://bitwarden.rpi.lan' },                                   // Vaultwarden — name resolves via nginx SNI, keep hostname
+  { key: 'http://opti.lan' },                                             // OpenMediaVault
+  { key: 'http://jellyfin.lan:8096' },
+  { key: 'http://comics.lan:5000' },                                      // Kavita
+  { key: 'http://noblenumbat.lan:9000' },                                 // Portainer
+  { key: 'http://noblenumbat.lan:8989' },                                 // Sonarr
+  { key: 'http://noblenumbat.lan:7878' },                                 // Radarr
+  { key: 'http://noblenumbat.lan:8686' },                                 // Lidarr
+  { key: 'http://noblenumbat.lan:6767' },                                 // Bazarr
+  { key: 'http://noblenumbat.lan:8090' },                                 // Mylar3
+  { key: 'http://noblenumbat.lan:9696' },                                 // Prowlarr
+  { key: 'http://noblenumbat.lan:8081' },                                 // qBittorrent
 ];
 
 // Any HTTP response counts as "up" — a 401 from the router or a 302 from Jellyfin is
 // a service answering. Only connect errors and timeouts are "down".
-function probe(origin) {
+function probe({ key, target }) {
   return new Promise((resolve) => {
-    const mod = origin.startsWith('https') ? https : http;
-    const req = mod.request(origin + '/', {
+    const url = (target || key) + '/';
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.request(url, {
       method: 'HEAD',
       timeout: 4000,
       rejectUnauthorized: false,   // LAN self-signed certs are the norm here
     }, (res) => {
       res.resume();
-      resolve({ origin, up: true, status: res.statusCode });
+      resolve({ origin: key, up: true, status: res.statusCode });
     });
-    req.on('timeout', () => { req.destroy(); resolve({ origin, up: false, error: 'timeout' }); });
-    req.on('error', (e) => resolve({ origin, up: false, error: e.code || e.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ origin: key, up: false, error: 'timeout' }); });
+    req.on('error', (e) => resolve({ origin: key, up: false, error: e.code || e.message }));
     req.end();
   });
 }
