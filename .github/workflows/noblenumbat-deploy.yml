@@ -38,6 +38,25 @@ jobs:
         working-directory: /opt/yams
         run: docker compose config --quiet
 
+      - name: Preflight the opti CIFS mounts
+        # The first run of this workflow (2026-07-27 00:24) failed HERE-ish the hard way:
+        # /mnt/opti-shows and /mnt/opti-library had gone stale ("Stale file handle" — the
+        # ZFS dataset shuffle on opti invalidated old server-side handles), the running
+        # containers were coasting on handles acquired before the migration, and `up -d`
+        # stopped them and then couldn't start the replacements — media stack half down.
+        # Checking traversal BEFORE touching any container turns that into a clean abort
+        # while the old containers keep running. Fix on failure:
+        #   sudo umount /mnt/opti-<X> && ls /mnt/opti-<X>   (automount re-triggers cleanly)
+        run: |
+          rc=0
+          for m in /mnt/opti-shows /mnt/opti-library /mnt/opti-media; do
+            if ! timeout 10 ls "$m" >/dev/null 2>&1; then
+              echo "::error::$m is not traversable (stale/hung CIFS?) — aborting before any container is touched"
+              rc=1
+            fi
+          done
+          exit $rc
+
       - name: Pull images (the deliberate update path)
         working-directory: /opt/yams
         run: docker compose pull
