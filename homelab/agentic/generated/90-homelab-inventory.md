@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/Tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-07-26T22:16:24+00:00`
+> Generated: `2026-07-26T22:42:28+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.2.0 | 2h ago | 13 | none |
-| opti | 0.2.0 | 2h ago | 0 | none |
-| rpi | 0.2.0 | 2h ago | 12 | none |
+| noblenumbat | 0.2.0 | 3h ago | 13 | none |
+| opti | 0.2.0 | 3h ago | 0 | none |
+| rpi | 0.2.0 | 3h ago | 12 | none |
 
 
 ## Nodes

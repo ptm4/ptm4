@@ -1,0 +1,2217 @@
+{
+  "meta": {
+    "title": "Homelab architecture",
+    "subtitle": "Four hosts, 25 containers, one storage pool \u2014 and how they actually depend on each other.",
+    "generatedAt": "2026-07-26T22:45:07+00:00",
+    "probedAt": "2026-07-26T22:00:00Z",
+    "generator": "homelab/tools/architecture/build-arch-data.py",
+    "liveEndpoint": "/api/architecture/live",
+    "note": "Structure is curated and versioned here; live health is overlaid at runtime from the newest homelab-doctor report."
+  },
+  "zones": [
+    {
+      "id": "wan",
+      "label": "Off-LAN",
+      "description": "Outside the perimeter."
+    },
+    {
+      "id": "edge",
+      "label": "Edge",
+      "description": "The gateway between the LAN and the WAN."
+    },
+    {
+      "id": "servers",
+      "label": "Servers",
+      "description": "The three always-on hosts."
+    },
+    {
+      "id": "clients",
+      "label": "Clients",
+      "description": "What consumes the homelab."
+    }
+  ],
+  "groups": [
+    {
+      "id": "wan",
+      "label": "Off-LAN services"
+    },
+    {
+      "id": "edge",
+      "label": "Gateway"
+    },
+    {
+      "id": "net",
+      "label": "Network & DNS"
+    },
+    {
+      "id": "apps",
+      "label": "Web apps"
+    },
+    {
+      "id": "bots",
+      "label": "Discord bots"
+    },
+    {
+      "id": "platform",
+      "label": "Platform"
+    },
+    {
+      "id": "disks",
+      "label": "Disks & share"
+    },
+    {
+      "id": "control",
+      "label": "Agent control plane"
+    },
+    {
+      "id": "vpn",
+      "label": "VPN"
+    },
+    {
+      "id": "serve",
+      "label": "Media servers"
+    },
+    {
+      "id": "arr",
+      "label": "Automation (*arr)"
+    },
+    {
+      "id": "dl",
+      "label": "Download clients"
+    },
+    {
+      "id": "nn-platform",
+      "label": "Platform & storage"
+    },
+    {
+      "id": "clients",
+      "label": "Clients"
+    }
+  ],
+  "categories": [
+    {
+      "key": "network",
+      "label": "Network & DNS",
+      "glyph": "\u25c8",
+      "light": "#2a78d6",
+      "dark": "#3987e5",
+      "description": "Name resolution, DHCP, reverse proxies, VPN tunnel, gateway."
+    },
+    {
+      "key": "storage",
+      "label": "Storage",
+      "glyph": "\u25a4",
+      "light": "#1baf7a",
+      "dark": "#1bab7d",
+      "description": "Physical disks, the ZFS pool, the attic cold copy, the Samba export and every CIFS mount that consumes it."
+    },
+    {
+      "key": "media",
+      "label": "Media",
+      "glyph": "\u25b6",
+      "light": "#eda100",
+      "dark": "#c98500",
+      "description": "Jellyfin, Kavita, the *arr automation stack and the download clients."
+    },
+    {
+      "key": "apps",
+      "label": "Apps & data",
+      "glyph": "\u25cf",
+      "light": "#e87ba4",
+      "dark": "#c4477a",
+      "description": "The dashboard webapp, notes, the password manager and the Discord bot fleet."
+    },
+    {
+      "key": "infra",
+      "label": "Platform",
+      "glyph": "\u2699",
+      "light": "#6b7280",
+      "dark": "#8b93a7",
+      "description": "Container engines, CI runners, the agent control plane, timers and remote access. Deliberately recessive."
+    },
+    {
+      "key": "external",
+      "label": "Off-LAN",
+      "glyph": "\u2601",
+      "light": "#9aa1ae",
+      "dark": "#6e768a",
+      "description": "Services outside the LAN \u2014 upstream DNS, GitHub, Discord, the VPN exit and content APIs."
+    },
+    {
+      "key": "client",
+      "label": "Clients",
+      "glyph": "\u25a3",
+      "light": "#7c8698",
+      "dark": "#7f8798",
+      "description": "Workstations, phones and TVs that consume the homelab."
+    }
+  ],
+  "edgeKinds": [
+    {
+      "key": "dns",
+      "label": "DNS / DHCP",
+      "dash": "3 3"
+    },
+    {
+      "key": "http",
+      "label": "HTTP / API",
+      "dash": null
+    },
+    {
+      "key": "storage",
+      "label": "Filesystem / CIFS",
+      "dash": "7 4"
+    },
+    {
+      "key": "vpn",
+      "label": "VPN-tunnelled",
+      "dash": "1 4"
+    },
+    {
+      "key": "control",
+      "label": "Control / orchestration",
+      "dash": "5 3"
+    },
+    {
+      "key": "ci",
+      "label": "CI / deploy",
+      "dash": "9 3 2 3"
+    }
+  ],
+  "hosts": [
+    {
+      "id": "wan",
+      "label": "Off-LAN",
+      "zone": "wan",
+      "role": "Outside the perimeter",
+      "notes": "Nothing here is reachable inbound. Every link crossing this boundary is outbound-initiated from inside the LAN.",
+      "facts": []
+    },
+    {
+      "id": "router",
+      "label": "Router / Gateway",
+      "ip": "192.168.1.1",
+      "zone": "edge",
+      "role": "Internet gateway",
+      "os": "Verizon-supplied firmware",
+      "notes": "Upstream DNS target for Pi-hole. Its DHCP server must stay OFF \u2014 two DHCP servers on this LAN causes the 'servers down' race.",
+      "facts": []
+    },
+    {
+      "id": "rpi",
+      "label": "rpi",
+      "fqdn": "rpi.lan",
+      "ip": "192.168.1.10",
+      "mac": "e4:5f:01:89:b6:4d",
+      "zone": "servers",
+      "role": "DNS, DHCP & web services",
+      "model": "Raspberry Pi 4",
+      "os": "Ubuntu 22.04.5 LTS",
+      "kernel": "5.15.0-1105-raspi",
+      "arch": "aarch64",
+      "facts": [
+        {
+          "label": "CPU",
+          "value": "Cortex-A72 \u00b7 4 cores"
+        },
+        {
+          "label": "RAM",
+          "value": "3.7 GiB \u00b7 no swap"
+        },
+        {
+          "label": "Root disk",
+          "value": "117 GB SD card \u00b7 16% used"
+        },
+        {
+          "label": "Network",
+          "value": "eth0 wired \u00b7 static lease"
+        },
+        {
+          "label": "Containers",
+          "value": "12"
+        }
+      ],
+      "notes": "Lowest-powered host but the most load-bearing: it is the LAN's sole DNS and DHCP server. If it goes down, name resolution goes with it. Runs on an SD card \u2014 the single biggest hardware risk in the homelab."
+    },
+    {
+      "id": "opti",
+      "label": "opti",
+      "fqdn": "opti.lan",
+      "ip": "192.168.1.11",
+      "mac": "34:17:eb:d1:eb:f8",
+      "zone": "servers",
+      "role": "Storage / NAS & control plane",
+      "model": "Custom x86 tower",
+      "os": "Debian 12 (Bookworm)",
+      "kernel": "6.12.94+deb12-amd64",
+      "arch": "x86_64",
+      "facts": [
+        {
+          "label": "CPU",
+          "value": "Intel i5-3570 \u00b7 4 cores"
+        },
+        {
+          "label": "RAM",
+          "value": "5.7 GiB"
+        },
+        {
+          "label": "Root disk",
+          "value": "457 GB ext4 \u00b7 66% used"
+        },
+        {
+          "label": "Pool",
+          "value": "3.6 TB ZFS (red) \u00b7 16% used"
+        },
+        {
+          "label": "Share config",
+          "value": "/etc/homelab/samba-red.conf"
+        }
+      ],
+      "notes": "Every other host mounts its Samba export, so it is the storage single point of failure. Since the 2026-07-25 ZFS migration the live share [red] is configured in /etc/homelab/samba-red.conf \u2014 OMV is UI/monitoring only and no longer owns the share. Also hosts the agent control plane and the x86 CI runner."
+    },
+    {
+      "id": "noblenumbat",
+      "label": "noblenumbat",
+      "fqdn": "noblenumbat.lan",
+      "ip": "192.168.1.6",
+      "mac": "14:f6:d8:ea:e3:22",
+      "zone": "servers",
+      "role": "Media stack",
+      "model": "Dell Latitude 7400",
+      "os": "Ubuntu 24.04.4 LTS",
+      "kernel": "7.0.0-28-generic",
+      "arch": "x86_64",
+      "facts": [
+        {
+          "label": "CPU",
+          "value": "Intel i7-8665U \u00b7 8 threads"
+        },
+        {
+          "label": "RAM",
+          "value": "15 GiB"
+        },
+        {
+          "label": "Root disk",
+          "value": "468 GB NVMe \u00b7 15% used"
+        },
+        {
+          "label": "GPU",
+          "value": "UHD 620 \u00b7 QuickSync VAAPI"
+        },
+        {
+          "label": "Network",
+          "value": "USB ethernet (enx207bd262\u2026)"
+        },
+        {
+          "label": "Containers",
+          "value": "13"
+        }
+      ],
+      "notes": "A laptop with sleep masked. Hardware-transcodes for Jellyfin via /dev/dri/renderD128. Suffered a whole-host outage from a cooling problem on 2026-07-16 \u2014 thermals are the thing to watch here."
+    },
+    {
+      "id": "tux",
+      "label": "tux",
+      "fqdn": "tux.lan",
+      "ip": "192.168.1.3",
+      "mac": "d8:5e:d3:0c:13:f2",
+      "zone": "clients",
+      "role": "Workstation \u2014 where the code is written",
+      "os": "CachyOS (Linux 7.1.3)",
+      "arch": "x86_64",
+      "facts": [
+        {
+          "label": "Repo",
+          "value": "ptm4 via CIFS at ~/opti"
+        },
+        {
+          "label": "Agent",
+          "value": "Claude Code runs here"
+        }
+      ],
+      "notes": "Edits the repo over the CIFS mount of opti's pool, so a write here lands directly on opti's disk. Not a server \u2014 nothing depends on it."
+    },
+    {
+      "id": "android",
+      "label": "android (S10)",
+      "fqdn": "android.lan",
+      "ip": "192.168.1.54",
+      "zone": "clients",
+      "role": "Local LLM host",
+      "os": "Android + Termux",
+      "arch": "arm64",
+      "facts": [
+        {
+          "label": "SSH",
+          "value": "port 8022 (non-default)"
+        },
+        {
+          "label": "Model",
+          "value": "Qwen2.5-3B via llama.cpp"
+        }
+      ],
+      "notes": "Intermittent by nature \u2014 a phone. Its DNS record is static but it drops off the LAN often; the webapp's LLM tab degrades gracefully. Was unreachable during the probe that produced this map.",
+      "intermittent": true
+    }
+  ],
+  "nodes": [
+    {
+      "id": "internet",
+      "label": "Internet",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "Everything beyond the gateway",
+      "kind": "cloud"
+    },
+    {
+      "id": "cloudflare",
+      "label": "Cloudflare DNS",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "1.1.1.1 \u2014 Pi-hole fallback upstream",
+      "kind": "cloud"
+    },
+    {
+      "id": "github",
+      "label": "GitHub",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "ptm4 repo + Actions control plane",
+      "kind": "cloud",
+      "notes": "Both self-hosted runners poll GitHub outbound over HTTPS, so no inbound port is ever opened. This is the only path by which outside code reaches the LAN."
+    },
+    {
+      "id": "discord",
+      "label": "Discord API",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "Gateway + webhooks for 5 bots",
+      "kind": "cloud"
+    },
+    {
+      "id": "vpn-exit",
+      "label": "VPN exit \u2014 Netherlands",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "Public IP 46.29.25.130",
+      "kind": "cloud",
+      "notes": "All torrent/usenet/indexer traffic egresses here, never via the LAN's own WAN IP."
+    },
+    {
+      "id": "content-apis",
+      "label": "Content APIs",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "Weather \u00b7 HLTV \u00b7 sports \u00b7 indexers \u00b7 usenet",
+      "kind": "cloud"
+    },
+    {
+      "id": "gateway",
+      "label": "Gateway 192.168.1.1",
+      "host": "router",
+      "category": "network",
+      "group": "edge",
+      "sublabel": "Verizon router \u00b7 DHCP disabled",
+      "kind": "device",
+      "notes": "DHCP must remain disabled here. When it is re-enabled it races Pi-hole and hands out leases pointing at the wrong DNS \u2014 the classic 'servers are down' symptom."
+    },
+    {
+      "id": "pihole",
+      "label": "Pi-hole",
+      "host": "rpi",
+      "category": "network",
+      "group": "net",
+      "sublabel": "DNS :53 \u00b7 DHCP \u00b7 admin :80",
+      "container": "pihole",
+      "image": "pihole/pihole:latest",
+      "ports": [
+        "53/tcp",
+        "53/udp",
+        "80/tcp"
+      ],
+      "kind": "container",
+      "critical": true,
+      "notes": "v6 (FTL v6.7). Serves DNS *and* DHCP for the whole 192.168.1.0/24. 15 local A records, 6 static MAC reservations, scope .2\u2013.250. Whitelist with `pihole allow`."
+    },
+    {
+      "id": "nginx-webapp",
+      "label": "nginx (webapp)",
+      "host": "rpi",
+      "category": "network",
+      "group": "net",
+      "sublabel": "TLS :8443 \u2192 webapp / notes",
+      "container": "nginx-webapp",
+      "image": "nginx:stable-alpine",
+      "ports": [
+        "192.168.1.10:8443\u2192443"
+      ],
+      "kind": "container",
+      "notes": "Terminates TLS for webapp.rpi.lan using a cert read off opti's pool. Raises proxy_read_timeout to 240s for /api/llama/ only \u2014 cold LLM prompts legitimately exceed nginx's 60s default."
+    },
+    {
+      "id": "nginx-bitwarden",
+      "label": "nginx (vault)",
+      "host": "rpi",
+      "category": "network",
+      "group": "net",
+      "sublabel": "TLS :443 \u2192 Vaultwarden",
+      "container": "nginx-bitwarden",
+      "image": "nginx:stable-alpine",
+      "ports": [
+        "443/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "rpi-internal-net",
+      "label": "docker net \u00b7 internal",
+      "host": "rpi",
+      "category": "network",
+      "group": "net",
+      "sublabel": "172.18.0.0/16 \u2014 all rpi containers",
+      "kind": "network",
+      "notes": "Every rpi service shares this bridge. Bot control APIs bind :8080 on it and are NOT published to the host, so only the webapp can reach them."
+    },
+    {
+      "id": "webapp",
+      "label": "Dashboard webapp",
+      "host": "rpi",
+      "category": "apps",
+      "group": "apps",
+      "sublabel": "Node/Express :3000 \u00b7 this page's server",
+      "container": "webapp",
+      "image": "node:lts-alpine",
+      "ports": [
+        "3000 (internal)"
+      ],
+      "url": "https://webapp.rpi.lan:8443/",
+      "kind": "container",
+      "notes": "Bind-mounts the repo's webapp/ directory, so deploying frontend files is a file copy \u2014 no rebuild. Reads opti's agent-logs and security-reports read-only and proxies the bot control APIs, the opti dispatcher and the phone's LLM."
+    },
+    {
+      "id": "notes-api",
+      "label": "Notes app",
+      "host": "rpi",
+      "category": "apps",
+      "group": "apps",
+      "sublabel": "Express + JSON store :3002",
+      "container": "notes-api",
+      "image": "compose-notes-api",
+      "ports": [
+        "192.168.1.10:3002"
+      ],
+      "kind": "container",
+      "notes": "Published directly on the host as well as proxied, so phones can skip the self-signed-cert prompt."
+    },
+    {
+      "id": "bitwarden",
+      "label": "Vaultwarden",
+      "host": "rpi",
+      "category": "apps",
+      "group": "apps",
+      "sublabel": "Password manager",
+      "container": "bitwarden",
+      "image": "vaultwarden/server:latest",
+      "url": "https://bitwarden.rpi.lan/",
+      "kind": "container",
+      "critical": true
+    },
+    {
+      "id": "bitwarden-db",
+      "label": "MariaDB",
+      "host": "rpi",
+      "category": "apps",
+      "group": "apps",
+      "sublabel": "Vaultwarden datastore :3306",
+      "container": "bitwarden-db",
+      "image": "mariadb:11",
+      "kind": "container",
+      "critical": true,
+      "notes": "Holds the password vault. The single most backup-critical dataset here."
+    },
+    {
+      "id": "bot-weather",
+      "label": "discord-weather",
+      "host": "rpi",
+      "category": "apps",
+      "group": "bots",
+      "sublabel": "Daily 7AM ET forecast",
+      "container": "discord-weather",
+      "kind": "container",
+      "notes": "Manage via the webapp's #weather tab \u2014 never by editing files on the rpi."
+    },
+    {
+      "id": "bot-health",
+      "label": "discord-healthdigest",
+      "host": "rpi",
+      "category": "apps",
+      "group": "bots",
+      "sublabel": "Homelab health summary",
+      "container": "discord-healthdigest",
+      "kind": "container"
+    },
+    {
+      "id": "bot-jellyfin",
+      "label": "discord-jellyfin",
+      "host": "rpi",
+      "category": "apps",
+      "group": "bots",
+      "sublabel": "New-media announcements",
+      "container": "discord-jellyfin",
+      "kind": "container"
+    },
+    {
+      "id": "bot-sports",
+      "label": "discord-sports",
+      "host": "rpi",
+      "category": "apps",
+      "group": "bots",
+      "sublabel": "Scores & fixtures",
+      "container": "discord-sports",
+      "kind": "container"
+    },
+    {
+      "id": "bot-hltv",
+      "label": "discord-hltv",
+      "host": "rpi",
+      "category": "apps",
+      "group": "bots",
+      "sublabel": "CS2 news & match results",
+      "container": "discord-hltv",
+      "kind": "container",
+      "notes": "The container is `discord-hltv`, not `discord-cs2` \u2014 the compose service and the container name differ from what the CS2 naming elsewhere suggests."
+    },
+    {
+      "id": "rpi-docker",
+      "label": "Docker engine",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "12 containers \u00b7 compose at /srv/docker/compose",
+      "kind": "daemon"
+    },
+    {
+      "id": "rpi-runner",
+      "label": "Actions runner (ARM64)",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "self-hosted \u00b7 deploys the rpi stack",
+      "kind": "service",
+      "notes": "Pinned to [self-hosted, ARM64] because a bare 'self-hosted' label also matched opti's x86 runner."
+    },
+    {
+      "id": "rpi-mount",
+      "label": "/mnt/opti-fs",
+      "host": "rpi",
+      "category": "storage",
+      "group": "platform",
+      "sublabel": "CIFS 3.0 \u2190 //opti/red",
+      "kind": "mount",
+      "notes": "How the rpi reads agent logs, security reports, TLS certs and the repo. If opti is down this mount hangs and the webapp's data tabs empty out."
+    },
+    {
+      "id": "rpi-sshd",
+      "label": "sshd :22",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "kind": "service"
+    },
+    {
+      "id": "rpi-timers",
+      "label": "systemd timers",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "autoreboot 03:00 \u00b7 autoupdate",
+      "kind": "timer"
+    },
+    {
+      "id": "opti-sdc",
+      "label": "sdc \u00b7 4 TB WD Red Plus",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": "WD40EFZZ \u00b7 ZFS vdev",
+      "kind": "disk",
+      "notes": "The single vdev backing pool red. One disk = no redundancy; the attic cold copy is the only second copy of this data."
+    },
+    {
+      "id": "zfs-red",
+      "label": "ZFS pool \u00b7 red",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": "/srv/red \u00b7 3.6 TB \u00b7 16% used",
+      "kind": "volume",
+      "critical": true,
+      "notes": "Replaced the mergerfs pool on 2026-07-25. Datasets: red/fs (the Samba share root) and red/media. This is the homelab's primary dataset \u2014 media, repo, certs, agent logs, security reports all live here. Single-vdev: a scrub (clean 2026-07-25) verifies integrity but nothing self-heals without a mirror."
+    },
+    {
+      "id": "samba",
+      "label": "Samba \u00b7 share [red]",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": ":445 \u2192 /srv/red/fs",
+      "kind": "service",
+      "critical": true,
+      "notes": "Exports red/fs as \\\\opti\\red. Config lives in /etc/homelab/samba-red.conf \u2014 hand-managed since the ZFS migration; OMV no longer owns the live share."
+    },
+    {
+      "id": "attic",
+      "label": "attic \u00b7 cold copy",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": "old sda+sdb pair \u00b7 noauto \u00b7 weekly",
+      "kind": "volume",
+      "notes": "The retired mergerfs disks, repurposed as a cold second copy. Mounted only during the weekly homelab-coldcopy run (rsync --delete red\u2192attic, with an empty-source interlock so a failed pool import can't erase the last copy), so /srv/attic doesn't exist between runs and nothing can write into it."
+    },
+    {
+      "id": "opti-sda",
+      "label": "sda \u00b7 466 GB HDD",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": "ST500DM002 \u00b7 ext4 root + attic branch",
+      "kind": "disk"
+    },
+    {
+      "id": "opti-sdb",
+      "label": "sdb \u00b7 596 GB HDD",
+      "host": "opti",
+      "category": "storage",
+      "group": "disks",
+      "sublabel": "Hitachi HTS5475 \u00b7 NTFS \u00b7 attic branch (ro)",
+      "kind": "disk",
+      "notes": "Held the mergerfs data before the migration; now an attic branch kept ro in steady state and flipped rw only during the coldcopy window."
+    },
+    {
+      "id": "omv",
+      "label": "OpenMediaVault",
+      "host": "opti",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "NAS UI/monitoring \u00b7 web UI :80",
+      "kind": "service",
+      "notes": "Demoted at the ZFS migration: disk/SMART monitoring and UI only. The live share is NOT in OMV's smb.conf anymore."
+    },
+    {
+      "id": "dispatcher",
+      "label": "Agent dispatcher",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "Python :9099 \u00b7 enable/disable + run-now",
+      "kind": "service",
+      "notes": "The LAN control plane the webapp's Agents tab drives. Runs from the repo checkout on the OMV data disk."
+    },
+    {
+      "id": "agents",
+      "label": "Homelab agents",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "doctor \u00b7 hardware \u00b7 software \u00b7 network \u00b7 docs",
+      "kind": "service",
+      "notes": "SSH out to every host, then write JSON reports into the pool. The homelab-doctor report is what this page's live overlay reads."
+    },
+    {
+      "id": "agent-logs",
+      "label": "agent-logs/",
+      "host": "opti",
+      "category": "storage",
+      "group": "control",
+      "sublabel": "JSON reports on the pool",
+      "kind": "dataset",
+      "notes": "hardware-latest \u00b7 software-latest \u00b7 network-latest \u00b7 homelab-doctor-latest. The rpi webapp mounts this read-only at /agent-logs."
+    },
+    {
+      "id": "opti-runner",
+      "label": "Actions runner (x86)",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "self-hosted \u00b7 runs the agent workflow",
+      "kind": "service"
+    },
+    {
+      "id": "opti-timers",
+      "label": "systemd timers",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "docs 05:16 \u00b7 health-digest 06:30 \u00b7 autoreboot \u00b7 coldcopy Sun 04:00 \u00b7 zfs-scrub monthly",
+      "kind": "timer"
+    },
+    {
+      "id": "opti-remote",
+      "label": "Remote access",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "sshd :22 \u00b7 xrdp :3389",
+      "kind": "service"
+    },
+    {
+      "id": "gluetun",
+      "label": "Gluetun VPN",
+      "host": "noblenumbat",
+      "category": "network",
+      "group": "vpn",
+      "sublabel": "WireGuard \u2192 NL \u00b7 port-fwd 42328",
+      "container": "gluetun",
+      "image": "qmcgaw/gluetun:v3.41.0",
+      "ports": [
+        "8888 proxy",
+        "8388 shadowsocks",
+        "8003\u21928000 admin"
+      ],
+      "kind": "container",
+      "critical": true,
+      "notes": "Five containers share this network namespace, so if gluetun stops they lose all connectivity \u2014 that is the intended kill-switch. Its NAT-PMP port forwarding dies silently; the vpn-stack-heal timer exists to catch that."
+    },
+    {
+      "id": "vpn-heal",
+      "label": "vpn-stack-heal",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "vpn",
+      "sublabel": "timer \u00b7 every 2 min",
+      "kind": "timer",
+      "notes": "Watchdog added 2026-07-11 after Gluetun's forwarded port kept dying without any error. Re-syncs the forwarded port into qBittorrent. Status at /var/lib/vpn-stack-heal/status.json."
+    },
+    {
+      "id": "nn-vpn-net",
+      "label": "netns \u00b7 service:gluetun",
+      "host": "noblenumbat",
+      "category": "network",
+      "group": "vpn",
+      "sublabel": "qbittorrent \u00b7 sabnzbd \u00b7 prowlarr \u00b7 mylar3 \u00b7 flaresolverr",
+      "kind": "network"
+    },
+    {
+      "id": "jellyfin",
+      "label": "Jellyfin",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "serve",
+      "sublabel": "Media server :8096 \u00b7 HW transcode",
+      "container": "jellyfin",
+      "image": "lscr.io/linuxserver/jellyfin:latest",
+      "ports": [
+        "8096/tcp"
+      ],
+      "url": "http://jellyfin.lan:8096/",
+      "kind": "container",
+      "critical": true
+    },
+    {
+      "id": "kavita",
+      "label": "Kavita",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "serve",
+      "sublabel": "Comics & books :5000",
+      "container": "kavita",
+      "image": "lscr.io/linuxserver/kavita:latest",
+      "ports": [
+        "5000/tcp"
+      ],
+      "url": "http://comics.lan:5000/",
+      "kind": "container"
+    },
+    {
+      "id": "sonarr",
+      "label": "Sonarr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "TV automation :8989",
+      "container": "sonarr",
+      "ports": [
+        "8989/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "radarr",
+      "label": "Radarr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "Movie automation :7878",
+      "container": "radarr",
+      "ports": [
+        "7878/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "lidarr",
+      "label": "Lidarr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "Music automation :8686",
+      "container": "lidarr",
+      "ports": [
+        "8686/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "bazarr",
+      "label": "Bazarr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "Subtitles :6767",
+      "container": "bazarr",
+      "ports": [
+        "6767/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "mylar3",
+      "label": "Mylar3",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "Comics automation :8090 via VPN",
+      "container": "mylar3",
+      "kind": "container"
+    },
+    {
+      "id": "prowlarr",
+      "label": "Prowlarr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "arr",
+      "sublabel": "Indexer manager :9696 via VPN",
+      "container": "prowlarr",
+      "kind": "container",
+      "notes": "Feeds indexers to every *arr. Published through gluetun's port map, not its own."
+    },
+    {
+      "id": "qbittorrent",
+      "label": "qBittorrent",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "dl",
+      "sublabel": "Torrents \u00b7 pinned 4.6.3 \u00b7 via VPN",
+      "container": "qbittorrent",
+      "image": "lscr.io/linuxserver/qbittorrent:4.6.3",
+      "kind": "container",
+      "notes": "Version-pinned deliberately. Its listen port must track Gluetun's forwarded port or nothing seeds \u2014 that sync is what vpn-stack-heal maintains."
+    },
+    {
+      "id": "sabnzbd",
+      "label": "SABnzbd",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "dl",
+      "sublabel": "Usenet :8081 via VPN",
+      "container": "sabnzbd",
+      "kind": "container"
+    },
+    {
+      "id": "flaresolverr",
+      "label": "FlareSolverr",
+      "host": "noblenumbat",
+      "category": "media",
+      "group": "dl",
+      "sublabel": "Captcha solver :8191 via VPN",
+      "container": "flaresolverr",
+      "kind": "container"
+    },
+    {
+      "id": "portainer",
+      "label": "Portainer",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "Container UI :9000",
+      "container": "portainer",
+      "ports": [
+        "9000/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "nn-docker",
+      "label": "Docker engine",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "13 containers \u00b7 YAMS compose",
+      "kind": "daemon",
+      "notes": "Stack lives at /opt/yams/docker-compose.yaml. Watchtower was removed 2026-07-25; image updates are now report-only (software-inventory) and applied deliberately via docker compose pull."
+    },
+    {
+      "id": "nn-yams-net",
+      "label": "docker net \u00b7 yams_network",
+      "host": "noblenumbat",
+      "category": "network",
+      "group": "nn-platform",
+      "sublabel": "172.60.0.0/24",
+      "kind": "network"
+    },
+    {
+      "id": "nn-mounts",
+      "label": "opti CIFS mounts",
+      "host": "noblenumbat",
+      "category": "storage",
+      "group": "nn-platform",
+      "sublabel": "/mnt/opti-library \u00b7 -shows \u00b7 -media",
+      "kind": "mount",
+      "critical": true,
+      "notes": "Movies, Shows and the import inbox all live on opti, not locally. Jellyfin's libraries are these mounts \u2014 if opti or the LAN blips, playback stops."
+    },
+    {
+      "id": "media-import",
+      "label": "media-import",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "timer \u00b7 every 2 min",
+      "kind": "timer",
+      "notes": "Sweeps the Media-Import inbox on opti's pool into the library."
+    },
+    {
+      "id": "kavita-sync",
+      "label": "bb-kavita-sync",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "timer \u00b7 hourly",
+      "kind": "timer"
+    },
+    {
+      "id": "nn-remote",
+      "label": "Remote access",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "sshd :22 \u00b7 RDP :3389",
+      "kind": "service"
+    },
+    {
+      "id": "workstation",
+      "label": "tux workstation",
+      "host": "tux",
+      "category": "client",
+      "group": "clients",
+      "sublabel": "Editor + Claude Code \u00b7 CIFS to opti",
+      "kind": "device"
+    },
+    {
+      "id": "browser",
+      "label": "Browsers & phones",
+      "host": "tux",
+      "category": "client",
+      "group": "clients",
+      "sublabel": "Dashboard \u00b7 Jellyfin \u00b7 vault \u00b7 notes",
+      "kind": "device"
+    },
+    {
+      "id": "llama",
+      "label": "llama-server",
+      "host": "android",
+      "category": "apps",
+      "group": "clients",
+      "sublabel": "Qwen2.5-3B :8080 \u00b7 LAN-only",
+      "kind": "service",
+      "notes": "Offline local inference, ~40s warm. The webapp's LLM tab and the `ask` runbook helper both target it. Was offline during this probe."
+    },
+    {
+      "id": "other-clients",
+      "label": "Other LAN devices",
+      "host": "tux",
+      "category": "client",
+      "group": "clients",
+      "sublabel": "twah.lan .4 \u00b7 ptmshc.lan .5",
+      "kind": "device"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-gw-wan",
+      "from": "gateway",
+      "to": "internet",
+      "label": "NAT to the WAN",
+      "kind": "http"
+    },
+    {
+      "id": "e-clients-dns",
+      "from": "browser",
+      "to": "pihole",
+      "label": "DNS :53 \u2014 every LAN lookup",
+      "kind": "dns"
+    },
+    {
+      "id": "e-ws-dns",
+      "from": "workstation",
+      "to": "pihole",
+      "label": "DNS :53",
+      "kind": "dns"
+    },
+    {
+      "id": "e-others-dns",
+      "from": "other-clients",
+      "to": "pihole",
+      "label": "DNS :53 + DHCP lease",
+      "kind": "dns"
+    },
+    {
+      "id": "e-pihole-gw",
+      "from": "pihole",
+      "to": "gateway",
+      "label": "upstream DNS :53",
+      "kind": "dns"
+    },
+    {
+      "id": "e-pihole-cf",
+      "from": "pihole",
+      "to": "cloudflare",
+      "label": "fallback upstream 1.1.1.1",
+      "kind": "dns"
+    },
+    {
+      "id": "e-pihole-dhcp",
+      "from": "pihole",
+      "to": "gateway",
+      "label": "DHCP offers router .1 as gateway",
+      "kind": "dns"
+    },
+    {
+      "id": "e-browser-nginx",
+      "from": "browser",
+      "to": "nginx-webapp",
+      "label": "HTTPS :8443 webapp.rpi.lan",
+      "kind": "http"
+    },
+    {
+      "id": "e-nginx-webapp",
+      "from": "nginx-webapp",
+      "to": "webapp",
+      "label": "proxy \u2192 :3000",
+      "kind": "http"
+    },
+    {
+      "id": "e-nginx-notes",
+      "from": "nginx-webapp",
+      "to": "notes-api",
+      "label": "proxy /notes \u2192 :3002",
+      "kind": "http"
+    },
+    {
+      "id": "e-browser-notes",
+      "from": "browser",
+      "to": "notes-api",
+      "label": "direct :3002 (no cert prompt)",
+      "kind": "http"
+    },
+    {
+      "id": "e-browser-vault",
+      "from": "browser",
+      "to": "nginx-bitwarden",
+      "label": "HTTPS :443 bitwarden.rpi.lan",
+      "kind": "http"
+    },
+    {
+      "id": "e-vaultnginx-vault",
+      "from": "nginx-bitwarden",
+      "to": "bitwarden",
+      "label": "proxy \u2192 :80",
+      "kind": "http"
+    },
+    {
+      "id": "e-vault-db",
+      "from": "bitwarden",
+      "to": "bitwarden-db",
+      "label": "MySQL :3306",
+      "kind": "http"
+    },
+    {
+      "id": "e-rpinet",
+      "from": "rpi-internal-net",
+      "to": "webapp",
+      "label": "shared docker bridge",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-bots",
+      "from": "webapp",
+      "to": "bot-weather",
+      "label": "control API :8080",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-health",
+      "from": "webapp",
+      "to": "bot-health",
+      "label": "control API :8080",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-jf",
+      "from": "webapp",
+      "to": "bot-jellyfin",
+      "label": "control API :8080",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-sports",
+      "from": "webapp",
+      "to": "bot-sports",
+      "label": "control API :8080",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-hltv",
+      "from": "webapp",
+      "to": "bot-hltv",
+      "label": "control API :8080",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-dispatch",
+      "from": "webapp",
+      "to": "dispatcher",
+      "label": "enable/disable + run-now :9099",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-llama",
+      "from": "webapp",
+      "to": "llama",
+      "label": "chat + runbook Q&A :8080",
+      "kind": "http"
+    },
+    {
+      "id": "e-webapp-mount",
+      "from": "webapp",
+      "to": "rpi-mount",
+      "label": "reads /agent-logs, /reports, /workspace",
+      "kind": "storage"
+    },
+    {
+      "id": "e-bots-discord",
+      "from": "bot-weather",
+      "to": "discord",
+      "label": "bot gateway",
+      "kind": "http"
+    },
+    {
+      "id": "e-health-discord",
+      "from": "bot-health",
+      "to": "discord",
+      "label": "bot gateway",
+      "kind": "http"
+    },
+    {
+      "id": "e-jfbot-discord",
+      "from": "bot-jellyfin",
+      "to": "discord",
+      "label": "bot gateway",
+      "kind": "http"
+    },
+    {
+      "id": "e-sportsbot-discord",
+      "from": "bot-sports",
+      "to": "discord",
+      "label": "bot gateway",
+      "kind": "http"
+    },
+    {
+      "id": "e-hltvbot-discord",
+      "from": "bot-hltv",
+      "to": "discord",
+      "label": "bot gateway",
+      "kind": "http"
+    },
+    {
+      "id": "e-weather-api",
+      "from": "bot-weather",
+      "to": "content-apis",
+      "label": "forecast fetch",
+      "kind": "http"
+    },
+    {
+      "id": "e-sports-api",
+      "from": "bot-sports",
+      "to": "content-apis",
+      "label": "scores fetch",
+      "kind": "http"
+    },
+    {
+      "id": "e-hltv-api",
+      "from": "bot-hltv",
+      "to": "content-apis",
+      "label": "HLTV scrape",
+      "kind": "http"
+    },
+    {
+      "id": "e-jfbot-jellyfin",
+      "from": "bot-jellyfin",
+      "to": "jellyfin",
+      "label": "library poll :8096",
+      "kind": "http"
+    },
+    {
+      "id": "e-health-logs",
+      "from": "bot-health",
+      "to": "rpi-mount",
+      "label": "reads agent-logs",
+      "kind": "storage"
+    },
+    {
+      "id": "e-rpidocker",
+      "from": "rpi-docker",
+      "to": "rpi-internal-net",
+      "label": "manages the bridge",
+      "kind": "control"
+    },
+    {
+      "id": "e-rpimount-samba",
+      "from": "rpi-mount",
+      "to": "samba",
+      "label": "CIFS 3.0 :445",
+      "kind": "storage"
+    },
+    {
+      "id": "e-nginx-certs",
+      "from": "nginx-webapp",
+      "to": "rpi-mount",
+      "label": "TLS cert from the pool",
+      "kind": "storage"
+    },
+    {
+      "id": "e-sdc-pool",
+      "from": "opti-sdc",
+      "to": "zfs-red",
+      "label": "single vdev",
+      "kind": "storage"
+    },
+    {
+      "id": "e-pool-samba",
+      "from": "zfs-red",
+      "to": "samba",
+      "label": "red/fs exported as \\\\opti\\red",
+      "kind": "storage"
+    },
+    {
+      "id": "e-pool-attic",
+      "from": "zfs-red",
+      "to": "attic",
+      "label": "weekly cold copy \u00b7 Sun 04:00",
+      "kind": "storage"
+    },
+    {
+      "id": "e-sda-attic",
+      "from": "opti-sda",
+      "to": "attic",
+      "label": "attic branch",
+      "kind": "storage"
+    },
+    {
+      "id": "e-sdb-attic",
+      "from": "opti-sdb",
+      "to": "attic",
+      "label": "attic branch (ro)",
+      "kind": "storage"
+    },
+    {
+      "id": "e-omv-monitor",
+      "from": "omv",
+      "to": "opti-sdc",
+      "label": "SMART / disk monitoring only",
+      "kind": "control"
+    },
+    {
+      "id": "e-logs-pool",
+      "from": "agent-logs",
+      "to": "zfs-red",
+      "label": "stored on the pool",
+      "kind": "storage"
+    },
+    {
+      "id": "e-dispatch-agents",
+      "from": "dispatcher",
+      "to": "agents",
+      "label": "starts a run",
+      "kind": "control"
+    },
+    {
+      "id": "e-agents-logs",
+      "from": "agents",
+      "to": "agent-logs",
+      "label": "writes JSON reports",
+      "kind": "storage"
+    },
+    {
+      "id": "e-agents-rpi",
+      "from": "agents",
+      "to": "rpi-sshd",
+      "label": "SSH probe",
+      "kind": "control"
+    },
+    {
+      "id": "e-agents-nn",
+      "from": "agents",
+      "to": "nn-remote",
+      "label": "SSH probe",
+      "kind": "control"
+    },
+    {
+      "id": "e-timers-agents",
+      "from": "opti-timers",
+      "to": "agents",
+      "label": "scheduled runs",
+      "kind": "control"
+    },
+    {
+      "id": "e-optirunner-agents",
+      "from": "opti-runner",
+      "to": "agents",
+      "label": "workflow-triggered run",
+      "kind": "ci"
+    },
+    {
+      "id": "e-ws-repo",
+      "from": "workstation",
+      "to": "samba",
+      "label": "edits the repo over CIFS",
+      "kind": "storage"
+    },
+    {
+      "id": "e-ws-github",
+      "from": "workstation",
+      "to": "github",
+      "label": "git push main",
+      "kind": "ci"
+    },
+    {
+      "id": "e-github-rpirunner",
+      "from": "github",
+      "to": "rpi-runner",
+      "label": "outbound poll \u2192 job",
+      "kind": "ci"
+    },
+    {
+      "id": "e-github-optirunner",
+      "from": "github",
+      "to": "opti-runner",
+      "label": "outbound poll \u2192 job",
+      "kind": "ci"
+    },
+    {
+      "id": "e-rpirunner-docker",
+      "from": "rpi-runner",
+      "to": "rpi-docker",
+      "label": "compose pull + up -d",
+      "kind": "ci"
+    },
+    {
+      "id": "e-rpirunner-webapp",
+      "from": "rpi-runner",
+      "to": "webapp",
+      "label": "copies webapp/ then restarts",
+      "kind": "ci"
+    },
+    {
+      "id": "e-prowlarr-sonarr",
+      "from": "prowlarr",
+      "to": "sonarr",
+      "label": "indexer feed",
+      "kind": "http"
+    },
+    {
+      "id": "e-prowlarr-radarr",
+      "from": "prowlarr",
+      "to": "radarr",
+      "label": "indexer feed",
+      "kind": "http"
+    },
+    {
+      "id": "e-prowlarr-lidarr",
+      "from": "prowlarr",
+      "to": "lidarr",
+      "label": "indexer feed",
+      "kind": "http"
+    },
+    {
+      "id": "e-prowlarr-mylar",
+      "from": "prowlarr",
+      "to": "mylar3",
+      "label": "indexer feed",
+      "kind": "http"
+    },
+    {
+      "id": "e-flare-prowlarr",
+      "from": "flaresolverr",
+      "to": "prowlarr",
+      "label": "solves protected indexers",
+      "kind": "http"
+    },
+    {
+      "id": "e-sonarr-qbt",
+      "from": "sonarr",
+      "to": "qbittorrent",
+      "label": "sends torrents",
+      "kind": "http"
+    },
+    {
+      "id": "e-radarr-qbt",
+      "from": "radarr",
+      "to": "qbittorrent",
+      "label": "sends torrents",
+      "kind": "http"
+    },
+    {
+      "id": "e-lidarr-qbt",
+      "from": "lidarr",
+      "to": "qbittorrent",
+      "label": "sends torrents",
+      "kind": "http"
+    },
+    {
+      "id": "e-sonarr-sab",
+      "from": "sonarr",
+      "to": "sabnzbd",
+      "label": "sends NZBs",
+      "kind": "http"
+    },
+    {
+      "id": "e-radarr-sab",
+      "from": "radarr",
+      "to": "sabnzbd",
+      "label": "sends NZBs",
+      "kind": "http"
+    },
+    {
+      "id": "e-bazarr-sonarr",
+      "from": "bazarr",
+      "to": "sonarr",
+      "label": "reads series list",
+      "kind": "http"
+    },
+    {
+      "id": "e-bazarr-radarr",
+      "from": "bazarr",
+      "to": "radarr",
+      "label": "reads movie list",
+      "kind": "http"
+    },
+    {
+      "id": "e-qbt-vpnnet",
+      "from": "qbittorrent",
+      "to": "nn-vpn-net",
+      "label": "network_mode: service:gluetun",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-sab-vpnnet",
+      "from": "sabnzbd",
+      "to": "nn-vpn-net",
+      "label": "network_mode: service:gluetun",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-prowlarr-vpnnet",
+      "from": "prowlarr",
+      "to": "nn-vpn-net",
+      "label": "network_mode: service:gluetun",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-mylar-vpnnet",
+      "from": "mylar3",
+      "to": "nn-vpn-net",
+      "label": "network_mode: service:gluetun",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-flare-vpnnet",
+      "from": "flaresolverr",
+      "to": "nn-vpn-net",
+      "label": "network_mode: service:gluetun",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-vpnnet-gluetun",
+      "from": "nn-vpn-net",
+      "to": "gluetun",
+      "label": "all egress via the tunnel",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-gluetun-exit",
+      "from": "gluetun",
+      "to": "vpn-exit",
+      "label": "WireGuard tunnel",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-exit-apis",
+      "from": "vpn-exit",
+      "to": "content-apis",
+      "label": "indexers + usenet + peers",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-heal-gluetun",
+      "from": "vpn-heal",
+      "to": "gluetun",
+      "label": "checks forwarded port",
+      "kind": "control"
+    },
+    {
+      "id": "e-heal-qbt",
+      "from": "vpn-heal",
+      "to": "qbittorrent",
+      "label": "re-syncs listen port",
+      "kind": "control"
+    },
+    {
+      "id": "e-nnmounts-samba",
+      "from": "nn-mounts",
+      "to": "samba",
+      "label": "CIFS 3.1.1 :445",
+      "kind": "storage"
+    },
+    {
+      "id": "e-jellyfin-mounts",
+      "from": "jellyfin",
+      "to": "nn-mounts",
+      "label": "libraries live on opti",
+      "kind": "storage"
+    },
+    {
+      "id": "e-kavita-mounts",
+      "from": "kavita",
+      "to": "nn-mounts",
+      "label": "comics from the pool",
+      "kind": "storage"
+    },
+    {
+      "id": "e-qbt-mounts",
+      "from": "qbittorrent",
+      "to": "nn-mounts",
+      "label": "writes completed downloads",
+      "kind": "storage"
+    },
+    {
+      "id": "e-sab-mounts",
+      "from": "sabnzbd",
+      "to": "nn-mounts",
+      "label": "writes completed downloads",
+      "kind": "storage"
+    },
+    {
+      "id": "e-sonarr-mounts",
+      "from": "sonarr",
+      "to": "nn-mounts",
+      "label": "imports into the library",
+      "kind": "storage"
+    },
+    {
+      "id": "e-radarr-mounts",
+      "from": "radarr",
+      "to": "nn-mounts",
+      "label": "imports into the library",
+      "kind": "storage"
+    },
+    {
+      "id": "e-import-mounts",
+      "from": "media-import",
+      "to": "nn-mounts",
+      "label": "sweeps the import inbox",
+      "kind": "control"
+    },
+    {
+      "id": "e-kavitasync-kavita",
+      "from": "kavita-sync",
+      "to": "kavita",
+      "label": "triggers a library scan",
+      "kind": "control"
+    },
+    {
+      "id": "e-browser-jellyfin",
+      "from": "browser",
+      "to": "jellyfin",
+      "label": "streams :8096",
+      "kind": "http"
+    },
+    {
+      "id": "e-browser-kavita",
+      "from": "browser",
+      "to": "kavita",
+      "label": "reads :5000",
+      "kind": "http"
+    },
+    {
+      "id": "e-browser-portainer",
+      "from": "browser",
+      "to": "portainer",
+      "label": "container UI :9000",
+      "kind": "http"
+    },
+    {
+      "id": "e-nndocker-yams",
+      "from": "nn-docker",
+      "to": "nn-yams-net",
+      "label": "manages the bridge",
+      "kind": "control"
+    },
+    {
+      "id": "e-portainer-docker",
+      "from": "portainer",
+      "to": "nn-docker",
+      "label": "docker socket",
+      "kind": "control"
+    },
+    {
+      "id": "e-ws-remote",
+      "from": "workstation",
+      "to": "opti-remote",
+      "label": "SSH + RDP",
+      "kind": "control"
+    },
+    {
+      "id": "e-ws-nnremote",
+      "from": "workstation",
+      "to": "nn-remote",
+      "label": "SSH + RDP",
+      "kind": "control"
+    },
+    {
+      "id": "e-rpitimers-docker",
+      "from": "rpi-timers",
+      "to": "rpi-docker",
+      "label": "nightly reboot + updates",
+      "kind": "control"
+    }
+  ],
+  "flows": [
+    {
+      "id": "flow-movie",
+      "name": "A movie, from request to playback",
+      "summary": "The full media path \u2014 and the reason the VPN and the NAS both sit in the middle of it.",
+      "steps": [
+        {
+          "edge": "e-prowlarr-radarr",
+          "title": "Prowlarr feeds indexers to Radarr",
+          "detail": "Prowlarr holds the indexer definitions centrally; each *arr asks it rather than keeping its own copies."
+        },
+        {
+          "edge": "e-radarr-qbt",
+          "title": "Radarr hands the release to qBittorrent",
+          "detail": "Radarr picks a release and pushes it to the download client over the shared docker network."
+        },
+        {
+          "edge": "e-qbt-vpnnet",
+          "title": "qBittorrent has no network of its own",
+          "detail": "It runs with network_mode: service:gluetun, so its only route out is the tunnel. Stop gluetun and it goes dark \u2014 that is the kill-switch working."
+        },
+        {
+          "edge": "e-gluetun-exit",
+          "title": "Gluetun egresses in the Netherlands",
+          "detail": "Public IP 46.29.25.130, with NAT-PMP forwarded port 42328 mapped back to qBittorrent's listen port."
+        },
+        {
+          "edge": "e-qbt-mounts",
+          "title": "The finished file is written to opti, not locally",
+          "detail": "Downloads land on the CIFS mount, so the 468 GB NVMe never fills with media."
+        },
+        {
+          "edge": "e-radarr-mounts",
+          "title": "Radarr imports it into the library",
+          "detail": "Rename and move within opti's pool \u2014 a metadata operation on the same filesystem."
+        },
+        {
+          "edge": "e-jellyfin-mounts",
+          "title": "Jellyfin sees it via /mnt/opti-library",
+          "detail": "Its libraries ARE the opti mounts; there is no local copy of the media."
+        },
+        {
+          "edge": "e-browser-jellyfin",
+          "title": "You stream it on :8096",
+          "detail": "Transcoding, when needed, is hardware-accelerated on the UHD 620 via /dev/dri/renderD128."
+        }
+      ]
+    },
+    {
+      "id": "flow-deploy",
+      "name": "Shipping a change to this dashboard",
+      "summary": "How code on the workstation becomes a running container on the rpi \u2014 with no inbound port ever opened.",
+      "steps": [
+        {
+          "edge": "e-ws-repo",
+          "title": "Edit the repo on tux, over CIFS",
+          "detail": "The working copy at ~/opti/ptm/repo/ptm4 is a CIFS mount of opti's pool, so saving a file writes straight to opti's disk."
+        },
+        {
+          "edge": "e-ws-github",
+          "title": "git push to main",
+          "detail": "Pushing paths under homelab/hosts/rpi/** is what triggers the deploy workflow."
+        },
+        {
+          "edge": "e-github-rpirunner",
+          "title": "The rpi's runner picks up the job",
+          "detail": "The runner polls GitHub outbound over HTTPS. Nothing is exposed inbound \u2014 this is the only way external code enters the LAN. Pinned to [self-hosted, ARM64] so it can't land on opti."
+        },
+        {
+          "edge": "e-rpirunner-webapp",
+          "title": "Files are copied into the bind mount",
+          "detail": "webapp/ is copied to /srv/docker/compose/webapp, which the container bind-mounts at /app. Frontend files are live immediately; backend changes need the restart that follows."
+        },
+        {
+          "edge": "e-rpirunner-docker",
+          "title": "compose pull + up -d, then restart webapp",
+          "detail": "Images are refreshed and the stack reconciled, then the webapp container restarts to re-exec the Node process."
+        }
+      ]
+    },
+    {
+      "id": "flow-dns",
+      "name": "Resolving a name on the LAN",
+      "summary": "Why the rpi is the most load-bearing host despite being the weakest.",
+      "risk": "Both DNS and DHCP live in one container on an SD card. If the gateway's own DHCP is ever switched back on it races Pi-hole and hands out leases with the wrong DNS \u2014 which presents as 'all the servers are down'.",
+      "steps": [
+        {
+          "edge": "e-others-dns",
+          "title": "A device gets its lease from Pi-hole",
+          "detail": "Pi-hole \u2014 not the router \u2014 is the DHCP server for 192.168.1.0/24, scope .2\u2013.250, with six MAC-pinned reservations for the servers."
+        },
+        {
+          "edge": "e-clients-dns",
+          "title": "Every lookup goes to 192.168.1.10:53",
+          "detail": "Ad-blocking plus the 15 local A records (webapp.rpi.lan, jellyfin.lan, comics.lan, opti.lan\u2026) that make the homelab addressable by name."
+        },
+        {
+          "edge": "e-pihole-gw",
+          "title": "Unknown names go upstream to the router",
+          "detail": "192.168.1.1 is the primary upstream."
+        },
+        {
+          "edge": "e-pihole-cf",
+          "title": "Cloudflare is the fallback",
+          "detail": "1.1.1.1 covers the case where the router's resolver is unhappy."
+        }
+      ]
+    },
+    {
+      "id": "flow-agents",
+      "name": "How this page knows what is up",
+      "summary": "The agent loop that produces the live overlay on the Map tab.",
+      "steps": [
+        {
+          "edge": "e-timers-agents",
+          "title": "A timer on opti starts an agent run",
+          "detail": "homelab-doctor, plus the hardware, software and network reporters."
+        },
+        {
+          "edge": "e-agents-rpi",
+          "title": "Each agent SSHes out to every host",
+          "detail": "It collects containers, disks, packages and pool state first-hand."
+        },
+        {
+          "edge": "e-agents-logs",
+          "title": "Results are written as JSON onto the pool",
+          "detail": "homelab-doctor-latest.json and friends land in /srv/red/fs/ptm/agent-logs/."
+        },
+        {
+          "edge": "e-webapp-mount",
+          "title": "The webapp reads them read-only",
+          "detail": "The pool is mounted at /agent-logs inside the container."
+        },
+        {
+          "edge": "e-nginx-webapp",
+          "title": "Sync fetches /api/architecture/live",
+          "detail": "The route reshapes the newest doctor/hardware/software reports per host \u2014 no fresh SSH round trip, so the button is cheap."
+        }
+      ]
+    },
+    {
+      "id": "flow-vpn-heal",
+      "name": "The VPN port-forward watchdog",
+      "summary": "A silent failure that needed a watchdog rather than a fix.",
+      "steps": [
+        {
+          "edge": "e-heal-gluetun",
+          "title": "Every 2 minutes, check the forwarded port",
+          "detail": "Gluetun's NAT-PMP lease dies without logging an error, so nothing surfaces the failure on its own."
+        },
+        {
+          "edge": "e-heal-qbt",
+          "title": "Push the port back into qBittorrent",
+          "detail": "If qBittorrent's listen port has drifted from the forwarded port, seeding silently stops. The healer re-syncs them."
+        },
+        {
+          "edge": "e-gluetun-exit",
+          "title": "Confirm the tunnel still egresses in NL",
+          "detail": "Public IP and port are recorded to /var/lib/vpn-stack-heal/status.json \u2014 check there first when torrents stall."
+        }
+      ]
+    },
+    {
+      "id": "flow-vault",
+      "name": "Opening the password vault",
+      "summary": "The shortest path in the homelab, and the one with the most valuable data behind it.",
+      "steps": [
+        {
+          "edge": "e-browser-vault",
+          "title": "HTTPS to bitwarden.rpi.lan",
+          "detail": "nginx terminates TLS on :443 with a local cert."
+        },
+        {
+          "edge": "e-vaultnginx-vault",
+          "title": "Proxied to Vaultwarden",
+          "detail": "Vaultwarden itself is never published to the host \u2014 only nginx can reach it, over the internal docker bridge."
+        },
+        {
+          "edge": "e-vault-db",
+          "title": "Secrets are read from MariaDB",
+          "detail": "This dataset is the most backup-critical thing on the rpi."
+        }
+      ]
+    }
+  ],
+  "network": {
+    "subnet": "192.168.1.0/24",
+    "gateway": "192.168.1.1",
+    "dns": {
+      "server": "192.168.1.10:53 (Pi-hole FTL v6.7)",
+      "upstreams": [
+        "192.168.1.1 (router)",
+        "1.1.1.1 (Cloudflare)"
+      ]
+    },
+    "dhcp": {
+      "server": "Pi-hole (the router's DHCP must stay disabled)",
+      "scope": "192.168.1.2 \u2013 192.168.1.250",
+      "router": "192.168.1.1",
+      "ipv6": false
+    },
+    "records": [
+      {
+        "name": "rpi.lan",
+        "ip": "192.168.1.10"
+      },
+      {
+        "name": "webapp.rpi.lan",
+        "ip": "192.168.1.10"
+      },
+      {
+        "name": "bitwarden.rpi.lan",
+        "ip": "192.168.1.10"
+      },
+      {
+        "name": "vpn.rpi.lan",
+        "ip": "192.168.1.10",
+        "note": "orphaned \u2014 WireGuard is decommissioned"
+      },
+      {
+        "name": "opti.lan / opti",
+        "ip": "192.168.1.11"
+      },
+      {
+        "name": "noblenumbat.lan",
+        "ip": "192.168.1.6"
+      },
+      {
+        "name": "jellyfin.lan",
+        "ip": "192.168.1.6"
+      },
+      {
+        "name": "comics.lan",
+        "ip": "192.168.1.6"
+      },
+      {
+        "name": "tux.lan / ptm.lan",
+        "ip": "192.168.1.3"
+      },
+      {
+        "name": "twah.lan",
+        "ip": "192.168.1.4"
+      },
+      {
+        "name": "ptmshc.lan",
+        "ip": "192.168.1.5"
+      },
+      {
+        "name": "android / android.lan",
+        "ip": "192.168.1.54"
+      }
+    ],
+    "reservations": [
+      {
+        "host": "ptm / tux",
+        "ip": "192.168.1.3",
+        "mac": "d8:5e:d3:0c:13:f2"
+      },
+      {
+        "host": "twah",
+        "ip": "192.168.1.4",
+        "mac": "98:25:4a:2f:49:3c"
+      },
+      {
+        "host": "ptmshc",
+        "ip": "192.168.1.5",
+        "mac": "ac:1a:3d:7e:bc:a5"
+      },
+      {
+        "host": "noblenumbat",
+        "ip": "192.168.1.6",
+        "mac": "14:f6:d8:ea:e3:22"
+      },
+      {
+        "host": "rpi",
+        "ip": "192.168.1.10",
+        "mac": "e4:5f:01:89:b6:4d"
+      },
+      {
+        "host": "opti",
+        "ip": "192.168.1.11",
+        "mac": "34:17:eb:d1:eb:f8"
+      }
+    ],
+    "notes": [
+      "There is no inbound path into this LAN. WireGuard and its peer-manager UI were decommissioned; no wg0 interface and nothing on UDP 51820. Orphaned peer configs still sit on the rpi's disk.",
+      "Remote access is LAN-only: SSH everywhere, RDP on opti (xrdp) and noblenumbat (gnome-remote-desktop)."
+    ]
+  },
+  "storage": {
+    "summary": "One ZFS pool on opti backs essentially everything. Every other host is a CIFS client of it. Migrated from mergerfs 2026-07-25; the old disks survive as a weekly cold copy ('attic').",
+    "pool": {
+      "name": "zpool red \u2192 /srv/red (share root: red/fs \u2192 /srv/red/fs)",
+      "size": "3.6 TB",
+      "used": "602 GB (16%)",
+      "free": "2.92 TB",
+      "branches": [
+        {
+          "dev": "/dev/sdc (WD40EFZZ, 4 TB WD Red Plus)",
+          "size": "3.6 TB",
+          "fs": "ZFS",
+          "note": "single vdev \u2014 no redundancy; scrub clean 2026-07-25"
+        },
+        {
+          "dev": "attic: sda1 (ext4) + sdb2 (NTFS)",
+          "size": "~1 TB",
+          "fs": "mixed",
+          "note": "retired mergerfs pair \u00b7 noauto cold copy, refreshed Sun 04:00"
+        }
+      ]
+    },
+    "layout": [
+      {
+        "path": "ptm/Media/Movies",
+        "purpose": "Jellyfin movie library \u2192 noblenumbat /mnt/opti-library"
+      },
+      {
+        "path": "ptm/Media/Shows",
+        "purpose": "Jellyfin TV library \u2192 noblenumbat /mnt/opti-shows"
+      },
+      {
+        "path": "ptm/Media-Import",
+        "purpose": "Drop inbox, swept every 2 min \u2192 /mnt/opti-media"
+      },
+      {
+        "path": "ptm/agent-logs",
+        "purpose": "Agent JSON reports \u2192 rpi webapp /agent-logs"
+      },
+      {
+        "path": "ptm/security-reports",
+        "purpose": "Security agent output \u2192 rpi webapp /reports"
+      },
+      {
+        "path": "ptm/certs",
+        "purpose": "TLS certs for webapp.rpi.lan"
+      },
+      {
+        "path": "ptm/repo/ptm4",
+        "purpose": "The repo itself \u2014 edited from tux, read by the webapp"
+      },
+      {
+        "path": "ptm/logging",
+        "purpose": "Deploy logs written by the rpi runner"
+      }
+    ],
+    "consumers": [
+      {
+        "host": "rpi",
+        "mount": "/mnt/opti-fs",
+        "proto": "CIFS 3.0",
+        "what": "agent logs, reports, certs, repo"
+      },
+      {
+        "host": "noblenumbat",
+        "mount": "/mnt/opti-library",
+        "proto": "CIFS 3.1.1",
+        "what": "movies"
+      },
+      {
+        "host": "noblenumbat",
+        "mount": "/mnt/opti-shows",
+        "proto": "CIFS 3.1.1",
+        "what": "TV"
+      },
+      {
+        "host": "noblenumbat",
+        "mount": "/mnt/opti-media",
+        "proto": "CIFS 3.1.1",
+        "what": "import inbox"
+      },
+      {
+        "host": "tux",
+        "mount": "~/opti",
+        "proto": "CIFS 3.1.1",
+        "what": "the whole share, for editing"
+      }
+    ],
+    "notes": [
+      "The live share [red] is configured in /etc/homelab/samba-red.conf, hand-managed. OMV no longer owns it \u2014 its smb.conf is not where the share lives.",
+      "The pool is a single vdev: ZFS checksums detect corruption but cannot self-heal it without a mirror. The attic cold copy (weekly, rsync --delete with an empty-source interlock) is the recovery path, so worst-case loss is up to a week of changes."
+    ]
+  },
+  "automation": [
+    {
+      "host": "opti",
+      "unit": "homelab-docs.timer",
+      "when": "daily ~05:16",
+      "what": "Regenerates homelab docs"
+    },
+    {
+      "host": "opti",
+      "unit": "opti-health-digest.timer",
+      "when": "daily 06:30",
+      "what": "Feeds the Discord health bot"
+    },
+    {
+      "host": "opti",
+      "unit": "hl-agent-dispatcher.service",
+      "when": "always on",
+      "what": "Agent control API on :9099"
+    },
+    {
+      "host": "opti",
+      "unit": "homelab-coldcopy.timer",
+      "when": "Sun 04:00",
+      "what": "Refreshes the cold copy (ZFS red \u2192 old mergerfs pair)"
+    },
+    {
+      "host": "opti",
+      "unit": "zfs-scrub-monthly@red.timer",
+      "when": "monthly",
+      "what": "ZFS scrub of the red pool"
+    },
+    {
+      "host": "noblenumbat",
+      "unit": "vpn-stack-heal.timer",
+      "when": "every 2 min",
+      "what": "Repairs Gluetun's forwarded port"
+    },
+    {
+      "host": "noblenumbat",
+      "unit": "media-import.timer",
+      "when": "every 2 min",
+      "what": "Sweeps the import inbox"
+    },
+    {
+      "host": "noblenumbat",
+      "unit": "bb-kavita-sync.timer",
+      "when": "hourly",
+      "what": "Kavita library sync"
+    },
+    {
+      "host": "all",
+      "unit": "homelab-autoupdate.timer",
+      "when": "daily ~02:00",
+      "what": "Unattended package updates"
+    },
+    {
+      "host": "all",
+      "unit": "homelab-autoreboot.timer",
+      "when": "daily 03:00",
+      "what": "Coordinated reboot window"
+    }
+  ],
+  "agents": [
+    {
+      "id": "homelab-doctor",
+      "what": "Cross-host service + container health. Feeds this page's live overlay."
+    },
+    {
+      "id": "hardware-report",
+      "what": "CPU, RAM, disks, temperatures per host."
+    },
+    {
+      "id": "software-inventory",
+      "what": "Installed packages and pending updates."
+    },
+    {
+      "id": "network-report",
+      "what": "Interfaces, listening ports, reachability."
+    },
+    {
+      "id": "docs-generator",
+      "what": "Regenerates the technical documentation."
+    },
+    {
+      "id": "journald-hunter",
+      "what": "Scans journals for anomalies."
+    },
+    {
+      "id": "persistence-auditor",
+      "what": "Audits units, timers and cron for unexpected persistence."
+    }
+  ],
+  "observations": [
+    {
+      "severity": "warning",
+      "title": "DNS and DHCP are a single point of failure on an SD card",
+      "detail": "Pi-hole on the rpi is the only DNS and DHCP server for the LAN, and the rpi boots from a 117 GB SD card. Losing that card takes name resolution and lease renewal down with it."
+    },
+    {
+      "severity": "warning",
+      "title": "opti is the storage single point of failure",
+      "detail": "The rpi, noblenumbat and tux all mount //opti/red. Jellyfin's libraries, the webapp's data tabs, the TLS certs and the repo all live there. opti going down degrades all three other hosts at once."
+    },
+    {
+      "severity": "good",
+      "title": "No inbound attack surface",
+      "detail": "WireGuard is decommissioned and nothing is port-forwarded. Both CI runners reach GitHub outbound-only, so deploys work without exposing anything."
+    },
+    {
+      "severity": "good",
+      "title": "The VPN kill-switch is real",
+      "detail": "Five containers share Gluetun's network namespace rather than merely routing through it, so they cannot leak to the WAN if the tunnel drops."
+    },
+    {
+      "severity": "warning",
+      "title": "The live pool has no redundancy",
+      "detail": "Pool red is a single 4 TB vdev. ZFS checksums catch corruption, but with no mirror nothing self-heals \u2014 the weekly attic cold copy is the only second copy, so a disk failure can cost up to a week of changes. A mirror disk is the structural fix (see the opti-drive-onboard skill)."
+    },
+    {
+      "severity": "info",
+      "title": "Leftovers worth cleaning up",
+      "detail": "A vpn.rpi.lan DNS record and WireGuard peer configs survive a decommissioned service, and a stale pre-ZFS copy of the repo sits on opti's old NTFS disk (dev-disk-by-uuid\u2026/fs/ptm/repo/ptm4) \u2014 one commit behind and no longer referenced by any unit."
+    },
+    {
+      "severity": "info",
+      "title": "noblenumbat's real risk is thermal, not software",
+      "detail": "A whole-host outage on 2026-07-16 turned out to be a cooling problem on the laptop chassis, not a Jellyfin or container fault."
+    }
+  ]
+}

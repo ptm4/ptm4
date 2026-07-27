@@ -18,8 +18,10 @@ is reached. Also `ptm.lan` / `tux.lan` in Pi-hole.
 
 ### opti — 192.168.1.11
 Storage and control plane. Debian 12, Intel i5-3570, 5.7 GiB RAM.
-- **OpenMediaVault** manages the box; web UI on `:80`. **Never hand-edit the Samba config** —
-  OMV regenerates it.
+- **OpenMediaVault** web UI on `:80` — **UI/monitoring only since the ZFS migration**; it no
+  longer owns the live share. Don't edit `/etc/samba/*` (OMV leftovers) *or*
+  `/etc/homelab/samba-red.conf` in place — the repo copy `homelab/hosts/opti/samba/samba-red.conf`
+  is the source, deployed by copy.
 - **ZFS pool `red`** (single 4 TB WD Red Plus vdev, migrated from mergerfs 2026-07-25):
   share root `red/fs` → `/srv/red/fs`, exported as `\\opti\red` via
   `/etc/homelab/samba-red.conf` (hand-managed — **not** OMV's smb.conf; OMV is UI/monitoring
@@ -55,8 +57,9 @@ cooling problem, not Jellyfin).
   connectivity with it — an intentional kill-switch): qBittorrent, SABnzbd, Prowlarr `:9696`,
   Mylar3 `:8090`, FlareSolverr `:8191`. Portainer on `:9000`.
 - Media lives on **opti**, not locally: `/mnt/opti-library`, `/mnt/opti-shows`, `/mnt/opti-media`.
-- Compose at `/opt/yams/docker-compose.yaml`. A `watchtower` service is defined there but is not
-  currently running.
+- Compose at `/opt/yams/docker-compose.yaml` (repo source: `homelab/hosts/noblenumbat/`).
+  Watchtower was removed 2026-07-25 — image updates are report-only via software-inventory,
+  applied deliberately with `docker compose pull`.
 - SSH: `ssh noblenumbat` (user `ptm`, `~/.ssh/homelab`).
 
 ### android — 192.168.1.54
@@ -84,7 +87,7 @@ ssh -G <alias> | grep -iE '^(hostname|port|user|identityfile) '
 `~/.ssh/hl_agents`, selected by `HL_SSH_KEY`, with targets in `HL_HOSTS`
 (`opti=127.0.0.1,rpi=192.168.1.10,noblenumbat=192.168.1.6` by default) — both set in
 `/etc/hl-agents.env`. The runners reach opti *over SSH to itself* so every host takes one
-uniform code path. See `homelab/Tools/homelab/_hosts.py`.
+uniform code path. See `homelab/tools/collectors/_hosts.py`.
 
 If a runner reports every host unreachable at once, suspect this key rather than the network.
 

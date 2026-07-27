@@ -35,4 +35,4 @@ Year is optional but strongly recommended (avoids remake/same-title collisions).
 
 - **Docuseries/TV are not movies.** Netflix-style multi-part documentaries (e.g. Fear City, Get Gotti) live on TMDB as TV series — Radarr can't manage them; they belong in Sonarr (`http://192.168.1.6:8989`). The lookup will usually return `NOT FOUND` for these; don't force-match them to similarly named movie entries.
 - Radarr tracks **one file per movie** — alternate cuts (theatrical vs. special edition) need manual handling as Jellyfin "versions".
-- After adding, downloads appear in qBittorrent (`http://192.168.1.6:8081`) within minutes; imports to Jellyfin are automatic. See homelab/homelab-techdoc.md Section 16.
+- After adding, downloads appear in qBittorrent (`http://192.168.1.6:8081`) within minutes; imports to Jellyfin are automatic. See homelab/docs/homelab-techdoc.md Section 16.

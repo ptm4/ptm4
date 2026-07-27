@@ -61,7 +61,7 @@ will get a hard denial rather than a warning.
 - **Never hand-edit Samba or OMV config on opti.** OpenMediaVault regenerates it; edits vanish.
 - **Never edit `discord-*` files directly on rpi.** Bots are managed through the webapp.
 - **Never edit `/srv/docker/compose/webapp/` on rpi as the fix.** That is a deploy target, not
-  the source — the next CI run reverts it. Edit `homelab/RPI-srv/webapp/` in the repo.
+  the source — the next CI run reverts it. Edit `homelab/hosts/rpi/webapp/` in the repo.
 - **Never `git commit`, `amend`, `reset`, or push.** Peter commits his own work. Make the change
   and say what needs committing.
 - **Never enable DHCP on the Verizon router.** It races Pi-hole and presents as "all the servers

@@ -1,0 +1,279 @@
+#compose
+#
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    logging: *default-logging
+    network_mode: "host"          # Host mode required for DHCP/DNS
+    environment:
+      TZ: "America/New_York"
+      FTLCONF_webserver_api_password: ${PIHOLE_WEB_PASSWORD}
+      FTLCONF_dns_upstreams: "192.168.1.1;1.1.1.1"
+    volumes:
+      - pihole_data:/etc/pihole
+      - dnsmasq_data:/etc/dnsmasq.d
+    cap_add:
+      - NET_ADMIN                  # Needed for DHCP
+      - SYS_NICE                   # Suppress FTL process priority warning
+
+  mariadb:
+    image: mariadb:11
+    container_name: bitwarden-db
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./bitwarden-db/data:/var/lib/mysql
+    networks:
+      - internal
+  bitwarden:
+    image: vaultwarden/server:latest
+    container_name: bitwarden
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      WEBSOCKET_ENABLED: "true"
+      SIGNUPS_ALLOWED: "true"
+      BITWARDEN_SMTP_ENABLED: "false"
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@bitwarden-db:3306/${MYSQL_DATABASE}"
+      DOMAIN: ${VAULTWARDEN_DOMAIN}
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN}
+    depends_on:
+      - mariadb
+    networks:
+      - internal
+    expose:
+      - "80"   # expose internally to NGINX, not host
+    volumes:
+      - ./vaultwarden-data:/data
+
+  nginx-proxy:
+    image: nginx:stable-alpine
+    container_name: nginx-bitwarden
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "443:443"   # HTTPS for LAN clients
+    volumes:
+      - ./certs/bitwarden.rpi.lan.pem:/etc/ssl/certs/bitwarden.crt:ro
+      - ./certs/bitwarden.rpi.lan-key.pem:/etc/ssl/private/bitwarden.key:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - bitwarden
+    networks:
+      - internal
+
+  notes-api:
+    build: ./notes-app/api
+    container_name: notes-api
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATA_DIR: /data
+      PORT: 3002
+    volumes:
+      - ./notes-app/api/index.js:/app/index.js:ro
+      - ./notes-app/web:/web:ro
+      - notes_data:/data
+    ports:
+      - "${RPI_IP}:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
+    expose:
+      - "3002"                      # internal Docker network access for nginx
+    networks:
+      - internal
+
+  webapp:
+    image: node:lts-alpine
+    container_name: webapp
+    restart: unless-stopped
+    logging: *default-logging
+    working_dir: /app/backend
+    command: sh -c "npm install --omit=dev && node index.js"
+    environment:
+      # opti agent dispatcher (enable/disable + run-now); set in .env
+      DISPATCHER_URL: ${DISPATCHER_URL:-}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+      # android phone local LLM (llama.cpp + llama-ctl management API)
+      LLAMA_URL: ${LLAMA_URL:-http://android.lan:8080}
+      LLAMA_CTL_URL: ${LLAMA_CTL_URL:-http://android.lan:8081}
+      # shared secret the per-host architecture agents present on POST /ingest;
+      # see homelab/tools/arch-agent/hl-arch-agent.env.example on each host
+      HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
+      # live Pi-hole tile + pause/resume (routes/pihole.js). Pi-hole is host-network on
+      # this rpi; the webapp container reaches it via the host's LAN IP. The password
+      # already lives in this same .env for Pi-hole itself.
+      PIHOLE_URL: ${PIHOLE_URL:-http://192.168.1.10}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+    volumes:
+      - ./webapp:/app
+      - /mnt/opti-fs/ptm/security-reports:/reports:ro
+      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
+      # ptm4 repo root (read-only) — the agentic manifest, per-host probe status, and the
+      # workspace wiring files (CLAUDE.md, .claude/skills) the /api/agentic route inspects
+      - /mnt/opti-fs/ptm/repo/ptm4:/workspace:ro
+      # WRITABLE — the only one. Architecture-agent fragments landed by POST /ingest
+      # (routes/architecture.js). Everything else webapp reads is deliberately :ro so
+      # a bug in this route can't touch anything but its own data.
+      - arch_data:/arch-data
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  discord-weather:
+    build: ./discord-weather
+    container_name: discord-weather
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      - weather_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-healthdigest:
+    build: ./discord-healthdigest
+    container_name: discord-healthdigest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HEALTHDIGEST: ${DISCORD_WEBHOOK_URL_HEALTHDIGEST:-}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+      RPI_IP: ${RPI_IP:-}
+      DISPATCHER_URL: ${DISPATCHER_URL:-}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+    volumes:
+      - healthdigest_data:/data
+      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-jellyfin:
+    build: ./discord-jellyfin
+    container_name: discord-jellyfin
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_JELLYFIN: ${DISCORD_WEBHOOK_URL_JELLYFIN:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+    volumes:
+      - jellyfinbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-sports:
+    build: ./discord-sports
+    container_name: discord-sports
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_SPORTS: ${DISCORD_WEBHOOK_URL_SPORTS:-}
+    volumes:
+      - sportsbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-hltv:
+    build: ./discord-hltv
+    container_name: discord-hltv
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HLTV: ${DISCORD_WEBHOOK_URL_HLTV:-}
+    volumes:
+      - hltvbot_data:/data
+    expose:
+      - "8080"                     # control API — internal network only, used by webapp
+    networks:
+      - internal
+    healthcheck:
+      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  nginx-webapp:
+    image: nginx:stable-alpine
+    container_name: nginx-webapp
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${RPI_IP}:8443:443"
+    volumes:
+      - /mnt/opti-fs/ptm/certs/webapp.rpi.lan.pem:/etc/ssl/certs/webapp.crt:ro
+      - /mnt/opti-fs/ptm/certs/webapp.rpi.lan-key.pem:/etc/ssl/private/webapp.key:ro
+      - ./nginx-wg.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - webapp
+      - notes-api
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  notes_data:
+  weather_data:
+  healthdigest_data:
+  jellyfinbot_data:
+  sportsbot_data:
+  hltvbot_data:
+  pihole_data:
+  dnsmasq_data:
+  db_data:
+  arch_data:

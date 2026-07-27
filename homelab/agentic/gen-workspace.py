@@ -8,7 +8,7 @@ where skills / rules / runbooks / harness notes are, and how a given tool discov
 described once, in plain JSON, so it survives a swap from Claude Code to Codex, Cursor, or
 anything else. The canonical home is this folder: `homelab/agentic/` in the ptm4 repo.
 
-Deterministic and stdlib-only (same convention as Tools/homelab/docs-generator.py):
+Deterministic and stdlib-only (same convention as tools/collectors/docs-generator.py):
   - The *inventory* (skills/rules/runbooks/harness) is scanned from the filesystem so it
     never drifts from reality.
   - The *facts* (workspace paths, hosts, portability guidance) are embedded below; edit

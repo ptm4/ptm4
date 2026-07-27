@@ -1,0 +1,60 @@
+name: Deploy opti Units
+
+# Installs opti's systemd units + scripts from the repo, so they stop being
+# hand-managed (until 2026-07-26 the installed units had silently drifted AHEAD of
+# the repo copies — ZFS guards existed live but not in git; this workflow makes the
+# repo authoritative in both directions).
+#
+# Deliberately NOT deployed here:
+#   - /etc/homelab/samba-red.conf — the webapp's samba editor drives the dispatcher's
+#     validate→backup→write→reload→verify pipeline (hosts/opti/samba_config.py); a
+#     blind cp + reload on every push would bypass those interlocks.
+#   - /etc/hl-agents.env — secrets, never in the repo.
+#   - The dispatcher runs FROM the working copy on the pool (not from this checkout),
+#     so a push that changes agent-dispatcher.py needs the restart below to take
+#     effect — that's this workflow's real job.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homelab/hosts/opti/**"
+      - "homelab/tools/automation/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, opti]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cross-host automation scripts
+        run: |
+          sudo cp "$GITHUB_WORKSPACE/homelab/tools/automation/homelab-autoupdate.sh" /usr/local/bin/
+          sudo cp "$GITHUB_WORKSPACE/homelab/tools/automation/homelab-autoreboot.sh" /usr/local/bin/
+          sudo cp "$GITHUB_WORKSPACE/homelab/hosts/opti/homelab-coldcopy.sh" /usr/local/bin/
+          sudo chmod +x /usr/local/bin/homelab-autoupdate.sh /usr/local/bin/homelab-autoreboot.sh /usr/local/bin/homelab-coldcopy.sh
+
+      - name: Install systemd units
+        run: |
+          sudo cp "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.service \
+                  "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.timer \
+                  /etc/systemd/system/
+          sudo cp "$GITHUB_WORKSPACE"/homelab/tools/automation/*.service \
+                  "$GITHUB_WORKSPACE"/homelab/tools/automation/*.timer \
+                  /etc/systemd/system/
+          sudo systemctl daemon-reload
+
+      - name: Restart the dispatcher (it runs from the pool working copy)
+        run: |
+          sudo systemctl restart hl-agent-dispatcher
+          sleep 2
+          systemctl is-active hl-agent-dispatcher
+
+      - name: Verify timers
+        run: |
+          sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-autoupdate.timer homelab-autoreboot.timer
+          systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer --no-legend --no-pager

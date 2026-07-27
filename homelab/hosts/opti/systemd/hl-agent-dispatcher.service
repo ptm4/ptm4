@@ -1,0 +1,27 @@
+[Unit]
+# Homelab agent dispatcher — LAN control plane for enable/disable + run-now.
+# Install on opti:
+#   sudo cp hl-agent-dispatcher.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hl-agent-dispatcher
+# Runs from the working copy on the ZFS pool; the mountpoint guard stops a boot-race
+# from launching against an empty /srv/red (see agentic/troubleshooting.md — that race
+# once pointed the old /srv/pool at a dead-end dir for six seconds).
+Description=Homelab agent dispatcher (enable/disable + run-now)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /srv/red
+Type=simple
+User=ptm
+# '-' prefix: missing env file is non-fatal (agent uses relative-path defaults until created)
+EnvironmentFile=-/etc/hl-agents.env
+WorkingDirectory=/srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti/agent-dispatcher.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

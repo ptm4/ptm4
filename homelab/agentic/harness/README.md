@@ -142,7 +142,7 @@ the reason. Prefer explicit JSON over exit 2; it lets you attach a useful messag
    filesystem, no CIFS. Latency here is paid on every tool use.
 3. **Reasons must be actionable.** "Denied" teaches nothing; "Denied — OMV regenerates this,
    use the web UI on opti:80" resolves the situation in one turn.
-4. **Stdlib Python only**, matching the rest of `homelab/Tools/`.
+4. **Stdlib Python only**, matching the rest of `homelab/tools/`.
 
 ---
 
@@ -196,7 +196,7 @@ loads only when those files are touched:
 ```markdown
 ---
 paths:
-  - "homelab/RPI-srv/webapp/**"
+  - "homelab/hosts/rpi/webapp/**"
 ---
 ```
 

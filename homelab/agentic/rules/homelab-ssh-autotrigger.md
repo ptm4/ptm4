@@ -22,6 +22,6 @@ things that actually get updated when something changes.
   [`../runbooks/01-hosts-and-ssh.md`](../runbooks/01-hosts-and-ssh.md) rather than inventing a
   key path. Don't assume one host's key works on another.
 
-**Exception:** the collectors in `homelab/Tools/homelab/` deliberately do their own SSH fan-out
+**Exception:** the collectors in `homelab/tools/collectors/` deliberately do their own SSH fan-out
 via `_hosts.py` and the `hl_agents` key. Don't rewrite those to use the interactive alias —
 they run unattended on opti, where `~/.ssh/config` aliases aren't in play.

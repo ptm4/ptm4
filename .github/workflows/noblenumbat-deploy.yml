@@ -1,0 +1,73 @@
+name: Deploy noblenumbat Stack
+
+# Deploys the YAMS media stack + its three systemd timers from the repo, mirroring
+# rpi-deploy.yml. Until 2026-07-26 this host was deployed by hand; the repo copy and
+# live /opt/yams had no enforcement keeping them in sync.
+#
+# `docker compose pull` here is DELIBERATE update policy, not an accident: watchtower
+# was removed 2026-07-25 (it silently restarted the stack and then died mid-self-update),
+# so image updates apply exactly when a push touches this host's paths or when this
+# workflow is dispatched manually — never on a background schedule.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homelab/hosts/noblenumbat/**"
+  workflow_dispatch:   # manual trigger — also the deliberate "apply image updates now" button
+
+jobs:
+  deploy:
+    # Pin to the noblenumbat runner — bare 'self-hosted' would also match opti (x86)
+    # and rpi (ARM64). Label is set at runner registration.
+    runs-on: [self-hosted, noblenumbat]
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose files
+        # COMPOSE_FILE in /opt/yams/.env chains both: docker-compose.yaml:docker-compose.custom.yaml.
+        # The .env itself (secrets: VPN creds) is NOT in the repo and is never touched here.
+        run: |
+          cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/docker-compose.yaml" /opt/yams/docker-compose.yaml
+          cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/docker-compose.custom.yaml" /opt/yams/docker-compose.custom.yaml
+
+      - name: Validate compose before touching containers
+        working-directory: /opt/yams
+        run: docker compose config --quiet
+
+      - name: Pull images (the deliberate update path)
+        working-directory: /opt/yams
+        run: docker compose pull
+
+      - name: Bring stack up
+        working-directory: /opt/yams
+        run: docker compose up -d --remove-orphans
+
+      - name: Install timer scripts
+        # Destinations match the installed units' ExecStart paths (/usr/local/bin).
+        run: |
+          sudo cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/media-import.sh" /usr/local/bin/media-import.sh
+          sudo cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/vpn-stack-heal.sh" /usr/local/bin/vpn-stack-heal.sh
+          sudo cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/bb-kavita-sync.py" /usr/local/bin/bb-kavita-sync.py
+          sudo chmod +x /usr/local/bin/media-import.sh /usr/local/bin/vpn-stack-heal.sh
+
+      - name: Install systemd units
+        run: |
+          sudo cp "$GITHUB_WORKSPACE"/homelab/hosts/noblenumbat/systemd/*.service \
+                  "$GITHUB_WORKSPACE"/homelab/hosts/noblenumbat/systemd/*.timer \
+                  /etc/systemd/system/
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now media-import.timer vpn-stack-heal.timer bb-kavita-sync.timer
+
+      - name: Verify
+        working-directory: /opt/yams
+        run: |
+          echo "--- services ---"
+          docker compose config --services
+          echo "--- running ---"
+          docker compose ps --format '{{.Name}}\t{{.State}}'
+          echo "--- timers ---"
+          systemctl list-timers media-import.timer vpn-stack-heal.timer bb-kavita-sync.timer --no-legend --no-pager

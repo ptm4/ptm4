@@ -257,11 +257,11 @@ Everything in [homelab/](homelab/) is a personal project. It runs my actual home
 
 What's in it:
 
-* **[RPI-srv/](homelab/RPI-srv/)**: Raspberry Pi services. Discord bots (weather, sports, CS2/HLTV, Jellyfin, health digest), a Node.js web control panel for managing the fleet, and a notes app.
-* **[noblenumbat-srv/](homelab/noblenumbat-srv/)**: media server stack (Docker Compose) plus a self-healing VPN watchdog ([vpn-stack-heal.sh](homelab/noblenumbat-srv/yams/vpn-stack-heal.sh)) that detects dead port forwarding and recovers the stack unattended.
-* **[Tools/](homelab/Tools/)**: fleet tooling. Health checks across hosts ([homelab-doctor](homelab/Tools/homelab/homelab-doctor.py)), network reporting, systemd timers for unattended updates and reboots, a CS2 stats coach built on the Leetify API, and other experiments.
+* **[hosts/rpi/](homelab/hosts/rpi/)**: Raspberry Pi services. Discord bots (weather, sports, CS2/HLTV, Jellyfin, health digest), a Node.js web control panel for managing the fleet, and a notes app.
+* **[hosts/noblenumbat/](homelab/hosts/noblenumbat/)**: media server stack (Docker Compose) plus a self-healing VPN watchdog ([vpn-stack-heal.sh](homelab/hosts/noblenumbat/vpn-stack-heal.sh)) that detects dead port forwarding and recovers the stack unattended.
+* **[Tools/](homelab/tools/)**: fleet tooling. Health checks across hosts ([homelab-doctor](homelab/tools/collectors/homelab-doctor.py)), network reporting, systemd timers for unattended updates and reboots, a CS2 stats coach built on the Leetify API, and other experiments.
 * **[PTMonitor-widget/](homelab/PTMonitor-widget/)**: a desktop monitoring widget built with Tauri.
-* **[homelab-techdoc.md](homelab/homelab-techdoc.md)** and draw.io diagrams: architecture documentation for all of it.
+* **[homelab-techdoc.md](homelab/docs/homelab-techdoc.md)** and draw.io diagrams: architecture documentation for all of it.
 
 Deployment is automated end to end: pushing a `docker-compose.yml` change to this repo triggers a GitHub Actions workflow that deploys to the homelab servers, brings the stack up, and logs back to a central filesystem with 15-day rotation.
 

@@ -63,7 +63,7 @@ def _rm_repo_copy(tool, cmd, path):
 
 def _samba_or_omv(tool, cmd, path):
     # /etc/homelab/samba-red.conf is the LIVE share config since the ZFS migration —
-    # a deploy target, not source (source: homelab/opti-srv/samba/samba-red.conf).
+    # a deploy target, not source (source: homelab/hosts/opti/samba/samba-red.conf).
     # `cp` into it is the deploy and stays allowed (_writes_to only matches in-place
     # editors); editing it in place on the host is the drift trap.
     targets = ("/etc/samba", "smb.conf", "/etc/openmediavault", "/etc/homelab/samba-red.conf")
@@ -111,7 +111,7 @@ RULES = [
         "samba-omv-config", "deny", _samba_or_omv,
         "Since the 2026-07-25 ZFS migration the live share [red] is NOT in OMV's smb.conf — "
         "it lives in /etc/homelab/samba-red.conf (tracked in the repo as "
-        "homelab/opti-srv/samba/samba-red.conf; edit there and deploy). /etc/samba/* is "
+        "homelab/hosts/opti/samba/samba-red.conf; edit there and deploy). /etc/samba/* is "
         "still OMV-generated leftovers: editing it is either silently discarded or, worse, "
         "quietly resurrects a second share definition. Don't touch either path directly.",
     ),
@@ -119,12 +119,12 @@ RULES = [
         "discord-files-on-rpi", "deny", _discord_on_rpi,
         "The Discord bots are managed through the webapp, not by editing files on the rpi. "
         "Their control APIs are only reachable from the webapp container. Edit "
-        "homelab/RPI-srv/discord-*/ in the repo, or use the webapp's bot tab.",
+        "homelab/hosts/rpi/discord-*/ in the repo, or use the webapp's bot tab.",
     ),
     (
         "webapp-deploy-dir", "deny", _webapp_deploy_dir,
         "/srv/docker/compose/webapp on the rpi is a deploy target, not source — the next CI "
-        "run overwrites it. Edit homelab/RPI-srv/webapp/ in the repo instead, then rsync it "
+        "run overwrites it. Edit homelab/hosts/rpi/webapp/ in the repo instead, then rsync it "
         "over (copying into this dir is fine; editing in place is the trap).",
     ),
     (

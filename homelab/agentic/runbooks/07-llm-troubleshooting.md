@@ -170,12 +170,12 @@ timeout, not an app error, just "this route doesn't exist," instantly (<1s).
 `LLAMA_CTL_URL` env vars in `docker-compose.yml`, and the `/api/llama/` timeout block in
 `nginx-wg.conf`) had **only ever been written to the live deployed copy on rpi**
 (`/srv/docker/compose/webapp/`) — never ported into the actual **repo source**
-(`homelab/RPI-srv/webapp/`). This was known and flagged at the time as a risk, but not
+(`homelab/hosts/rpi/webapp/`). This was known and flagged at the time as a risk, but not
 acted on. An unrelated, legitimate commit (`fea5035 "webapp"`, adding an architecture-diagram
-page — nothing to do with the LLM work) touched `homelab/RPI-srv/webapp/**`, which triggered
+page — nothing to do with the LLM work) touched `homelab/hosts/rpi/webapp/**`, which triggered
 the `rpi-deploy.yml` GitHub Actions workflow. That workflow does exactly what it's supposed
 to: copies the repo's webapp source over the deployed one
-(`cp -r $GITHUB_WORKSPACE/homelab/RPI-srv/webapp/. /srv/docker/compose/webapp/` +
+(`cp -r $GITHUB_WORKSPACE/homelab/hosts/rpi/webapp/. /srv/docker/compose/webapp/` +
 a direct overwrite of `docker-compose.yml` and `nginx-wg.conf`). Since the repo copy never
 had the LLM integration, the deploy correctly-but-unfortunately reverted the live site back
 to a version without it. Nobody did anything wrong — the deploy workflow worked exactly as
@@ -193,13 +193,13 @@ webapp-touching commit; `git show --stat` confirmed it was unrelated (an archite
 **Fix:** re-deployed all 5 affected files to the live rpi copy, recreated the `webapp`
 container (`docker compose up -d webapp` — required to pick up the env var, a plain
 `restart` doesn't reread compose env), reloaded nginx. Then — this time — actually **ported
-all 6 files into the repo source** (`homelab/RPI-srv/webapp/backend/index.js`,
+all 6 files into the repo source** (`homelab/hosts/rpi/webapp/backend/index.js`,
 `.../routes/llama.js` (new file), `.../frontend/{app.js,index.html,style.css}`,
-`homelab/RPI-srv/docker-compose.yml`, `homelab/RPI-srv/nginx-wg.conf`), staged as
+`homelab/hosts/rpi/docker-compose.yml`, `homelab/hosts/rpi/nginx-wg.conf`), staged as
 uncommitted changes (`git status` shows them cleanly) for Peter to review and commit.
 
 **Lesson — for anything built directly on rpi's live deployed copy going forward:** if a
-change isn't also in `homelab/RPI-srv/**` in the repo, it does not durably exist. It will
+change isn't also in `homelab/hosts/rpi/**` in the repo, it does not durably exist. It will
 survive right up until the next *completely unrelated* push touches any file under that
 path, then vanish silently with no error in the deploy workflow itself (the workflow did
 exactly what it was told). Port live-deployed changes into the repo source in the *same*
@@ -231,4 +231,4 @@ session they're built, not as a "later" follow-up.
 6. `curl -s https://192.168.1.10:8443/api/llama/status` (production path) returning the
    Express-default 404 text instead of JSON → the webapp's deployed copy has drifted from
    what was actually built (see the deploy-wipe incident above) — diff the live
-   `/srv/docker/compose/webapp/` against `homelab/RPI-srv/webapp/` in the repo.
+   `/srv/docker/compose/webapp/` against `homelab/hosts/rpi/webapp/` in the repo.

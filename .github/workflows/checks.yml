@@ -1,0 +1,57 @@
+name: Repo Checks
+
+# Fails a push BEFORE it lands on a timer or a deploy, instead of at 00:20 the next
+# morning. Motivated twice over:
+#   - build-arch-data.py validates referential integrity (a typo'd edge fails silently
+#     in the browser — the validator is the only thing that catches it pre-deploy)
+#   - the 2026-07-26 restructure found a silently-broken sys.path import in the leetify
+#     scripts that only py_compile-at-import-time... wouldn't catch either; the compile
+#     sweep at least catches syntax + the validator catches the data layer.
+#
+# Runs on GitHub-hosted ubuntu (python3 + node preinstalled) — the self-hosted runners
+# stay free for deploys, and none of this needs LAN access.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homelab/tools/**"
+      - "homelab/hosts/**"
+      - "homelab/agentic/**"
+      - ".github/workflows/**"
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python compile sweep
+        run: |
+          find homelab/tools homelab/hosts homelab/agentic -name "*.py" \
+            -not -path "*__pycache__*" -not -path "*misc*" -print0 \
+            | xargs -0 python3 -m py_compile
+          echo "all python compiles"
+
+      - name: Architecture data validates
+        run: python3 homelab/tools/architecture/build-arch-data.py --check
+
+      - name: Webapp backend syntax
+        run: |
+          for f in homelab/hosts/rpi/webapp/backend/index.js homelab/hosts/rpi/webapp/backend/routes/*.js; do
+            node --check "$f"
+          done
+          echo "backend syntax OK"
+
+      - name: Workflows reference no pre-restructure paths
+        # The 2026-07-26 restructure moved everything; a merge that resurrects an old
+        # path (stale branch, cherry-pick) should fail loudly here. This file excludes
+        # itself — its own grep pattern would otherwise match this very line.
+        run: |
+          ! grep -rn --exclude=checks.yml "RPI-srv\|homelab/Tools\|noblenumbat-srv\|opti-srv" .github/workflows/ \
+            || { echo "::error::old pre-restructure path in a workflow"; exit 1; }

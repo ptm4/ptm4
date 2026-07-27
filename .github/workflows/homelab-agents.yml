@@ -55,14 +55,14 @@ jobs:
         run: |
           set -uo pipefail
           declare -A SCRIPTS=(
-            [journald-hunter]=homelab/Tools/linux-security/journald-hunter.py
-            [persistence-auditor]=homelab/Tools/linux-security/persistence-auditor.py
-            [hardware-report]=homelab/Tools/homelab/hardware-report.py
-            [software-inventory]=homelab/Tools/homelab/software-inventory.py
-            [homelab-doctor]=homelab/Tools/homelab/homelab-doctor.py
-            [network-report]=homelab/Tools/homelab/network-report.py
-            [leetify-stats]=homelab/Tools/leetify/leetify-stats.py
-            [refresh-cs2-knowledge]=homelab/Tools/leetify/refresh-cs2-knowledge.py
+            [journald-hunter]=homelab/tools/security/journald-hunter.py
+            [persistence-auditor]=homelab/tools/security/persistence-auditor.py
+            [hardware-report]=homelab/tools/collectors/hardware-report.py
+            [software-inventory]=homelab/tools/collectors/software-inventory.py
+            [homelab-doctor]=homelab/tools/collectors/homelab-doctor.py
+            [network-report]=homelab/tools/collectors/network-report.py
+            [leetify-stats]=homelab/tools/leetify/leetify-stats.py
+            [refresh-cs2-knowledge]=homelab/tools/leetify/refresh-cs2-knowledge.py
           )
           # NOTE: leetify-stats and refresh-cs2-knowledge make paid Claude calls, so they
           # are intentionally OUT of every *scheduled* branch — run them on demand via
@@ -79,7 +79,7 @@ jobs:
             AGENTS="journald-hunter persistence-auditor hardware-report software-inventory homelab-doctor network-report"
           fi
 
-          DISP=homelab/Tools/automation/agent-dispatcher.py
+          DISP=homelab/hosts/opti/agent-dispatcher.py
           rc=0
           for a in $AGENTS; do
             script="${SCRIPTS[$a]:-}"

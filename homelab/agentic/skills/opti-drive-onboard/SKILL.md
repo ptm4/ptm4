@@ -23,14 +23,14 @@ Tools live in `/usr/sbin` — call as `sudo <tool>`.
   zfs-dkms **2.3.2 from bookworm-backports** (base-repo 2.1.11 does not build on the
   6.12 backport kernel). ARC capped 1.5 GiB (`/etc/modprobe.d/zfs.conf`).
 - Samba `\\opti\red` = `/srv/red/fs`, defined in `/etc/homelab/samba-red.conf`
-  (repo: `homelab/opti-srv/samba/samba-red.conf`), included from OMV's SMB "Extra
+  (repo: `homelab/hosts/opti/samba/samba-red.conf`), included from OMV's SMB "Extra
   options". Editable at `https://webapp.rpi.lan:8443/samba/`.
 - Clients: tux `/home/ptm/opti`, rpi `/mnt/opti-fs`, noblenumbat
   `/mnt/opti-{shows,library,media}` — all on `//192.168.1.11/red`.
 - **Cold copy**: the retired mergerfs union (sda dir `/srv/sda-pool` + sdb NTFS Hitachi,
   10.6k hours, 3 reallocated sectors) at `/srv/attic`, `noauto`, sdb fstab'd `ro`.
   Refreshed weekly by `homelab-coldcopy.timer` (Sun 04:00) — see
-  `homelab/Tools/automation/homelab-coldcopy.sh` for its interlocks.
+  `homelab/hosts/opti/homelab-coldcopy.sh` for its interlocks.
 - `/srv/pool` is a bind of `/srv/red/fs` (compat; old union path).
 - SATA: 6 ports, sda+sdb+sdc used, **3 free**. Chassis/PSU realistically fits ~2 more drives.
 
@@ -61,7 +61,7 @@ If the drive may carry data, STOP and confirm with the user before any wipe.
 ```bash
 sudo zpool status red && zfs list
 ```
-Update `homelab/homelab-techdoc.md` (§2 opti table, §10 storage) and this baseline.
+Update `homelab/docs/homelab-techdoc.md` (§2 opti table, §10 storage) and this baseline.
 User commits — never commit for them.
 
 ## History

@@ -22,7 +22,7 @@ successful DNS lookups (`github.com`, `webapp.rpi.lan` both resolved). Internet 
 worked; the finding didn't match reality.
 
 ### Root cause
-`default_gateway()` in `homelab/Tools/homelab/network-report.py` ran `ip route show
+`default_gateway()` in `homelab/tools/collectors/network-report.py` ran `ip route show
 default` over SSH and looked for a line starting with `default`. That works on the three
 Linux hosts, but **Android routes per-app/per-uid through tables that aren't in the main
 routing table an unprivileged process (Termux, unrooted) can see** — so the command
@@ -43,7 +43,7 @@ Verified the parse logic against `ip route get 1.1.1.1` output on a normal Linux
 Android/Termux's `ip` produces.
 
 ### Where
-`homelab/Tools/homelab/network-report.py`, `default_gateway()`.
+`homelab/tools/collectors/network-report.py`, `default_gateway()`.
 
 ### ⚠️ Caveat — not deployed, and android is currently unreachable anyway
 This fix lives only in the working tree here (never committed by me — see the
