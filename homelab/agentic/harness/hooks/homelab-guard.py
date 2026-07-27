@@ -90,11 +90,16 @@ def _webapp_deploy_dir(tool, cmd, path):
 
 
 def _git_write(tool, cmd, path):
+    # [^|;&\n]* — the \n matters: without it the gap between `git` and `commit|push` can
+    # span STATEMENT boundaries in a multi-line compound command, so an innocent
+    # `git log` followed lines later by an echo string containing the word "push" or
+    # "commit" tripped a deny (observed live 2026-07-27, twice in one sweep). A guard
+    # that blocks legitimate work gets switched off — false positives are the real bug.
     if tool != "Bash":
         return False
-    return bool(re.search(r"\bgit\b[^|;&]*\s(commit|push)\b", cmd)
-                or re.search(r"\bgit\b[^|;&]*\bcommit\b[^|;&]*--amend", cmd)
-                or re.search(r"\bgit\s+reset\b[^|;&]*--hard", cmd))
+    return bool(re.search(r"\bgit\b[^|;&\n]*\s(commit|push)\b", cmd)
+                or re.search(r"\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*--amend", cmd)
+                or re.search(r"\bgit\s+reset\b[^|;&\n]*--hard", cmd))
 
 
 RULES = [

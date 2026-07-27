@@ -1,7 +1,7 @@
 # Homelab Drift
 
-> ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/Tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-07-26T22:42:28+00:00`
+> ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
+> Generated: `2026-07-27T04:21:12+00:00`
 
 
 Where the architecture map and reality disagree, as of the last agent sync. This is a TODO list, not a health report: an empty section means nothing to do, not that everything is fine — cross-check `90-homelab-inventory.md`'s sync ages.
@@ -9,7 +9,7 @@ Where the architecture map and reality disagree, as of the last agent sync. This
 
 ## Running, not described on the map · 0
 
-A container an agent found that has no matching node in the architecture data. Either add it to `homelab/Tools/architecture/build-arch-data.py`'s NODES, or if it's expected to be transient/unmanaged, leave it — this list is informational, nothing acts on it automatically.
+A container an agent found that has no matching node in the architecture data. Either add it to `homelab/tools/architecture/build-arch-data.py`'s NODES, or if it's expected to be transient/unmanaged, leave it — this list is informational, nothing acts on it automatically.
 
 _none_
 

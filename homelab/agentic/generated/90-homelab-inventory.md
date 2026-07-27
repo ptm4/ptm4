@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
-> ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/Tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-07-26T22:42:28+00:00`
+> ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
+> Generated: `2026-07-27T04:21:12+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.2.0 | 3h ago | 13 | none |
-| opti | 0.2.0 | 3h ago | 0 | none |
-| rpi | 0.2.0 | 3h ago | 12 | none |
+| noblenumbat | 0.2.0 | 21m ago | 13 | none |
+| opti | 0.2.0 | 21m ago | 0 | none |
+| rpi | 0.2.0 | 20m ago | 12 | none |
 
 
 ## Nodes
@@ -48,20 +48,20 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 
 | Node | Plane | Container | State | Image | Summary |
 |---|---|---|---|---|---|
-| Bazarr | media | bazarr | running | lscr.io/linuxserver/bazarr:latest | Subtitles :6767 |
+| Bazarr | media | bazarr | running | lscr.io/linuxserver/bazarr | Subtitles :6767 |
 | Docker engine | infra | — | n/a | — | 13 containers · YAMS compose |
 | FlareSolverr | media | flaresolverr | running | ghcr.io/flaresolverr/flaresolverr:latest | Captcha solver :8191 via VPN |
 | Gluetun VPN | network | gluetun | running | qmcgaw/gluetun:v3.41.0 | WireGuard → NL · port-fwd 42328 |
-| Jellyfin | media | jellyfin | running | lscr.io/linuxserver/jellyfin:latest | Media server :8096 · HW transcode |
-| Kavita | media | kavita | running | lscr.io/linuxserver/kavita:latest | Comics & books :5000 |
-| Lidarr | media | lidarr | running | lscr.io/linuxserver/lidarr:latest | Music automation :8686 |
+| Jellyfin | media | jellyfin | running | lscr.io/linuxserver/jellyfin | Media server :8096 · HW transcode |
+| Kavita | media | kavita | running | lscr.io/linuxserver/kavita | Comics & books :5000 |
+| Lidarr | media | lidarr | running | lscr.io/linuxserver/lidarr | Music automation :8686 |
 | Mylar3 | media | mylar3 | running | lscr.io/linuxserver/mylar3 | Comics automation :8090 via VPN |
-| Portainer | infra | portainer | running | portainer/portainer-ce:latest | Container UI :9000 |
+| Portainer | infra | portainer | running | portainer/portainer-ce | Container UI :9000 |
 | Prowlarr | media | prowlarr | running | lscr.io/linuxserver/prowlarr | Indexer manager :9696 via VPN |
-| Radarr | media | radarr | running | lscr.io/linuxserver/radarr:latest | Movie automation :7878 |
+| Radarr | media | radarr | running | lscr.io/linuxserver/radarr | Movie automation :7878 |
 | Remote access | infra | — | n/a | — | sshd :22 · RDP :3389 |
 | SABnzbd | media | sabnzbd | running | lscr.io/linuxserver/sabnzbd:latest | Usenet :8081 via VPN |
-| Sonarr | media | sonarr | running | lscr.io/linuxserver/sonarr:latest | TV automation :8989 |
+| Sonarr | media | sonarr | running | lscr.io/linuxserver/sonarr | TV automation :8989 |
 | bb-kavita-sync | infra | — | n/a | — | timer · hourly |
 | docker net · yams_network | network | — | n/a | — | 172.60.0.0/24 |
 | media-import | infra | — | n/a | — | timer · every 2 min |
