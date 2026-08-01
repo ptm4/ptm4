@@ -117,7 +117,8 @@ router.post('/sync-all', async (req, res) => {
 // its agent's /restart (agent v0.2.0+). The agent validates the name against its own
 // `docker ps -a` and requires a bearer token, so this proxy stays thin.
 // Timeout is generous: a real `docker restart` on a heavy container takes ~10-15s and
-// the agent blocks until it finishes, but stays inside nginx's 60s proxy read timeout.
+// the agent blocks until it finishes, but stays well inside the 240s read timeout the
+// /api/agents/ location gets in nginx-wg.conf (raised there for update-container).
 //
 // AUTH POSTURE (deliberate, reviewed 2026-07-26 — see webapp/BUGS.md B3): this route,
 // like every other write on this dashboard (samba config save, runner run-now, bot
@@ -144,6 +145,39 @@ router.post('/:host/restart-container', async (req, res) => {
       host: req.params.host, ok: false,
       error: /abort|timeout/i.test(e.message)
         ? `agent on ${req.params.host} did not respond in time (restart may still be running)`
+        : `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// POST /api/agents/:host/update-container — pull the newest image for one container's
+// compose service and recreate just that service, via the agent's /update (v0.3.0+).
+// The agent does all the validating (name exists, compose labels present, build-only
+// service refused, bind mounts reachable), so this proxy stays as thin as the restart
+// one. The same LAN-trust posture noted above applies.
+//
+// The timeout is the big difference: a registry pull on the Pi can genuinely run for
+// minutes, so this sits under nginx's 240s /api/agents/ read timeout and above the
+// agent's own worst case (140s pull + 45s recreate).
+const UPDATE_TIMEOUT_MS = 220000;
+router.post('/:host/update-container', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  const container = req.body?.container;
+  if (typeof container !== 'string' || !container.trim()) {
+    return res.status(400).json({ error: 'body.container is required' });
+  }
+
+  try {
+    const r = await agentFetch(`${cfg.base}/update`, {
+      method: 'POST', timeoutMs: UPDATE_TIMEOUT_MS, body: { container: container.trim() },
+    });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: /abort|timeout/i.test(e.message)
+        ? `agent on ${req.params.host} did not respond in time (the update may still be running — check the containers panel in a minute)`
         : `agent on ${req.params.host} unreachable: ${e.message}`,
     });
   }

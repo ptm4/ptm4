@@ -50,18 +50,29 @@ function toast(msg, tone = 'ok', { sticky = false, allowHtml = false } = {}) {
   return el;
 }
 
-// Containers whose restart has blast radius beyond themselves. Restarting these needs
-// the name typed out, and says what will actually break.
+// Containers whose restart or update has blast radius beyond themselves. Touching these
+// needs the name typed out, and says what will actually break. Wording stays neutral
+// about which operation it is: both the restart and the update modal render these, and
+// an update takes longer than a restart, so "~15s" would be a lie in half the cases.
 const CRITICAL_CONTAINERS = {
   pihole: 'Brief LAN-wide DNS blips — Pi-hole is this network\'s only DNS *and* DHCP server.',
-  webapp: 'This dashboard will stop responding for ~15s. The restart still completes.',
-  'nginx-webapp': 'This dashboard goes offline for ~15s while TLS restarts.',
-  bitwarden: 'Vaultwarden is unavailable during the restart — password access included.',
-  'bitwarden-db': 'Vaultwarden\'s database. A restart risks Vaultwarden erroring until it reconnects.',
+  webapp: 'This dashboard stops responding while its container comes back. The operation still completes on the host.',
+  'nginx-webapp': 'This dashboard goes offline while TLS comes back.',
+  bitwarden: 'Vaultwarden is unavailable while it comes back — password access included.',
+  'bitwarden-db': 'Vaultwarden\'s database — Vaultwarden may error until it reconnects.',
   'nginx-bitwarden': 'Vaultwarden\'s TLS front end goes down briefly.',
   gluetun: 'Tears down the VPN tunnel; every *arr and qBittorrent loses network until it re-establishes, and the forwarded port may change.',
-  'notes-api': 'The Notes app at /notes/ is unavailable during the restart.',
+  'notes-api': 'The Notes app at /notes/ is unavailable while it comes back.',
 };
+
+// Containers that serve this page: touching one kills the response to the very request
+// that asked for it. Observed both ways — the fetch fails outright, OR nginx outlives the
+// backend and answers 502/504 — so both branches have to recognise it, or a self-update
+// that actually succeeded gets reported as a red failure.
+const SELF_CONTAINERS = new Set(['webapp', 'nginx-webapp']);
+const selfKillNotice = (eName, verb) =>
+  `Connection dropped — expected when ${verb} <b>${eName}</b>: the container serving this ` +
+  `page was replaced. It is almost certainly back; reload to confirm.`;
 
 // Promise<boolean>. Reuses the existing .modal styling; adds a danger variant and an
 // optional type-the-name gate for the critical set above. `body` is caller-built HTML
@@ -156,6 +167,9 @@ async function restartContainer(host, name, btn) {
       toast(`<b>${eName}</b> restarted on ${eHost}${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(1)}s` : ''}.`,
         'ok', { allowHtml: true });
       loadContainers();
+    } else if (SELF_CONTAINERS.has(name) && (res.status === 502 || res.status === 504)) {
+      // nginx can outlive the backend and answer 502 for it — not a failed restart.
+      toast(selfKillNotice(eName, 'restarting'), 'warn', { sticky: true, allowHtml: true });
     } else {
       toast(restartError(res.status, d, host, name), 'crit', { sticky: true, allowHtml: true });
     }
@@ -163,8 +177,8 @@ async function restartContainer(host, name, btn) {
     pending.remove();
     // The dashboard restarting itself kills its own in-flight response; that is not a
     // failure of the restart, so say so rather than claiming an error.
-    const msg = (name === 'webapp' || name === 'nginx-webapp')
-      ? `Connection dropped — expected when restarting <b>${eName}</b>. It is almost certainly back; reload the page.`
+    const msg = SELF_CONTAINERS.has(name)
+      ? selfKillNotice(eName, 'restarting')
       : (e.name === 'TimeoutError' || e.name === 'AbortError')
         ? `No response after 70s — the restart of <b>${eName}</b> may still have completed; check the containers panel.`
         : `Restart of <b>${eName}</b> failed: ${escHtml(e.message)}`;
@@ -184,6 +198,97 @@ function restartError(status, d, host, name) {
   if (status === 404 && /no container/i.test(detail)) return `${eHost} has no container named <b>${eName}</b> — Force Sync the agent and retry.`;
   if (status === 404) return `The agent on ${eHost} is too old for restarts (needs v0.2.0).`;
   return `Restart of <b>${eName}</b> failed: ${detail}`;
+}
+
+// update_available comes from software-latest.json, which the collector rewrites once a
+// day (plus the kick below). Without this, a container you just updated keeps wearing an
+// "update" chip until that run lands. Suppression is in-memory only: a page reload before
+// the collector re-runs brings the stale chip back, which is annoying but honest.
+const RECENT_UPDATES = new Map();
+const UPDATE_SUPPRESS_MS = 30 * 60 * 1000;
+function recentlyUpdated(host, name) {
+  const t = RECENT_UPDATES.get(`${host}/${name}`);
+  return t != null && Date.now() - t < UPDATE_SUPPRESS_MS;
+}
+
+// Pull the newest image for one container and recreate it, through its host's agent.
+// Same untrusted-text rules as restartContainer: host/name/image come from reports.
+async function updateContainer(host, name, image, btn) {
+  const danger = CRITICAL_CONTAINERS[name];
+  const eName = escHtml(name), eHost = escHtml(host);
+  const eImg = escHtml(image || 'its image');
+  const ok = await confirmAction({
+    title: `Update ${name}?`,
+    tone: danger ? 'crit' : 'warn',
+    confirmLabel: 'Pull & recreate',
+    requireTyped: danger ? name : null,
+    body: `<p>Pulls the newest <code>${eImg}</code> on <b>${eHost}</b>, then recreates
+           <code>${eName}</code> from it. Only this container is touched.</p>
+           <p class="tile-sub">The pull can take a couple of minutes; downtime is the few
+           seconds the new container needs to start.</p>` +
+          (danger ? `<p class="confirm-danger">⚠ ${escHtml(danger)}</p>` : ''),
+  });
+  if (!ok) return;
+
+  const orig = btn ? btn.textContent : null;
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  const pending = toast(`Updating <b>${eName}</b> on ${eHost} — pulling image… (up to ~2 min)`,
+    'warn', { sticky: true, allowHtml: true });
+
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/update-container`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container: name }),
+      // Between the backend's 220s cap and nginx's 240s read timeout for this path.
+      signal: AbortSignal.timeout(230_000),
+    });
+    const d = await res.json().catch(() => ({}));
+    pending.remove();
+    if (res.ok && d.ok) {
+      RECENT_UPDATES.set(`${host}/${name}`, Date.now());
+      toast(d.changed
+        ? `<b>${eName}</b> updated on ${eHost} (<span class="mono">${escHtml(d.before || '?')}</span> → <span class="mono">${escHtml(d.after || '?')}</span>)${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(0)}s` : ''}.`
+        : `<b>${eName}</b> already runs the newest image — nothing was recreated.`,
+        'ok', { allowHtml: true });
+      loadContainers();
+      // Re-run the inventory collector so the chips reflect reality within minutes
+      // instead of at tomorrow's scheduled run. Fire-and-forget: if it fails, the only
+      // cost is that the chip waits for the daily run.
+      fetch('/api/runners/software-inventory/run', { method: 'POST' }).catch(() => {});
+    } else if (SELF_CONTAINERS.has(name) && (res.status === 502 || res.status === 504)) {
+      // nginx outlived the backend and answered for it — the update itself was fine.
+      toast(selfKillNotice(eName, 'updating'), 'warn', { sticky: true, allowHtml: true });
+    } else {
+      toast(updateError(res.status, d, host, name), 'crit', { sticky: true, allowHtml: true });
+    }
+  } catch (e) {
+    pending.remove();
+    const msg = SELF_CONTAINERS.has(name)
+      ? selfKillNotice(eName, 'updating')
+      : (e.name === 'TimeoutError' || e.name === 'AbortError')
+        ? `No response after 230s — the update of <b>${eName}</b> may still be running; check the containers panel shortly.`
+        : `Update of <b>${eName}</b> failed: ${escHtml(e.message)}`;
+    toast(msg, 'warn', { sticky: true, allowHtml: true });
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  }
+}
+
+// Map a failed update onto the thing the operator actually has to go fix.
+// Returns HTML (callers pass allowHtml) — every dynamic value is escaped here.
+function updateError(status, d, host, name) {
+  const detail = escHtml(d.error || `HTTP ${status}`);
+  const eHost = escHtml(host), eName = escHtml(name);
+  if (status === 403) return `Update refused: the agent on ${eHost} has no token set. Add HL_ARCH_AGENT_TOKEN to /etc/hl-arch-agent.env and restart hl-arch-agent.`;
+  if (status === 401) return `Update unauthorized: the webapp's HL_ARCH_INGEST_TOKEN doesn't match ${eHost}'s HL_ARCH_AGENT_TOKEN.`;
+  if (status === 404 && /no container/i.test(detail)) return `${eHost} has no container named <b>${eName}</b> — Force Sync the agent and retry.`;
+  if (status === 404) return `The agent on ${eHost} is too old for updates (needs v0.3.0) — reinstall hl-arch-agent.py there.`;
+  if (status === 409) return `Can't update <b>${eName}</b>: ${detail}`;
+  if (status === 503 && d.stage === 'preflight') return `Update aborted before touching <b>${eName}</b>: ${detail}`;
+  if (d.stage === 'pull') return `Image pull failed on ${eHost} — <b>${eName}</b> was NOT touched. ${detail}`;
+  if (d.stage === 'up') return `Recreate failed on ${eHost} after the pull: ${detail}`;
+  return `Update of <b>${eName}</b> failed: ${detail}`;
 }
 
 // Pause / resume Pi-hole ad blocking. Pausing always carries a timer server-side, so
@@ -928,24 +1033,33 @@ async function loadContainers() {
     if (!d?.hosts?.length) { el.innerHTML = `<div class="tile-sub">No container data yet.</div>`; return; }
     let total = 0, up = 0, updates = 0;
     const rows = d.hosts.flatMap(h => h.containers.map(c => {
-      total++; if (c.up) up++; if (c.update_available) updates++;
+      total++; if (c.up) up++;
+      // One flag drives the chip, the counter and the ⬆ button, so a just-updated
+      // container can't show "update" in one place and not the other.
+      const showUpd = !!c.update_available && !recentlyUpdated(h.host, c.name);
+      if (showUpd) updates++;
       const since = c.status_since ? durSince(c.status_since) : (c.status || '');
       const img = (c.image || '').replace(/^(lscr\.io|ghcr\.io|docker\.io)\//, '').replace(/@sha256.*$/, '');
       return `<tr>
         <td><span class="cdot" data-s="${c.up ? 'ok' : 'crit'}"></span></td>
-        <td class="mono ct-name">${escHtml(c.name)}${c.update_available ? ' <span class="chip" data-s="warn" title="newer image available">update</span>' : ''}</td>
+        <td class="mono ct-name">${escHtml(c.name)}${showUpd ? ' <span class="chip" data-s="warn" title="newer image available">update</span>' : ''}</td>
         <td><span class="chip">${escHtml(h.host)}</span></td>
         <td class="tile-sub" style="margin:0">${c.up ? 'up ' + escHtml(since) : '<b style="color:var(--crit)">down</b>'}</td>
         <td class="mono ct-img" title="${escHtml(c.image || '')}">${escHtml(img)}</td>
-        <td class="ct-act"><button class="btn-icon" title="Restart ${escHtml(c.name)} on ${escHtml(h.host)}"
+        <td class="ct-act">${showUpd ? `<button class="btn-icon" title="Update ${escHtml(c.name)} on ${escHtml(h.host)} — pull newer image and recreate"
+          data-upd-host="${escHtml(h.host)}" data-upd-container="${escHtml(c.name)}" data-upd-image="${escHtml(c.image || '')}">⬆</button>` : ''}<button class="btn-icon" title="Restart ${escHtml(c.name)} on ${escHtml(h.host)}"
           data-host="${escHtml(h.host)}" data-container="${escHtml(c.name)}">⟳</button></td>
       </tr>`;
     }));
     const meta = document.getElementById('ct-meta');
     if (meta) meta.textContent = `${up}/${total} up${updates ? ` · ${updates} updates` : ''}`;
     el.innerHTML = `<table class="ctable"><tbody>${rows.join('')}</tbody></table>`;
+    // Distinct attribute names, so the restart selector can't also match an ⬆ button.
     el.querySelectorAll('.btn-icon[data-container]').forEach(b => {
       b.addEventListener('click', () => restartContainer(b.dataset.host, b.dataset.container, b));
+    });
+    el.querySelectorAll('.btn-icon[data-upd-container]').forEach(b => {
+      b.addEventListener('click', () => updateContainer(b.dataset.updHost, b.dataset.updContainer, b.dataset.updImage, b));
     });
   } catch (_) {
     el.innerHTML = `<div class="tile-sub">Unavailable — is opti reachable?</div>`;
@@ -1904,6 +2018,7 @@ async function loadWeather() {
     return;
   }
   weatherCfg = cfg;
+  weatherCfg.witty_names = cfg.witty_names || [];  // old bot build during deploy skew
 
   const fmt = (iso) => iso ? new Date(iso).toLocaleString() : '—';
   page.innerHTML = `
@@ -1942,6 +2057,31 @@ async function loadWeather() {
         </div>
       </div>
 
+      <div class="sec-card w-card-wide${cfg.witty_enabled ? '' : ' card-disabled'}">
+        <div class="sec-card-header"><span class="sec-card-title">Witty morning messages</span></div>
+        <div class="w-field">
+          <label><input type="checkbox" id="w-witty-enabled" ${cfg.witty_enabled ? 'checked' : ''}
+                 onchange="weatherCfg.witty_enabled = this.checked" />
+                 Append a generated one-liner after the message text each morning</label>
+        </div>
+        <div id="w-witty-info"><div class="sec-loading">Loading pool status…</div></div>
+        <div id="w-name-list"></div>
+        <div class="w-field">
+          <label for="w-name-add">Add a name</label>
+          <div class="w-search-row">
+            <input type="text" id="w-name-add" class="w-input" placeholder="first name / nickname / full name…"
+                   onkeydown="if(event.key==='Enter')weatherAddName()" autocomplete="off" />
+            <button class="btn-view" onclick="weatherAddName()">Add</button>
+          </div>
+        </div>
+        <div class="sec-card-actions">
+          <button class="btn-view" onclick="weatherReroll(this)">Reroll next line</button>
+        </div>
+        <p class="w-hint">One line featuring a random name is appended after the message text each morning —
+        generated locally, no API calls. Nothing repeats until the pool runs out, then it reshuffles itself.
+        “Send now” and “Reroll” each use up a line. Name changes apply on “Save settings” and rebuild the pool.</p>
+      </div>
+
       <div class="sec-card w-card-wide">
         <div class="sec-card-header"><span class="sec-card-title">Locations (${cfg.locations.length})</span></div>
         <div id="w-loc-list"></div>
@@ -1958,6 +2098,8 @@ async function loadWeather() {
       </div>
     </div>`;
   weatherRenderLocations();
+  weatherRenderNames();
+  weatherLoadWitty();  // fire-and-forget — fills #w-witty-info when it lands
 }
 
 function weatherRenderLocations() {
@@ -1976,6 +2118,74 @@ function weatherRenderLocations() {
 function weatherRemoveLocation(i) {
   weatherCfg.locations.splice(i, 1);
   weatherRenderLocations();
+}
+
+// ── witty message pool (same list-editor pattern as locations) ────────────────
+function weatherRenderNames() {
+  const el = document.getElementById('w-name-list');
+  if (!el || !weatherCfg) return;
+  el.innerHTML = (weatherCfg.witty_names || []).map((n, i) => `
+    <div class="w-loc-row">
+      <span class="w-loc-name">🎯 ${escHtml(n)}</span>
+      <button class="w-loc-del" title="Remove" onclick="weatherRemoveName(${i})">✕</button>
+    </div>`).join('') || '<div class="sec-empty">No names — the one-liner needs at least one victim.</div>';
+}
+
+function weatherAddName() {
+  const input = document.getElementById('w-name-add');
+  const n = (input?.value || '').trim();
+  if (!n) return;
+  const names = weatherCfg.witty_names || (weatherCfg.witty_names = []);
+  if (!names.some(x => x.toLowerCase() === n.toLowerCase())) names.push(n);
+  input.value = '';
+  weatherRenderNames();
+}
+
+function weatherRemoveName(i) {
+  weatherCfg.witty_names.splice(i, 1);
+  weatherRenderNames();
+}
+
+async function weatherLoadWitty() {
+  const el = document.getElementById('w-witty-info');
+  if (!el) return;
+  let res, err;
+  try { res = await fetch('/api/weather/witty'); } catch (e) { err = e; }
+  if (!res || !res.ok) {
+    el.innerHTML = `<div class="sec-error">Witty pool unavailable${res ? ` (HTTP ${res.status})` : ''} —
+      an old bot build may still be deploying. Hit ↻ Refresh in a minute.</div>`;
+    return;
+  }
+  const d = await res.json();
+  if (!d.available) {
+    el.innerHTML = `<div class="sec-error">${escHtml(d.reason || 'witty module not loaded')}</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <div class="w-kv"><span>Lines left this cycle</span><strong>${d.remaining} (cycle ${d.cycle})</strong></div>
+    <div class="w-kv"><span>Next up*</span><strong id="w-witty-next">${escHtml(d.next_generic || '—')}</strong></div>
+    <div class="w-kv"><span>Last posted</span><strong>${escHtml(d.last_posted?.text || '—')}</strong></div>
+    <p class="w-hint">*generic preview — the posted line adapts to the day's weather and weekday.
+    “Preview report” shows exactly what will post.</p>`;
+}
+
+async function weatherReroll(btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Rerolling…';
+  let res, err;
+  try { res = await fetch('/api/weather/witty/reroll', { method: 'POST' }); } catch (e) { err = e; }
+  btn.textContent = orig;
+  btn.disabled = false;
+  const d = res ? await res.json().catch(() => ({})) : {};
+  if (!res || !res.ok || !d.ok) {
+    alert(d.error || weatherError(res, err) || 'Reroll failed.');
+    return;
+  }
+  await weatherLoadWitty();
+  // the reroll response knows today's actual weather — show that pick, not the generic one
+  const next = document.getElementById('w-witty-next');
+  if (next && d.next) next.textContent = d.next;
 }
 
 async function weatherGeocode() {
@@ -2020,6 +2230,8 @@ async function weatherSave(btn) {
     message: document.getElementById('w-message').value,
     locations: weatherCfg.locations,
     webhook_url: (document.getElementById('w-webhook').value || '').trim(),
+    witty_enabled: !!document.getElementById('w-witty-enabled')?.checked,
+    witty_names: weatherCfg.witty_names || [],
   };
   btn.disabled = true;
   let res, err;

@@ -9,7 +9,8 @@ probing a host yourself.
 
 ## Hosts
 
-LAN is `192.168.1.0/24`, gateway `.1`. All four hosts are SSH-able by alias.
+LAN is `192.168.1.0/24`, gateway `.1` (a **TP-Link Archer** — earlier docs said "Verizon
+router"; that hardware doesn't exist, confirmed 2026-07-31). All four hosts are SSH-able by alias.
 
 | Alias | IP | OS | Role — what it contains |
 |---|---|---|---|
@@ -64,8 +65,8 @@ will get a hard denial rather than a warning.
   the source — the next CI run reverts it. Edit `homelab/hosts/rpi/webapp/` in the repo.
 - **Never `git commit`, `amend`, `reset`, or push.** Peter commits his own work. Make the change
   and say what needs committing.
-- **Never enable DHCP on the Verizon router.** It races Pi-hole and presents as "all the servers
-  are down".
+- **Never enable DHCP on the router (TP-Link Archer).** It races Pi-hole and presents as "all
+  the servers are down".
 
 ## Working conventions
 

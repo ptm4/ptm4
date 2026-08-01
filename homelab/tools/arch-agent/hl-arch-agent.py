@@ -19,6 +19,9 @@ long-running process (Type=simple) that both self-schedules the daily run and an
       GET  /status  -> last run time/result, next scheduled run
       POST /sync    -> collect + push right now, block and return the real result
                        (never a fire-and-forget "queued" with no feedback)
+      POST /restart -> restart one named container (token always required)
+      POST /update  -> pull the newest image for one compose service and recreate it
+                       (token always required)
   - a state file records the last successful run date, so a host that was rebooted
     or the service restarted past 00:00 catches up on the next tick instead of
     silently waiting a full day (the manual equivalent of a timer's Persistent=true)
@@ -28,7 +31,9 @@ WHAT IT COLLECTS (all local, no SSH, no remote calls except the final push)
   the cross-host dependencies), network interfaces, listening ports (best-effort;
   needs root for process names), every `docker inspect`-able container (image, state,
   network_mode, published ports, mounts, compose labels), docker networks, and
-  systemd timers. Read-only: never starts, stops, or reconfigures anything.
+  systemd timers. Collection itself is read-only; the only mutations this agent ever
+  performs are the explicitly token-gated POST /restart (v0.2.0) and POST /update
+  (v0.3.0), each acting on a single named container.
 
 WHAT IT DELIBERATELY DOES NOT COLLECT
   Human judgment: no "why it matters" text, no category/plane assignment, no flows.
@@ -87,7 +92,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.3.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -556,6 +561,117 @@ def restart_container(name):
     return 200, {"ok": True, "container": name, "host": HOST, "took_ms": took_ms}
 
 
+# ── container image update (v0.3.0) ────────────────────────────────────────────
+# Pull the current tag for one compose-managed container and recreate ONLY that
+# service. Same trust posture as restart_container: the name is validated by
+# existence and every value is its own argv element, never a shell string.
+#
+# The compose invocation is reconstructed from the container's own labels rather
+# than from any path this agent knows: that is what makes one code path work for
+# rpi's single-file project at /srv/docker/compose and noblenumbat's two chained
+# yams files, without either being hardcoded here.
+_COMPOSE_LBL = "com.docker.compose."
+
+
+def update_container(name):
+    """Pull + recreate one container by exact name. Returns (http_code, body).
+
+    Deliberately narrow: `up -d --no-deps <service>` touches the named service and
+    nothing else, so recreating gluetun can never take its five netns dependents
+    with it as collateral. Blocking, like /restart — the caller gets the real
+    result, including `changed: false` when the pull found nothing new."""
+    if not isinstance(name, str) or not name.strip():
+        return 400, {"ok": False, "error": "body.container is required"}
+    name = name.strip()
+
+    out, err = _run(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout=15)
+    if err:
+        return 502, {"ok": False, "error": f"cannot list containers: {err}"}
+    if name not in out.split():
+        return 404, {"ok": False, "error": f"no container named {name!r} on {HOST}"}
+
+    out, err = _run(["docker", "inspect", name], timeout=15)
+    if err or not out.strip():
+        return 502, {"ok": False, "error": f"docker inspect failed: {err or 'empty output'}"}
+    try:
+        info = json.loads(out)[0]
+    except (ValueError, IndexError) as exc:
+        return 502, {"ok": False, "error": f"unreadable docker inspect output: {exc}"}
+
+    labels = (info.get("Config") or {}).get("Labels") or {}
+    workdir = labels.get(_COMPOSE_LBL + "project.working_dir")
+    config_files = labels.get(_COMPOSE_LBL + "project.config_files") or ""
+    service = labels.get(_COMPOSE_LBL + "service")
+    image_ref = (info.get("Config") or {}).get("Image") or ""
+    before_sha = info.get("Image") or ""
+
+    if not (workdir and service):
+        return 409, {"ok": False, "error": f"{name!r} is not compose-managed on {HOST} "
+                     f"(no compose labels) — update it by hand"}
+
+    compose = ["docker", "compose", "--project-directory", workdir]
+    for f in [p for p in config_files.split(",") if p.strip()]:
+        compose += ["-f", f.strip()]
+    # .env in the project directory (COMPOSE_FILE chaining, VPN creds, RPI_IP) is
+    # auto-loaded by compose from --project-directory, so it needs no handling here.
+
+    # Services with a build: context (notes-api, the discord-* bots) are rebuilt by the
+    # deploy workflow, never pulled — a `compose pull` on one silently no-ops, which
+    # would report a successful "update" that updated nothing. Ask compose itself
+    # rather than inferring from the image: locally built images DO carry a local
+    # RepoDigest (compose-discord-weather@sha256:…), so digests can't tell them apart.
+    out, err = _run([*compose, "config", "--format", "json"], timeout=30)
+    if err:
+        return 502, {"ok": False, "error": f"cannot read compose config for {name}: {err[:300]}"}
+    try:
+        svc_def = (json.loads(out).get("services") or {}).get(service) or {}
+    except ValueError as exc:
+        return 502, {"ok": False, "error": f"unreadable compose config: {exc}"}
+    if svc_def.get("build"):
+        return 409, {"ok": False, "error": f"{name!r} is a build: service — its image is "
+                     f"built by the deploy workflow, so there is nothing to pull"}
+
+    # Preflight every host-side bind source before touching anything. A stale CIFS
+    # handle lets the RUNNING container coast but makes the recreate fail or hang
+    # half-down — that is exactly the outage noblenumbat-deploy.yml's preflight was
+    # added for, generalized to whatever this container actually mounts. `timeout`
+    # bounds a D-state hang to a few seconds and a clean abort.
+    bind_sources = sorted({m.get("Source") for m in (info.get("Mounts") or [])
+                           if m.get("Type") == "bind" and m.get("Source")})
+    for src in bind_sources:
+        _, perr = _run(["timeout", "5", "ls", src], timeout=10)
+        if perr:
+            return 503, {"ok": False, "stage": "preflight", "container": name,
+                         "host": HOST, "mount": src,
+                         "error": f"bind source {src} is not traversable (stale or hung "
+                         f"CIFS mount?) — container left untouched. On {HOST}: "
+                         f"sudo umount {src} && ls {src} to re-trigger the automount"}
+
+    started = time.time()
+    _, err = _run([*compose, "pull", service], timeout=140)
+    if err:
+        return 502, {"ok": False, "stage": "pull", "container": name, "host": HOST,
+                     "took_ms": int((time.time() - started) * 1000),
+                     "error": f"image pull failed, container untouched: {err[:400]}"}
+
+    _, err = _run([*compose, "up", "-d", "--no-deps", service], timeout=45)
+    took_ms = int((time.time() - started) * 1000)
+    if err:
+        return 502, {"ok": False, "stage": "up", "container": name, "host": HOST,
+                     "took_ms": took_ms,
+                     "error": f"recreate failed after a successful pull — {name} may be "
+                     f"down, check `docker ps` on {HOST}: {err[:400]}"}
+
+    after_sha = ""
+    out, err = _run(["docker", "inspect", name, "--format", "{{.Image}}"], timeout=15)
+    if not err:
+        after_sha = out.strip()
+    return 200, {"ok": True, "container": name, "service": service, "host": HOST,
+                 "image": image_ref, "took_ms": took_ms,
+                 "changed": bool(after_sha) and after_sha != before_sha,
+                 "before": before_sha[7:19], "after": (after_sha or "?")[7:19]}
+
+
 # ── local HTTP endpoint ──────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
@@ -597,11 +713,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200 if result["ok"] else 502, result)
             return
 
-        if path == "/restart":
-            # Unlike /sync, this ALWAYS requires a token — a tokenless agent must never
-            # expose container restarts to anything that can reach port 8787.
+        # Unlike /sync, these ALWAYS require a token — a tokenless agent must never
+        # expose container mutation to anything that can reach port 8787.
+        mutators = {"/restart": restart_container, "/update": update_container}
+        if path in mutators:
             if not TOKEN:
-                self._json(403, {"error": "restart requires HL_ARCH_AGENT_TOKEN to be set"})
+                self._json(403, {"error": f"{path.lstrip('/')} requires "
+                                          "HL_ARCH_AGENT_TOKEN to be set"})
                 return
             if not self._authorized():
                 self._json(401, {"error": "unauthorized"})
@@ -612,7 +730,10 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, OSError) as exc:
                 self._json(400, {"error": f"bad request body: {exc}"})
                 return
-            self._json(*restart_container(body.get("container")))
+            if not isinstance(body, dict):
+                self._json(400, {"error": "body must be a JSON object"})
+                return
+            self._json(*mutators[path](body.get("container")))
             return
 
         self._json(404, {"error": "not found"})

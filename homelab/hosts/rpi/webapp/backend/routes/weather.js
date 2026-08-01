@@ -26,6 +26,8 @@ const ROUTES = [
   { method: 'put', path: '/config',  bot: 'PUT',  botPath: '/config' },
   { method: 'post', path: '/send',   bot: 'POST', botPath: '/send',    timeout: 30000 },
   { method: 'get', path: '/preview', bot: 'GET',  botPath: '/preview', timeout: 30000 },
+  { method: 'get', path: '/witty',   bot: 'GET',  botPath: '/witty' },
+  { method: 'post', path: '/witty/reroll', bot: 'POST', botPath: '/witty/reroll', timeout: 30000 },
 ];
 
 for (const r of ROUTES) {

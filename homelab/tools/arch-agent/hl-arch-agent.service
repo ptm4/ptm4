@@ -26,7 +26,8 @@ Restart=on-failure
 RestartSec=10
 # Root: unprivileged `ss` can't see process names, and `docker inspect` needs either
 # root or docker-group membership. Root also matches this repo's other always-on
-# collector (hl-agent-dispatcher on opti). The script is read-only — see its docstring.
+# collector (hl-agent-dispatcher on opti). Collection is read-only; /restart and
+# /update are the token-gated exceptions — see the script's docstring.
 User=root
 
 [Install]

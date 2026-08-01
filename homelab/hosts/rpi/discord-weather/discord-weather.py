@@ -26,9 +26,16 @@ from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
+try:
+    import witty_messages
+except Exception as _e:  # a witty bug must never take down the 7 AM report
+    print(f"WARNING: witty_messages failed to load, running without it: {_e}", flush=True)
+    witty_messages = None
+
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 LAST_POST_PATH = os.path.join(DATA_DIR, "last_post")
+WITTY_STATE_PATH = os.path.join(DATA_DIR, "witty_pool.json")
 API_PORT = 8080
 
 OM_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
@@ -40,6 +47,12 @@ DEFAULT_CONFIG = {
     "post_time": "07:00",
     "timezone": "America/New_York",
     "message": "@everyone",  # plain-text content sent above the embed
+    "witty_enabled": True,   # append a generated one-liner after the message
+    "witty_names": [
+        "Joe Stasi", "Matt duBourg", "Andrew Kenny", "Tommy Whisker",
+        "Anthony Johnson", "Joey Oddo", "Stanley Mcombe", "Nino",
+        "Ryan Ardito", "Matt Kaprowski",
+    ],
     "webhook_url": "",  # seeded from DISCORD_WEBHOOK_URL env on first boot
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
@@ -78,6 +91,7 @@ def log(msg):
 _lock = threading.Lock()
 _wake = threading.Event()   # poked on config change so the scheduler recomputes
 _status = {"last_post_at": None, "last_status": None, "next_post_at": None}
+_witty = witty_messages.WittyPool(WITTY_STATE_PATH) if witty_messages else None
 
 
 def load_config():
@@ -117,6 +131,19 @@ def validate_config(cfg):
     msg = cfg.get("message", "")
     if not isinstance(msg, str) or len(msg) > 2000:
         return "message must be text, max 2000 characters"
+    if not isinstance(cfg.get("witty_enabled"), bool):
+        return "witty_enabled must be true/false"
+    names = cfg.get("witty_names")
+    if not isinstance(names, list) or len(names) > 20:
+        return "witty_names must be a list of at most 20 names"
+    seen = set()
+    for n in names:
+        # letters/digits/space/.'- only: no @ (mention injection), no markdown chars
+        if not isinstance(n, str) or not re.fullmatch(r"[A-Za-z0-9 .'\-]{1,40}", n.strip()):
+            return f"invalid name {n!r} — letters, digits, spaces, . ' - only, max 40 chars"
+        if n.strip().lower() in seen:
+            return f"duplicate name {n.strip()!r}"
+        seen.add(n.strip().lower())
     try:
         ZoneInfo(str(cfg.get("timezone")))
     except Exception:
@@ -234,7 +261,9 @@ def location_field(loc, fc):
 
 def build_payload(cfg):
     """Fetch all locations and build the webhook payload.
-    Returns (payload, failed_names)."""
+    Returns (payload, failed_names, witty_entry). witty_entry is the pool entry
+    behind today's one-liner (or None) — the caller commits it only after the
+    webhook accepts the post, so previews/dry-runs/failed posts never consume."""
     tz = cfg["timezone"]
     fields, failed = [], []
     first_fc = None  # sun times shown once in the header, from the first town that resolves
@@ -276,9 +305,22 @@ def build_payload(cfg):
             "footer": {"text": "Open-Meteo"},
         }],
     }
-    if cfg.get("message"):
-        payload["content"] = cfg["message"]
-    return payload, failed
+    witty_entry = None
+    if _witty and cfg.get("witty_enabled") and cfg.get("witty_names"):
+        try:
+            witty_entry = _witty.peek(cfg["witty_names"], first_fc, now)
+        except Exception as e:
+            log(f"witty selection failed: {e}")
+    content = cfg.get("message", "")
+    if witty_entry:
+        composed = f"{content} {witty_entry['rendered']}".strip()
+        if len(composed) <= 2000:
+            content = composed
+        else:
+            witty_entry = None  # too long — drop the joke, keep the report
+    if content:
+        payload["content"] = content
+    return payload, failed, witty_entry
 
 
 def post_webhook(url, payload):
@@ -289,7 +331,7 @@ def post_webhook(url, payload):
 
 def post_report(cfg):
     """Build and post the report. Returns (ok, detail)."""
-    payload, failed = build_payload(cfg)
+    payload, failed, witty_entry = build_payload(cfg)
     url = cfg.get("webhook_url")
     if not url:
         return False, "DISCORD_WEBHOOK_URL / webhook_url not set"
@@ -297,6 +339,11 @@ def post_report(cfg):
         post_webhook(url, payload)
     except RuntimeError as e:
         return False, str(e)
+    if witty_entry and _witty:
+        try:
+            _witty.commit(witty_entry)
+        except Exception as e:
+            log(f"witty commit failed (line may repeat): {e}")
     detail = "posted" + (f" (no data for: {', '.join(failed)})" if failed else "")
     return True, detail
 
@@ -417,8 +464,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, pub)
         elif path == "/preview":
             try:
-                payload, failed = build_payload(cfg)
+                payload, failed, _entry = build_payload(cfg)  # peek only — never consumes
                 self._send(200, {"payload": payload, "failed": failed})
+            except Exception as e:
+                self._send(502, {"error": str(e)})
+        elif path == "/witty":
+            if _witty is None:
+                return self._send(200, {"available": False,
+                                        "reason": "witty module failed to load"})
+            try:
+                self._send(200, {"available": True,
+                                 "enabled": bool(cfg.get("witty_enabled")),
+                                 "names": cfg.get("witty_names") or [],
+                                 **_witty.status(cfg.get("witty_names") or [])})
             except Exception as e:
                 self._send(502, {"error": str(e)})
         elif path == "/geocode":
@@ -447,7 +505,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "invalid JSON"})
         current = load_config()
         merged = {**current, **{k: v for k, v in incoming.items()
-                                if k in ("enabled", "post_time", "timezone", "locations", "webhook_url", "message")}}
+                                if k in ("enabled", "post_time", "timezone", "locations",
+                                         "webhook_url", "message", "witty_enabled", "witty_names")}}
         # masked/blank webhook in the payload means "keep the current one"
         wh = incoming.get("webhook_url", "")
         if not wh or "…" in wh:
@@ -466,15 +525,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, pub)
 
     def do_POST(self):
-        if self.path.partition("?")[0] != "/send":
-            return self._send(404, {"error": "not found"})
-        cfg = load_config()
-        ok, detail = post_report(cfg)
-        with _lock:
-            _status["last_post_at"] = datetime.now(ZoneInfo(cfg["timezone"])).isoformat(timespec="seconds")
-            _status["last_status"] = f"manual: {detail}" if ok else f"manual failed: {detail}"
-        log(f"manual send: {'ok — ' + detail if ok else 'FAILED — ' + detail}")
-        self._send(200 if ok else 502, {"ok": ok, "detail": detail})
+        path = self.path.partition("?")[0]
+        if path == "/send":
+            cfg = load_config()
+            ok, detail = post_report(cfg)  # note: a posted witty line is consumed
+            with _lock:
+                _status["last_post_at"] = datetime.now(ZoneInfo(cfg["timezone"])).isoformat(timespec="seconds")
+                _status["last_status"] = f"manual: {detail}" if ok else f"manual failed: {detail}"
+            log(f"manual send: {'ok — ' + detail if ok else 'FAILED — ' + detail}")
+            self._send(200 if ok else 502, {"ok": ok, "detail": detail})
+        elif path == "/witty/reroll":
+            cfg = load_config()
+            if _witty is None or not cfg.get("witty_names"):
+                return self._send(400, {"error": "witty messages not configured"})
+            fc = None
+            try:  # with the forecast, the reroll rotates the line that would actually post
+                fc = fetch_forecast(cfg["locations"][0], cfg["timezone"])
+            except Exception as e:
+                log(f"reroll: forecast unavailable, rotating weather-blind: {e}")
+            try:
+                out = _witty.reroll(cfg["witty_names"], fc)
+            except Exception as e:
+                return self._send(502, {"error": str(e)})
+            self._send(200 if out.get("ok") else 400, out)
+        else:
+            self._send(404, {"error": "not found"})
 
 
 def main(argv):
@@ -484,7 +559,7 @@ def main(argv):
         except OSError:  # DATA_DIR not writable (e.g. running outside the container)
             cfg = {**DEFAULT_CONFIG, "webhook_url": os.environ.get("DISCORD_WEBHOOK_URL", "")}
         if "--dry-run" in argv:
-            payload, failed = build_payload(cfg)
+            payload, failed, _entry = build_payload(cfg)
             print(json.dumps(payload, indent=2, ensure_ascii=False))
             if failed:
                 print(f"WARNING: no data for {failed}", file=sys.stderr)
