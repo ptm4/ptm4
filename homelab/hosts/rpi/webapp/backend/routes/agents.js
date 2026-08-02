@@ -70,6 +70,10 @@ router.get('/', async (req, res) => {
         next_scheduled: r.data.next_scheduled || null,
         agent_version: r.data.agent_version || null,
         drift_count: drift[id] || 0,
+        // v0.4.0 control capabilities; null/[] on an older agent, which is exactly
+        // how the cockpit tab detects "needs v0.4.0" and disables its buttons.
+        allowed_units: r.data.allowed_units || null,
+        wake_targets: r.data.wake_targets || [],
       };
     } catch (e) {
       return {
@@ -181,6 +185,116 @@ router.post('/:host/update-container', async (req, res) => {
         : `agent on ${req.params.host} unreachable: ${e.message}`,
     });
   }
+});
+
+// ── Cockpit host controls (agent v0.4.0) ─────────────────────────────────────
+// Thin proxies like restart/update-container above; the agent does the validating
+// (host-mismatch guard, ZFS reboot guard, unit allowlist) and requires the bearer
+// token. The same LAN-trust posture applies — see BUGS.md B3.
+
+// POST /api/agents/:host/reboot — reboot the host. The body echoes the host name so
+// the agent can refuse a proxy/route mixup (its own HOST must match). The agent
+// responds BEFORE rebooting (~2s grace), so even an rpi reboot returns a real 200.
+router.post('/:host/reboot', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  try {
+    const r = await agentFetch(`${cfg.base}/reboot`, {
+      method: 'POST', timeoutMs: 15000, body: { host: req.params.host },
+    });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// POST /api/agents/:host/apt-upgrade — kick the nightly homelab-autoupdate unit now.
+// Fast by design: the agent starts the unit and returns; progress is polled via
+// GET /:host/apt-status below, so no long request is ever held open.
+router.post('/:host/apt-upgrade', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  try {
+    const r = await agentFetch(`${cfg.base}/apt-upgrade`, { method: 'POST', timeoutMs: 10000 });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// GET /api/agents/:host/apt-status — unit state + log tail + reboot-required flag.
+router.get('/:host/apt-status', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  try {
+    const r = await agentFetch(`${cfg.base}/apt-status`, { timeoutMs: 8000 });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// POST /api/agents/:host/restart-service — restart one allowlisted systemd unit.
+// Timeout ladder must nest: agent restart cap 120s < this 160s < nginx 240s (the
+// slow case is docker.service on opti, which restarts every container it runs).
+router.post('/:host/restart-service', async (req, res) => {
+  const cfg = AGENT_HOSTS[req.params.host];
+  if (!cfg) return res.status(404).json({ error: `unknown agent host '${req.params.host}'` });
+  const unit = req.body?.unit;
+  if (typeof unit !== 'string' || !unit.trim()) {
+    return res.status(400).json({ error: 'body.unit is required' });
+  }
+  try {
+    const r = await agentFetch(`${cfg.base}/service-restart`, {
+      method: 'POST', timeoutMs: 160000, body: { unit: unit.trim() },
+    });
+    res.status(r.status).json({ host: req.params.host, ...r.data });
+  } catch (e) {
+    res.status(502).json({
+      host: req.params.host, ok: false,
+      error: /abort|timeout/i.test(e.message)
+        ? `agent on ${req.params.host} did not respond in time (the restart may still be running)`
+        : `agent on ${req.params.host} unreachable: ${e.message}`,
+    });
+  }
+});
+
+// POST /api/agents/:host/wake — Wake-on-LAN. The one deliberate exception to the
+// thin-proxy rule: the target host is OFF, so a healthy PEER agent broadcasts the
+// magic packet on its behalf. (The webapp container itself sits behind docker
+// bridge NAT, where a UDP broadcast would not reliably reach the LAN.)
+const WAKE_TARGETS = ['opti']; // hosts with WoL-armed NICs; mirrors the agents' WAKE_MACS
+router.post('/:host/wake', async (req, res) => {
+  const host = req.params.host;
+  if (!WAKE_TARGETS.includes(host)) {
+    return res.status(404).json({ error: `'${host}' is not a wake target (no WoL-capable NIC)` });
+  }
+  const senders = Object.keys(AGENT_HOSTS).filter((h) => h !== host);
+  const failures = [];
+  for (const sender of senders) {
+    try {
+      const r = await agentFetch(`${AGENT_HOSTS[sender].base}/wake`, {
+        method: 'POST', timeoutMs: 5000, body: { target: host },
+      });
+      if (r.ok) return res.json({ host, sent_by: sender, ...r.data });
+      failures.push(`${sender}: HTTP ${r.status}`);
+    } catch (e) {
+      failures.push(`${sender}: ${e.message}`);
+    }
+  }
+  res.status(502).json({
+    host, ok: false,
+    error: `no reachable agent to send the wake packet (${failures.join('; ')})`,
+  });
 });
 
 // AGENT_HOSTS is the single source of truth for "which hosts run an agent";

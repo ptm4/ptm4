@@ -2,7 +2,7 @@
   "meta": {
     "title": "Homelab architecture",
     "subtitle": "Four hosts, 25 containers, one storage pool \u2014 and how they actually depend on each other.",
-    "generatedAt": "2026-07-26T22:45:07+00:00",
+    "generatedAt": "2026-08-02T15:46:27+00:00",
     "probedAt": "2026-07-26T22:00:00Z",
     "generator": "homelab/tools/architecture/build-arch-data.py",
     "liveEndpoint": "/api/architecture/live",
@@ -412,14 +412,24 @@
       "kind": "cloud"
     },
     {
+      "id": "phone-remote",
+      "label": "Phone \u00b7 away from home",
+      "host": "wan",
+      "category": "external",
+      "group": "wan",
+      "sublabel": "WireGuard client \u00b7 tunnel IP 10.213.87.2",
+      "kind": "device",
+      "notes": "The Archer's exported config points DNS at 10.213.87.1 (its own forwarder \u2014 no LAN names). It is hand-edited to DNS = 192.168.1.10, and a re-export from the router silently reverts that edit."
+    },
+    {
       "id": "gateway",
       "label": "Gateway 192.168.1.1",
       "host": "router",
       "category": "network",
       "group": "edge",
-      "sublabel": "Verizon router \u00b7 DHCP disabled",
+      "sublabel": "TP-Link Archer \u00b7 DHCP disabled \u00b7 WireGuard :51820",
       "kind": "device",
-      "notes": "DHCP must remain disabled here. When it is re-enabled it races Pi-hole and hands out leases pointing at the wrong DNS \u2014 the classic 'servers are down' symptom."
+      "notes": "DHCP must remain disabled here. When it is re-enabled it races Pi-hole and hands out leases pointing at the wrong DNS \u2014 the classic 'servers are down' symptom. Also the LAN's WireGuard server: UDP :51820 on the WAN side, tunnel subnet 10.213.87.0/24, routed into the LAN without NAT \u2014 no homelab host runs wg."
     },
     {
       "id": "pihole",
@@ -1050,6 +1060,41 @@
       "to": "internet",
       "label": "NAT to the WAN",
       "kind": "http"
+    },
+    {
+      "id": "e-phone-wan",
+      "from": "phone-remote",
+      "to": "internet",
+      "label": "encrypted UDP from anywhere",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-wan-wg",
+      "from": "internet",
+      "to": "gateway",
+      "label": "WireGuard endpoint UDP :51820",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-wg-pihole",
+      "from": "gateway",
+      "to": "pihole",
+      "label": "tunnel DNS \u2192 :53",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-wg-nginx",
+      "from": "gateway",
+      "to": "nginx-webapp",
+      "label": "tunnel HTTPS \u2192 :8443",
+      "kind": "vpn"
+    },
+    {
+      "id": "e-wg-samba",
+      "from": "gateway",
+      "to": "samba",
+      "label": "tunnel SMB \u2192 opti :445",
+      "kind": "vpn"
     },
     {
       "id": "e-clients-dns",
@@ -1866,6 +1911,39 @@
       ]
     },
     {
+      "id": "flow-vpn-access",
+      "name": "Reaching the homelab from the phone",
+      "summary": "The WireGuard path in from anywhere \u2014 terminating on the router, not on any homelab host.",
+      "risk": "Tunnel clients keep their 10.213.87.x source address, so any new LAN-only firewall rule will work on wifi and time out on VPN. And a profile re-exported from the Archer reverts DNS to 10.213.87.1, silently losing every LAN name.",
+      "steps": [
+        {
+          "edge": "e-phone-wan",
+          "title": "The phone brings up its tunnel",
+          "detail": "AllowedIPs = 0.0.0.0/0, so while connected everything the phone does routes through home."
+        },
+        {
+          "edge": "e-wan-wg",
+          "title": "The Archer answers on UDP :51820",
+          "detail": "The router itself is the WireGuard server \u2014 no homelab host runs wg. Tunnel traffic (10.213.87.0/24) is routed into the LAN without NAT, so hosts see the raw tunnel IP."
+        },
+        {
+          "edge": "e-wg-pihole",
+          "title": "DNS rides the tunnel to Pi-hole",
+          "detail": "Two prerequisites: the client config's DNS line hand-edited to 192.168.1.10, and Pi-hole's listening mode set to ALL \u2014 the LOCAL default refused non-LAN sources. This is what makes webapp.rpi resolve remotely."
+        },
+        {
+          "edge": "e-wg-nginx",
+          "title": "The dashboard works exactly as on wifi",
+          "detail": "Same origin, same homelab-CA cert \u2014 the phone's trust store doesn't care which network the request rode in on."
+        },
+        {
+          "edge": "e-wg-samba",
+          "title": "opti's share is reachable too",
+          "detail": "ufw on opti and noblenumbat needed explicit allow rules for 10.213.87.0/24 \u2014 without them VPN packets were silently dropped: the classic 5-second timeout."
+        }
+      ]
+    },
+    {
       "id": "flow-vault",
       "name": "Opening the password vault",
       "summary": "The shortest path in the homelab, and the one with the most valuable data behind it.",
@@ -1912,6 +1990,11 @@
       {
         "name": "webapp.rpi.lan",
         "ip": "192.168.1.10"
+      },
+      {
+        "name": "webapp.rpi",
+        "ip": "192.168.1.10",
+        "note": "short name for phone/VPN use"
       },
       {
         "name": "bitwarden.rpi.lan",

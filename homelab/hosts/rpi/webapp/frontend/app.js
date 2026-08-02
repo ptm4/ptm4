@@ -211,6 +211,30 @@ function recentlyUpdated(host, name) {
   return t != null && Date.now() - t < UPDATE_SUPPRESS_MS;
 }
 
+// One container update with no UI chrome: fetch + result classification only. Shared
+// by the single ⬆ button (updateContainer) and the cockpit's update-all loop, so the
+// two can never drift on RECENT_UPDATES bookkeeping or timeout values.
+// Resolves to { ok, changed, status, d, err } — never rejects.
+async function performUpdate(host, name) {
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/update-container`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ container: name }),
+      // Between the backend's 220s cap and nginx's 240s read timeout for this path.
+      signal: AbortSignal.timeout(230_000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) {
+      RECENT_UPDATES.set(`${host}/${name}`, Date.now());
+      return { ok: true, changed: !!d.changed, status: res.status, d };
+    }
+    return { ok: false, changed: false, status: res.status, d };
+  } catch (e) {
+    return { ok: false, changed: false, status: null, d: {}, err: e };
+  }
+}
+
 // Pull the newest image for one container and recreate it, through its host's agent.
 // Same untrusted-text rules as restartContainer: host/name/image come from reports.
 async function updateContainer(host, name, image, btn) {
@@ -235,44 +259,34 @@ async function updateContainer(host, name, image, btn) {
   const pending = toast(`Updating <b>${eName}</b> on ${eHost} — pulling image… (up to ~2 min)`,
     'warn', { sticky: true, allowHtml: true });
 
-  try {
-    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/update-container`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ container: name }),
-      // Between the backend's 220s cap and nginx's 240s read timeout for this path.
-      signal: AbortSignal.timeout(230_000),
-    });
-    const d = await res.json().catch(() => ({}));
-    pending.remove();
-    if (res.ok && d.ok) {
-      RECENT_UPDATES.set(`${host}/${name}`, Date.now());
-      toast(d.changed
-        ? `<b>${eName}</b> updated on ${eHost} (<span class="mono">${escHtml(d.before || '?')}</span> → <span class="mono">${escHtml(d.after || '?')}</span>)${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(0)}s` : ''}.`
-        : `<b>${eName}</b> already runs the newest image — nothing was recreated.`,
-        'ok', { allowHtml: true });
-      loadContainers();
-      // Re-run the inventory collector so the chips reflect reality within minutes
-      // instead of at tomorrow's scheduled run. Fire-and-forget: if it fails, the only
-      // cost is that the chip waits for the daily run.
-      fetch('/api/runners/software-inventory/run', { method: 'POST' }).catch(() => {});
-    } else if (SELF_CONTAINERS.has(name) && (res.status === 502 || res.status === 504)) {
-      // nginx outlived the backend and answered for it — the update itself was fine.
-      toast(selfKillNotice(eName, 'updating'), 'warn', { sticky: true, allowHtml: true });
-    } else {
-      toast(updateError(res.status, d, host, name), 'crit', { sticky: true, allowHtml: true });
-    }
-  } catch (e) {
-    pending.remove();
+  const r = await performUpdate(host, name);
+  pending.remove();
+  if (r.ok) {
+    const d = r.d;
+    toast(r.changed
+      ? `<b>${eName}</b> updated on ${eHost} (<span class="mono">${escHtml(d.before || '?')}</span> → <span class="mono">${escHtml(d.after || '?')}</span>)${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(0)}s` : ''}.`
+      : `<b>${eName}</b> already runs the newest image — nothing was recreated.`,
+      'ok', { allowHtml: true });
+    loadContainers();
+    // Re-run the inventory collector so the chips reflect reality within minutes
+    // instead of at tomorrow's scheduled run. Fire-and-forget: if it fails, the only
+    // cost is that the chip waits for the daily run.
+    fetch('/api/runners/software-inventory/run', { method: 'POST' }).catch(() => {});
+  } else if (r.err) {
+    const e = r.err;
     const msg = SELF_CONTAINERS.has(name)
       ? selfKillNotice(eName, 'updating')
       : (e.name === 'TimeoutError' || e.name === 'AbortError')
         ? `No response after 230s — the update of <b>${eName}</b> may still be running; check the containers panel shortly.`
         : `Update of <b>${eName}</b> failed: ${escHtml(e.message)}`;
     toast(msg, 'warn', { sticky: true, allowHtml: true });
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = orig; }
+  } else if (SELF_CONTAINERS.has(name) && (r.status === 502 || r.status === 504)) {
+    // nginx outlived the backend and answered for it — the update itself was fine.
+    toast(selfKillNotice(eName, 'updating'), 'warn', { sticky: true, allowHtml: true });
+  } else {
+    toast(updateError(r.status, r.d, host, name), 'crit', { sticky: true, allowHtml: true });
   }
+  if (btn) { btn.disabled = false; btn.textContent = orig; }
 }
 
 // Map a failed update onto the thing the operator actually has to go fix.

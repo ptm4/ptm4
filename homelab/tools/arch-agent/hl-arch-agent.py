@@ -16,12 +16,20 @@ long-running process (Type=simple) that both self-schedules the daily run and an
 
   - an internal loop sleeps until the next 00:00 (local time) and collects+pushes
   - a small stdlib HTTP server on HL_ARCH_AGENT_PORT (default 8787) exposes:
-      GET  /status  -> last run time/result, next scheduled run
+      GET  /status  -> last run time/result, next scheduled run, control capabilities
+      GET  /apt-status -> homelab-autoupdate unit state + log tail + reboot-required
       POST /sync    -> collect + push right now, block and return the real result
                        (never a fire-and-forget "queued" with no feedback)
       POST /restart -> restart one named container (token always required)
       POST /update  -> pull the newest image for one compose service and recreate it
                        (token always required)
+      POST /reboot  -> reboot this host (token always required; ZFS-DKMS guard on
+                       pool hosts; responds FIRST, reboots ~2s later)
+      POST /apt-upgrade     -> start homelab-autoupdate.service, return immediately;
+                               progress is polled via GET /apt-status (token required)
+      POST /service-restart -> restart one ALLOWED_UNITS systemd unit (token required)
+      POST /wake    -> broadcast a WoL magic packet for a WAKE_MACS target (token
+                       required; sent by this host on behalf of a powered-off one)
   - a state file records the last successful run date, so a host that was rebooted
     or the service restarted past 00:00 catches up on the next tick instead of
     silently waiting a full day (the manual equivalent of a timer's Persistent=true)
@@ -32,8 +40,10 @@ WHAT IT COLLECTS (all local, no SSH, no remote calls except the final push)
   needs root for process names), every `docker inspect`-able container (image, state,
   network_mode, published ports, mounts, compose labels), docker networks, and
   systemd timers. Collection itself is read-only; the only mutations this agent ever
-  performs are the explicitly token-gated POST /restart (v0.2.0) and POST /update
-  (v0.3.0), each acting on a single named container.
+  performs are the explicitly token-gated POSTs: /restart (v0.2.0) and /update
+  (v0.3.0) on a single named container, and the host controls (v0.4.0) — /reboot,
+  /apt-upgrade, /service-restart (allowlisted units only) and /wake — that back the
+  dashboard's Cockpit tab.
 
 WHAT IT DELIBERATELY DOES NOT COLLECT
   Human judgment: no "why it matters" text, no category/plane assignment, no flows.
@@ -81,6 +91,7 @@ import argparse
 import glob
 import json
 import os
+import re
 import socket
 import ssl
 import subprocess
@@ -92,7 +103,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -103,6 +114,26 @@ RUN_HOUR = int(os.environ.get("HL_ARCH_RUN_HOUR", "0"))
 
 # Only these carry cross-host meaning; a bind-mount of /proc or an overlay layer is noise.
 _INTERESTING_FSTYPES = ("cifs", "nfs", "nfs4", "fuse", "fuse.")
+
+# ── host-control config (v0.4.0) ───────────────────────────────────────────────
+# Only these units may be restarted via POST /service-restart. Hardcoded rather than
+# env-configured for the same reason routes/agents.js hardcodes AGENT_HOSTS: the
+# topology is fixed and known, the list is versioned with the code, and it deploys
+# atomically to all three hosts instead of drifting per-host in /etc.
+ALLOWED_UNITS = {
+    "opti": ["hl-agent-dispatcher.service", "hl-arch-agent.service",
+             "smbd.service", "docker.service"],
+    "rpi": ["hl-arch-agent.service"],
+    # vpn-stack-heal is a oneshot: restarting it while inactive just runs it, so the
+    # dashboard button doubles as "run the VPN heal check now".
+    "noblenumbat": ["hl-arch-agent.service", "vpn-stack-heal.service"],
+}
+
+# POST /wake targets — hosts whose NIC has WoL armed (opti eno1: `Wake-on: g`,
+# verified 2026-08-02). Any agent can broadcast for any target; the webapp asks an
+# agent that is UP to wake one that is not. noblenumbat is absent deliberately:
+# its USB NIC has no WoL support, which is also why there is no /shutdown endpoint.
+WAKE_MACS = {"opti": "34:17:eb:d1:eb:f8"}
 
 
 def _run(argv, timeout=10):
@@ -672,6 +703,211 @@ def update_container(name):
                  "before": before_sha[7:19], "after": (after_sha or "?")[7:19]}
 
 
+# ── host controls (v0.4.0) ─────────────────────────────────────────────────────
+# These back the dashboard's Cockpit tab. Same shape as the container mutators:
+# fn(body) -> (http_code, dict), every command via _run argv (never a shell string),
+# token always required. The one deliberate difference: actions that kill this very
+# process (/reboot, self-restart) RESPOND FIRST and act ~2s later from a detached
+# thread — a synchronous `systemctl reboot` would die mid-response and the caller
+# could never tell "rebooting" from "crashed".
+_APT_UNIT = "homelab-autoupdate.service"
+_APT_LOG = "/var/log/homelab-autoupdate.log"
+
+
+def _unit_prop(unit, prop):
+    """One systemd property via `systemctl show` — unlike is-active, exit code is 0
+    regardless of state, which matters because _run maps nonzero exits to ("", err)."""
+    out, err = _run(["systemctl", "show", unit, "-p", prop, "--value"], timeout=15)
+    return (out.strip(), err)
+
+
+def _detached(action_argv, delay=2.0):
+    """Run a command from a daemon thread after the response has gone out."""
+    def _later():
+        time.sleep(delay)
+        subprocess.run(action_argv)
+    threading.Thread(target=_later, daemon=True).start()
+
+
+def _zfs_reboot_guard():
+    """Refuse to reboot into a kernel the zfs DKMS module did not build for — the
+    pool (and \\opti\\red for four hosts) would not come back. Ported from
+    homelab-autoreboot.sh; presence-based, so hosts without zpool skip through.
+    Returns None when safe, else the human-readable abort reason."""
+    _, err = _run(["zpool", "list", "-H"], timeout=15)
+    if err:
+        return None  # no zfs on this host — nothing to guard
+    try:
+        kernels = os.listdir("/lib/modules")
+    except OSError:
+        return None
+    if not kernels:
+        return None
+    # all-int sort key (a mixed str/int key can raise TypeError on uneven names)
+    newest = max(kernels, key=lambda s: [int(x) for x in re.findall(r"\d+", s)])
+    if os.path.exists(f"/lib/modules/{newest}/updates/dkms/zfs.ko"):
+        return None
+    _, merr = _run(["modinfo", "-k", newest, "zfs"], timeout=15)
+    if not merr:
+        return None
+    return f"no zfs module for kernel {newest} — fix DKMS before rebooting {HOST}"
+
+
+def do_reboot(body):
+    """Reboot this host. The request must name the host it thinks it is rebooting —
+    a cheap guard against a proxy/route mixup sending the reboot somewhere else."""
+    want = body.get("host")
+    if want != HOST:
+        return 400, {"ok": False, "error": f"host mismatch: this agent is {HOST!r}, "
+                     f"request said {want!r}"}
+    guard = _zfs_reboot_guard()
+    if guard:
+        return 409, {"ok": False, "stage": "zfs-guard", "host": HOST, "error": guard}
+    _detached(["systemctl", "reboot"])
+    return 200, {
+        "ok": True, "host": HOST,
+        "rebooting_at": (datetime.now(timezone.utc) + timedelta(seconds=2)).isoformat(),
+        "uptime_s": collect_uptime(),
+        "reboot_required": os.path.exists("/var/run/reboot-required"),
+    }
+
+
+def apt_upgrade(body):
+    """Kick homelab-autoupdate.service and return immediately. Async on purpose:
+    an apt upgrade can outlive every timeout in the nginx/backend/browser ladder,
+    so the caller polls GET /apt-status instead of holding a request open. Reuses
+    the nightly unit rather than running apt directly — same code path that already
+    works unattended at 02:00 every day."""
+    del body  # no parameters; signature matches the mutator shape
+    loaded, err = _unit_prop(_APT_UNIT, "LoadState")
+    if err or loaded != "loaded":
+        return 404, {"ok": False, "error": f"{_APT_UNIT} not installed on {HOST}"}
+    active, _ = _unit_prop(_APT_UNIT, "ActiveState")
+    if active in ("active", "activating", "reloading"):
+        return 200, {"ok": True, "host": HOST, "unit": _APT_UNIT, "already_running": True}
+    _, err = _run(["systemctl", "start", "--no-block", _APT_UNIT], timeout=15)
+    if err:
+        return 502, {"ok": False, "stage": "start", "host": HOST, "unit": _APT_UNIT,
+                     "error": err[:400]}
+    return 202, {"ok": True, "host": HOST, "unit": _APT_UNIT,
+                 "started_at": datetime.now(timezone.utc).isoformat()}
+
+
+def apt_status():
+    """Progress/result of the last (or current) homelab-autoupdate run. Read-only
+    and unauthenticated like /status and /vitals — the same package facts are
+    already published to the dashboard by software-inventory."""
+    props = {}
+    out, _ = _run(["systemctl", "show", _APT_UNIT,
+                   "-p", "ActiveState,SubState,Result,ExecMainStartTimestamp,"
+                   "ExecMainExitTimestamp,ExecMainStatus"], timeout=15)
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        props[k] = v.strip()
+    active = props.get("ActiveState", "unknown")
+    reboot_pkgs = ""
+    try:
+        with open("/var/run/reboot-required.pkgs") as f:
+            reboot_pkgs = ", ".join(sorted(set(f.read().split())))
+    except OSError:
+        pass
+    log_tail = []
+    try:
+        with open(_APT_LOG, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            log_tail = f.read().decode("utf-8", "replace").splitlines()[-40:]
+    except OSError:
+        pass
+    return 200, {
+        "host": HOST, "unit": _APT_UNIT,
+        "active": active, "sub": props.get("SubState"),
+        "running": active in ("active", "activating"),
+        "result": props.get("Result"),
+        "exit_status": props.get("ExecMainStatus"),
+        "started_at": props.get("ExecMainStartTimestamp") or None,
+        "finished_at": props.get("ExecMainExitTimestamp") or None,
+        "reboot_required": os.path.exists("/var/run/reboot-required"),
+        "reboot_pkgs": reboot_pkgs,
+        "log_tail": log_tail,
+    }
+
+
+def service_restart(body):
+    """Restart one systemd unit — allowlist FIRST, so this endpoint never probes
+    (or even acknowledges the existence of) arbitrary units."""
+    unit = body.get("unit")
+    if not isinstance(unit, str) or not unit.strip():
+        return 400, {"ok": False, "error": "body.unit is required"}
+    unit = unit.strip()
+    allowed = ALLOWED_UNITS.get(HOST, [])
+    if unit not in allowed:
+        return 403, {"ok": False, "error": f"unit {unit!r} is not in the allowlist "
+                     f"for {HOST}", "allowed": allowed}
+    loaded, err = _unit_prop(unit, "LoadState")
+    if err or loaded != "loaded":
+        return 404, {"ok": False, "error": f"unit {unit!r} not found on {HOST}"}
+    before, _ = _unit_prop(unit, "ActiveState")
+
+    if unit == "hl-arch-agent.service":
+        _detached(["systemctl", "restart", unit])
+        return 200, {"ok": True, "host": HOST, "unit": unit, "before": before,
+                     "self_restart": True,
+                     "note": "agent restarting itself in ~2s — poll /status for the "
+                             "new process"}
+
+    started = time.time()
+    # 120s: docker.service on opti restarts every container it runs — the slowest
+    # allowlisted case. The webapp proxy allows 160s, nginx 240s (ladder must nest).
+    _, err = _run(["systemctl", "restart", unit], timeout=120)
+    took_ms = int((time.time() - started) * 1000)
+    if err:
+        return 502, {"ok": False, "stage": "restart", "host": HOST, "unit": unit,
+                     "before": before, "took_ms": took_ms, "error": err[:400]}
+    after, _ = _unit_prop(unit, "ActiveState")
+    # A oneshot (vpn-stack-heal) lands back on "inactive" after a successful run —
+    # that IS success; the caller reads ok, not the after state, for the verdict.
+    return 200, {"ok": True, "host": HOST, "unit": unit, "before": before,
+                 "after": after, "took_ms": took_ms}
+
+
+def wake_target(body):
+    """Broadcast a WoL magic packet for a known target. Runs on a host that is UP
+    (the target is off — its own agent obviously can't help)."""
+    target = body.get("target")
+    if not isinstance(target, str) or not target.strip():
+        return 400, {"ok": False, "error": "body.target is required"}
+    target = target.strip()
+    mac = WAKE_MACS.get(target)
+    if not mac:
+        return 404, {"ok": False, "error": f"no wake target {target!r} on this agent",
+                     "targets": sorted(WAKE_MACS)}
+    try:
+        mac_bytes = bytes.fromhex(mac.replace(":", "").replace("-", ""))
+        if len(mac_bytes) != 6:
+            raise ValueError(f"decodes to {len(mac_bytes)} bytes, want 6")
+    except ValueError as exc:
+        return 500, {"ok": False, "error": f"bad MAC configured for {target!r}: {exc}"}
+    packet = b"\xff" * 6 + mac_bytes * 16
+    sent = 0
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            # Global + subnet-directed broadcast, 3x each — WoL is fire-and-forget
+            # UDP with no ack, so redundancy is the only delivery guarantee there is.
+            for addr in ("255.255.255.255", "192.168.1.255"):
+                for _ in range(3):
+                    s.sendto(packet, (addr, 9))
+                    sent += 1
+                    time.sleep(0.1)
+    except OSError as exc:
+        if not sent:
+            return 502, {"ok": False, "error": f"could not send magic packet: {exc}"}
+    return 200, {"ok": True, "host": HOST, "target": target, "mac": mac,
+                 "packets": sent}
+
+
 # ── local HTTP endpoint ──────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
@@ -695,11 +931,20 @@ class Handler(BaseHTTPRequestHandler):
                 "host": HOST, "agent_version": AGENT_VERSION,
                 "last_run": state.get("last_run"),
                 "next_scheduled": next_run_at().isoformat(),
+                # Control capabilities for the Cockpit tab — their presence is also
+                # how the webapp detects a pre-0.4.0 agent (missing -> old).
+                "allowed_units": ALLOWED_UNITS.get(HOST, []),
+                "wake_targets": sorted(WAKE_MACS),
             })
             return
         if path == "/vitals":
             # Unauthenticated like /status: read-only counters, LAN-only listener.
             self._json(200, collect_vitals())
+            return
+        if path == "/apt-status":
+            # Unauthenticated: read-only, and software-inventory already publishes
+            # the same package facts to the dashboard.
+            self._json(*apt_status())
             return
         self._json(404, {"error": "not found"})
 
@@ -714,8 +959,15 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # Unlike /sync, these ALWAYS require a token — a tokenless agent must never
-        # expose container mutation to anything that can reach port 8787.
-        mutators = {"/restart": restart_container, "/update": update_container}
+        # expose container or host mutation to anything that can reach port 8787.
+        mutators = {
+            "/restart": lambda b: restart_container(b.get("container")),
+            "/update": lambda b: update_container(b.get("container")),
+            "/reboot": do_reboot,
+            "/apt-upgrade": apt_upgrade,
+            "/service-restart": service_restart,
+            "/wake": wake_target,
+        }
         if path in mutators:
             if not TOKEN:
                 self._json(403, {"error": f"{path.lstrip('/')} requires "
@@ -733,7 +985,7 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(body, dict):
                 self._json(400, {"error": "body must be a JSON object"})
                 return
-            self._json(*mutators[path](body.get("container")))
+            self._json(*mutators[path](body))
             return
 
         self._json(404, {"error": "not found"})

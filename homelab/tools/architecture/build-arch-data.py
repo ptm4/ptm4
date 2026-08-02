@@ -296,12 +296,19 @@ NODES = [
       notes="All torrent/usenet/indexer traffic egresses here, never via the LAN's own WAN IP."),
     N("content-apis", "Content APIs", "wan", "external", "wan",
       sublabel="Weather · HLTV · sports · indexers · usenet", kind="cloud"),
+    N("phone-remote", "Phone · away from home", "wan", "external", "wan",
+      sublabel="WireGuard client · tunnel IP 10.213.87.2", kind="device",
+      notes="The Archer's exported config points DNS at 10.213.87.1 (its own forwarder — "
+            "no LAN names). It is hand-edited to DNS = 192.168.1.10, and a re-export "
+            "from the router silently reverts that edit."),
 
     # ── Gateway ──────────────────────────────────────────────────────────────
     N("gateway", "Gateway 192.168.1.1", "router", "network", "edge",
-      sublabel="Verizon router · DHCP disabled", kind="device",
+      sublabel="TP-Link Archer · DHCP disabled · WireGuard :51820", kind="device",
       notes="DHCP must remain disabled here. When it is re-enabled it races Pi-hole and "
-            "hands out leases pointing at the wrong DNS — the classic 'servers are down' symptom."),
+            "hands out leases pointing at the wrong DNS — the classic 'servers are down' symptom. "
+            "Also the LAN's WireGuard server: UDP :51820 on the WAN side, tunnel subnet "
+            "10.213.87.0/24, routed into the LAN without NAT — no homelab host runs wg."),
 
     # ── rpi · network plane ──────────────────────────────────────────────────
     N("pihole", "Pi-hole", "rpi", "network", "net",
@@ -524,6 +531,11 @@ def E(id, src, dst, label, kind, **kw):
 EDGES = [
     # DNS / DHCP
     E("e-gw-wan", "gateway", "internet", "NAT to the WAN", "http"),
+    E("e-phone-wan", "phone-remote", "internet", "encrypted UDP from anywhere", "vpn"),
+    E("e-wan-wg", "internet", "gateway", "WireGuard endpoint UDP :51820", "vpn"),
+    E("e-wg-pihole", "gateway", "pihole", "tunnel DNS → :53", "vpn"),
+    E("e-wg-nginx", "gateway", "nginx-webapp", "tunnel HTTPS → :8443", "vpn"),
+    E("e-wg-samba", "gateway", "samba", "tunnel SMB → opti :445", "vpn"),
     E("e-clients-dns", "browser", "pihole", "DNS :53 — every LAN lookup", "dns"),
     E("e-ws-dns", "workstation", "pihole", "DNS :53", "dns"),
     E("e-others-dns", "other-clients", "pihole", "DNS :53 + DHCP lease", "dns"),
@@ -734,6 +746,31 @@ FLOWS = [
         ],
     },
     {
+        "id": "flow-vpn-access",
+        "name": "Reaching the homelab from the phone",
+        "summary": "The WireGuard path in from anywhere — terminating on the router, not on any homelab host.",
+        "steps": [
+            ("e-phone-wan", "The phone brings up its tunnel",
+             "AllowedIPs = 0.0.0.0/0, so while connected everything the phone does routes through home."),
+            ("e-wan-wg", "The Archer answers on UDP :51820",
+             "The router itself is the WireGuard server — no homelab host runs wg. Tunnel traffic "
+             "(10.213.87.0/24) is routed into the LAN without NAT, so hosts see the raw tunnel IP."),
+            ("e-wg-pihole", "DNS rides the tunnel to Pi-hole",
+             "Two prerequisites: the client config's DNS line hand-edited to 192.168.1.10, and "
+             "Pi-hole's listening mode set to ALL — the LOCAL default refused non-LAN sources. "
+             "This is what makes webapp.rpi resolve remotely."),
+            ("e-wg-nginx", "The dashboard works exactly as on wifi",
+             "Same origin, same homelab-CA cert — the phone's trust store doesn't care which "
+             "network the request rode in on."),
+            ("e-wg-samba", "opti's share is reachable too",
+             "ufw on opti and noblenumbat needed explicit allow rules for 10.213.87.0/24 — "
+             "without them VPN packets were silently dropped: the classic 5-second timeout."),
+        ],
+        "risk": "Tunnel clients keep their 10.213.87.x source address, so any new LAN-only firewall "
+                "rule will work on wifi and time out on VPN. And a profile re-exported from the "
+                "Archer reverts DNS to 10.213.87.1, silently losing every LAN name.",
+    },
+    {
         "id": "flow-vault",
         "name": "Opening the password vault",
         "summary": "The shortest path in the homelab, and the one with the most valuable data behind it.",
@@ -768,6 +805,7 @@ NETWORK = {
     "records": [
         {"name": "rpi.lan", "ip": "192.168.1.10"},
         {"name": "webapp.rpi.lan", "ip": "192.168.1.10"},
+        {"name": "webapp.rpi", "ip": "192.168.1.10", "note": "short name for phone/VPN use"},
         {"name": "bitwarden.rpi.lan", "ip": "192.168.1.10"},
         {"name": "vpn.rpi.lan", "ip": "192.168.1.10", "note": "orphaned — WireGuard is decommissioned"},
         {"name": "opti.lan / opti", "ip": "192.168.1.11"},

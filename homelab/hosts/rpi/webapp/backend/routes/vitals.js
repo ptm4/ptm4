@@ -67,6 +67,9 @@ function derive(prev, cur) {
     load1: Array.isArray(cur.loadavg) ? cur.loadavg[0] : null,
     cpu_pct: null, mem_pct: null, temp_c: cur.temp_c ?? null,
     rx_bps: null, tx_bps: null,
+    // Carried through raw for the cockpit cards — a reset (small again) is the
+    // observable proof that a requested reboot actually happened.
+    uptime_s: cur.uptime_s ?? null,
   };
   if (dt <= 0) return s;
 

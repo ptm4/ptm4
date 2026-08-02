@@ -11,7 +11,9 @@
 # Unlike the other homelab-* units (autoupdate, autoreboot), this is NOT a
 # timer + oneshot: Force Sync needs a live process to answer at any moment, so the
 # script is a single long-running daemon that both self-schedules the nightly
-# collection and serves GET /status + POST /sync. See hl-arch-agent.py's docstring.
+# collection and serves GET /status /vitals /apt-status + the token-gated POSTs
+# /sync /restart /update /reboot /apt-upgrade /service-restart /wake (the Cockpit
+# tab's host controls, v0.4.0). See hl-arch-agent.py's docstring.
 Description=Homelab architecture agent (per-host collector + Force Sync endpoint)
 After=network-online.target docker.service
 Wants=network-online.target
@@ -26,8 +28,9 @@ Restart=on-failure
 RestartSec=10
 # Root: unprivileged `ss` can't see process names, and `docker inspect` needs either
 # root or docker-group membership. Root also matches this repo's other always-on
-# collector (hl-agent-dispatcher on opti). Collection is read-only; /restart and
-# /update are the token-gated exceptions — see the script's docstring.
+# collector (hl-agent-dispatcher on opti), and lets the v0.4.0 host controls call
+# systemctl (reboot/restart/start) directly. Collection is read-only; the mutating
+# POSTs are all token-gated — see the script's docstring.
 User=root
 
 [Install]
