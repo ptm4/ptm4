@@ -285,7 +285,9 @@ router.post('/:host/wake', async (req, res) => {
       const r = await agentFetch(`${AGENT_HOSTS[sender].base}/wake`, {
         method: 'POST', timeoutMs: 5000, body: { target: host },
       });
-      if (r.ok) return res.json({ host, sent_by: sender, ...r.data });
+      // Spread first: the agent's own `host` field is the SENDER — the response's
+      // host must stay the wake TARGET.
+      if (r.ok) return res.json({ ...r.data, host, sent_by: sender });
       failures.push(`${sender}: HTTP ${r.status}`);
     } catch (e) {
       failures.push(`${sender}: ${e.message}`);

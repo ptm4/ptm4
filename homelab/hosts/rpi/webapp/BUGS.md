@@ -87,6 +87,14 @@ Consistent with the dashboard's existing no-auth posture, but these are its firs
 write primitives, so the posture is worth a deliberate decision rather than an
 inherited one.
 
+**2026-08-02 update (Cockpit tab, agent v0.4.0):** the write surface now includes host
+reboot, apt upgrade, allowlisted service restarts and WoL (`/api/agents/:host/{reboot,
+apt-upgrade,restart-service,wake}`). This raises the stakes of the accepted posture but
+does not change the decision: exposure is still LAN/WireGuard-only, the agents remain
+token-gated with hardcoded allowlists and a ZFS reboot guard server-side, and the typed
+confirm modal mitigates accidents (not malice — same as before). Re-gate at nginx before
+the dashboard is ever reachable beyond the LAN.
+
 **Fix options (pick one):**
 1. Accept as trusted-LAN posture; record that decision here and in the techdoc.
 2. nginx `location`-level restriction on the two POST paths (basic auth, or

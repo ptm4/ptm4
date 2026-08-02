@@ -1263,3 +1263,32 @@ body {
   .view { padding: var(--s4); max-width: 100%; }
   .page-header { margin-bottom: var(--s4); padding-bottom: var(--s3); }
 }
+
+/* ── Cockpit tab ─────────────────────────────────────────────────────────────
+   Per-host control cards. Reuses .tile/.pill/.chip/.btn-mini; only layout and the
+   apt-log/status affordances are new. Cards must stay readable on a phone — the
+   whole point of this tab is being poked at over WireGuard from far away. */
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--s4);
+}
+.ck-card-head { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; margin-bottom: var(--s2); }
+.ck-host { font-weight: 600; font-size: 15px; }
+.ck-stats { margin: 0 0 var(--s2); }
+.ck-chips { display: flex; gap: var(--s1); flex-wrap: wrap; align-items: center; margin-bottom: var(--s2); min-height: 20px; }
+.ck-actions { display: flex; gap: var(--s1); flex-wrap: wrap; margin-top: var(--s2); }
+.ck-status { margin: var(--s1) 0; }
+.ck-aptlog summary { cursor: pointer; }
+.ck-aptlog pre {
+  max-height: 220px; overflow: auto; font-size: 11px; line-height: 1.5;
+  margin-top: var(--s1); padding: var(--s2); white-space: pre-wrap;
+  background: var(--bg-2, rgba(128,128,128,.08)); border-radius: 6px;
+}
+.ck-updlist { margin: var(--s2) 0 var(--s2) 18px; padding: 0; max-height: 180px; overflow: auto; }
+/* A pending upgrade wants a reboot — make the button say so at a glance. */
+.ck-reboot-hot { box-shadow: 0 0 0 1px var(--warn); }
+#ck-cluster-status { min-height: 18px; margin-bottom: var(--s3); }
+@media (max-width: 860px) {
+  .cockpit-grid { grid-template-columns: 1fr; }
+}

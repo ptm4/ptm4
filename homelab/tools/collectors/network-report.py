@@ -25,7 +25,8 @@ REPORT_BASE = "network-latest"
 
 # ports we expect to be bound on a host's LAN surface, common to all hosts
 EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
-                  8787}   # hl-arch-agent (/status /vitals /sync /restart), all hosts
+                  8787}   # hl-arch-agent (/status /vitals /apt-status /sync /restart
+                          # /update /reboot /apt-upgrade /service-restart /wake), all hosts
 
 # additional per-host expected ports — see homelab-techdoc.md "Remote Access"
 # and "Homelab Agent Platform" sections for what each of these is

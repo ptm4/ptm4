@@ -334,9 +334,549 @@ async function toggleBlocking(enable, seconds = 300) {
   }
 }
 
+// ── Cockpit: fleet control hub (#cockpit) ─────────────────────────────────────
+// One tab that can do everything remote-hands while away: reboot a host (typed
+// confirm here, ZFS-DKMS guard server-side), kick the nightly apt unit and watch its
+// log, restart the few allowlisted services, bulk-apply container updates, and wake
+// opti via WoL. The cards deliberately run on CIFS-free data (/api/agents live
+// probes + /api/vitals in-memory ring buffer); the software-latest chips ride opti's
+// share and degrade to "unavailable" when it is down — which is exactly the moment
+// this tab must still render, to show the Wake button.
+
+// Analogue of CRITICAL_CONTAINERS: what actually breaks while the host is down.
+const HOST_REBOOT_IMPACT = {
+  opti: 'ZFS pool and \\\\opti\\red drop for every host — reports, container data, Samba and the dispatcher all stall until it returns (~2–3 min). The agent runs a ZFS-DKMS guard first and refuses if the next kernel has no zfs module.',
+  rpi: 'LAN DNS + DHCP (Pi-hole) AND this dashboard go down (~2 min). Your WireGuard tunnel survives — it terminates on the router. rpi boots from an SD card: small chance it does not come back, so reboot it remotely only if you must.',
+  noblenumbat: 'Jellyfin, the *arr stack and the VPN go down (~2 min). vpn-stack-heal re-establishes the tunnel within 2 minutes of boot.',
+};
+
+// Units whose restart is disruptive enough for the typed gate, with blast radius.
+const CRITICAL_UNITS = new Set(['smbd.service', 'docker.service']);
+const UNIT_IMPACT = {
+  'smbd.service': 'Samba drops briefly — hosts with \\\\opti\\red mounted may see I/O errors for a few seconds. (This is also the recovery lever for stale CIFS handles.)',
+  'docker.service': 'Restarts the Docker daemon AND every container on the host.',
+};
+const UNIT_LABELS = {
+  'hl-agent-dispatcher.service': 'dispatcher',
+  'hl-arch-agent.service': 'agent',
+  'smbd.service': 'samba',
+  'docker.service': 'docker',
+  'vpn-stack-heal.service': 'vpn heal',
+};
+
+const cockpitState = {
+  agents: null,        // /api/agents rows by host id (reachability + capabilities)
+  vitals: null,        // /api/vitals rollup: host -> {latest}
+  sw: null,            // software-latest rows by host (chips; null when opti is down)
+  llama: null,         // android LLM status (best-effort)
+  updCount: 0,         // pending image updates -> "Update all (N)" button
+  busy: new Set(),     // hosts with an op in flight; their buttons render disabled
+  watch: {},           // host -> {label, t0} while waiting for it to come back
+  apt: {},             // host -> last /apt-status snapshot (progress + log tail)
+};
+let cockpitTimer = null;
+const ckSleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ckUptime = (s) => {
+  if (s == null) return null;
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m}m` : `${m}m`;
+};
+const agentTooOld = (host, what) =>
+  `The agent on ${escHtml(host)} is too old for ${what} (needs v0.4.0) — reinstall hl-arch-agent.py there.`;
+
+function renderCockpit(view) {
+  view.innerHTML = `
+    <div class="page-security">
+      <div class="sec-header" style="margin-bottom:var(--s4);padding-bottom:var(--s3)">
+        <h1>Cockpit</h1>
+        <div class="sec-header-actions">
+          <button class="btn-mini" id="ck-doctor">▶ Doctor</button>
+          <button class="btn-mini" id="ck-sync">⟳ Sync agents</button>
+          <button class="btn-mini" id="ck-pihole" title="Pause Pi-hole blocking for 5 minutes">⏸ Pi-hole 5 min</button>
+          <button class="btn-mini" id="ck-updall" style="display:none">⬆ Update all</button>
+        </div>
+      </div>
+      <div class="tile-sub" id="ck-cluster-status"></div>
+      <div class="cockpit-grid" id="ck-grid">
+        <div class="tile"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div></div>
+      </div>
+    </div>`;
+  document.getElementById('ck-doctor').addEventListener('click', (e) => ribbonRun(e.currentTarget));
+  document.getElementById('ck-sync').addEventListener('click', (e) => ribbonSync(e.currentTarget));
+  document.getElementById('ck-pihole').addEventListener('click', () => toggleBlocking(false, 300));
+  document.getElementById('ck-updall').addEventListener('click', () => updateAllContainers());
+  loadCockpit();
+  if (cockpitTimer) clearInterval(cockpitTimer);
+  cockpitTimer = setInterval(() => {
+    // Self-clearing: no point polling four endpoints for a tab nobody is looking at.
+    if (location.hash.replace('#', '') !== 'cockpit') {
+      clearInterval(cockpitTimer);
+      cockpitTimer = null;
+      return;
+    }
+    loadCockpit();
+  }, 30_000);
+}
+
+async function loadCockpit() {
+  // agents + vitals are the load-bearing pair (both CIFS-free). Everything else is
+  // garnish on a short timeout: when opti is down these fetches must fail fast, not
+  // hang the tab on a dead CIFS mount.
+  const [agents, vitals, sw, containers, llama] = await Promise.all([
+    fetch('/api/agents', { signal: AbortSignal.timeout(8000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/vitals', { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/runners/software-latest', { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/containers', { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/llama/status', { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  if (agents) cockpitState.agents = Object.fromEntries((agents.hosts || []).map(h => [h.id, h]));
+  if (vitals) cockpitState.vitals = vitals.hosts || {};
+  cockpitState.sw = sw ? Object.fromEntries((sw.hosts || []).map(h => [h.host, h])) : cockpitState.sw;
+  cockpitState.llama = llama;
+  if (containers) {
+    cockpitState.updCount = (containers.hosts || []).reduce((n, h) =>
+      n + (h.containers || []).filter(c =>
+        c.update_available && !recentlyUpdated(h.host, c.name) && !SELF_CONTAINERS.has(c.name)).length, 0);
+  }
+  renderCockpitCards();
+}
+
+function cockpitCard(id) {
+  const a = cockpitState.agents?.[id];
+  const v = cockpitState.vitals?.[id]?.latest;
+  const m = cockpitState.sw?.[id]?.metrics;
+  const reachable = !!a?.reachable;
+  const hasControls = Array.isArray(a?.allowed_units); // null/undefined -> pre-0.4.0 agent
+  const busy = cockpitState.busy.has(id);
+  const eId = escHtml(id);
+
+  const stats = v ? [
+    v.uptime_s != null ? `up ${ckUptime(v.uptime_s)}` : null,
+    v.load1 != null ? `load ${v.load1.toFixed(2)}` : null,
+    v.cpu_pct != null ? `cpu ${v.cpu_pct}%` : null,
+    v.mem_pct != null ? `mem ${v.mem_pct}%` : null,
+    v.temp_c != null ? `${Math.round(v.temp_c)}°C` : null,
+  ].filter(Boolean).join(' · ') : 'no vitals';
+
+  const chips = m ? [
+    m.reboot_required ? `<span class="chip" data-s="warn" title="${escHtml(m.reboot_pkgs || '')}">reboot req</span>` : '',
+    m.pending_count ? `<span class="chip">${m.pending_count} pkg${m.security_count ? ` · <b style="color:var(--crit)">${m.security_count} sec</b>` : ''}</span>` : '',
+    m.image_update_count ? `<span class="chip">${m.image_update_count} image${m.image_update_count > 1 ? 's' : ''}</span>` : '',
+  ].filter(Boolean).join(' ') || '<span class="tile-sub" style="margin:0">patched · no reboot needed</span>'
+    : '<span class="tile-sub" style="margin:0">package info unavailable</span>';
+
+  const watch = cockpitState.watch[id];
+  const watchHtml = watch
+    ? `<div class="tile-sub ck-status">⏳ ${escHtml(watch.label)} — down ${Math.round((Date.now() - watch.t0) / 1000)}s…</div>` : '';
+
+  const apt = cockpitState.apt[id];
+  let aptHtml = '';
+  if (apt) {
+    const lastLine = (apt.log_tail || []).slice(-1)[0] || '';
+    aptHtml = apt.running
+      ? `<div class="tile-sub ck-status">⏳ apt running… <span class="mono">${escHtml(lastLine)}</span></div>`
+      : `<details class="ck-aptlog"><summary class="tile-sub">apt log · ${escHtml(apt.finished_at || 'last run')}</summary>
+           <pre class="mono">${escHtml((apt.log_tail || []).join('\n'))}</pre></details>`;
+  }
+
+  let buttons;
+  if (reachable && hasControls) {
+    const rebootHot = !!m?.reboot_required;
+    buttons = `
+      <button class="btn-mini btn-danger${rebootHot ? ' ck-reboot-hot' : ''}" data-ck-act="reboot" data-ck-host="${eId}"
+        ${busy ? 'disabled' : ''} title="Reboot ${eId}${rebootHot ? ' — a pending upgrade wants this' : ''}">Reboot</button>
+      <button class="btn-mini" data-ck-act="apt" data-ck-host="${eId}" ${busy ? 'disabled' : ''}
+        title="Run homelab-autoupdate (apt update + upgrade) on ${eId} now">Apt upgrade</button>
+      ${(a.allowed_units || []).map(u => `<button class="btn-mini" data-ck-act="unit" data-ck-host="${eId}"
+        data-ck-unit="${escHtml(u)}" ${busy ? 'disabled' : ''} title="systemctl restart ${escHtml(u)}">↻ ${escHtml(UNIT_LABELS[u] || u)}</button>`).join('')}`;
+  } else if (reachable) {
+    buttons = `<span class="tile-sub" style="margin:0">controls need agent v0.4.0 — reinstall hl-arch-agent.py on ${eId}</span>`;
+  } else {
+    // Down. Offer Wake if any REACHABLE agent advertises this host as a wake target.
+    const wakeable = Object.values(cockpitState.agents || {})
+      .some(h => h.reachable && (h.wake_targets || []).includes(id));
+    buttons = wakeable
+      ? `<button class="btn-mini" data-ck-act="wake" data-ck-host="${eId}" ${busy ? 'disabled' : ''}
+           title="Broadcast a Wake-on-LAN magic packet for ${eId}">⚡ Wake</button>`
+      : `<span class="tile-sub" style="margin:0">unreachable — no WoL for this host, physical access needed if it is off</span>`;
+  }
+
+  return `<div class="tile ck-card">
+    <div class="ck-card-head">
+      <span class="mono ck-host">${eId}</span>
+      <span class="tile-sub" style="margin:0">${escHtml(HOST_ROLES[id] || '')}</span>
+      <span class="spacer"></span>
+      <span class="pill" data-s="${reachable ? 'ok' : 'crit'}">${reachable ? 'up' : 'unreachable'}</span>
+      ${a?.agent_version ? `<span class="chip" title="hl-arch-agent version">v${escHtml(a.agent_version)}</span>` : ''}
+    </div>
+    <div class="tile-sub ck-stats">${escHtml(stats)}</div>
+    <div class="ck-chips">${chips}</div>
+    ${watchHtml}${aptHtml}
+    <div class="ck-actions">${buttons}</div>
+  </div>`;
+}
+
+function cockpitAndroidCard() {
+  const up = !!cockpitState.llama;
+  return `<div class="tile ck-card">
+    <div class="ck-card-head">
+      <span class="mono ck-host">android</span>
+      <span class="tile-sub" style="margin:0">${escHtml(HOST_ROLES.android || 'local LLM')}</span>
+      <span class="spacer"></span>
+      <span class="pill" data-s="${up ? 'ok' : 'warn'}">${up ? 'up' : 'offline'}</span>
+    </div>
+    <div class="tile-sub">Status display only — no agent on this host, and it is often
+      offline by design (it is a phone).</div>
+  </div>`;
+}
+
+function renderCockpitCards() {
+  const grid = document.getElementById('ck-grid');
+  if (!grid) return;
+  grid.innerHTML = ['opti', 'rpi', 'noblenumbat'].map(cockpitCard).join('') + cockpitAndroidCard();
+  const updBtn = document.getElementById('ck-updall');
+  if (updBtn) {
+    updBtn.style.display = cockpitState.updCount ? '' : 'none';
+    updBtn.textContent = `⬆ Update all (${cockpitState.updCount})`;
+  }
+  grid.querySelectorAll('button[data-ck-act]').forEach(b => {
+    b.addEventListener('click', () => {
+      const host = b.dataset.ckHost;
+      if (b.dataset.ckAct === 'reboot') rebootHost(host);
+      else if (b.dataset.ckAct === 'apt') aptUpgrade(host);
+      else if (b.dataset.ckAct === 'unit') restartServiceUnit(host, b.dataset.ckUnit);
+      else if (b.dataset.ckAct === 'wake') wakeHost(host);
+    });
+  });
+}
+
+// Poll until the host answers again; drives the "down Xs" line on its card.
+// For rpi (the host serving this page) /api/health is the recovery signal — its own
+// agent row would need the backend up anyway.
+async function watchHostReturn(host, { label = 'rebooting' } = {}) {
+  cockpitState.watch[host] = { label, t0: Date.now() };
+  cockpitState.busy.add(host);
+  renderCockpitCards();
+  const t0 = cockpitState.watch[host].t0;
+  const giveUpMs = 10 * 60 * 1000;
+  while (Date.now() - t0 < giveUpMs) {
+    await ckSleep(5000);
+    if (cockpitState.watch[host]?.t0 !== t0) return; // superseded by a newer watch
+    let back = false;
+    try {
+      if (host === 'rpi') {
+        back = (await fetch('/api/health', { signal: AbortSignal.timeout(4000) })).ok;
+      }
+      if (!back) {
+        const a = await fetch('/api/agents', { signal: AbortSignal.timeout(8000) })
+          .then(r => r.ok ? r.json() : null);
+        if (a) {
+          cockpitState.agents = Object.fromEntries((a.hosts || []).map(x => [x.id, x]));
+          back = !!cockpitState.agents[host]?.reachable;
+        }
+      }
+    } catch (_) { /* still down — the gap is the honest answer */ }
+    renderCockpitCards();
+    if (back) {
+      delete cockpitState.watch[host];
+      cockpitState.busy.delete(host);
+      toast(`<b>${escHtml(host)}</b> is back online after ${Math.round((Date.now() - t0) / 1000)}s.`,
+        'ok', { allowHtml: true });
+      loadCockpit();
+      loadContainers(); // harmless no-op unless the Home tab's table is mounted
+      return;
+    }
+  }
+  delete cockpitState.watch[host];
+  cockpitState.busy.delete(host);
+  renderCockpitCards();
+  toast(`<b>${escHtml(host)}</b> has not come back after 10 minutes — check it directly.`,
+    'crit', { sticky: true, allowHtml: true });
+}
+
+async function rebootHost(host) {
+  const eHost = escHtml(host);
+  const ok = await confirmAction({
+    title: `Reboot ${host}?`,
+    tone: 'crit',
+    confirmLabel: 'Reboot',
+    requireTyped: host,
+    body: `<p>Reboots <b>${eHost}</b> now. Expect ~2 minutes of downtime.</p>
+           <p class="confirm-danger">⚠ ${escHtml(HOST_REBOOT_IMPACT[host] || '')}</p>`,
+  });
+  if (!ok) return;
+  cockpitState.busy.add(host);
+  renderCockpitCards();
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/reboot`, {
+      method: 'POST',
+      signal: AbortSignal.timeout(20_000), // backend caps the agent call at 15s
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) {
+      toast(`Reboot accepted — <b>${eHost}</b> goes down in ~2s. Watching for it to return…`,
+        'warn', { allowHtml: true });
+      watchHostReturn(host);
+      return;
+    }
+    cockpitState.busy.delete(host);
+    renderCockpitCards();
+    if (res.status === 409 && d.stage === 'zfs-guard') {
+      toast(`Reboot of <b>${eHost}</b> REFUSED by the ZFS guard: ${escHtml(d.error || '')}`,
+        'crit', { sticky: true, allowHtml: true });
+    } else if (res.status === 404) {
+      toast(agentTooOld(host, 'reboots'), 'crit', { sticky: true, allowHtml: true });
+    } else {
+      toast(`Reboot of <b>${eHost}</b> failed: ${escHtml(d.error || `HTTP ${res.status}`)}`,
+        'crit', { sticky: true, allowHtml: true });
+    }
+  } catch (e) {
+    if (host === 'rpi') {
+      // The host serving this page: a dropped connection here IS the reboot working
+      // (same reasoning as SELF_CONTAINERS for container ops).
+      toast('Connection dropped — expected when rebooting <b>rpi</b>, it serves this page. Watching for it to return…',
+        'warn', { sticky: true, allowHtml: true });
+      watchHostReturn(host);
+      return;
+    }
+    cockpitState.busy.delete(host);
+    renderCockpitCards();
+    toast(`Reboot request to <b>${eHost}</b> failed: ${escHtml(e.message)}`,
+      'crit', { sticky: true, allowHtml: true });
+  }
+}
+
+async function aptUpgrade(host) {
+  const eHost = escHtml(host);
+  const ok = await confirmAction({
+    title: `Apt upgrade on ${host}?`,
+    tone: 'warn',
+    confirmLabel: 'Upgrade now',
+    body: `<p>Runs the nightly <code>homelab-autoupdate</code> unit on <b>${eHost}</b> now
+           (apt update + full upgrade + autoremove) — the same code path that already runs
+           unattended at 02:00.</p>
+           <p class="tile-sub">Progress and the log tail show on the card. If the upgrade
+           wants a reboot, the Reboot button lights up afterwards.</p>`,
+  });
+  if (!ok) return;
+  cockpitState.busy.add(host);
+  renderCockpitCards();
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/apt-upgrade`, {
+      method: 'POST', signal: AbortSignal.timeout(15_000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.ok) {
+      cockpitState.busy.delete(host);
+      renderCockpitCards();
+      toast(res.status === 404
+        ? agentTooOld(host, 'apt upgrades')
+        : `Apt upgrade on <b>${eHost}</b> failed to start: ${escHtml(d.error || `HTTP ${res.status}`)}`,
+        'crit', { sticky: true, allowHtml: true });
+      return;
+    }
+    if (d.already_running) {
+      toast(`An apt run is already in progress on <b>${eHost}</b> — attaching to it.`,
+        'warn', { allowHtml: true });
+    }
+    await pollAptStatus(host);
+  } catch (e) {
+    cockpitState.busy.delete(host);
+    renderCockpitCards();
+    toast(`Apt upgrade on <b>${eHost}</b> failed: ${escHtml(e.message)}`,
+      'crit', { sticky: true, allowHtml: true });
+  }
+}
+
+async function pollAptStatus(host) {
+  const eHost = escHtml(host);
+  const t0 = Date.now();
+  const giveUpMs = 30 * 60 * 1000; // a big upgrade on the Pi genuinely runs long
+  while (Date.now() - t0 < giveUpMs) {
+    await ckSleep(5000);
+    let st = null;
+    try {
+      st = await fetch(`/api/agents/${encodeURIComponent(host)}/apt-status`,
+        { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null);
+    } catch (_) { /* transient — keep polling */ }
+    if (!st) continue;
+    cockpitState.apt[host] = st;
+    renderCockpitCards();
+    if (!st.running) {
+      cockpitState.busy.delete(host);
+      renderCockpitCards();
+      const good = st.result === 'success' || st.exit_status === '0';
+      toast(good
+        ? `Apt upgrade finished on <b>${eHost}</b>${st.reboot_required ? ' — <b>reboot required</b> to finish.' : '.'}`
+        : `Apt upgrade on <b>${eHost}</b> ended with result "${escHtml(st.result || '?')}" — see the log on its card.`,
+        good ? 'ok' : 'crit', { allowHtml: true, sticky: !good });
+      loadCockpit();
+      return;
+    }
+  }
+  cockpitState.busy.delete(host);
+  renderCockpitCards();
+  toast(`Apt upgrade on <b>${eHost}</b> still running after 30 min — check /var/log/homelab-autoupdate.log on the host.`,
+    'warn', { sticky: true, allowHtml: true });
+}
+
+async function restartServiceUnit(host, unit) {
+  const eHost = escHtml(host), eUnit = escHtml(unit);
+  const impact = UNIT_IMPACT[unit];
+  const selfAgent = unit === 'hl-arch-agent.service';
+  const ok = await confirmAction({
+    title: `Restart ${unit}?`,
+    tone: CRITICAL_UNITS.has(unit) ? 'crit' : 'warn',
+    confirmLabel: 'Restart',
+    requireTyped: CRITICAL_UNITS.has(unit) ? unit : null,
+    body: `<p>Runs <code>systemctl restart ${eUnit}</code> on <b>${eHost}</b>.</p>` +
+          (impact ? `<p class="confirm-danger">⚠ ${escHtml(impact)}</p>` : '') +
+          (selfAgent ? '<p class="tile-sub">This is the agent itself — it responds first and restarts ~2s later.</p>' : '') +
+          (unit === 'vpn-stack-heal.service' ? '<p class="tile-sub">vpn-stack-heal is a oneshot: this simply runs the heal check now.</p>' : ''),
+  });
+  if (!ok) return;
+  cockpitState.busy.add(host);
+  renderCockpitCards();
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/restart-service`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ unit }),
+      signal: AbortSignal.timeout(170_000), // above the backend's 160s, below nginx's 240s
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) {
+      if (d.self_restart) {
+        toast(`Agent on <b>${eHost}</b> is restarting itself — its card refreshes shortly.`,
+          'warn', { allowHtml: true });
+        setTimeout(loadCockpit, 6000);
+      } else {
+        toast(`<code>${eUnit}</code> restarted on <b>${eHost}</b>${d.took_ms ? ` in ${(d.took_ms / 1000).toFixed(1)}s` : ''} (${escHtml(d.before || '?')} → ${escHtml(d.after || '?')}).`,
+          'ok', { allowHtml: true });
+      }
+    } else if (res.status === 403 && d.allowed) {
+      toast(`<code>${eUnit}</code> is not allowlisted on ${eHost} (allowed: ${escHtml((d.allowed || []).join(', '))}).`,
+        'crit', { sticky: true, allowHtml: true });
+    } else if (res.status === 403) {
+      toast(`Restart refused: the agent on ${eHost} has no token set. Add HL_ARCH_AGENT_TOKEN to /etc/hl-arch-agent.env and restart hl-arch-agent.`,
+        'crit', { sticky: true });
+    } else if (res.status === 401) {
+      toast(`Restart unauthorized: the webapp's HL_ARCH_INGEST_TOKEN doesn't match ${eHost}'s HL_ARCH_AGENT_TOKEN.`,
+        'crit', { sticky: true });
+    } else if (res.status === 404 && !/not found on/i.test(d.error || '')) {
+      toast(agentTooOld(host, 'service restarts'), 'crit', { sticky: true, allowHtml: true });
+    } else {
+      toast(`Restart of <code>${eUnit}</code> on ${eHost} failed: ${escHtml(d.error || `HTTP ${res.status}`)}`,
+        'crit', { sticky: true, allowHtml: true });
+    }
+  } catch (e) {
+    toast((e.name === 'TimeoutError' || e.name === 'AbortError')
+      ? `No response after 170s — the restart of <code>${eUnit}</code> may still be running on ${eHost}.`
+      : `Restart request failed: ${escHtml(e.message)}`,
+      'warn', { sticky: true, allowHtml: true });
+  } finally {
+    cockpitState.busy.delete(host);
+    renderCockpitCards();
+  }
+}
+
+async function wakeHost(host) {
+  const eHost = escHtml(host);
+  const ok = await confirmAction({
+    title: `Wake ${host}?`,
+    tone: 'warn',
+    confirmLabel: 'Send magic packet',
+    body: `<p>Asks a healthy peer agent to broadcast a Wake-on-LAN packet for <b>${eHost}</b>.</p>
+           <p class="tile-sub">Booting takes 1–3 minutes; the card watches for it to return.</p>`,
+  });
+  if (!ok) return;
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(host)}/wake`, {
+      method: 'POST', signal: AbortSignal.timeout(15_000),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.ok) {
+      toast(`Magic packet sent for <b>${eHost}</b> via ${escHtml(d.sent_by || '?')} — watching for boot…`,
+        'ok', { allowHtml: true });
+      watchHostReturn(host, { label: 'waking' });
+    } else {
+      toast(`Wake failed: ${escHtml(d.error || `HTTP ${res.status}`)}`, 'crit', { sticky: true });
+    }
+  } catch (e) {
+    toast(`Wake request failed: ${escHtml(e.message)}`, 'crit', { sticky: true });
+  }
+}
+
+// Bulk-apply every pending image update, sequentially, via the same performUpdate
+// the single ⬆ button uses. Fetches its own fresh /api/containers — never relies on
+// another tab having loaded anything.
+async function updateAllContainers() {
+  let d = null;
+  try {
+    d = await fetch('/api/containers', { signal: AbortSignal.timeout(10_000) })
+      .then(r => r.ok ? r.json() : null);
+  } catch (_) {}
+  if (!d?.hosts?.length) {
+    toast('Container data unavailable — is opti reachable?', 'crit', { sticky: true });
+    return;
+  }
+  const targets = d.hosts.flatMap(h => (h.containers || [])
+    .filter(c => c.update_available && !recentlyUpdated(h.host, c.name) && !SELF_CONTAINERS.has(c.name))
+    .map(c => ({ host: h.host, name: c.name })));
+  if (!targets.length) {
+    toast('Nothing to update — every container already runs its newest image.', 'ok');
+    return;
+  }
+  const criticals = targets.filter(t => CRITICAL_CONTAINERS[t.name]);
+  const ok = await confirmAction({
+    title: `Update ${targets.length} container${targets.length > 1 ? 's' : ''}?`,
+    tone: criticals.length ? 'crit' : 'warn',
+    confirmLabel: 'Update all',
+    requireTyped: criticals.length ? 'update all' : null,
+    body: `<p>Pulls and recreates, one at a time:</p>
+           <ul class="ck-updlist">${targets.map(t => `<li><code>${escHtml(t.name)}</code>
+             <span class="tile-sub">on ${escHtml(t.host)}</span>${CRITICAL_CONTAINERS[t.name] ? ' ⚠' : ''}</li>`).join('')}</ul>` +
+          (criticals.length ? `<p class="confirm-danger">⚠ Includes containers with blast radius: ${criticals.map(t => escHtml(t.name)).join(', ')}.</p>` : '') +
+          '<p class="tile-sub">webapp / nginx-webapp are excluded — updating the dashboard mid-run would kill the run itself; use their own ⬆ buttons.</p>',
+  });
+  if (!ok) return;
+  const btn = document.getElementById('ck-updall');
+  if (btn) btn.disabled = true;
+  const statusEl = () => document.getElementById('ck-cluster-status');
+  const failures = [];
+  let changed = 0;
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    const el = statusEl();
+    if (el) el.innerHTML = `⬆ ${i + 1}/${targets.length} — updating <code>${escHtml(t.name)}</code> on ${escHtml(t.host)}…`;
+    const r = await performUpdate(t.host, t.name);
+    if (r.ok) {
+      if (r.changed) changed++;
+    } else {
+      // Continue past failures — one bad pull must not strand the rest of the queue.
+      failures.push(`<code>${escHtml(t.name)}</code> (${escHtml(r.err ? r.err.message : (r.d?.error || `HTTP ${r.status}`))})`);
+    }
+  }
+  const el = statusEl();
+  if (el) el.innerHTML = '';
+  if (btn) btn.disabled = false;
+  if (failures.length) {
+    toast(`Update-all finished: ${targets.length - failures.length}/${targets.length} ok, ${changed} changed. Failed: ${failures.join(', ')}.`,
+      'crit', { sticky: true, allowHtml: true });
+  } else {
+    toast(`Update-all finished: ${targets.length} container${targets.length > 1 ? 's' : ''} processed, ${changed} actually changed.`,
+      'ok', { allowHtml: true });
+  }
+  // One inventory kick for the whole batch, not one per container.
+  fetch('/api/runners/software-inventory/run', { method: 'POST' }).catch(() => {});
+  loadCockpit();
+  loadContainers();
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 const routes = {
   home:     renderHome,
+  cockpit:  renderCockpit,
   security: renderSecurity,
   reports:  renderReports,
   bots:     renderBots,
@@ -370,7 +910,9 @@ const LINK_GROUPS = [
   { group: 'Infrastructure', links: [
     { label: 'Router (Archer BE3600)', url: 'http://192.168.1.1/webpages/index.html', icon: '📶' },
     { label: 'Pi-hole',            url: 'http://rpi.lan/admin',                        icon: '🛡️', fav: true },
-    { label: 'Cockpit (rpi)',      url: 'https://rpi.lan:9090/',                       icon: '🖥️', fav: true },
+    // Renamed from "Cockpit (rpi)" — this dashboard now has its own #cockpit tab,
+    // and two things called Cockpit in one palette was a mis-click waiting to happen.
+    { label: 'Cockpit console (rpi:9090)', url: 'https://rpi.lan:9090/',               icon: '🖥️', fav: true },
     { label: 'OpenMediaVault',     url: 'http://opti.lan/',                            icon: '🗄️', fav: true },
     { label: 'Portainer',          url: 'http://noblenumbat.lan:9000/',                icon: '🐳', fav: true },
     { label: 'Vaultwarden',        url: 'https://bitwarden.rpi.lan/#/vault',           icon: '🔑', fav: true },
@@ -420,7 +962,7 @@ function route() {
   const renderer = routes[hash] ?? renderHome;
   // Dense board layouts get the full screen; text-heavy pages keep the 1100px
   // reading width (see .view/.view-wide in style.css).
-  view.classList.toggle('view-wide', renderer === renderHome || renderer === renderLinks);
+  view.classList.toggle('view-wide', renderer === renderHome || renderer === renderLinks || renderer === renderCockpit);
   renderer(view);
 }
 
@@ -3463,6 +4005,7 @@ function toggleTheme() {
 // here is also reachable by clicking.
 const CMDK_ITEMS = [
   { group: 'Go to', icon: '⌂',  label: 'Home',               action: () => (location.hash = '#home') },
+  { group: 'Go to', icon: '🎛️', label: 'Cockpit',            hint: 'host controls', action: () => (location.hash = '#cockpit') },
   { group: 'Go to', icon: '▤',  label: 'Reports',            action: () => (location.hash = '#reports') },
   { group: 'Go to', icon: '🔒', label: 'Security',           action: () => (location.hash = '#security') },
   { group: 'Go to', icon: '🎯', label: 'CS2 / Leetify',      action: () => (location.hash = '#leetify') },
