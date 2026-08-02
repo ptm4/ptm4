@@ -479,6 +479,16 @@ function cockpitCard(id) {
            <pre class="mono">${escHtml((apt.log_tail || []).join('\n'))}</pre></details>`;
   }
 
+  // Real shell access goes through Cockpit (the app) on rpi:9090 — its own PAM
+  // login, NOT this dashboard's no-auth posture. rpi is local; opti/noblenumbat are
+  // federated remote hosts (/etc/cockpit/machines.d/99-homelab.json on rpi).
+  const termUrl = id === 'rpi'
+    ? 'https://rpi.lan:9090/system/terminal'
+    : `https://rpi.lan:9090/@${encodeURIComponent(id)}/system/terminal`;
+  const termBtn = reachable
+    ? `<a class="btn-mini" href="${termUrl}" target="_blank" rel="noopener"
+         title="Terminal on ${eId} via Cockpit (rpi:9090, system login)">⌨ Terminal</a>` : '';
+
   let buttons;
   if (reachable && hasControls) {
     const rebootHot = !!m?.reboot_required;
@@ -488,9 +498,10 @@ function cockpitCard(id) {
       <button class="btn-mini" data-ck-act="apt" data-ck-host="${eId}" ${busy ? 'disabled' : ''}
         title="Run homelab-autoupdate (apt update + upgrade) on ${eId} now">Apt upgrade</button>
       ${(a.allowed_units || []).map(u => `<button class="btn-mini" data-ck-act="unit" data-ck-host="${eId}"
-        data-ck-unit="${escHtml(u)}" ${busy ? 'disabled' : ''} title="systemctl restart ${escHtml(u)}">↻ ${escHtml(UNIT_LABELS[u] || u)}</button>`).join('')}`;
+        data-ck-unit="${escHtml(u)}" ${busy ? 'disabled' : ''} title="systemctl restart ${escHtml(u)}">↻ ${escHtml(UNIT_LABELS[u] || u)}</button>`).join('')}
+      ${termBtn}`;
   } else if (reachable) {
-    buttons = `<span class="tile-sub" style="margin:0">controls need agent v0.4.0 — reinstall hl-arch-agent.py on ${eId}</span>`;
+    buttons = `<span class="tile-sub" style="margin:0">controls need agent v0.4.0 — reinstall hl-arch-agent.py on ${eId}</span>${termBtn}`;
   } else {
     // Down. Offer Wake if any REACHABLE agent advertises this host as a wake target.
     const wakeable = Object.values(cockpitState.agents || {})
@@ -913,6 +924,8 @@ const LINK_GROUPS = [
     // Renamed from "Cockpit (rpi)" — this dashboard now has its own #cockpit tab,
     // and two things called Cockpit in one palette was a mis-click waiting to happen.
     { label: 'Cockpit console (rpi:9090)', url: 'https://rpi.lan:9090/',               icon: '🖥️', fav: true },
+    { label: 'Uptime Kuma',        url: 'http://rpi.lan:3001/',                        icon: '📈', fav: true },
+    { label: 'Dozzle (logs)',      url: 'http://rpi.lan:9999/',                        icon: '📜', fav: true },
     { label: 'OpenMediaVault',     url: 'http://opti.lan/',                            icon: '🗄️', fav: true },
     { label: 'Portainer',          url: 'http://noblenumbat.lan:9000/',                icon: '🐳', fav: true },
     { label: 'Vaultwarden',        url: 'https://bitwarden.rpi.lan/#/vault',           icon: '🔑', fav: true },

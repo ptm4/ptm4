@@ -121,8 +121,9 @@ _INTERESTING_FSTYPES = ("cifs", "nfs", "nfs4", "fuse", "fuse.")
 # topology is fixed and known, the list is versioned with the code, and it deploys
 # atomically to all three hosts instead of drifting per-host in /etc.
 ALLOWED_UNITS = {
-    "opti": ["hl-agent-dispatcher.service", "hl-arch-agent.service",
-             "smbd.service", "docker.service"],
+    # No docker.service on opti — it runs no containers (verified 2026-08-02);
+    # the dispatcher and Samba are its levers.
+    "opti": ["hl-agent-dispatcher.service", "hl-arch-agent.service", "smbd.service"],
     "rpi": ["hl-arch-agent.service"],
     # vpn-stack-heal is a oneshot: restarting it while inactive just runs it, so the
     # dashboard button doubles as "run the VPN heal check now".

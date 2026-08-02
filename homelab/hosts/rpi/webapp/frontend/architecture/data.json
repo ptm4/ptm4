@@ -2,7 +2,7 @@
   "meta": {
     "title": "Homelab architecture",
     "subtitle": "Four hosts, 25 containers, one storage pool \u2014 and how they actually depend on each other.",
-    "generatedAt": "2026-08-02T15:46:27+00:00",
+    "generatedAt": "2026-08-02T16:21:56+00:00",
     "probedAt": "2026-07-26T22:00:00Z",
     "generator": "homelab/tools/architecture/build-arch-data.py",
     "liveEndpoint": "/api/architecture/live",
@@ -1984,20 +1984,15 @@
     },
     "records": [
       {
-        "name": "rpi.lan",
+        "name": "rpi.lan / rpi",
         "ip": "192.168.1.10"
       },
       {
-        "name": "webapp.rpi.lan",
+        "name": "webapp.rpi.lan / webapp.rpi",
         "ip": "192.168.1.10"
       },
       {
-        "name": "webapp.rpi",
-        "ip": "192.168.1.10",
-        "note": "short name for phone/VPN use"
-      },
-      {
-        "name": "bitwarden.rpi.lan",
+        "name": "bitwarden.rpi.lan / bitwarden.rpi",
         "ip": "192.168.1.10"
       },
       {
@@ -2010,15 +2005,15 @@
         "ip": "192.168.1.11"
       },
       {
-        "name": "noblenumbat.lan",
+        "name": "noblenumbat.lan / noblenumbat",
         "ip": "192.168.1.6"
       },
       {
-        "name": "jellyfin.lan",
+        "name": "jellyfin.lan / jellyfin",
         "ip": "192.168.1.6"
       },
       {
-        "name": "comics.lan",
+        "name": "comics.lan / comics",
         "ip": "192.168.1.6"
       },
       {

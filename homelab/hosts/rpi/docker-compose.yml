@@ -262,11 +262,44 @@ services:
     networks:
       - internal
 
+  # ── Fleet ops add-ons (2026-08-02, alongside the webapp's Cockpit tab) ──────
+  # Uptime Kuma: real-time uptime checks + alerting (Discord notifications fit the
+  # existing bot fleet). Complements — not replaces — the doctor's 30-min sweeps.
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${RPI_IP}:3001:3001"
+    volumes:
+      - kuma_data:/app/data
+    networks:
+      - internal
+
+  # Dozzle: live docker-log viewer. Local socket read-only; noblenumbat's logs come
+  # in via a dozzle agent on nn:7007 (see homelab/hosts/noblenumbat/). opti runs no
+  # docker (verified 2026-08-02), so there is nothing to attach there.
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DOZZLE_REMOTE_AGENT: "192.168.1.6:7007"
+    ports:
+      - "${RPI_IP}:9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+
 networks:
   internal:
     driver: bridge
 
 volumes:
+  kuma_data:
   notes_data:
   weather_data:
   healthdigest_data:

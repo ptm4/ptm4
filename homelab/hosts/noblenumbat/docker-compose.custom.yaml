@@ -47,6 +47,18 @@ services:
     # egress IP, so mylar must exit through the same tunnel as flaresolverr
     network_mode: "service:gluetun"
 
+  # Dozzle agent: exposes this host's container logs to the Dozzle hub on rpi:9999
+  # over :7007 (socket mounted read-only). See homelab/hosts/rpi/docker-compose.yml.
+  dozzle-agent:
+    image: amir20/dozzle:latest
+    container_name: dozzle-agent
+    command: agent
+    restart: unless-stopped
+    ports:
+      - 7007:7007
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
   # Kavita serves the comic/book library (CBZ/CBR/epub/PDF web reader + OPDS)
   kavita:
     image: lscr.io/linuxserver/kavita
