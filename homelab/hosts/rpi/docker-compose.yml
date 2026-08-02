@@ -270,6 +270,11 @@ services:
     container_name: uptime-kuma
     restart: unless-stopped
     logging: *default-logging
+    dns:
+      # Pi-hole, so monitors can use the same .lan names as the quick links.
+      # (Docker's bridge DNS otherwise falls back to public resolvers for
+      # containers on this host, and every *.lan monitor would flap NXDOMAIN.)
+      - 192.168.1.10
     ports:
       - "${RPI_IP}:3001:3001"
     volumes:
