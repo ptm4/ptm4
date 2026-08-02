@@ -1602,31 +1602,81 @@ function wireEvents() {
   $('#qClear').onclick = () => { q.value = ''; onQuery(); q.focus(); };
 
   const stage = $('#stage');
-  let drag = null;
+  // One pointer pans; a second finger turns the gesture into a pinch zoom.
+  // touch-action:none means the browser never pinches natively here, so both
+  // fingers arrive as pointer events and the math is ours.
+  const pts = new Map();
+  let drag = null, pinch = null;
+  const stagePt = (ev) => {
+    const r = stage.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  };
   stage.addEventListener('pointerdown', (ev) => {
     if (ev.target.closest('.node, .btn, .info')) return;
-    drag = { x: ev.clientX, y: ev.clientY, ox: S.view.x, oy: S.view.y, id: ev.pointerId, moved: false };
+    pts.set(ev.pointerId, stagePt(ev));
+    // Capture can throw on exotic pointer ids; losing it only degrades edge-of-
+    // stage tracking, so it must never abort the gesture setup below.
+    try { stage.setPointerCapture(ev.pointerId); } catch (_) {}
     stage.classList.add('panning');
-    stage.setPointerCapture(ev.pointerId);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = {
+        d0: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        mx0: (a.x + b.x) / 2, my0: (a.y + b.y) / 2,
+        x0: S.view.x, y0: S.view.y, k0: S.view.k,
+      };
+      drag = null;
+    } else if (pts.size === 1) {
+      drag = { x: ev.clientX, y: ev.clientY, ox: S.view.x, oy: S.view.y, id: ev.pointerId, moved: false };
+    }
   });
   stage.addEventListener('pointermove', (ev) => {
-    if (!drag || ev.pointerId !== drag.id) return;
-    S.view.x = drag.ox + (ev.clientX - drag.x);
-    S.view.y = drag.oy + (ev.clientY - drag.y);
-    if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 4) drag.moved = true;
-    applyView();
+    if (!pts.has(ev.pointerId)) return;
+    pts.set(ev.pointerId, stagePt(ev));
+    if (pinch && pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const k = Math.min(2.2, Math.max(0.2, pinch.k0 * (d / pinch.d0)));
+      // Keep the map point that started under the pinch midpoint glued to the
+      // (possibly moving) midpoint — zoom about it and pan with it in one step.
+      S.view.x = mx - (pinch.mx0 - pinch.x0) * (k / pinch.k0);
+      S.view.y = my - (pinch.my0 - pinch.y0) * (k / pinch.k0);
+      S.view.k = k;
+      applyView();
+    } else if (drag && ev.pointerId === drag.id) {
+      S.view.x = drag.ox + (ev.clientX - drag.x);
+      S.view.y = drag.oy + (ev.clientY - drag.y);
+      if (Math.abs(ev.clientX - drag.x) + Math.abs(ev.clientY - drag.y) > 4) drag.moved = true;
+      applyView();
+    }
   });
-  const endDrag = () => {
-    if (!drag) return;
-    stage.classList.remove('panning');
-    try { stage.releasePointerCapture(drag.id); } catch (_) {}
-    // A drag shouldn't also count as the background click that clears selection.
-    const moved = drag.moved;
-    drag = null;
+  // A drag or pinch shouldn't also count as the background click that clears selection.
+  const release = (ev) => {
+    if (!pts.delete(ev.pointerId)) return false;
+    try { stage.releasePointerCapture(ev.pointerId); } catch (_) {}
+    let moved = false;
+    if (pinch) {
+      moved = true;
+      if (pts.size < 2) {
+        pinch = null;
+        // A finger may remain — hand off to a one-finger pan without a jump.
+        const rest = [...pts.entries()][0];
+        if (rest) {
+          const r = stage.getBoundingClientRect();
+          drag = { x: rest[1].x + r.left, y: rest[1].y + r.top,
+                   ox: S.view.x, oy: S.view.y, id: rest[0], moved: true };
+        }
+      }
+    } else if (drag && ev.pointerId === drag.id) {
+      moved = drag.moved;
+      drag = null;
+    }
+    if (!pts.size) stage.classList.remove('panning');
     return moved;
   };
-  stage.addEventListener('pointerup', (ev) => { stage.dataset.moved = String(!!endDrag()); });
-  stage.addEventListener('pointercancel', endDrag);
+  stage.addEventListener('pointerup', (ev) => { stage.dataset.moved = String(!!release(ev)); });
+  stage.addEventListener('pointercancel', release);
 
   stage.addEventListener('wheel', (ev) => {
     ev.preventDefault();
