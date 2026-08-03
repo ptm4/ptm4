@@ -102,7 +102,9 @@ services:
     restart: unless-stopped
     logging: *default-logging
     working_dir: /app/backend
-    command: sh -c "npm install --omit=dev && node index.js"
+    # prefer-offline/no-audit: with node_modules warm on the bind mount this makes the
+    # restart window ~2-3s instead of ~6 — every second here is nginx serving 502s.
+    command: sh -c "npm install --omit=dev --no-audit --no-fund --prefer-offline && node index.js"
     environment:
       # opti agent dispatcher (enable/disable + run-now); set in .env
       DISPATCHER_URL: ${DISPATCHER_URL:-}
@@ -118,6 +120,10 @@ services:
       # already lives in this same .env for Pi-hole itself.
       PIHOLE_URL: ${PIHOLE_URL:-http://192.168.1.10}
       PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+      # Uptime Kuma monitors panel (routes/uptime.js). The uk1_ API key only
+      # unlocks /metrics on Kuma 1.x — read-only, which is all this needs.
+      KUMA_URL: ${KUMA_URL:-http://uptime-kuma:3001}
+      KUMA_API_KEY: ${KUMA_API_KEY:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro
@@ -259,6 +265,7 @@ services:
     depends_on:
       - webapp
       - notes-api
+      - dozzle          # proxy_pass http://dozzle — nginx won't start if unresolvable
     networks:
       - internal
 
@@ -292,6 +299,9 @@ services:
     logging: *default-logging
     environment:
       DOZZLE_REMOTE_AGENT: "192.168.1.6:7007"
+      # Base path so nginx-webapp can serve it same-origin at /dozzle for the
+      # dashboard's #logs iframe (direct access moves to rpi.lan:9999/dozzle/).
+      DOZZLE_BASE: /dozzle
     ports:
       - "${RPI_IP}:9999:8080"
     volumes:

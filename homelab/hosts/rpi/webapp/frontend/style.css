@@ -1292,3 +1292,22 @@ body {
 @media (max-width: 860px) {
   .cockpit-grid { grid-template-columns: 1fr; }
 }
+
+/* Cockpit monitors panel (Uptime Kuma read-model) */
+.ck-monitors { margin-top: var(--s4); }
+.ck-mon-summary { margin: var(--s2) 0; }
+.ck-mon-grid { display: flex; flex-wrap: wrap; gap: var(--s1); }
+.ck-mon {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: 999px; white-space: nowrap;
+}
+.ck-mon[data-s="down"] { border-color: var(--crit); }
+.ck-mon[data-s="pending"], .ck-mon[data-s="maintenance"] { border-color: var(--warn); }
+.ck-mon-ms { color: var(--ink-3); font-size: 11px; }
+
+/* Logs tab: the iframe IS the page; leave just enough room for the header */
+.logs-frame {
+  width: 100%; height: calc(100vh - 150px); min-height: 420px;
+  border: 1px solid var(--border); border-radius: 8px; background: transparent;
+}

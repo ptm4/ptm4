@@ -400,6 +400,10 @@ function renderCockpit(view) {
       <div class="cockpit-grid" id="ck-grid">
         <div class="tile"><div class="sk sk-line w40"></div><div class="sk sk-line w80"></div><div class="sk sk-line w60"></div></div>
       </div>
+      <div class="tile ck-monitors" id="ck-monitors">
+        <div class="tile-head">Monitors <span class="tile-sub" style="margin:0">· Uptime Kuma</span></div>
+        <div class="tile-sub">Loading…</div>
+      </div>
     </div>`;
   document.getElementById('ck-doctor').addEventListener('click', (e) => ribbonRun(e.currentTarget));
   document.getElementById('ck-sync').addEventListener('click', (e) => ribbonSync(e.currentTarget));
@@ -439,6 +443,36 @@ async function loadCockpit() {
         c.update_available && !recentlyUpdated(h.host, c.name) && !SELF_CONTAINERS.has(c.name)).length, 0);
   }
   renderCockpitCards();
+  loadCockpitMonitors();
+}
+
+// Kuma monitors panel: headline count + a dot-chip per monitor. Down/pending sort
+// first so a problem is the first thing on the panel, not hidden in a green sea.
+async function loadCockpitMonitors() {
+  const el = document.getElementById('ck-monitors');
+  if (!el) return;
+  let d = null;
+  try {
+    d = await fetch('/api/uptime', { signal: AbortSignal.timeout(10_000) })
+      .then(r => r.ok ? r.json() : null);
+  } catch (_) {}
+  const head = `<div class="tile-head">Monitors <span class="tile-sub" style="margin:0">· <a
+    href="http://rpi.lan:3001/" target="_blank" rel="noopener">Uptime Kuma</a></span></div>`;
+  if (!d?.ok) {
+    el.innerHTML = `${head}<div class="tile-sub">Unavailable${d?.error ? ` — ${escHtml(d.error)}` : ''}.</div>`;
+    return;
+  }
+  const rank = { down: 0, pending: 1, maintenance: 2, up: 3 };
+  const list = [...(d.monitors || [])].sort((a, b) =>
+    (rank[a.status] ?? 4) - (rank[b.status] ?? 4) || a.name.localeCompare(b.name));
+  const tone = d.down ? 'crit' : d.pending ? 'warn' : 'ok';
+  const dot = (s) => s === 'up' ? 'ok' : s === 'down' ? 'crit' : 'warn';
+  el.innerHTML = `${head}
+    <div class="ck-mon-summary"><span class="pill" data-s="${tone}">${d.up}/${d.total} up${d.down ? ` · ${d.down} down` : ''}${d.pending ? ` · ${d.pending} pending` : ''}</span></div>
+    <div class="ck-mon-grid">${list.map(m => `
+      <span class="ck-mon" data-s="${m.status}" title="${escHtml(m.name)} — ${escHtml(m.status)}${m.ms != null ? `, ${m.ms}ms` : ''}">
+        <span class="cdot" data-s="${dot(m.status)}"></span>${escHtml(m.name)}${m.ms != null ? ` <span class="ck-mon-ms">${m.ms}ms</span>` : ''}
+      </span>`).join('')}</div>`;
 }
 
 function cockpitCard(id) {
@@ -576,7 +610,10 @@ async function watchHostReturn(host, { label = 'rebooting' } = {}) {
     let back = false;
     try {
       if (host === 'rpi') {
-        back = (await fetch('/api/health', { signal: AbortSignal.timeout(4000) })).ok;
+        // Must parse as JSON, not just res.ok: during the boot window nginx serves
+        // the 200 "_restarting" holding page, which would read as a false recovery.
+        const r = await fetch('/api/health', { signal: AbortSignal.timeout(4000) });
+        back = r.ok && !!(await r.json().catch(() => null));
       }
       if (!back) {
         const a = await fetch('/api/agents', { signal: AbortSignal.timeout(8000) })
@@ -884,10 +921,29 @@ async function updateAllContainers() {
   loadContainers();
 }
 
+// ── Logs tab: Dozzle, embedded ───────────────────────────────────────────────
+// Dozzle is proxied same-origin at /dozzle (nginx-wg.conf) precisely so this iframe
+// works — an http://rpi.lan:9999 frame inside this https page would be blocked as
+// mixed content. The iframe is the whole tab; Dozzle's own UI does the rest.
+function renderLogs(view) {
+  view.innerHTML = `
+    <div class="page-security logs-page">
+      <div class="sec-header" style="margin-bottom:var(--s3);padding-bottom:var(--s3)">
+        <h1>Container logs</h1>
+        <div class="sec-header-actions">
+          <span class="sec-refresh-label">Dozzle · rpi + noblenumbat (opti runs no docker)</span>
+          <a class="btn-mini" href="/dozzle/" target="_blank" rel="noopener">Open full ↗</a>
+        </div>
+      </div>
+      <iframe class="logs-frame" src="/dozzle/" title="Dozzle container logs"></iframe>
+    </div>`;
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 const routes = {
   home:     renderHome,
   cockpit:  renderCockpit,
+  logs:     renderLogs,
   security: renderSecurity,
   reports:  renderReports,
   bots:     renderBots,
@@ -925,7 +981,7 @@ const LINK_GROUPS = [
     // and two things called Cockpit in one palette was a mis-click waiting to happen.
     { label: 'Cockpit console (rpi:9090)', url: 'https://rpi.lan:9090/',               icon: '🖥️', fav: true },
     { label: 'Uptime Kuma',        url: 'http://rpi.lan:3001/',                        icon: '📈', fav: true },
-    { label: 'Dozzle (logs)',      url: 'http://rpi.lan:9999/',                        icon: '📜', fav: true },
+    { label: 'Dozzle (logs)',      url: '/dozzle/',                                    icon: '📜', fav: true },
     { label: 'OpenMediaVault',     url: 'http://opti.lan/',                            icon: '🗄️', fav: true },
     { label: 'Portainer',          url: 'http://noblenumbat.lan:9000/',                icon: '🐳', fav: true },
     { label: 'Vaultwarden',        url: 'https://bitwarden.rpi.lan/#/vault',           icon: '🔑', fav: true },
@@ -975,7 +1031,7 @@ function route() {
   const renderer = routes[hash] ?? renderHome;
   // Dense board layouts get the full screen; text-heavy pages keep the 1100px
   // reading width (see .view/.view-wide in style.css).
-  view.classList.toggle('view-wide', renderer === renderHome || renderer === renderLinks || renderer === renderCockpit);
+  view.classList.toggle('view-wide', renderer === renderHome || renderer === renderLinks || renderer === renderCockpit || renderer === renderLogs);
   renderer(view);
 }
 
@@ -1132,6 +1188,11 @@ function renderHome(view) {
 
         <div class="tile-col sp4">
           <div class="mini-grid">
+            <a class="tile link" href="#cockpit">
+              <div class="tile-head">Monitors</div>
+              <div class="tile-metric" id="m-monitors">—</div>
+              <div class="tile-sub" id="s-monitors">Uptime Kuma</div>
+            </a>
             <a class="tile link" href="#reports">
               <div class="tile-head">Reports</div>
               <div class="tile-metric" id="m-reports">—</div>
@@ -1179,6 +1240,19 @@ function renderHome(view) {
   loadActivity();
   loadHomeCounters();
   loadLeetify();
+
+  // Live layer: repaint the fast-moving numbers every 30s while Home is visible
+  // (report loaders above stay fetch-on-render — their data doesn't move that fast).
+  if (homeLiveTimer) clearInterval(homeLiveTimer);
+  homeLiveTimer = setInterval(() => {
+    if (!homeIsActive()) {
+      clearInterval(homeLiveTimer);
+      homeLiveTimer = null;
+      return;
+    }
+    refreshHomeLive();
+    loadSparks(['rpi', 'opti', 'noblenumbat']);
+  }, 30_000);
 }
 
 // ── Quick links page ──────────────────────────────────────────────────────────
@@ -1314,8 +1388,10 @@ async function loadRibbon() {
     const agents = (a.hosts || []);
     const reach = agents.filter(h => h.reachable).length;
     el.innerHTML = `<span class="pill" data-s="${tone}">${worst === 'ok' ? '✓ fleet ok' : '! ' + worst}</span>
+      <span class="pill" id="ribbon-mon" title="Uptime Kuma — live" data-s="ok">…</span>
       <span class="ribbon-fresh" title="report ages">${fresh}</span>
       <span class="ribbon-fresh">· ${reach}/${agents.length || 3} agents</span>`;
+    refreshHomeLive();   // fills #ribbon-mon (and the Monitors mini-tile) right away
   } catch (_) {
     el.innerHTML = `<span class="tile-sub">status unavailable</span>`;
   }
@@ -1397,7 +1473,8 @@ async function loadHostVitals() {
     const down = (dm.containers || []).filter(c => !/^up/i.test(c.status || '')).length;
     const updates = byHost[name].sw?.metrics?.image_update_count || 0;
 
-    return `<a class="tile link sp4 host-tile" href="/architecture/">
+    return `<a class="tile link sp4 host-tile" href="/architecture/" data-host-info="${name}"
+        title="Click for host details (ctrl/middle-click opens the architecture map)">
       <div class="tile-head" style="margin-bottom:var(--s2)">
         <span class="host-name">${name}</span>
         <span class="spacer"></span>
@@ -1407,15 +1484,15 @@ async function loadHostVitals() {
       <div class="vitals">
         <div class="vital">
           <div class="vital-label">CPU load</div>
-          <div class="vital-value">${load1 != null ? load1.toFixed(2) : '—'}
+          <div class="vital-value"><span id="hv-load-${name}">${load1 != null ? load1.toFixed(2) : '—'}</span>
             ${cores ? `<small>/ ${cores} cores</small>` : ''}</div>
-          ${meter(loadPct)}
+          <span id="hm-load-${name}">${meter(loadPct)}</span>
         </div>
         <div class="vital">
           <div class="vital-label">Memory</div>
-          <div class="vital-value">${memPct != null ? memPct + '%' : '—'}
+          <div class="vital-value"><span id="hv-mem-${name}">${memPct != null ? memPct + '%' : '—'}</span>
             ${memTotal ? `<small>of ${memTotal} GiB</small>` : ''}</div>
-          ${meter(memPct)}
+          <span id="hm-mem-${name}">${meter(memPct)}</span>
         </div>
         <div class="vital">
           <div class="vital-label">Disk</div>
@@ -1424,9 +1501,9 @@ async function loadHostVitals() {
           ${meter(diskPct)}
         </div>
         <div class="vital">
-          <div class="vital-label">${temp != null ? 'Temp' : 'Uptime'}</div>
-          <div class="vital-value">${temp != null ? temp + '°C' : (m.uptime || '—')}</div>
-          ${temp != null ? `<div class="tile-sub" style="margin-top:2px">${m.uptime || ''}</div>` : ''}
+          <div class="vital-label" id="hv4l-${name}">${temp != null ? 'Temp' : 'Uptime'}</div>
+          <div class="vital-value" id="hv4v-${name}">${temp != null ? temp + '°C' : (m.uptime || '—')}</div>
+          <div class="tile-sub" style="margin-top:2px" id="hv4s-${name}">${temp != null ? (m.uptime || '') : ''}</div>
         </div>
       </div>
       <div class="sparks" id="sparks-${name}"></div>
@@ -1440,7 +1517,150 @@ async function loadHostVitals() {
     </a>`;
   }).join('');
 
+  // Keep the raw report rows around for the host-info modal, and remember cores
+  // for the live loop's "load / N cores" label.
+  homeHostReports = byHost;
+
+  // Plain click opens the info modal; ctrl/cmd/middle-click keeps the old
+  // architecture-map destination (the href is real, so open-in-new-tab still works).
+  wrap.querySelectorAll('[data-host-info]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      if (e.ctrlKey || e.metaKey || e.button === 1) return;
+      e.preventDefault();
+      showHostInfo(a.dataset.hostInfo);
+    });
+  });
+
   loadSparks(order);
+  refreshHomeLive();
+}
+
+// ── Home live layer ──────────────────────────────────────────────────────────
+// The report-driven tiles above are correct but slow-moving (doctor 30 min,
+// hardware daily). This layer repaints the fast-moving numbers every 30s from the
+// same live sources the cockpit uses: /api/vitals (agents' 30s ring buffer) and
+// /api/uptime (Kuma). Reports keep owning disk/SMART/containers — those don't move.
+let homeHostReports = {};
+let homeLive = { vitals: null, uptime: null };
+let homeLiveTimer = null;
+
+function homeIsActive() {
+  const h = location.hash.replace('#', '');
+  return h === '' || h === 'home';
+}
+
+async function refreshHomeLive() {
+  const [v, u] = await Promise.all([
+    fetch('/api/vitals', { signal: AbortSignal.timeout(5000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+    fetch('/api/uptime', { signal: AbortSignal.timeout(10_000) }).then(r => r.ok ? r.json() : null).catch(() => null),
+  ]);
+  if (v) homeLive.vitals = v.hosts || {};
+  if (u?.ok) homeLive.uptime = u;
+
+  for (const [name, st] of Object.entries(homeLive.vitals || {})) {
+    const s = st.latest;
+    if (!s) continue;
+    const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const setHtml = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    if (s.load1 != null) set(`hv-load-${name}`, s.load1.toFixed(2));
+    if (s.cpu_pct != null) setHtml(`hm-load-${name}`, meter(Math.round(s.cpu_pct)));
+    if (s.mem_pct != null) {
+      set(`hv-mem-${name}`, `${Math.round(s.mem_pct)}%`);
+      setHtml(`hm-mem-${name}`, meter(Math.round(s.mem_pct)));
+    }
+    const up = s.uptime_s != null ? `up ${ckUptime(s.uptime_s)}` : '';
+    if (s.temp_c != null) {
+      set(`hv4l-${name}`, 'Temp');
+      set(`hv4v-${name}`, `${Math.round(s.temp_c)}°C`);
+      set(`hv4s-${name}`, up);
+    } else if (up) {
+      set(`hv4l-${name}`, 'Uptime');
+      set(`hv4v-${name}`, ckUptime(s.uptime_s));
+    }
+  }
+
+  const ku = homeLive.uptime;
+  const mon = document.getElementById('ribbon-mon');
+  if (mon && ku) {
+    mon.dataset.s = ku.down ? 'crit' : ku.pending ? 'warn' : 'ok';
+    mon.textContent = `${ku.up}/${ku.total} monitors`;
+  }
+  const mm = document.getElementById('m-monitors');
+  if (mm && ku) {
+    mm.textContent = `${ku.up}/${ku.total}`;
+    const sub = document.getElementById('s-monitors');
+    if (sub) {
+      const bad = (ku.monitors || []).filter(m => m.status !== 'up').map(m => m.name);
+      sub.textContent = bad.length ? `down: ${bad.join(', ')}` : 'all up · Uptime Kuma';
+      sub.style.color = bad.length ? 'var(--crit)' : '';
+    }
+  }
+}
+
+// Basic host info on click — the tile used to jump straight to the architecture
+// map, which is a lot of page for "what's this box doing right now".
+function showHostInfo(name) {
+  const rep = homeHostReports[name] || {};
+  const live = homeLive.vitals?.[name]?.latest;
+  const m = rep.hw?.metrics || {};
+  const dm = rep.doc?.metrics || {};
+  const swm = rep.sw?.metrics || {};
+  const status = rep.doc?.status || 'unknown';
+  const ips = { rpi: '192.168.1.10', opti: '192.168.1.11', noblenumbat: '192.168.1.6' };
+  const cs = dm.containers || [];
+  const downList = cs.filter(c => !/^up/i.test(c.status || '')).map(c => c.name);
+  // Kuma rows for this host: its ping monitor + the "<prefix>:" service monitors.
+  const pfx = { rpi: 'rpi:', opti: 'opti:', noblenumbat: 'nn:' }[name];
+  const kmon = (homeLive.uptime?.monitors || []).filter(x =>
+    x.name.startsWith(`host: ${name}`) || (pfx && x.name.startsWith(pfx)));
+  const dot = (s) => s === 'up' ? 'ok' : s === 'down' ? 'crit' : 'warn';
+  const kv = (k, val) => val ? `<div class="kv-row"><span>${k}</span><span>${val}</span></div>` : '';
+
+  infoModal(`${name} — ${HOST_ROLES[name] || 'host'}`, `
+    <div class="kv-rows">
+      ${kv('status', `<span class="pill" data-s="${status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'crit'}">${escHtml(status)}</span>`)}
+      ${kv('address', `<span class="mono">${ips[name] || '—'}</span>`)}
+      ${kv('uptime', live?.uptime_s != null ? ckUptime(live.uptime_s) : escHtml(m.uptime || '—'))}
+      ${kv('cpu', live ? `load ${live.load1?.toFixed(2) ?? '—'}${live.cpu_pct != null ? ` · ${Math.round(live.cpu_pct)}%` : ''}` : null)}
+      ${kv('memory', live?.mem_pct != null ? `${Math.round(live.mem_pct)}%` : null)}
+      ${kv('temp', live?.temp_c != null ? `${Math.round(live.temp_c)}°C` : null)}
+      ${kv('containers', cs.length ? `${cs.length - downList.length}/${cs.length} up${downList.length ? ` — <b style="color:var(--crit)">down: ${escHtml(downList.join(', '))}</b>` : ''}` : null)}
+      ${kv('packages', swm.pending_count ? `${swm.pending_count} pending${swm.reboot_required ? ' · <b style="color:var(--warn)">reboot required</b>' : ''}` : (swm.reboot_required ? '<b style="color:var(--warn)">reboot required</b>' : null))}
+    </div>
+    ${kmon.length ? `<div class="tile-sub" style="margin-top:var(--s3)">Monitors</div>
+      <div class="ck-mon-grid" style="margin-top:var(--s1)">${kmon.map(x => `
+        <span class="ck-mon" data-s="${x.status}"><span class="cdot" data-s="${dot(x.status)}"></span>${escHtml(x.name)}${x.ms != null ? ` <span class="ck-mon-ms">${x.ms}ms</span>` : ''}</span>`).join('')}</div>` : ''}
+    <div class="ck-actions" style="margin-top:var(--s3)">
+      <a class="btn-mini" href="#cockpit">🎛 Cockpit</a>
+      ${name !== 'android' ? `<a class="btn-mini" target="_blank" rel="noopener"
+        href="${name === 'rpi' ? 'https://rpi.lan:9090/system/terminal' : `https://rpi.lan:9090/@${name}/system/terminal`}">⌨ Terminal</a>` : ''}
+      <a class="btn-mini" href="/architecture/">◈ Architecture map</a>
+    </div>`);
+}
+
+// Lightweight info-only modal: same chrome as confirmAction, no confirm semantics.
+function infoModal(title, bodyHtml) {
+  if (document.querySelector('.confirm-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay open confirm-overlay';
+  overlay.innerHTML = `
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-label="${escHtml(title)}">
+      <div class="modal-header">
+        <span class="modal-title">${escHtml(title)}</span>
+        <button class="modal-close" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">${bodyHtml}</div>
+    </div>`;
+  const close = () => { document.removeEventListener('keydown', onKey); overlay.remove(); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  overlay.querySelector('.modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) close();
+    // In-app links inside the modal (e.g. #cockpit) should also dismiss it.
+    if (e.target.closest('a[href^="#"]')) close();
+  });
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(overlay);
 }
 
 // Host-tile sparklines. Phase 3 wires /api/vitals (30s live series from the arch
@@ -4019,6 +4239,7 @@ function toggleTheme() {
 const CMDK_ITEMS = [
   { group: 'Go to', icon: '⌂',  label: 'Home',               action: () => (location.hash = '#home') },
   { group: 'Go to', icon: '🎛️', label: 'Cockpit',            hint: 'host controls', action: () => (location.hash = '#cockpit') },
+  { group: 'Go to', icon: '📜', label: 'Logs',               hint: 'Dozzle', action: () => (location.hash = '#logs') },
   { group: 'Go to', icon: '▤',  label: 'Reports',            action: () => (location.hash = '#reports') },
   { group: 'Go to', icon: '🔒', label: 'Security',           action: () => (location.hash = '#security') },
   { group: 'Go to', icon: '🎯', label: 'CS2 / Leetify',      action: () => (location.hash = '#leetify') },

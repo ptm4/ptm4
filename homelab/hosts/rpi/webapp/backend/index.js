@@ -75,6 +75,11 @@ app.use('/api/architecture', architectureRouter);
 const agentsRouter = require('./routes/agents');
 app.use('/api/agents', agentsRouter);
 
+// Uptime Kuma read-model — /metrics parsed to JSON for the cockpit Monitors panel
+// (the uk1_ API key stays server-side; read-only by construction)
+const uptimeRouter = require('./routes/uptime');
+app.use('/api/uptime', uptimeRouter);
+
 // agentic workspace manifest — portable skills/rules/runbooks description, read live from
 // opti's homelab/agentic/workspace.json (bind-mounted at /agentic)
 const agenticRouter = require('./routes/agentic');
