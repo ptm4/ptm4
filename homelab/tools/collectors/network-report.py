@@ -31,8 +31,10 @@ EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
 # additional per-host expected ports — see homelab-techdoc.md "Remote Access"
 # and "Homelab Agent Platform" sections for what each of these is
 PER_HOST_EXPECTED_PORTS = {
-    "opti": {139, 3389, 3350, 5355, 5357},   # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
-    "rpi": {111, 9090},                       # idle rpcbind, Cockpit admin UI
+    "opti": {139, 3389, 3350, 5355, 5357,    # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
+             9090},                           # Cockpit admin UI (2026-08-02 control-hub work)
+    "rpi": {111, 9090,                        # idle rpcbind, Cockpit admin UI
+            3001, 9999},                      # Uptime Kuma, Dozzle (2026-08-02 control-hub work)
     "noblenumbat": {
         111, 631,                             # rpcbind (nfs-common, client support), cupsd (loopback)
         3389, 3390,                           # gnome-remote-desktop
@@ -40,6 +42,7 @@ PER_HOST_EXPECTED_PORTS = {
         8191, 8388, 8686, 8888, 8989, 9000, 9696,
         # kavita, bazarr, radarr, gluetun-admin, qbittorrent, mylar3, jellyfin,
         # flaresolverr, gluetun-shadowsocks/http-proxy, lidarr, portainer, sonarr, prowlarr
+        9090, 7007,                           # Cockpit admin UI, Dozzle agent (2026-08-02)
     },
 }
 

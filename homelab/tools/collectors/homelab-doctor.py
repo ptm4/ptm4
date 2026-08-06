@@ -49,6 +49,11 @@ SERVICES = [
 DISK_WARN_PCT = 90
 STALE_HOURS = 36
 
+# Reports on a slower-than-daily cadence get their own threshold; the flat 36h
+# default falsely flags the weekly cold copy for 5 of every 7 days. Keep these
+# aligned with the webapp's runners.js CATALOG (cadence_h * 2).
+STALE_HOURS_OVERRIDES = {"coldcopy-latest.json": 336}
+
 # Reports from manual-only agents (paid/on-demand, not on the schedule — see
 # homelab-techdoc.md "Homelab Agent Platform") are exempt from staleness checks;
 # "last run 3 weeks ago" is expected for these, not a silent failure.
@@ -107,8 +112,14 @@ def cert_days_left_openssl(host, port):
 
 
 def host_disk_pct(host):
-    """Root-fs used % on `host`, over SSH. None if unavailable."""
-    out, rc = run_on(host, ["df", "-P", "/"], timeout=15)
+    """Root-fs used % on `host`, over SSH. None if unavailable.
+
+    On android `/` is the read-only system partition, which Android keeps
+    near-100% by design — measuring it is a permanent false alarm. The disk
+    that can actually fill (apps, models, termux) is /data.
+    """
+    path = "/data" if host.name == "android" else "/"
+    out, rc = run_on(host, ["df", "-P", path], timeout=15)
     if rc != 0:
         return None
     lines = out.splitlines()
@@ -146,7 +157,7 @@ def report_freshness():
             if fn in MANUAL_ONLY_REPORTS:
                 continue
             age_h = (now - os.path.getmtime(os.path.join(d, fn))) / 3600
-            if age_h > STALE_HOURS:
+            if age_h > STALE_HOURS_OVERRIDES.get(fn, STALE_HOURS):
                 stale.append((fn, round(age_h, 1)))
     return stale
 
