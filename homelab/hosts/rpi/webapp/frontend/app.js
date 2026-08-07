@@ -1458,8 +1458,13 @@ async function loadHostVitals() {
     const sTone = status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'crit';
     const sGlyph = status === 'ok' ? '✓' : status === 'warn' ? '!' : '×';
 
-    const disk = (m.disks || [])[0] || {};
+    // Hosts with a storage pool (opti's ZFS `red`) show the pool, not the OS disk —
+    // the pool is what fills up and what everyone else's storage rides on. The OS
+    // disk stays watched by the doctor's 90% threshold either way.
+    const pool = dm.pool || null;
+    const disk = pool || (m.disks || [])[0] || {};
     const diskPct = disk.used_pct ?? null;
+    const diskLabel = pool ? `Pool · ${pool.pool_name || 'zfs'}` : 'Disk';
     // memory_gib is an OBJECT ({MemTotal, MemAvailable, SwapTotal, SwapFree}); the
     // scalar is mem_used_gib. Treating memory_gib as a number rendered
     // "NaN% of [object Object] GiB".
@@ -1495,7 +1500,7 @@ async function loadHostVitals() {
           <span id="hm-mem-${name}">${meter(memPct)}</span>
         </div>
         <div class="vital">
-          <div class="vital-label">Disk</div>
+          <div class="vital-label">${diskLabel}</div>
           <div class="vital-value">${diskPct != null ? diskPct + '%' : '—'}
             ${disk.size_gb ? `<small>of ${Math.round(disk.size_gb)} GB</small>` : ''}</div>
           ${meter(diskPct)}

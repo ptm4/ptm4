@@ -2,7 +2,7 @@
   "meta": {
     "title": "Homelab architecture",
     "subtitle": "Four hosts, 25 containers, one storage pool \u2014 and how they actually depend on each other.",
-    "generatedAt": "2026-08-02T16:21:56+00:00",
+    "generatedAt": "2026-08-07T03:05:41+00:00",
     "probedAt": "2026-07-26T22:00:00Z",
     "generator": "homelab/tools/architecture/build-arch-data.py",
     "liveEndpoint": "/api/architecture/live",
@@ -644,6 +644,38 @@
       "kind": "timer"
     },
     {
+      "id": "uptime-kuma",
+      "label": "Uptime Kuma",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "Synthetic monitors :3001",
+      "container": "uptime-kuma",
+      "image": "louislam/uptime-kuma:1",
+      "ports": [
+        "192.168.1.10:3001"
+      ],
+      "url": "http://rpi.lan:3001/",
+      "kind": "container",
+      "notes": "Part of the 2026-08-02 control-hub work: probes every service on its own schedule, independent of the collector cadence."
+    },
+    {
+      "id": "dozzle",
+      "label": "Dozzle",
+      "host": "rpi",
+      "category": "infra",
+      "group": "platform",
+      "sublabel": "Live container logs :9999",
+      "container": "dozzle",
+      "image": "amir20/dozzle:latest",
+      "ports": [
+        "192.168.1.10:9999"
+      ],
+      "url": "http://rpi.lan:9999/",
+      "kind": "container",
+      "notes": "Streams local containers directly and noblenumbat's via the dozzle-agent on :7007. opti has no docker, so nothing to stream there."
+    },
+    {
       "id": "opti-sdc",
       "label": "sdc \u00b7 4 TB WD Red Plus",
       "host": "opti",
@@ -954,6 +986,20 @@
       "container": "portainer",
       "ports": [
         "9000/tcp"
+      ],
+      "kind": "container"
+    },
+    {
+      "id": "dozzle-agent",
+      "label": "Dozzle agent",
+      "host": "noblenumbat",
+      "category": "infra",
+      "group": "nn-platform",
+      "sublabel": "Log stream for rpi's Dozzle :7007",
+      "container": "dozzle-agent",
+      "image": "amir20/dozzle:latest",
+      "ports": [
+        "7007/tcp"
       ],
       "kind": "container"
     },
@@ -1711,6 +1757,41 @@
       "to": "portainer",
       "label": "container UI :9000",
       "kind": "http"
+    },
+    {
+      "id": "e-browser-kuma",
+      "from": "browser",
+      "to": "uptime-kuma",
+      "label": "monitors UI :3001",
+      "kind": "http"
+    },
+    {
+      "id": "e-browser-dozzle",
+      "from": "browser",
+      "to": "dozzle",
+      "label": "logs UI :9999",
+      "kind": "http"
+    },
+    {
+      "id": "e-dozzle-docker",
+      "from": "dozzle",
+      "to": "rpi-docker",
+      "label": "docker socket",
+      "kind": "control"
+    },
+    {
+      "id": "e-dozzle-agent",
+      "from": "dozzle",
+      "to": "dozzle-agent",
+      "label": "remote agent :7007",
+      "kind": "control"
+    },
+    {
+      "id": "e-dozzleagent-docker",
+      "from": "dozzle-agent",
+      "to": "nn-docker",
+      "label": "docker socket",
+      "kind": "control"
     },
     {
       "id": "e-nndocker-yams",

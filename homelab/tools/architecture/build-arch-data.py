@@ -381,6 +381,18 @@ NODES = [
     N("rpi-sshd", "sshd :22", "rpi", "infra", "platform", kind="service"),
     N("rpi-timers", "systemd timers", "rpi", "infra", "platform",
       sublabel="autoreboot 03:00 · autoupdate", kind="timer"),
+    N("uptime-kuma", "Uptime Kuma", "rpi", "infra", "platform",
+      sublabel="Synthetic monitors :3001", container="uptime-kuma",
+      image="louislam/uptime-kuma:1", ports=["192.168.1.10:3001"],
+      url="http://rpi.lan:3001/", kind="container",
+      notes="Part of the 2026-08-02 control-hub work: probes every service on its own "
+            "schedule, independent of the collector cadence."),
+    N("dozzle", "Dozzle", "rpi", "infra", "platform",
+      sublabel="Live container logs :9999", container="dozzle",
+      image="amir20/dozzle:latest", ports=["192.168.1.10:9999"],
+      url="http://rpi.lan:9999/", kind="container",
+      notes="Streams local containers directly and noblenumbat's via the dozzle-agent "
+            "on :7007. opti has no docker, so nothing to stream there."),
 
     # ── opti · storage plane (ZFS since 2026-07-25; replaced the mergerfs pool) ──
     N("opti-sdc", "sdc · 4 TB WD Red Plus", "opti", "storage", "disks",
@@ -486,6 +498,9 @@ NODES = [
     # ── noblenumbat · platform ───────────────────────────────────────────────
     N("portainer", "Portainer", "noblenumbat", "infra", "nn-platform",
       sublabel="Container UI :9000", container="portainer", ports=["9000/tcp"], kind="container"),
+    N("dozzle-agent", "Dozzle agent", "noblenumbat", "infra", "nn-platform",
+      sublabel="Log stream for rpi's Dozzle :7007", container="dozzle-agent",
+      image="amir20/dozzle:latest", ports=["7007/tcp"], kind="container"),
     N("nn-docker", "Docker engine", "noblenumbat", "infra", "nn-platform",
       sublabel="13 containers · YAMS compose", kind="daemon",
       notes="Stack lives at /opt/yams/docker-compose.yaml. Watchtower was removed "
@@ -644,6 +659,11 @@ EDGES = [
     E("e-browser-jellyfin", "browser", "jellyfin", "streams :8096", "http"),
     E("e-browser-kavita", "browser", "kavita", "reads :5000", "http"),
     E("e-browser-portainer", "browser", "portainer", "container UI :9000", "http"),
+    E("e-browser-kuma", "browser", "uptime-kuma", "monitors UI :3001", "http"),
+    E("e-browser-dozzle", "browser", "dozzle", "logs UI :9999", "http"),
+    E("e-dozzle-docker", "dozzle", "rpi-docker", "docker socket", "control"),
+    E("e-dozzle-agent", "dozzle", "dozzle-agent", "remote agent :7007", "control"),
+    E("e-dozzleagent-docker", "dozzle-agent", "nn-docker", "docker socket", "control"),
     E("e-nndocker-yams", "nn-docker", "nn-yams-net", "manages the bridge", "control"),
     E("e-portainer-docker", "portainer", "nn-docker", "docker socket", "control"),
 
