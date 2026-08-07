@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-08-02T04:21:42+00:00`
+> Generated: `2026-08-07T04:20:53+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.3.0 | 21m ago | 13 | none |
-| opti | 0.3.0 | 21m ago | 0 | none |
-| rpi | 0.3.0 | 20m ago | 12 | none |
+| noblenumbat | 0.4.0 | 20m ago | 14 | none |
+| opti | 0.4.0 | 20m ago | 0 | none |
+| rpi | 0.4.0 | 19m ago | 14 | none |
 
 
 ## Nodes
@@ -27,6 +27,7 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | Discord API | external | — | n/a | — | Gateway + webhooks for 5 bots |
 | GitHub | external | — | n/a | — | ptm4 repo + Actions control plane |
 | Internet | external | — | n/a | — | Everything beyond the gateway |
+| Phone · away from home | external | — | n/a | — | WireGuard client · tunnel IP 10.213.87.2 |
 | VPN exit — Netherlands | external | — | n/a | — | Public IP 46.29.25.130 |
 
 
@@ -34,7 +35,7 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 
 | Node | Plane | Container | State | Image | Summary |
 |---|---|---|---|---|---|
-| Gateway 192.168.1.1 | network | — | n/a | — | Verizon router · DHCP disabled |
+| Gateway 192.168.1.1 | network | — | n/a | — | TP-Link Archer · DHCP disabled · WireGuard :51820 |
 
 
 ### android (S10)
@@ -50,6 +51,7 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 |---|---|---|---|---|---|
 | Bazarr | media | bazarr | running | lscr.io/linuxserver/bazarr | Subtitles :6767 |
 | Docker engine | infra | — | n/a | — | 13 containers · YAMS compose |
+| Dozzle agent | infra | dozzle-agent | running | amir20/dozzle:latest | Log stream for rpi's Dozzle :7007 |
 | FlareSolverr | media | flaresolverr | running | ghcr.io/flaresolverr/flaresolverr:latest | Captcha solver :8191 via VPN |
 | Gluetun VPN | network | gluetun | running | qmcgaw/gluetun:v3.41.0 | WireGuard → NL · port-fwd 42328 |
 | Jellyfin | media | jellyfin | running | lscr.io/linuxserver/jellyfin | Media server :8096 · HW transcode |
@@ -98,9 +100,11 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | Actions runner (ARM64) | infra | — | n/a | — | self-hosted · deploys the rpi stack |
 | Dashboard webapp | apps | webapp | running | node:lts-alpine | Node/Express :3000 · this page's server |
 | Docker engine | infra | — | n/a | — | 12 containers · compose at /srv/docker/compose |
+| Dozzle | infra | dozzle | running | amir20/dozzle:latest | Live container logs :9999 |
 | MariaDB | apps | bitwarden-db | running | mariadb:11 | Vaultwarden datastore :3306 |
 | Notes app | apps | notes-api | running | compose-notes-api | Express + JSON store :3002 |
 | Pi-hole | network | pihole | running | pihole/pihole:latest | DNS :53 · DHCP · admin :80 |
+| Uptime Kuma | infra | uptime-kuma | running | louislam/uptime-kuma:1 | Synthetic monitors :3001 |
 | Vaultwarden | apps | bitwarden | running | vaultwarden/server:latest | Password manager |
 | discord-healthdigest | apps | discord-healthdigest | running | compose-discord-healthdigest | Homelab health summary |
 | discord-hltv | apps | discord-hltv | running | compose-discord-hltv | CS2 news & match results |

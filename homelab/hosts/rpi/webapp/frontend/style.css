@@ -930,6 +930,10 @@ body {
 .vital .vital-value small { font-size: var(--fs-sm); color: var(--ink-3); font-weight: 400; }
 
 .meter-sm { height: 4px; border-radius: 3px; background: var(--surface-3); overflow: hidden; margin-top: 5px; }
+/* split Disk cell (pool + OS disk side by side, e.g. opti's ZFS red) —
+   each column stacks its own value over its own meter so they line up */
+.meter-duo { display: flex; gap: var(--s3); }
+.meter-duo .duo-col { flex: 1; min-width: 0; }
 .meter-sm > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width .4s; }
 .meter-sm > span[data-tone="ok"]   { background: var(--ok); }
 .meter-sm > span[data-tone="warn"] { background: var(--warn); }

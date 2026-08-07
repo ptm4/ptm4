@@ -1458,13 +1458,38 @@ async function loadHostVitals() {
     const sTone = status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'crit';
     const sGlyph = status === 'ok' ? '✓' : status === 'warn' ? '!' : '×';
 
-    // Hosts with a storage pool (opti's ZFS `red`) show the pool, not the OS disk —
-    // the pool is what fills up and what everyone else's storage rides on. The OS
-    // disk stays watched by the doctor's 90% threshold either way.
+    // Hosts with a storage pool (opti's ZFS `red`) get a split Storage cell —
+    // pool first (it's what fills up and what everyone else's storage rides on),
+    // OS disk beside it, each with its own meter and tone.
     const pool = dm.pool || null;
-    const disk = pool || (m.disks || [])[0] || {};
+    const disk = (m.disks || [])[0] || {};
     const diskPct = disk.used_pct ?? null;
-    const diskLabel = pool ? `Pool · ${pool.pool_name || 'zfs'}` : 'Disk';
+    let diskVital;
+    if (pool) {
+      const pPct = Math.round(pool.used_pct);
+      const oPct = diskPct != null ? Math.round(diskPct) : null;
+      const poolName = pool.pool_name || 'pool';
+      diskVital = `<div class="vital" title="${poolName}: ${pPct}% of ${Math.round(pool.size_gb)} GB · OS disk: ${oPct != null ? oPct + '% of ' + Math.round(disk.size_gb) + ' GB' : '—'}">
+          <div class="vital-label">Disk</div>
+          <div class="meter-duo">
+            <div class="duo-col">
+              <div class="vital-value">${pPct}% <small>${escHtml(poolName)}</small></div>
+              ${meter(pool.used_pct)}
+            </div>
+            ${oPct != null ? `<div class="duo-col">
+              <div class="vital-value">${oPct}% <small>os</small></div>
+              ${meter(diskPct)}
+            </div>` : ''}
+          </div>
+        </div>`;
+    } else {
+      diskVital = `<div class="vital">
+          <div class="vital-label">Disk</div>
+          <div class="vital-value">${diskPct != null ? diskPct + '%' : '—'}
+            ${disk.size_gb ? `<small>of ${Math.round(disk.size_gb)} GB</small>` : ''}</div>
+          ${meter(diskPct)}
+        </div>`;
+    }
     // memory_gib is an OBJECT ({MemTotal, MemAvailable, SwapTotal, SwapFree}); the
     // scalar is mem_used_gib. Treating memory_gib as a number rendered
     // "NaN% of [object Object] GiB".
@@ -1499,12 +1524,7 @@ async function loadHostVitals() {
             ${memTotal ? `<small>of ${memTotal} GiB</small>` : ''}</div>
           <span id="hm-mem-${name}">${meter(memPct)}</span>
         </div>
-        <div class="vital">
-          <div class="vital-label">${diskLabel}</div>
-          <div class="vital-value">${diskPct != null ? diskPct + '%' : '—'}
-            ${disk.size_gb ? `<small>of ${Math.round(disk.size_gb)} GB</small>` : ''}</div>
-          ${meter(diskPct)}
-        </div>
+        ${diskVital}
         <div class="vital">
           <div class="vital-label" id="hv4l-${name}">${temp != null ? 'Temp' : 'Uptime'}</div>
           <div class="vital-value" id="hv4v-${name}">${temp != null ? temp + '°C' : (m.uptime || '—')}</div>
