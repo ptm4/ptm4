@@ -131,8 +131,10 @@ def http_json(url, body=None, tries=3, timeout=30):
         req = urllib.request.Request(
             url,
             data=json.dumps(body).encode() if body is not None else None,
-            headers={"Content-Type": "application/json",
-                     "User-Agent": "discord-sports (rpi homelab)"})
+            # No custom User-Agent: since ~2026-08-05 ESPN's edge 403s custom and
+            # browser-spoofed UA strings but allows honest tool defaults
+            # (Python-urllib/x.y, curl/x.y). Discord doesn't care either way.
+            headers={"Content-Type": "application/json"})
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
