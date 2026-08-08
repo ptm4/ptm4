@@ -126,15 +126,19 @@ def mask_webhook(url):
 
 
 # ── HTTP + ESPN ───────────────────────────────────────────────────────────────
-def http_json(url, body=None, tries=3, timeout=30):
+def http_json(url, body=None, tries=3, timeout=30, ua=None):
+    # User-Agent is per-request because the two endpoints disagree (both verified
+    # 2026-08-07): ESPN's edge 403s custom/browser-spoofed UAs but allows urllib's
+    # default, while Discord's Cloudflare 403s default Python-urllib but allows our
+    # custom string. Callers hitting Discord pass ua=; ESPN callers pass nothing.
     for attempt in range(tries):
+        headers = {"Content-Type": "application/json"}
+        if ua:
+            headers["User-Agent"] = ua
         req = urllib.request.Request(
             url,
             data=json.dumps(body).encode() if body is not None else None,
-            # No custom User-Agent: since ~2026-08-05 ESPN's edge 403s custom and
-            # browser-spoofed UA strings but allows honest tool defaults
-            # (Python-urllib/x.y, curl/x.y). Discord doesn't care either way.
-            headers={"Content-Type": "application/json"})
+            headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
@@ -269,7 +273,7 @@ def build_payload(cfg):
 
 
 def post_webhook(url, payload):
-    status, _ = http_json(url, body=payload)
+    status, _ = http_json(url, body=payload, ua="discord-sports (rpi homelab)")
     if not 200 <= status < 300:
         raise RuntimeError(f"webhook returned HTTP {status}")
 

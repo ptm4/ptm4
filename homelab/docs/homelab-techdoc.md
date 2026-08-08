@@ -720,6 +720,7 @@ nothing WireGuard-related remains in the current codebase).
 | Bazarr | `http://192.168.1.6:6767` | noblenumbat · subtitle manager |
 | Mylar3 | `http://192.168.1.6:8090` | noblenumbat · comic manager |
 | Kavita | `http://192.168.1.6:5000` | noblenumbat · comic/book reader (phone-friendly PWA) |
+| Streams page | `https://webapp.rpi.lan:8443/streams/` | live Twitch/YouTube/Kick in the browser · served by `stream-station` on noblenumbat `:8098` |
 | Portainer | `http://192.168.1.6:9000` | noblenumbat · Docker UI |
 | FlareSolverr | `http://192.168.1.6:8191` | noblenumbat · Cloudflare bypass for Prowlarr |
 
@@ -856,6 +857,7 @@ Full YAMS installation on noblenumbat (192.168.1.6) — Jellyfin + arr stack + q
 | `flaresolverr` | `ghcr.io/flaresolverr/flaresolverr` | `8191` | Cloudflare bypass proxy for Prowlarr indexers |
 | `mylar3` | `lscr.io/linuxserver/mylar3` | `8090` | Comic manager (arr for comics) · sends torrents to qBittorrent |
 | `kavita` | `lscr.io/linuxserver/kavita` | `5000` | Comic/book library + mobile web reader (CBZ/CBR/epub/PDF, OPDS) |
+| `stream-station` | **built locally** (`yams-stream-station`) | `8098` | Live-stream → HLS for the dashboard's Streams page · see below |
 
 ### Storage layout (on noblenumbat)
 
@@ -947,6 +949,48 @@ Phone reading: open `http://192.168.1.6:5000` in the phone browser → "Add to H
 - **Prowlarr indexers:** none added — FlareSolverr is ready to support Cloudflare-protected indexers (e.g. 1337x) once you add them via the Prowlarr UI.
 - **SABnzbd:** installed but unconfigured (requires paid Usenet provider).
 
+### stream-station (`:8098`) — the one service that is built, not pulled
+
+Added 2026-08-07. Backs `https://webapp.rpi.lan:8443/streams/`: streamlink resolves a
+Twitch/YouTube/Kick channel and headless VLC remuxes it to HLS, four independent slots.
+Debugging lives in [`homelab/agentic/runbooks/05-noblenumbat.md`](../agentic/runbooks/05-noblenumbat.md).
+
+| Property | Value |
+|---|---|
+| Port | `8098/tcp` (free range 8097–8100; `8080` is deliberately commented out of gluetun's block) |
+| Network | plain `yams_network` — **not** gluetun. VPN membership here is opt-in per service |
+| Image | built from `homelab/hosts/noblenumbat/stream-station/`, `python:3.12-slim` + VLC + pip streamlink |
+| User | uid 1000 (`streamer`) — **VLC refuses to run as root** |
+| Segments | `tmpfs /hls`, 256 MB, `uid=1000` — never the NVMe |
+| Caps | `mem_limit: 2g`, `cpus: 3` — the **only** capped service in this stack |
+| Auth | `POST /start|/stop|/keepalive` need `HL_STREAM_TOKEN`; `GET /hls/*` is open |
+
+**Why the caps, when nothing else here has them:** this service spawns child processes on
+demand (one streamlink + one VLC per slot), and this host has a cooling outage on record
+(2026-07-16). The caps turn a runaway pipeline into a dead container rather than a thermal
+event. The pipeline is **remux-only, never transcode** — the sources are already H.264+AAC, so
+a live 1080p stream costs ~3.5% CPU. tmpfs pages count against the cgroup limit, which is why
+`mem_limit` is 2g rather than 1g.
+
+**Token:** `HL_STREAM_TOKEN` in `/opt/yams/.env` must match the rpi webapp's
+`/srv/docker/compose/.env`. Neither file is in git and no workflow writes them.
+
+### Deploy path change (2026-08-07)
+
+`.github/workflows/noblenumbat-deploy.yml` previously only copied the two compose files and ran
+`docker compose pull` + `up -d`. It could not have built anything. It now:
+
+1. **Copy build contexts** (new step) — `cp -rT` the `stream-station/` directory into `/opt/yams/`,
+   because `docker compose config` cannot resolve a `build:` context that isn't on the host.
+2. **Pull images** — now `docker compose pull --ignore-buildable`, so the pull step skips
+   stream-station instead of failing on a service with no registry image.
+3. **Build local images** (new step) — `docker compose build stream-station`.
+
+This is a behavioral change to that workflow, not just an addition: the pull command itself
+changed. A consequence worth knowing — **`workflow_dispatch` on this workflow is now also the
+streamlink upgrade button**, since the build step re-resolves the pip install whenever
+`STREAMLINK_REV` in the Dockerfile has been bumped.
+
 ### Manage stack
 
 ```bash
@@ -974,11 +1018,15 @@ tail -f /var/log/media-import.log
 ```
 homelab/hosts/noblenumbat/
   docker-compose.yml          ← deployed compose (secrets stripped)
-  docker-compose.custom.yml   ← QuickSync overlay
+  docker-compose.custom.yml   ← QuickSync overlay + stream-station service
   .env.example
   media-import.sh             ← file-drop importer script
   media-import.service        ← systemd unit
   media-import.timer          ← systemd timer (2 min interval)
+  stream-station/             ← BUILD CONTEXT (not a deployed file — the deploy
+    Dockerfile                   workflow copies this dir to /opt/yams/ and builds it)
+    stream-station.py         ← control app: slots, pipeline, idle reaper
+    presets.json              ← channel presets, bind-mounted read-only
 ```
 
 ---

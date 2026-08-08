@@ -124,6 +124,12 @@ services:
       # unlocks /metrics on Kuma 1.x — read-only, which is all this needs.
       KUMA_URL: ${KUMA_URL:-http://uptime-kuma:3001}
       KUMA_API_KEY: ${KUMA_API_KEY:-}
+      # Streams page (routes/streams.js) — stream-station on noblenumbat. The token
+      # must match HL_STREAM_TOKEN in noblenumbat's /opt/yams/.env; it stays server-side
+      # so only this dashboard can start/stop streams. Video does not pass through here:
+      # nginx proxies /hls straight to the same host and port.
+      STREAM_URL: ${STREAM_URL:-http://192.168.1.6:8098}
+      HL_STREAM_TOKEN: ${HL_STREAM_TOKEN:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro

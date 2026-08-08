@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Streams</title>
+<link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+<style>
+  /* Canonical palette lives in /tokens.css (linked AFTER this block, so it wins).
+     Minimal dark fallback only, so the page isn't unreadable if tokens.css 404s. */
+  :root{
+    --bg:#0d1117; --surface:#161b22; --surface2:#21262d; --border:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#58a6ff;
+    --bad: var(--crit, #f85149);
+  }
+</style>
+<link rel="stylesheet" href="/tokens.css?v=20260726c" />
+<script>
+  // Follow the dashboard theme (shared 'arch-theme' key). Before first paint, no flash.
+  (function () {
+    let t = null;
+    try { t = localStorage.getItem('arch-theme'); } catch (_) {}
+    if (t !== 'light' && t !== 'dark')
+      t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans, system-ui, sans-serif);font-size:13px;line-height:1.5;}
+  a{color:var(--accent);}
+  button,input,select{font-family:inherit;font-size:12px;}
+  #back{position:fixed;top:14px;left:14px;z-index:20;background:var(--surface2);border:1px solid var(--border);
+    color:var(--text);padding:6px 12px;border-radius:6px;text-decoration:none;font-size:12px;}
+  #back:hover{border-color:var(--accent);}
+  header.page-head{padding:56px 24px 8px;max-width:1180px;}
+  header.page-head h1{font-size:20px;margin-bottom:6px;}
+  header.page-head p{color:var(--muted);max-width:900px;}
+  .wrap{max-width:1180px;padding:12px 24px 48px;}
+
+  /* ── slot tabs ─────────────────────────────────────────────────────────── */
+  .tabbar{display:flex;align-items:flex-end;gap:12px;border-bottom:1px solid var(--border);margin-bottom:16px;}
+  .tabs{display:flex;gap:6px;flex-wrap:wrap;padding-bottom:0;flex:1;min-width:0;}
+  .tbtn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+    padding:5px 12px;border-radius:6px;cursor:pointer;margin-bottom:6px;flex:none;white-space:nowrap;}
+  .tbtn:hover{border-color:var(--accent);color:var(--accent);}
+  .tab{background:transparent;border:1px solid transparent;border-bottom:none;color:var(--muted);
+    padding:8px 14px;border-radius:8px 8px 0 0;cursor:pointer;display:flex;align-items:center;gap:8px;
+    position:relative;top:1px;}
+  .tab:hover{color:var(--text);}
+  .tab.active{background:var(--surface);border-color:var(--border);color:var(--text);}
+  .tab .dot{width:7px;height:7px;border-radius:50%;background:var(--border);flex:none;}
+  .tab .dot.running{background:var(--ok, #3fb950);}
+  .tab .dot.starting{background:var(--warn, #d29922);animation:pulse 1.2s ease-in-out infinite;}
+  .tab .dot.ended{background:var(--bad);}
+  @keyframes pulse{50%{opacity:.3;}}
+  .tab .label{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* ── player + controls ─────────────────────────────────────────────────── */
+  .player-wrap{background:#000;border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;position:relative;}
+  video{width:100%;height:100%;display:block;background:#000;}
+  .placeholder{color:var(--muted);text-align:center;padding:24px;font-size:13px;}
+  /* Shown only when the browser refuses autoplay — otherwise the viewer stares at a
+     frozen first frame with no idea a click is all it needs. */
+  .playhint{position:absolute;inset:auto auto 16px 50%;transform:translateX(-50%);
+    background:var(--accent);color:var(--bg);border:none;padding:9px 20px;border-radius:999px;
+    cursor:pointer;font-size:13px;font-weight:600;}
+  .placeholder .big{font-size:15px;color:var(--text);margin-bottom:6px;}
+
+  .statusbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted);}
+  .badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;
+    border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:11px;}
+  .badge.running{border-color:var(--ok, #3fb950);color:var(--ok, #3fb950);}
+  .badge.starting{border-color:var(--warn, #d29922);color:var(--warn, #d29922);}
+  .badge.ended{border-color:var(--bad);color:var(--bad);}
+  .err{color:var(--bad);font-size:11.5px;word-break:break-word;flex-basis:100%;}
+
+  section{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-top:16px;}
+  section h2{font-size:13px;letter-spacing:.4px;margin-bottom:12px;color:var(--text);
+    border-bottom:1px solid var(--border);padding-bottom:8px;}
+  .preset-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  .preset-row .group-label{color:var(--muted);font-size:11px;min-width:96px;}
+  .chip{background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    padding:5px 12px;border-radius:999px;cursor:pointer;}
+  .chip:hover{border-color:var(--accent);color:var(--accent);}
+  .chip .plat{color:var(--muted);font-size:10px;margin-left:6px;}
+
+  .form-grid{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:14px;}
+  .field{display:flex;flex-direction:column;gap:4px;}
+  .field label{font-size:11px;color:var(--muted);}
+  .field input,.field select{background:var(--bg);border:1px solid var(--border);color:var(--text);
+    padding:6px 9px;border-radius:6px;min-width:150px;}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--accent);}
+  .field.grow{flex:1;min-width:240px;} .field.grow input{width:100%;}
+  .btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);
+    padding:7px 16px;border-radius:6px;cursor:pointer;}
+  .btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  .btn:disabled{opacity:.45;cursor:default;}
+  .btn.primary{border-color:var(--accent);color:var(--accent);}
+  .btn.primary:hover:not(:disabled){background:var(--accent);color:var(--bg);}
+  .btn.danger{border-color:var(--bad);color:var(--bad);}
+  .hint{color:var(--muted);font-size:11px;margin-top:10px;}
+  .sep{height:1px;background:var(--border);margin:16px 0;}
+
+  /* ── theater mode ──────────────────────────────────────────────────────────
+     Fills the window without entering fullscreen, so the slot tabs and the status
+     line stay on screen and you can still switch streams. Fullscreen (the player's
+     own button) remains available and is a different thing: it hides everything.
+     The controls below are not removed, just pushed past the fold — scroll for them. */
+  body.theater .wrap{max-width:none;padding:0 0 40px;}
+  body.theater header.page-head,
+  body.theater #back{display:none;}
+  body.theater .tabbar{padding:8px 14px 0;margin-bottom:0;}
+  body.theater .player-wrap{aspect-ratio:auto;height:calc(100vh - 108px);
+    border-radius:0;border-left:none;border-right:none;}
+  body.theater .statusbar{padding:8px 14px 0;}
+  body.theater section{margin:16px 14px;}
+  body.theater #theater{border-color:var(--accent);color:var(--accent);}
+  @media (max-width:640px){
+    header.page-head{padding-top:52px;} .wrap{padding:12px 14px 40px;}
+    .field input,.field select{min-width:0;width:100%;} .field{flex:1;min-width:140px;}
+    /* On a phone the win is edge-to-edge width, not height: forcing the viewport
+       height here would just letterbox a 16:9 stream inside a tall black box. */
+    body.theater .player-wrap{height:auto;aspect-ratio:16/9;}
+  }
+</style>
+</head>
+<body>
+<a id="back" href="/">← rpi.lan</a>
+
+<header class="page-head">
+  <h1>Streams</h1>
+  <p>Server-side <code>vlcwatcher</code>: streamlink resolves the channel (skipping the site player and its ads),
+     headless VLC on noblenumbat remuxes it to HLS, and it plays here. Four slots run independently —
+     switching tabs only changes what you are watching, not what is running.</p>
+</header>
+
+<div class="wrap">
+  <div class="tabbar">
+    <div class="tabs" id="tabs"></div>
+    <button class="tbtn" id="theater" title="Theater mode — fill the window without going fullscreen (t)">⛶ Theater</button>
+  </div>
+
+  <div class="player-wrap" id="player-wrap">
+    <div class="placeholder" id="placeholder">
+      <div class="big">Nothing playing in this slot</div>
+      <div>Pick a preset below, or enter a channel / direct stream URL.</div>
+    </div>
+    <video id="video" controls muted playsinline hidden></video>
+    <button class="playhint" id="playhint" hidden>▶ Click to play</button>
+  </div>
+
+  <div class="statusbar" id="statusbar"></div>
+
+  <section>
+    <h2>Presets</h2>
+    <div id="presets"><span class="hint">Loading presets…</span></div>
+
+    <div class="sep"></div>
+
+    <div class="form-grid">
+      <div class="field">
+        <label for="platform">Platform</label>
+        <select id="platform">
+          <option value="twitch">Twitch</option>
+          <option value="youtube">YouTube</option>
+          <option value="kick">Kick</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="channel">Channel</label>
+        <input id="channel" type="text" placeholder="e.g. eslcs" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="quality">Quality</label>
+        <select id="quality">
+          <option value="">best available (default chain)</option>
+          <option value="1080p60,1080p,best">1080p60</option>
+          <option value="720p60,720p,best">720p60</option>
+          <option value="480p,worst">480p (light)</option>
+          <option value="worst">worst (lowest bandwidth)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="profile">Latency</label>
+        <select id="profile">
+          <option value="low-latency">low latency (~6-10s)</option>
+          <option value="smooth">smooth (~15-20s, fewer stalls)</option>
+        </select>
+      </div>
+      <button class="btn primary" id="start-channel">Start channel</button>
+    </div>
+
+    <div class="form-grid">
+      <div class="field grow">
+        <label for="url">…or a direct stream URL (m3u8 / http / rtsp / rtmp — no streamlink)</label>
+        <input id="url" type="text" placeholder="https://example.com/live/stream.m3u8" autocomplete="off" />
+      </div>
+      <button class="btn" id="start-url">Start URL</button>
+      <button class="btn danger" id="stop">Stop slot</button>
+    </div>
+
+    <p class="hint" id="reaper-hint"></p>
+  </section>
+</div>
+
+<script src="hls.min.js"></script>
+<script src="streams.js?v=20260807c"></script>
+</body>
+</html>

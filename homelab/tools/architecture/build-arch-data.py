@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # When the facts below were last confirmed against the live hosts over SSH.
-PROBED_AT = "2026-07-26T22:00:00Z"
+PROBED_AT = "2026-08-08T03:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = REPO_ROOT / "homelab/hosts/rpi/webapp/frontend/architecture/data.json"
@@ -223,7 +223,7 @@ HOSTS = [
             {"label": "Root disk", "value": "468 GB NVMe · 15% used"},
             {"label": "GPU", "value": "UHD 620 · QuickSync VAAPI"},
             {"label": "Network", "value": "USB ethernet (enx207bd262…)"},
-            {"label": "Containers", "value": "13"},
+            {"label": "Containers", "value": "15"},
         ],
         "notes": "A laptop with sleep masked. Hardware-transcodes for Jellyfin via "
                  "/dev/dri/renderD128. Suffered a whole-host outage from a cooling "
@@ -472,6 +472,24 @@ NODES = [
       sublabel="Comics & books :5000", container="kavita",
       image="lscr.io/linuxserver/kavita:latest", ports=["5000/tcp"],
       url="http://comics.lan:5000/", kind="container"),
+    N("stream-station", "stream-station", "noblenumbat", "media", "serve",
+      sublabel="Live streams → HLS :8098 · 4 slots", container="stream-station",
+      image="yams-stream-station (built locally)", ports=["8098/tcp"], kind="container",
+      notes="Server-side vlcwatcher, added 2026-08-07: streamlink resolves a Twitch/"
+            "YouTube/Kick channel (skipping the site player and its ads) and headless VLC "
+            "remuxes it to HLS for the dashboard's Streams page. Four independent slots. "
+            "REMUX ONLY, never transcode — the sources are already H.264+AAC, so a live "
+            "1080p stream costs ~3.5% CPU; that is deliberate, this host has a cooling "
+            "outage on record (2026-07-16). Segments live on a 256M tmpfs at /hls and "
+            "never touch the NVMe. The ONLY built-not-pulled service in the YAMS stack "
+            "(python:3.12-slim + VLC + pip streamlink, runs as uid 1000 because VLC "
+            "refuses to run as root), so the deploy workflow copies its build context and "
+            "runs `docker compose build`. Plain yams_network, NOT gluetun — VPN is opt-in "
+            "there. POST /start|/stop are bearer-token gated (HL_STREAM_TOKEN, matched "
+            "against the rpi webapp's env); GET /hls/* is open so browsers can fetch "
+            "segments through nginx. An idle reaper stops any slot whose playlist has not "
+            "been fetched for 5 minutes, so nothing pulls a stream unattended. It is the "
+            "only container in this stack with mem_limit/cpus caps."),
     N("sonarr", "Sonarr", "noblenumbat", "media", "arr",
       sublabel="TV automation :8989", container="sonarr", ports=["8989/tcp"], kind="container"),
     N("radarr", "Radarr", "noblenumbat", "media", "arr",
@@ -502,10 +520,13 @@ NODES = [
       sublabel="Log stream for rpi's Dozzle :7007", container="dozzle-agent",
       image="amir20/dozzle:latest", ports=["7007/tcp"], kind="container"),
     N("nn-docker", "Docker engine", "noblenumbat", "infra", "nn-platform",
-      sublabel="13 containers · YAMS compose", kind="daemon",
+      sublabel="15 containers · YAMS compose", kind="daemon",
       notes="Stack lives at /opt/yams/docker-compose.yaml. Watchtower was removed "
             "2026-07-25; image updates are now report-only (software-inventory) and "
-            "applied deliberately via docker compose pull."),
+            "applied deliberately via docker compose pull. Since 2026-08-07 the deploy "
+            "workflow also copies build contexts and runs `docker compose build` — "
+            "stream-station is built here, not pulled, so the pull step passes "
+            "--ignore-buildable."),
     N("nn-yams-net", "docker net · yams_network", "noblenumbat", "network", "nn-platform",
       sublabel="172.60.0.0/24", kind="network"),
     N("nn-mounts", "opti CIFS mounts", "noblenumbat", "storage", "nn-platform",
@@ -658,6 +679,19 @@ EDGES = [
     E("e-kavitasync-kavita", "kavita-sync", "kavita", "triggers a library scan", "control"),
     E("e-browser-jellyfin", "browser", "jellyfin", "streams :8096", "http"),
     E("e-browser-kavita", "browser", "kavita", "reads :5000", "http"),
+    # Streams page — the video and control planes deliberately take different routes.
+    E("e-nginx-streamstation", "nginx-webapp", "stream-station", "proxy /hls → :8098 (video)", "http",
+      notes="Same-origin on purpose: the dashboard is https, so a <video> pointed straight "
+            "at http://192.168.1.6:8098 would be blocked as mixed content. These are "
+            "unauthenticated GETs — playlists and segments only."),
+    E("e-webapp-streamstation", "webapp", "stream-station", "/api/streams → :8098 (control)", "control",
+      notes="Start/stop/status/presets/keepalive. The bearer token is injected here, "
+            "server-side, so it never reaches the browser and only the dashboard can "
+            "start a stream."),
+    E("e-streamstation-wan", "stream-station", "content-apis", "streamlink resolves twitch/youtube/kick", "http",
+      notes="Direct LAN egress, not through gluetun — VPN membership on this host is "
+            "opt-in per service. A geo-locked source would use gluetun's HTTP proxy on "
+            ":8888 rather than joining its netns."),
     E("e-browser-portainer", "browser", "portainer", "container UI :9000", "http"),
     E("e-browser-kuma", "browser", "uptime-kuma", "monitors UI :3001", "http"),
     E("e-browser-dozzle", "browser", "dozzle", "logs UI :9999", "http"),
@@ -700,6 +734,23 @@ FLOWS = [
              "Its libraries ARE the opti mounts; there is no local copy of the media."),
             ("e-browser-jellyfin", "You stream it on :8096",
              "Transcoding, when needed, is hardware-accelerated on the UHD 620 via /dev/dri/renderD128."),
+        ],
+    },
+    {
+        "id": "flow-stream",
+        "name": "Watching a live stream in the browser",
+        "summary": "The Streams page: why the video and the controls reach the same container by two different routes.",
+        "steps": [
+            ("e-browser-nginx", "You open /streams/ on the dashboard",
+             "A standalone page with four slot tabs. Only the active tab holds a player; the other slots keep running on the server."),
+            ("e-webapp-streamstation", "Pressing a preset POSTs /api/streams/start",
+             "The Express backend forwards it to stream-station on noblenumbat and injects the bearer token server-side, so the browser never sees a credential and only this dashboard can start a stream."),
+            ("e-streamstation-wan", "streamlink resolves the channel",
+             "It pulls the raw stream from Twitch/YouTube/Kick instead of the site's web player, which is what skips the ads. Egress is direct over the LAN — this container is deliberately not in gluetun's netns."),
+            ("e-nndocker-yams", "VLC remuxes it to HLS on a tmpfs",
+             "cvlc cuts the H.264+AAC source into 2-second segments under /hls on a 256M tmpfs. Nothing is transcoded and nothing is written to the NVMe — ~3.5% CPU for a live 1080p stream, which is what keeps this thermally safe on a laptop."),
+            ("e-nginx-streamstation", "The browser fetches segments back through nginx",
+             "Served same-origin at /hls so the https page can play them; hls.js rides ~2 segments behind the edge, putting you roughly 8-12 seconds behind live. Stop watching and the idle reaper stops the slot after 5 minutes."),
         ],
     },
     {

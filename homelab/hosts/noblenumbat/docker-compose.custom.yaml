@@ -59,6 +59,36 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
+  # stream-station: server-side vlcwatcher — streamlink resolves a Twitch/YouTube/Kick
+  # channel (or a direct URL is used as-is) and headless VLC remuxes it to HLS for the
+  # dashboard's Streams page. REMUX ONLY, never transcode: the sources are already
+  # H.264+AAC, and this host is a laptop with a thermal outage on record (2026-07-16).
+  # If a transcode mode is ever added, copy jellyfin's /dev/dri + group_add "992" above.
+  # Plain yams_network on purpose — VPN is opt-in here and five containers already share
+  # gluetun's fate; a geo-locked source can use its HTTP proxy on :8888 instead.
+  stream-station:
+    build:
+      context: ./stream-station
+    container_name: stream-station
+    environment:
+      # Must match HL_STREAM_TOKEN in the rpi webapp's env — the dashboard backend is
+      # the only intended caller of the token-gated POSTs.
+      - HL_STREAM_TOKEN=${HL_STREAM_TOKEN}
+    volumes:
+      - ./stream-station/presets.json:/config/presets.json:ro
+    tmpfs:
+      # HLS segments are ephemeral and rewritten every 2s — keeping them off the NVMe.
+      # 4 slots x ~10 segments x ~2-4MB fits in well under half of this.
+      - /hls:size=256m,uid=1000,gid=1000,mode=0755
+    ports:
+      - 8098:8098
+    # Nothing else in this stack is capped, but this one spawns child processes on
+    # demand: the cap turns a runaway pipeline into a dead container instead of a
+    # thermal event. tmpfs pages count against mem_limit, hence 2g not 1g.
+    mem_limit: 2g
+    cpus: 3
+    restart: unless-stopped
+
   # Kavita serves the comic/book library (CBZ/CBR/epub/PDF web reader + OPDS)
   kavita:
     image: lscr.io/linuxserver/kavita

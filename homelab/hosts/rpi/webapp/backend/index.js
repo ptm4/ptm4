@@ -59,6 +59,11 @@ app.use('/api/sports', sportsRouter);
 const hltvRouter = require('./routes/hltv');
 app.use('/api/hltv', hltvRouter);
 
+// Streams page controls — stream-station on noblenumbat (streamlink + VLC → HLS).
+// Video bypasses this router entirely: nginx proxies /hls direct to nn.
+const streamsRouter = require('./routes/streams');
+app.use('/api/streams', streamsRouter);
+
 // local LLM (android phone) — status/models/runbooks/chat, see routes/llama.js
 const llamaRouter = require('./routes/llama');
 app.use('/api/llama', llamaRouter);

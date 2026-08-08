@@ -34,6 +34,14 @@ jobs:
           cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/docker-compose.yaml" /opt/yams/docker-compose.yaml
           cp "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/docker-compose.custom.yaml" /opt/yams/docker-compose.custom.yaml
 
+      - name: Copy build contexts
+        # stream-station is the one service built here rather than pulled, so its build
+        # context has to exist on the host before `docker compose config` can resolve it.
+        # cp -rT overwrites in place without nesting a second stream-station/ inside.
+        run: |
+          mkdir -p /opt/yams/stream-station
+          cp -rT "$GITHUB_WORKSPACE/homelab/hosts/noblenumbat/stream-station" /opt/yams/stream-station
+
       - name: Validate compose before touching containers
         working-directory: /opt/yams
         run: docker compose config --quiet
@@ -59,7 +67,15 @@ jobs:
 
       - name: Pull images (the deliberate update path)
         working-directory: /opt/yams
-        run: docker compose pull
+        # --ignore-buildable skips stream-station, which has no registry image to pull.
+        run: docker compose pull --ignore-buildable
+
+      - name: Build local images
+        working-directory: /opt/yams
+        # Also the streamlink upgrade path: bumping STREAMLINK_REV in the Dockerfile
+        # busts the pip layer, so a push (or a manual dispatch after a bump) pulls the
+        # current streamlink release — the fix for Twitch ad-bypass breakage.
+        run: docker compose build stream-station
 
       - name: Bring stack up
         working-directory: /opt/yams

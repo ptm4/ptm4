@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-08-07T04:20:53+00:00`
+> Generated: `2026-08-08T05:21:35+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.4.0 | 20m ago | 14 | none |
-| opti | 0.4.0 | 20m ago | 0 | none |
-| rpi | 0.4.0 | 19m ago | 14 | none |
+| noblenumbat | 0.4.0 | 0m ago | 15 | none |
+| opti | 0.4.0 | 0m ago | 0 | none |
+| rpi | 0.4.0 | 0m ago | 14 | none |
 
 
 ## Nodes
@@ -50,7 +50,7 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | Node | Plane | Container | State | Image | Summary |
 |---|---|---|---|---|---|
 | Bazarr | media | bazarr | running | lscr.io/linuxserver/bazarr | Subtitles :6767 |
-| Docker engine | infra | — | n/a | — | 13 containers · YAMS compose |
+| Docker engine | infra | — | n/a | — | 15 containers · YAMS compose |
 | Dozzle agent | infra | dozzle-agent | running | amir20/dozzle:latest | Log stream for rpi's Dozzle :7007 |
 | FlareSolverr | media | flaresolverr | running | ghcr.io/flaresolverr/flaresolverr:latest | Captcha solver :8191 via VPN |
 | Gluetun VPN | network | gluetun | running | qmcgaw/gluetun:v3.41.0 | WireGuard → NL · port-fwd 42328 |
@@ -70,6 +70,7 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | netns · service:gluetun | network | — | n/a | — | qbittorrent · sabnzbd · prowlarr · mylar3 · flaresolverr |
 | opti CIFS mounts | storage | — | n/a | — | /mnt/opti-library · -shows · -media |
 | qBittorrent | media | qbittorrent | running | lscr.io/linuxserver/qbittorrent:4.6.3 | Torrents · pinned 4.6.3 · via VPN |
+| stream-station | media | stream-station | running | yams-stream-station | Live streams → HLS :8098 · 4 slots |
 | vpn-stack-heal | infra | — | n/a | — | timer · every 2 min |
 
 

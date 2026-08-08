@@ -1,0 +1,16 @@
+{
+  "_comment": "Channel presets for the dashboard Streams page. Bind-mounted read-only and re-read on every GET /presets, so edits apply without a container restart (a repo commit + deploy is what makes them durable). Seeded from the 'cs' preset in homelab/tools/misc/vlcwatcher.",
+  "quality_default": "best,1440p60,1440p,1080p60,1080p,720p60,720p,worst",
+  "groups": [
+    {
+      "name": "cs",
+      "label": "Counter-Strike",
+      "channels": [
+        { "platform": "twitch", "channel": "eslcs", "label": "ESL CS" },
+        { "platform": "twitch", "channel": "eslcsb", "label": "ESL CS B" },
+        { "platform": "twitch", "channel": "pgl", "label": "PGL" },
+        { "platform": "twitch", "channel": "fl0m", "label": "fl0m" }
+      ]
+    }
+  ]
+}
