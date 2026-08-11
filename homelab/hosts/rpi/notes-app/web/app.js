@@ -3,6 +3,7 @@ import StarterKit   from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
 import TaskList     from 'https://esm.sh/@tiptap/extension-task-list@2.11.5';
 import TaskItem     from 'https://esm.sh/@tiptap/extension-task-item@2.11.5';
 import Placeholder  from 'https://esm.sh/@tiptap/extension-placeholder@2.11.5';
+import Image        from 'https://esm.sh/@tiptap/extension-image@2.11.5';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // detectServer() tries these candidates in order.
@@ -152,9 +153,28 @@ function initEditor() {
       TaskList.configure({}),
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: 'Start writing…' }),
+      // allowBase64 keeps offline-pasted images (data: URIs) rendering after reload
+      Image.configure({ inline: false, allowBase64: true }),
     ],
     content: '',
     editable: false,
+    editorProps: {
+      handlePaste(_view, event) {
+        const files = [...(event.clipboardData?.files || [])].filter(f => f.type.startsWith('image/'));
+        if (files.length === 0) return false;
+        event.preventDefault();
+        files.forEach(insertImageFile);
+        return true;
+      },
+      handleDrop(_view, event, _slice, moved) {
+        if (moved) return false;
+        const files = [...(event.dataTransfer?.files || [])].filter(f => f.type.startsWith('image/'));
+        if (files.length === 0) return false;
+        event.preventDefault();
+        files.forEach(insertImageFile);
+        return true;
+      },
+    },
     onUpdate: () => {
       if (!pageLoading) scheduleSave();
     },
@@ -200,11 +220,55 @@ document.querySelectorAll('#editor-toolbar button[data-cmd]').forEach(btn => {
       case 'blockquote':     editor.chain().focus().toggleBlockquote().run();              break;
       case 'codeBlock':      editor.chain().focus().toggleCodeBlock().run();               break;
       case 'horizontalRule': editor.chain().focus().setHorizontalRule().run();             break;
+      case 'image':          document.getElementById('image-file-input')?.click();         break;
       case 'undo':           editor.chain().focus().undo().run();                          break;
       case 'redo':           editor.chain().focus().redo().run();                          break;
     }
   });
 });
+
+// ── Images ────────────────────────────────────────────────────────────────────
+// Online: upload to notes-api, insert by URL (keeps page JSON and localStorage
+// small). Offline or upload failure: fall back to an inline data: URI so the
+// paste still works — it just lives inside the page content.
+async function insertImageFile(file) {
+  if (!editor || !activePage) return;
+
+  if (isOnline) {
+    try {
+      const res = await fetch(`${serverBase || ''}/notes/api/images`, {
+        method: 'POST',
+        headers: { 'Content-Type': file.type },
+        body: file,
+      });
+      if (res.ok) {
+        const { url } = await res.json();
+        editor.chain().focus().setImage({ src: url }).run();
+        return;
+      }
+      console.warn('image upload failed:', res.status);
+    } catch (err) {
+      console.warn('image upload failed, embedding inline:', err);
+    }
+  }
+
+  const dataUri = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+  editor.chain().focus().setImage({ src: dataUri }).run();
+}
+
+// Toolbar image button — file picker covers mobile, where clipboard images are rare
+const imageFileInput = document.getElementById('image-file-input');
+if (imageFileInput) {
+  imageFileInput.addEventListener('change', () => {
+    [...imageFileInput.files].forEach(insertImageFile);
+    imageFileInput.value = '';
+  });
+}
 
 // ── Save ──────────────────────────────────────────────────────────────────────
 function scheduleSave() {

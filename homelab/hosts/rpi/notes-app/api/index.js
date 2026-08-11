@@ -10,6 +10,9 @@ const PORT     = process.env.PORT || 3002;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
+const IMAGES_DIR = path.join(DATA_DIR, 'images');
+fs.mkdirSync(IMAGES_DIR, { recursive: true });
+
 const db = new Database(path.join(DATA_DIR, 'notes.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -78,6 +81,34 @@ app.use('/notes', express.static(path.join(__dirname, '../web')));
 
 // ── Health / ping ─────────────────────────────────────────────────────────────
 app.get('/notes/api/ping', (_req, res) => res.json({ ok: true }));
+
+// ── Images ────────────────────────────────────────────────────────────────────
+// Pasted/dropped editor images. Stored on the notes_data volume, referenced from
+// page content by URL — keeps page JSON (and localStorage on clients) small.
+const IMAGE_EXT = {
+  'image/png':     'png',
+  'image/jpeg':    'jpg',
+  'image/gif':     'gif',
+  'image/webp':    'webp',
+  'image/svg+xml': 'svg',
+};
+
+app.post('/notes/api/images',
+  express.raw({ type: 'image/*', limit: '25mb' }),
+  (req, res) => {
+    const ext = IMAGE_EXT[(req.headers['content-type'] || '').split(';')[0]];
+    if (!ext) return res.status(415).json({ error: 'unsupported image type' });
+    if (!req.body?.length) return res.status(400).json({ error: 'empty body' });
+    const name = `${crypto.randomUUID()}.${ext}`;
+    fs.writeFileSync(path.join(IMAGES_DIR, name), req.body);
+    res.status(201).json({ url: `/notes/api/images/${name}` });
+  });
+
+app.get('/notes/api/images/:name', (req, res) => {
+  const file = path.join(IMAGES_DIR, path.basename(req.params.name));
+  if (!fs.existsSync(file)) return res.status(404).json({ error: 'not found' });
+  res.sendFile(file);
+});
 
 // ── Notebooks ─────────────────────────────────────────────────────────────────
 app.get('/notes/api/notebooks', (_req, res) => {
