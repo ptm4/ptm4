@@ -104,7 +104,10 @@ services:
     working_dir: /app/backend
     # prefer-offline/no-audit: with node_modules warm on the bind mount this makes the
     # restart window ~2-3s instead of ~6 — every second here is nginx serving 502s.
-    command: sh -c "npm install --omit=dev --no-audit --no-fund --prefer-offline && node index.js"
+    # npm install, NOT npm ci: ci deletes node_modules unconditionally on every boot,
+    # which would turn each restart into a full reinstall. The committed
+    # backend/package-lock.json keeps install deterministic (2026-08-10 Fastify port).
+    command: sh -c "npm install --omit=dev --no-audit --no-fund --prefer-offline && node server.js"
     environment:
       # opti agent dispatcher (enable/disable + run-now); set in .env
       DISPATCHER_URL: ${DISPATCHER_URL:-}

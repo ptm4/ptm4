@@ -1,0 +1,475 @@
+{
+  "GET /api/health": {
+    "status": 200,
+    "keys": [
+      "host",
+      "status",
+      "uptime"
+    ]
+  },
+  "GET /api/reports": {
+    "status": 200,
+    "keys": [
+      "reports",
+      "reports_dir"
+    ]
+  },
+  "GET /api/reports/journal-hunt-latest": {
+    "status": 200,
+    "keys": [
+      "categories",
+      "findings",
+      "run_at",
+      "source",
+      "status",
+      "summary",
+      "tool",
+      "window_hours"
+    ]
+  },
+  "GET /api/runners": {
+    "status": 200,
+    "keys": [
+      "agent_logs_dir",
+      "runners"
+    ]
+  },
+  "GET /api/runners/homelab-doctor-latest": {
+    "status": 200,
+    "keys": [
+      "findings",
+      "hosts",
+      "log",
+      "run_at",
+      "services",
+      "stale_reports",
+      "status",
+      "summary",
+      "tool"
+    ]
+  },
+  "GET /api/runners/homelab-doctor-latest/history": {
+    "status": 200,
+    "keys": [
+      "history",
+      "name"
+    ]
+  },
+  "GET /api/containers": {
+    "status": 200,
+    "keys": [
+      "generated_at",
+      "hosts"
+    ]
+  },
+  "GET /api/timers": {
+    "status": 200,
+    "keys": [
+      "generated_at",
+      "hosts"
+    ]
+  },
+  "GET /api/activity?limit=5": {
+    "status": 200,
+    "keys": [
+      "events",
+      "generated_at"
+    ]
+  },
+  "GET /api/trends?days=7": {
+    "status": 200,
+    "keys": [
+      "days",
+      "disks",
+      "generated_at",
+      "pool"
+    ]
+  },
+  "GET /api/linkcheck": {
+    "status": 200,
+    "keys": [
+      "checked_at",
+      "origins"
+    ]
+  },
+  "GET /api/vitals": {
+    "status": 200,
+    "keys": [
+      "generated_at",
+      "hosts",
+      "interval_s"
+    ]
+  },
+  "GET /api/vitals/rpi": {
+    "status": 200,
+    "keys": [
+      "agent_version",
+      "cores",
+      "error",
+      "host",
+      "interval_s",
+      "latest",
+      "samples"
+    ]
+  },
+  "GET /api/vitals/android": {
+    "status": 404,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/agents": {
+    "status": 200,
+    "keys": [
+      "checked_at",
+      "hosts"
+    ]
+  },
+  "POST /api/agents/nope/sync": {
+    "status": 404,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/agents/rpi/restart-container": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/agents/rpi/update-container": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/agents/rpi/restart-service": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/agents/rpi/wake": {
+    "status": 404,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/agents/rpi/apt-status": {
+    "status": 200,
+    "keys": [
+      "active",
+      "exit_status",
+      "finished_at",
+      "host",
+      "log_tail",
+      "reboot_pkgs",
+      "reboot_required",
+      "result",
+      "running",
+      "started_at",
+      "sub",
+      "unit"
+    ]
+  },
+  "GET /api/architecture/live": {
+    "status": 200,
+    "keys": [
+      "doctor_summary",
+      "hosts",
+      "run_at",
+      "synced_at"
+    ]
+  },
+  "GET /api/architecture/data": {
+    "status": 200,
+    "keys": [
+      "agents",
+      "automation",
+      "categories",
+      "edgeKinds",
+      "edges",
+      "flows",
+      "groups",
+      "hosts",
+      "live_merge",
+      "meta",
+      "network",
+      "nodes",
+      "observations",
+      "storage",
+      "zones"
+    ]
+  },
+  "POST /api/architecture/ingest": {
+    "status": 401,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/pihole/summary": {
+    "status": 200,
+    "keys": [
+      "ads_blocked_today",
+      "ads_percentage_today",
+      "blocking",
+      "dns_queries_today",
+      "fetched_at",
+      "gravity_domains",
+      "queries_cached",
+      "queries_forwarded",
+      "unique_clients",
+      "unique_domains"
+    ]
+  },
+  "GET /api/pihole/blocking": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "timer"
+    ]
+  },
+  "GET /api/uptime": {
+    "status": 200,
+    "keys": [
+      "checked_at",
+      "down",
+      "maintenance",
+      "monitors",
+      "ok",
+      "pending",
+      "total",
+      "up"
+    ]
+  },
+  "GET /api/samba/status": {
+    "status": 200,
+    "keys": [
+      "clients",
+      "effective_path",
+      "shares",
+      "smbd"
+    ]
+  },
+  "GET /api/samba/config": {
+    "status": 200,
+    "keys": [
+      "content",
+      "effective_path",
+      "exists",
+      "mtime",
+      "path",
+      "repo_matches",
+      "repo_path",
+      "valid",
+      "validation"
+    ]
+  },
+  "GET /api/samba/backups": {
+    "status": 200,
+    "keys": [
+      "backups"
+    ]
+  },
+  "POST /api/samba/validate": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/samba/config": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/samba/rollback": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/agentic": {
+    "status": 200,
+    "keys": [
+      "computed_at",
+      "hosts",
+      "manifest",
+      "ok",
+      "source",
+      "wiring"
+    ]
+  },
+  "POST /api/agentic/wire/vim": {
+    "status": 400,
+    "keys": [
+      "error",
+      "ok"
+    ]
+  },
+  "POST /api/agentic/proposal/frob/skill-x": {
+    "status": 400,
+    "keys": [
+      "error",
+      "ok"
+    ]
+  },
+  "GET /api/streams/status": {
+    "status": 200,
+    "keys": [
+      "idle_secs",
+      "profiles",
+      "slots",
+      "version"
+    ]
+  },
+  "GET /api/streams/presets": {
+    "status": 200,
+    "keys": [
+      "_comment",
+      "groups",
+      "quality_default"
+    ]
+  },
+  "GET /api/llama/status": {
+    "status": 200,
+    "keys": [
+      "battery",
+      "current_model",
+      "llama_healthy",
+      "sv_status"
+    ]
+  },
+  "GET /api/llama/models": {
+    "status": 200,
+    "keys": [
+      "current",
+      "models"
+    ]
+  },
+  "GET /api/llama/runbooks": {
+    "status": 200,
+    "keys": [
+      "runbooks"
+    ]
+  },
+  "POST /api/llama/chat": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/weather/status": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "last_post_at",
+      "last_status",
+      "next_post_at",
+      "ok",
+      "post_time",
+      "timezone"
+    ]
+  },
+  "GET /api/weather/config": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "locations",
+      "message",
+      "post_time",
+      "timezone",
+      "webhook_configured",
+      "webhook_url",
+      "witty_enabled",
+      "witty_names"
+    ]
+  },
+  "GET /api/weather/geocode": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/healthdigest/status": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "last_post_at",
+      "last_status",
+      "next_post_at",
+      "ok",
+      "post_time",
+      "timezone"
+    ]
+  },
+  "GET /api/jellyfin/status": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "last_post_at",
+      "last_status",
+      "next_post_at",
+      "ok",
+      "post_time",
+      "timezone"
+    ]
+  },
+  "GET /api/sports/status": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "last_post_at",
+      "last_status",
+      "next_post_at",
+      "ok",
+      "post_time",
+      "timezone"
+    ]
+  },
+  "GET /api/sports/teams?q=x": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
+  "GET /api/hltv/status": {
+    "status": 200,
+    "keys": [
+      "enabled",
+      "last_post_at",
+      "last_status",
+      "next_post_at",
+      "ok",
+      "post_time",
+      "timezone"
+    ]
+  },
+  "GET /api/hltv/vrs": {
+    "status": 200,
+    "keys": [
+      "as_of",
+      "teams"
+    ]
+  },
+  "GET /": {
+    "status": 200,
+    "keys": null
+  },
+  "GET /legacy/": {
+    "status": 404,
+    "keys": null
+  },
+  "GET /tokens.css": {
+    "status": 200,
+    "keys": null
+  },
+  "GET /architecture/": {
+    "status": 200,
+    "keys": null
+  },
+  "GET /streams/": {
+    "status": 200,
+    "keys": null
+  }
+}

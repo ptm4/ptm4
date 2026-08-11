@@ -17,7 +17,37 @@ on:
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
 jobs:
+  # The v2 frontend is built on GitHub-hosted ubuntu (fast, free on a public repo)
+  # and artifact-passed to the Pi — a Vite+React production build on a Pi 4 is
+  # minutes of swap-thrash. Output is plain static files, so where it builds is
+  # irrelevant to what deploys.
+  build-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24   # matches node:lts-alpine in the webapp container (v24)
+          cache: npm
+          cache-dependency-path: homelab/hosts/rpi/webapp/frontend/package-lock.json
+
+      - name: Build (tsc + vite)
+        working-directory: homelab/hosts/rpi/webapp/frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webapp-dist
+          path: homelab/hosts/rpi/webapp/frontend/dist
+          retention-days: 3
+
   deploy:
+    needs: build-frontend
     runs-on: [self-hosted, ARM64]   # pin to the Pi (ARM64); bare 'self-hosted' also matched opti (x86_64)
     timeout-minutes: 10
 
@@ -25,14 +55,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch built frontend
+        uses: actions/download-artifact@v4
+        with:
+          name: webapp-dist
+          path: homelab/hosts/rpi/webapp/frontend/dist
+
       - name: Copy compose file
         run: |
           cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/docker-compose.yml" /srv/docker/compose/docker-compose.yml
 
-      - name: Copy webapp and nginx config
+      - name: Sync webapp and nginx config
+        # rsync --delete (was cp -r): removed/renamed files must disappear on the Pi
+        # too — cp left the pre-redesign frontend at the served root forever, and the
+        # v2 app's content-hashed bundles would otherwise accumulate unboundedly.
+        # backend/node_modules is excluded so the warm install survives (the 2-3s
+        # restart window the compose command comment relies on).
         run: |
           mkdir -p /srv/docker/compose/webapp
-          cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp/." /srv/docker/compose/webapp/
+          rsync -a --delete --exclude 'backend/node_modules' \
+            "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp/" /srv/docker/compose/webapp/
           cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
       - name: Copy notes-app
@@ -61,6 +103,17 @@ jobs:
       - name: Restart webapp to pick up code changes
         working-directory: /srv/docker/compose
         run: docker compose restart webapp
+
+      - name: API smoke against the restarted backend
+        # Runs INSIDE the webapp container (the Pi host has no node). Hits Fastify
+        # directly on :3000 and compares against the committed v1 baseline — a missing
+        # route or a response that lost fields marks the deploy red. Rollback stays
+        # manual (see webapp/ROLLBACK.md), per house style.
+        working-directory: /srv/docker/compose
+        run: |
+          sleep 8   # let npm install + boot finish inside the container
+          docker compose exec -T webapp node /app/scripts/smoke-api.mjs \
+            --base http://127.0.0.1:3000 --compare /app/scripts/smoke-baseline.json
 
       - name: Build and restart notes-api
         working-directory: /srv/docker/compose

@@ -1,0 +1,118 @@
+/* ── Design tokens — the ONLY palette source for the legacy + standalone pages ─
+   Re-anchored 2026-08-11 to the "diff screenshot" palette (GitHub Dark Dimmed
+   family): warm charcoal #22272e, salmon red #e5534b, leaf green #57ab5a, soft
+   blue #539bf5, slate grey #768390. Mirrors frontend/src/styles/tokens.css —
+   change BOTH or the standalone pages drift from the v2 app.
+
+   NOTE the old "purple = healthy" deviation is RETIRED: status colors now use
+   diff semantics — green is good, red is bad. Blue stays interactive.
+
+   Linked by every standalone page (architecture/, agents/, agentic/, samba/,
+   streams/) and the /legacy app — do not re-declare these tokens inline.
+   ------------------------------------------------------------------------- */
+:root {
+  /* surfaces & ink — charcoal ramp from the screenshot */
+  --bg:        #22272e;   /* canvas */
+  --bg-inset:  #1c2128;   /* canvas inset: sidebar rail, code blocks, cmdk input */
+  --surface:   #2d333b;   /* cards */
+  --surface-2: #373e47;   /* muted fills, buttons */
+  --surface-3: #444c56;   /* hover fills, skeletons, kbd */
+  --border:    #444c56;   /* default card/table border */
+  --border-2:  #545d68;   /* hover / emphasis border */
+  --ink:       #adbac7;
+  --ink-2:     #768390;
+  --ink-3:     #636e7b;
+
+  /* interactive (blue) */
+  --accent:          #539bf5;
+  --accent-emphasis: #316dca;              /* filled buttons, focus rings */
+  --accent-dim:      rgba(83,155,245,.15); /* accent.subtle backgrounds */
+  --accent-muted:    rgba(83,155,245,.4);  /* accent.muted borders */
+
+  /* identity — the theme's purple; blue stays interactive */
+  --brand: #b083f0;
+
+  /* status — reserved, never reused as a category colour.
+     Diff semantics: ok is GREEN, crit is RED. */
+  --ok:          #57ab5a;
+  --ok-emphasis: #347d39;
+  --ok-dim:      rgba(87,171,90,.15);
+  --ok-muted:    rgba(87,171,90,.4);
+  --warn:        #c69026;
+  --warn-dim:    rgba(198,144,38,.15);
+  --warn-muted:  rgba(198,144,38,.4);
+  --severe:      #cc6b2c;   /* degraded-but-not-down: SMART realloc, stale */
+  --crit:        #e5534b;
+  --crit-dim:    rgba(229,83,75,.15);
+  --crit-muted:  rgba(229,83,75,.4);
+
+  /* categorical — four syntax hues of the same theme */
+  --c-network: #6cb6ff;
+  --c-storage: #8ddb8c;
+  --c-media:   #f69d50;
+  --c-apps:    #dcbdfb;
+
+  /* spacing scale */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* type scale (legacy pages keep their denser sizing) */
+  --fs-xs: 10.5px; --fs-sm: 11.5px; --fs-base: 12.5px; --fs-md: 14px;
+  --fs-lg: 16px;   --fs-xl: 20px;   --fs-2xl: 28px;    --fs-hero: 34px;
+
+  /* radii & elevation */
+  --r-sm: 6px; --r: 6px; --r-lg: 12px;
+  --sh-1: 0 1px 2px rgba(16,20,25,.4);
+  --sh-2: 0 8px 24px rgba(16,20,25,.5);
+
+  --sidebar-w: 248px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+          Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* legacy aliases — older page CSS still references these.
+     --green resolves to real green again (the purple era is over). */
+  --surface2: var(--surface-2);
+  --text:     var(--ink);
+  --muted:    var(--ink-3);
+  --green:    var(--ok);
+  --yellow:   var(--warn);
+  --red:      var(--crit);
+  --radius:   var(--r-sm);
+}
+
+:root[data-theme="light"] {
+  /* GitHub Light with the same hue anchors. */
+  --bg:        #f6f8fa;
+  --bg-inset:  #eaeef2;
+  --surface:   #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eaeef2;
+  --border:    #d0d7de;
+  --border-2:  #afb8c1;
+  --ink:       #1f2328;
+  --ink-2:     #656d76;
+  --ink-3:     #6e7781;
+  --accent:          #0969da;
+  --accent-emphasis: #0969da;
+  --accent-dim:      rgba(9,105,218,.1);
+  --accent-muted:    rgba(84,174,255,.4);
+  --brand: #8250df;
+  --ok:          #1a7f37;
+  --ok-emphasis: #1a7f37;
+  --ok-dim:      rgba(26,127,55,.12);
+  --ok-muted:    rgba(74,194,107,.4);
+  --warn:        #9a6700;
+  --warn-dim:    rgba(154,103,0,.1);
+  --warn-muted:  rgba(212,167,44,.4);
+  --severe:      #bc4c00;
+  --crit:        #d1242f;
+  --crit-dim:    rgba(209,36,47,.1);
+  --crit-muted:  rgba(255,129,130,.4);
+  --c-network: #0969da;
+  --c-storage: #1a7f37;
+  --c-media:   #bc4c00;
+  --c-apps:    #8250df;
+  --sh-1: 0 1px 2px rgba(31,35,40,.06);
+  --sh-2: 0 8px 24px rgba(31,35,40,.12);
+}

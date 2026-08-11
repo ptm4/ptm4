@@ -1,0 +1,169 @@
+/* ── Design tokens v2.2 — the "diff screenshot" palette ──────────────────────
+   Re-anchored 2026-08-11 to the code-diff screenshot Peter picked: GitHub Dark
+   Dimmed's family — warm charcoal (NOT pure black), salmon red, leaf green,
+   soft blue, slate grey. The exact shades he pointed at:
+
+     black  #22272e (canvas)  /  #1c2128 (inset)
+     red    #e5534b  (bright #f47067)
+     green  #57ab5a  (bright #8ddb8c)
+     blue   #539bf5  (bright #6cb6ff)
+     grey   #768390
+
+   This RETIRES the v1 "purple = healthy" deviation: in a diff, green is good
+   and red is bad, and status colors now say exactly that. Blue stays
+   interactive. Amber (from the same theme family) covers warn, since a diff
+   has no yellow.
+
+   The legacy root /tokens.css (frontend-legacy/) carries the same values so
+   every standalone page reskins with this file's palette.
+   ------------------------------------------------------------------------- */
+:root {
+  /* surfaces & ink — the screenshot's charcoal ramp */
+  --bg:        #22272e;
+  --bg-inset:  #1c2128;
+  --surface:   #2d333b;
+  --surface-2: #373e47;
+  --surface-3: #444c56;
+  --border:    #444c56;
+  --border-2:  #545d68;
+  --ink:       #adbac7;
+  --ink-2:     #768390;
+  --ink-3:     #636e7b;
+
+  /* interactive — the function-name blue */
+  --accent:          #539bf5;
+  --accent-bright:   #6cb6ff;
+  --accent-emphasis: #316dca;
+  --accent-dim:      rgba(83, 155, 245, .15);
+  --accent-muted:    rgba(83, 155, 245, .4);
+
+  /* identity — the theme's purple; blue stays interactive */
+  --brand: #b083f0;
+  --brand-bright: #dcbdfb;
+  --brand-dim: rgba(176, 131, 240, .14);
+  --brand-muted: rgba(176, 131, 240, .4);
+
+  /* status — diff semantics: green added, red deleted */
+  --ok:          #57ab5a;
+  --ok-bright:   #8ddb8c;
+  --ok-emphasis: #347d39;
+  --ok-dim:      rgba(87, 171, 90, .15);
+  --ok-muted:    rgba(87, 171, 90, .4);
+  --warn:        #c69026;
+  --warn-dim:    rgba(198, 144, 38, .15);
+  --warn-muted:  rgba(198, 144, 38, .4);
+  --severe:      #cc6b2c;
+  --crit:        #e5534b;
+  --crit-bright: #f47067;
+  --crit-dim:    rgba(229, 83, 75, .15);
+  --crit-muted:  rgba(229, 83, 75, .4);
+
+  /* categorical — the four syntax hues of the same theme, for charts/maps */
+  --c-network: #6cb6ff;
+  --c-storage: #8ddb8c;
+  --c-media:   #f69d50;
+  --c-apps:    #dcbdfb;
+
+  /* spacing scale */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* type scale */
+  --fs-xs: 11px;  --fs-sm: 12.5px; --fs-base: 14px; --fs-md: 15px;
+  --fs-lg: 18px;  --fs-xl: 24px;   --fs-2xl: 34px;  --fs-hero: 44px;
+
+  /* radii & elevation */
+  --r-sm: 8px; --r: 10px; --r-lg: 18px;
+  --sh-1: 0 2px 8px rgba(16, 20, 25, .35);
+  --sh-2: 0 18px 44px rgba(16, 20, 25, .55);
+
+  --sidebar-w: 240px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+          Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* ── glass layer ──────────────────────────────────────────────────────────
+     Board sliders write the --board-* intent; each theme derives its finals
+     (an inline value can't be theme-aware). Glass tint = the canvas charcoal. */
+  --board-glass-opacity: 0.62;
+  --board-blur: 18px;
+  --board-dim: 0.28;
+
+  --wallpaper-url: none;
+  --wallpaper-dim: var(--board-dim);
+  --glass-opacity: var(--board-glass-opacity);
+  --glass-blur: var(--board-blur);
+  --glass-bg: rgba(34, 39, 46, var(--glass-opacity));
+  --glass-bg-strong: rgba(34, 39, 46, 0.9);
+  --glass-border: rgba(173, 186, 199, 0.10);
+  --glass-border-2: rgba(173, 186, 199, 0.20);
+  --glass-radius: var(--r-lg);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+:root[data-theme="light"] {
+  /* GitHub Light with the same hue anchors, so the toggle keeps its meaning. */
+  --bg:        #f6f8fa;
+  --bg-inset:  #eaeef2;
+  --surface:   #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eaeef2;
+  --border:    #d0d7de;
+  --border-2:  #afb8c1;
+  --ink:       #1f2328;
+  --ink-2:     #656d76;
+  --ink-3:     #6e7781;
+  --accent:          #0969da;
+  --accent-bright:   #218bff;
+  --accent-emphasis: #0969da;
+  --accent-dim:      rgba(9, 105, 218, .1);
+  --accent-muted:    rgba(84, 174, 255, .4);
+  --brand: #8250df;
+  --brand-bright: #a475f9;
+  --brand-dim: rgba(130, 80, 223, .1);
+  --brand-muted: rgba(194, 151, 255, .4);
+  --ok:          #1a7f37;
+  --ok-bright:   #2da44e;
+  --ok-emphasis: #1a7f37;
+  --ok-dim:      rgba(26, 127, 55, .12);
+  --ok-muted:    rgba(74, 194, 107, .4);
+  --warn:        #9a6700;
+  --warn-dim:    rgba(154, 103, 0, .1);
+  --warn-muted:  rgba(212, 167, 44, .4);
+  --severe:      #bc4c00;
+  --crit:        #d1242f;
+  --crit-bright: #cf222e;
+  --crit-dim:    rgba(209, 36, 47, .1);
+  --crit-muted:  rgba(255, 129, 130, .4);
+  --c-network: #0969da;
+  --c-storage: #1a7f37;
+  --c-media:   #bc4c00;
+  --c-apps:    #8250df;
+  --sh-1: 0 1px 2px rgba(31, 35, 40, .06);
+  --sh-2: 0 8px 24px rgba(31, 35, 40, .12);
+
+  /* dark wallpapers need a heavy white veil + more opaque cards in light mode */
+  --wallpaper-dim: calc(var(--board-dim) + 0.42);
+  --glass-opacity: calc(var(--board-glass-opacity) + 0.16);
+  --glass-bg: rgba(255, 255, 255, var(--glass-opacity));
+  --glass-bg-strong: rgba(255, 255, 255, 0.94);
+  --glass-border: rgba(31, 35, 40, 0.12);
+  --glass-border-2: rgba(31, 35, 40, 0.22);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* "Reduce glass": solid surfaces, no backdrop blur. */
+:root.reduce-glass {
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-border-2: var(--border-2);
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: var(--surface);
+    --glass-bg-strong: var(--surface);
+    --glass-border: var(--border);
+    --glass-border-2: var(--border-2);
+  }
+}

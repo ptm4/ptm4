@@ -1,23 +1,9 @@
 // Sports bot controls — thin proxy to the discord-sports container's control
-// API on the internal docker network (same pattern as weather.js).
-// The bot owns its config; this layer just forwards and maps failures to JSON.
-const express = require('express');
-const router = express.Router();
+// API on the internal docker network. The bot owns its config; this layer just
+// forwards and maps failures to JSON.
+const { proxyJson } = require('../lib/upstream');
 
 const SPORTS_BOT_URL = process.env.SPORTS_BOT_URL || 'http://discord-sports:8080';
-
-async function proxy(method, urlPath, body, timeoutMs = 5000) {
-  const res = await fetch(`${SPORTS_BOT_URL}${urlPath}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch (_) { data = { raw: text }; }
-  return { status: res.status, data };
-}
 
 // route → bot endpoint. /send and /preview hit ESPN live, so longer timeout.
 const ROUTES = [
@@ -28,28 +14,30 @@ const ROUTES = [
   { method: 'get', path: '/preview', bot: 'GET',  botPath: '/preview', timeout: 30000 },
 ];
 
-for (const r of ROUTES) {
-  router[r.method](r.path, async (req, res) => {
+module.exports = async function sportsRoutes(app) {
+  for (const r of ROUTES) {
+    app[r.method](r.path, async (req, reply) => {
+      try {
+        const out = await proxyJson(SPORTS_BOT_URL, r.bot, r.botPath,
+          r.method === 'get' ? undefined : req.body, r.timeout || 5000);
+        reply.code(out.status).send(out.data);
+      } catch (e) {
+        reply.code(502).send({ error: `sports bot unreachable: ${e.message}` });
+      }
+    });
+  }
+
+  // team search (the weather bot's /geocode pattern)
+  app.get('/teams', async (req, reply) => {
+    const league = (req.query.league || '').toString().trim();
+    const q = (req.query.q || '').toString().trim();
+    if (!league || !q) return reply.code(400).send({ error: 'missing ?league= or ?q=' });
     try {
-      const out = await proxy(r.bot, r.botPath, r.method === 'get' ? undefined : req.body, r.timeout);
-      res.status(out.status).json(out.data);
+      const out = await proxyJson(SPORTS_BOT_URL, 'GET',
+        `/teams?league=${encodeURIComponent(league)}&q=${encodeURIComponent(q)}`, undefined, 20000);
+      reply.code(out.status).send(out.data);
     } catch (e) {
-      res.status(502).json({ error: `sports bot unreachable: ${e.message}` });
+      reply.code(502).send({ error: `sports bot unreachable: ${e.message}` });
     }
   });
-}
-
-// team search (the weather bot's /geocode pattern)
-router.get('/teams', async (req, res) => {
-  const league = (req.query.league || '').toString().trim();
-  const q = (req.query.q || '').toString().trim();
-  if (!league || !q) return res.status(400).json({ error: 'missing ?league= or ?q=' });
-  try {
-    const out = await proxy('GET', `/teams?league=${encodeURIComponent(league)}&q=${encodeURIComponent(q)}`, undefined, 20000);
-    res.status(out.status).json(out.data);
-  } catch (e) {
-    res.status(502).json({ error: `sports bot unreachable: ${e.message}` });
-  }
-});
-
-module.exports = router;
+};

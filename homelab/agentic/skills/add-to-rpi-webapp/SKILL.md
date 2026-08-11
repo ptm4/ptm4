@@ -138,9 +138,15 @@ Two routes. **Both matter** — the direct copy makes it live, the commit makes 
 
 Peter commits his own work, so don't commit or push. To make a change live now:
 
+> **2026-08-10 redesign in progress:** the old vanilla frontend was renamed
+> `frontend-legacy/` (served at `/legacy/` + the standalone paths) and a new
+> React/Vite app lives in `frontend/` (built by CI, output `frontend/dist/`).
+> This skill's per-file recipes describe the LEGACY app; new pages belong in the
+> React app. This file gets rewritten when the redesign stabilizes (P7).
+
 ```bash
 # static frontend only — served immediately, no restart
-rsync -av homelab/hosts/rpi/webapp/frontend/ rpi:/srv/docker/compose/webapp/frontend/
+rsync -av homelab/hosts/rpi/webapp/frontend-legacy/ rpi:/srv/docker/compose/webapp/frontend-legacy/
 
 # backend route changes also need the Node process re-exec'd
 rsync -av homelab/hosts/rpi/webapp/backend/ rpi:/srv/docker/compose/webapp/backend/

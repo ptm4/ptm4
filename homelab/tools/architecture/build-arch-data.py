@@ -42,7 +42,7 @@ from pathlib import Path
 PROBED_AT = "2026-08-08T03:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_OUT = REPO_ROOT / "homelab/hosts/rpi/webapp/frontend/architecture/data.json"
+DEFAULT_OUT = REPO_ROOT / "homelab/hosts/rpi/webapp/frontend-legacy/architecture/data.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

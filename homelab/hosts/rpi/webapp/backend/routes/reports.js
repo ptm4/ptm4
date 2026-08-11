@@ -1,15 +1,8 @@
-const express = require('express');
+// Security reports (/reports mount = opti's security-reports dir, :ro).
 const fs = require('fs');
 const path = require('path');
-const { enabledFor, attachControls } = require('./controls');
-
-const router = express.Router();
-
-// /reports is the Docker volume mount: /mnt/opti-fs/ptm/security-reports
-// Falls back to a local dev path if the mount isn't present
-const REPORTS_DIR = fs.existsSync('/reports')
-  ? '/reports'
-  : path.join(__dirname, '..', '..', '..', '..', 'security-reports');
+const { REPORTS_DIR } = require('../lib/paths');
+const { enabledFor, attachControls } = require('../lib/controls');
 
 // report name (filename minus .json) -> { label, agent (dispatcher key), cadence_h }
 const CATALOG = {
@@ -49,46 +42,46 @@ function describe(filename) {
   };
 }
 
-// GET /api/reports — list security reports with metadata
-router.get('/', (req, res) => {
-  if (!fs.existsSync(REPORTS_DIR)) {
-    return res.json({ reports: [], message: 'Reports directory not found' });
-  }
-  let files;
-  try {
-    files = fs.readdirSync(REPORTS_DIR).filter(f => f.endsWith('.json'));
-  } catch (e) {
-    return res.status(500).json({ error: 'Cannot read reports directory' });
-  }
+module.exports = async function reportsRoutes(app) {
+  // GET /api/reports — list security reports with metadata
+  app.get('/', async (req, reply) => {
+    if (!fs.existsSync(REPORTS_DIR)) {
+      return { reports: [], message: 'Reports directory not found' };
+    }
+    let files;
+    try {
+      files = fs.readdirSync(REPORTS_DIR).filter(f => f.endsWith('.json'));
+    } catch (e) {
+      return reply.code(500).send({ error: 'Cannot read reports directory' });
+    }
 
-  const reports = files.map(describe);
-  const order = { critical: 0, warn: 1, ok: 2, unknown: 3 };
-  reports.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
-  res.json({ reports, reports_dir: REPORTS_DIR });
-});
+    const reports = files.map(describe);
+    const order = { critical: 0, warn: 1, ok: 2, unknown: 3 };
+    reports.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+    return { reports, reports_dir: REPORTS_DIR };
+  });
 
-// Enable/disable + run-now (proxied to the opti dispatcher)
-attachControls(router);
+  // Enable/disable + run-now (proxied to the opti dispatcher)
+  attachControls(app);
 
-// GET /api/reports/:name — return full JSON report
-router.get('/:name', (req, res) => {
-  const filename = req.params.name.endsWith('.json')
-    ? req.params.name
-    : `${req.params.name}.json`;
-  const fullPath = path.join(REPORTS_DIR, filename);
+  // GET /api/reports/:name — return full JSON report
+  app.get('/:name', async (req, reply) => {
+    const filename = req.params.name.endsWith('.json')
+      ? req.params.name
+      : `${req.params.name}.json`;
+    const fullPath = path.join(REPORTS_DIR, filename);
 
-  if (!fullPath.startsWith(REPORTS_DIR)) {
-    return res.status(400).json({ error: 'Invalid report name' });
-  }
-  if (!fs.existsSync(fullPath)) {
-    return res.status(404).json({ error: 'Report not found' });
-  }
-  try {
-    res.json(JSON.parse(fs.readFileSync(fullPath, 'utf8')));
-  } catch (e) {
-    console.error(`Failed to parse report ${fullPath}: ${e.message}`);
-    res.status(500).json({ error: 'Could not parse report file', detail: e.message });
-  }
-});
-
-module.exports = router;
+    if (!fullPath.startsWith(REPORTS_DIR)) {
+      return reply.code(400).send({ error: 'Invalid report name' });
+    }
+    if (!fs.existsSync(fullPath)) {
+      return reply.code(404).send({ error: 'Report not found' });
+    }
+    try {
+      return JSON.parse(fs.readFileSync(fullPath, 'utf8'));
+    } catch (e) {
+      console.error(`Failed to parse report ${fullPath}: ${e.message}`);
+      return reply.code(500).send({ error: 'Could not parse report file', detail: e.message });
+    }
+  });
+};

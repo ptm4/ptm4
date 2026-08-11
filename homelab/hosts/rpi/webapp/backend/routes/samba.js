@@ -9,46 +9,41 @@
 // and has no ZFS backend, so it cannot model this share. The share lives in
 // /etc/homelab/samba-red.conf and OMV is pointed at it with an `include =` stored in OMV's
 // own "Extra options" field — so OMV maintains the link and never overwrites our file.
-const express = require('express');
-const { dispatch } = require('./controls');
-
-const router = express.Router();
+const { dispatch } = require('../lib/controls');
 
 const MAX_BYTES = 64 * 1024;
 
-function proxy(res, promise) {
-  promise
-    .then((r) => res.status(r.status).json(r.data))
-    .catch((e) => res.status(e.statusCode || 502).json({ error: e.message }));
-}
+module.exports = async function sambaRoutes(app) {
+  const proxy = (reply, promise) => promise
+    .then((r) => reply.code(r.status).send(r.data))
+    .catch((e) => reply.code(e.statusCode || 502).send({ error: e.message }));
 
-// Current config + validity + whether it has drifted from the repo copy
-router.get('/config', (req, res) => proxy(res, dispatch('GET', '/samba/config')));
+  // Current config + validity + whether it has drifted from the repo copy
+  app.get('/config', (req, reply) => proxy(reply, dispatch('GET', '/samba/config')));
 
-router.get('/backups', (req, res) => proxy(res, dispatch('GET', '/samba/backups')));
+  app.get('/backups', (req, reply) => proxy(reply, dispatch('GET', '/samba/backups')));
 
-router.get('/status', (req, res) => proxy(res, dispatch('GET', '/samba/status')));
+  app.get('/status', (req, reply) => proxy(reply, dispatch('GET', '/samba/status')));
 
-// Dry run: validate without writing anything
-router.post('/validate', (req, res) => {
-  const content = req.body?.content;
-  if (typeof content !== 'string') return res.status(400).json({ error: 'content must be a string' });
-  if (Buffer.byteLength(content) > MAX_BYTES) return res.status(413).json({ error: 'config too large' });
-  proxy(res, dispatch('POST', '/samba/validate', { content }));
-});
+  // Dry run: validate without writing anything
+  app.post('/validate', (req, reply) => {
+    const content = req.body?.content;
+    if (typeof content !== 'string') return reply.code(400).send({ error: 'content must be a string' });
+    if (Buffer.byteLength(content) > MAX_BYTES) return reply.code(413).send({ error: 'config too large' });
+    return proxy(reply, dispatch('POST', '/samba/validate', { content }));
+  });
 
-router.post('/config', (req, res) => {
-  const content = req.body?.content;
-  if (typeof content !== 'string') return res.status(400).json({ error: 'content must be a string' });
-  if (!content.trim()) return res.status(400).json({ error: 'refusing to write an empty config' });
-  if (Buffer.byteLength(content) > MAX_BYTES) return res.status(413).json({ error: 'config too large' });
-  proxy(res, dispatch('POST', '/samba/config', { content }));
-});
+  app.post('/config', (req, reply) => {
+    const content = req.body?.content;
+    if (typeof content !== 'string') return reply.code(400).send({ error: 'content must be a string' });
+    if (!content.trim()) return reply.code(400).send({ error: 'refusing to write an empty config' });
+    if (Buffer.byteLength(content) > MAX_BYTES) return reply.code(413).send({ error: 'config too large' });
+    return proxy(reply, dispatch('POST', '/samba/config', { content }));
+  });
 
-router.post('/rollback', (req, res) => {
-  const stamp = req.body?.stamp;
-  if (!/^\d{8}-\d{6}$/.test(stamp || '')) return res.status(400).json({ error: 'invalid backup id' });
-  proxy(res, dispatch('POST', '/samba/rollback', { stamp }));
-});
-
-module.exports = router;
+  app.post('/rollback', (req, reply) => {
+    const stamp = req.body?.stamp;
+    if (!/^\d{8}-\d{6}$/.test(stamp || '')) return reply.code(400).send({ error: 'invalid backup id' });
+    return proxy(reply, dispatch('POST', '/samba/rollback', { stamp }));
+  });
+};

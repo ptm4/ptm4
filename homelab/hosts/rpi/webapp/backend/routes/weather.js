@@ -1,23 +1,9 @@
 // Weather bot controls — thin proxy to the discord-weather container's control
-// API on the internal docker network (same pattern as controls.js → dispatcher).
-// The bot owns its config; this layer just forwards and maps failures to JSON.
-const express = require('express');
-const router = express.Router();
+// API on the internal docker network. The bot owns its config; this layer just
+// forwards and maps failures to JSON.
+const { proxyJson } = require('../lib/upstream');
 
 const WEATHER_BOT_URL = process.env.WEATHER_BOT_URL || 'http://discord-weather:8080';
-
-async function proxy(method, urlPath, body, timeoutMs = 5000) {
-  const res = await fetch(`${WEATHER_BOT_URL}${urlPath}`, {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await res.text();
-  let data;
-  try { data = JSON.parse(text); } catch (_) { data = { raw: text }; }
-  return { status: res.status, data };
-}
 
 // route → bot endpoint. /send and /preview hit Open-Meteo live, so longer timeout.
 const ROUTES = [
@@ -30,26 +16,27 @@ const ROUTES = [
   { method: 'post', path: '/witty/reroll', bot: 'POST', botPath: '/witty/reroll', timeout: 30000 },
 ];
 
-for (const r of ROUTES) {
-  router[r.method](r.path, async (req, res) => {
+module.exports = async function weatherRoutes(app) {
+  for (const r of ROUTES) {
+    app[r.method](r.path, async (req, reply) => {
+      try {
+        const out = await proxyJson(WEATHER_BOT_URL, r.bot, r.botPath,
+          r.method === 'get' ? undefined : req.body, r.timeout || 5000);
+        reply.code(out.status).send(out.data);
+      } catch (e) {
+        reply.code(502).send({ error: `weather bot unreachable: ${e.message}` });
+      }
+    });
+  }
+
+  app.get('/geocode', async (req, reply) => {
+    const q = (req.query.q || '').toString().trim();
+    if (!q) return reply.code(400).send({ error: 'missing ?q=' });
     try {
-      const out = await proxy(r.bot, r.botPath, r.method === 'get' ? undefined : req.body, r.timeout);
-      res.status(out.status).json(out.data);
+      const out = await proxyJson(WEATHER_BOT_URL, 'GET', `/geocode?q=${encodeURIComponent(q)}`, undefined, 15000);
+      reply.code(out.status).send(out.data);
     } catch (e) {
-      res.status(502).json({ error: `weather bot unreachable: ${e.message}` });
+      reply.code(502).send({ error: `weather bot unreachable: ${e.message}` });
     }
   });
-}
-
-router.get('/geocode', async (req, res) => {
-  const q = (req.query.q || '').toString().trim();
-  if (!q) return res.status(400).json({ error: 'missing ?q=' });
-  try {
-    const out = await proxy('GET', `/geocode?q=${encodeURIComponent(q)}`, undefined, 15000);
-    res.status(out.status).json(out.data);
-  } catch (e) {
-    res.status(502).json({ error: `weather bot unreachable: ${e.message}` });
-  }
-});
-
-module.exports = router;
+};

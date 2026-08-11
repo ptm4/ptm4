@@ -1,95 +1,30 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>webapp.rpi.lan</title>
-  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <!-- ?v= is a cache-buster: nginx serves these static and browsers hold onto them, so
-       without it a deploy can leave someone on new HTML with the old CSS/JS (which looks
-       like a broken layout rather than a caching problem). Bump the suffix on any change
-       to tokens.css, style.css or app.js. -->
-  <link rel="stylesheet" href="/tokens.css?v=20260726c" />
-  <link rel="stylesheet" href="style.css?v=20260802c" />
-</head>
-<body>
-  <div class="layout">
-
-    <!-- Sidebar navigation -->
-    <nav class="sidebar">
-      <div class="sidebar-logo">
-        <img src="/favicon.svg" alt="" class="logo-slice" />
-        <span class="logo-text">rpi.lan</span>
-        <span id="healthDot" class="health-dot" title="API health"></span>
-      </div>
-
-      <!-- Grouped nav. Was 14 flat entries; the 5 per-bot links collapsed into one
-           "Bots" page with tabs, so related things now sit together and the list is
-           scannable. Status dots are filled in by app.js from the live reports. -->
-      <div class="nav-group">
-        <div class="nav-group-label">Overview</div>
-        <ul class="nav-links">
-          <li><a href="#home" class="nav-link" data-route="home">Home</a></li>
-          <li><a href="#cockpit" class="nav-link" data-route="cockpit">Cockpit</a></li>
-          <li><a href="/architecture/" class="nav-link">Architecture</a></li>
-        </ul>
-      </div>
-
-      <div class="nav-group">
-        <div class="nav-group-label">Monitoring</div>
-        <ul class="nav-links">
-          <li><a href="#reports" class="nav-link" data-route="reports">Reports<span class="nav-dot" id="dot-reports"></span></a></li>
-          <li><a href="#logs" class="nav-link" data-route="logs">Logs</a></li>
-          <li><a href="#security" class="nav-link" data-route="security">Security<span class="nav-dot" id="dot-security"></span></a></li>
-          <li><a href="/agents/" class="nav-link">Agents<span class="nav-dot" id="dot-agents"></span></a></li>
-        </ul>
-      </div>
-
-      <div class="nav-group">
-        <div class="nav-group-label">Services</div>
-        <ul class="nav-links">
-          <li><a href="#bots" class="nav-link" data-route="bots">Bots<span class="nav-count" id="count-bots">5</span></a></li>
-          <li><a href="#leetify" class="nav-link" data-route="leetify">CS2 / Leetify</a></li>
-          <li><a href="#llm" class="nav-link" data-route="llm">Local LLM<span class="nav-dot" id="dot-llm"></span></a></li>
-          <li><a href="/streams/" class="nav-link">Streams</a></li>
-          <li><a href="/samba/" class="nav-link">Samba</a></li>
-          <li><a href="/notes/" class="nav-link">Notes</a></li>
-        </ul>
-      </div>
-
-      <div class="nav-group">
-        <div class="nav-group-label">Reference</div>
-        <ul class="nav-links">
-          <li><a href="#links" class="nav-link" data-route="links">Quick Links</a></li>
-          <li><a href="/agentic/" class="nav-link">Agentic Workspace</a></li>
-        </ul>
-      </div>
-
-      <div class="sidebar-actions">
-        <button id="cmdkBtn" title="Command palette">⌘ Search <kbd>K</kbd></button>
-        <button id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
-      </div>
-
-      <div class="sidebar-footer">
-        <span id="uptimeEl" class="uptime-text">—</span>
-      </div>
-    </nav>
-
-    <!-- Main content area — router renders here -->
-    <main id="view" class="view"></main>
-
-  </div>
-
-  <!-- Command palette. Additive to the nav above, not a substitute for it. -->
-  <div class="cmdk-backdrop" id="cmdkBackdrop" role="dialog" aria-modal="true" aria-label="Command palette">
-    <div class="cmdk">
-      <input id="cmdkInput" type="text" placeholder="Jump to a page, host, or action…"
-             autocomplete="off" spellcheck="false" aria-label="Command palette search" />
-      <div class="cmdk-list" id="cmdkList"></div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="app.js?v=20260802e"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#22272e" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Installable on the phone over WireGuard. No service worker on purpose:
+         this is a live-data app, an offline cache would only ever show stale state. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Pocket" />
+    <title>Pert's Pocket</title>
+    <script>
+      // Theme before first paint — same localStorage key as every legacy page so the
+      // whole dashboard (v2, /legacy, standalone pages) flips together.
+      (function () {
+        try {
+          var t = localStorage.getItem('arch-theme');
+          if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          document.documentElement.dataset.theme = t;
+        } catch (e) { document.documentElement.dataset.theme = 'dark'; }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
