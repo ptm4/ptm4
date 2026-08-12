@@ -48,8 +48,10 @@ HLTV_API = os.environ.get("HLTV_API_URL", "http://hltv-api:8080")
 VRS_CACHE_SECONDS = 3600     # the sidecar caches for a day; this just avoids chatter
 DAY_MAX_AGE = 900            # widget/preview reads may be up to 15 min stale
 EMBED_COLOR = 0x2B6EA4       # HLTV blue
-MAX_MATCHES = 20
+MAX_MATCHES = 30
 FIELD_CAP = 1024             # Discord's per-field limit
+MAX_FIELDS = 25              # …and its per-embed field limit
+DESC_CAP = 3800              # description holds 4096; keep room for the header
 EMBED_CAP = 5800             # Discord's 6000 total, with headroom
 
 DEFAULT_CONFIG = {
@@ -287,17 +289,21 @@ def fmt_match(m, tz):
     return f"**{when}** — {body}{bo}{link}"
 
 
-def pack_lines(lines, cap=FIELD_CAP):
-    """Fill a field without ever cutting mid-line — a severed markdown link
-    breaks the whole embed, which a blind slice would happily do."""
-    out, used = [], 0
-    for i, ln in enumerate(lines):
-        if used + len(ln) + 1 > cap - 16:
-            out.append(f"(+{len(lines) - i} more)")
-            break
-        out.append(ln)
+def chunk_lines(lines, cap=FIELD_CAP):
+    """Split lines into field-sized groups. A field holds 1024 characters and a
+    match line with two markdown links runs ~160, so a busy event needs several
+    fields — dropping the overflow would hide most of the day. Never cuts
+    mid-line: a severed link would break the whole embed."""
+    groups, cur, used = [], [], 0
+    for ln in lines:
+        if cur and used + len(ln) + 1 > cap:
+            groups.append(cur)
+            cur, used = [], 0
+        cur.append(ln)
         used += len(ln) + 1
-    return "\n".join(out)
+    if cur:
+        groups.append(cur)
+    return ["\n".join(g) for g in groups]
 
 
 def embed_size(embed):
@@ -337,11 +343,22 @@ def build_payload(cfg):
     for m in matches[:MAX_MATCHES]:
         by_event.setdefault(m.get("event") or "Unknown event", []).append(m)
 
+    # Prefer one block in the description: Discord puts vertical space around
+    # every field, so a day split across fields reads as unrelated groups with
+    # gaps in it. Fields are the fallback for a day too big for a description.
+    blocks = ["🏆 **" + md_escape(event) + "**\n"
+              + "\n".join(fmt_match(m, tz) for m in ms)
+              for event, ms in by_event.items()]
+    body = "\n\n".join(blocks)
     fields = []
-    for event, ms in by_event.items():
-        lines = [fmt_match(m, tz) for m in ms]
-        fields.append({"name": f"🏆 {md_escape(event)}"[:256],
-                       "value": pack_lines(lines), "inline": False})
+    if len(body) > DESC_CAP:
+        body = ""
+        for event, ms in by_event.items():
+            name = f"🏆 {md_escape(event)}"[:256]
+            for i, value in enumerate(chunk_lines([fmt_match(m, tz) for m in ms])):
+                # a zero-width name keeps a continued event from repeating its title
+                fields.append({"name": name if i == 0 else "​",
+                               "value": value, "inline": False})
 
     has_matches = bool(matches)
     date_str = now.strftime("%A, %B %d, %Y").replace(" 0", " ")
@@ -362,14 +379,16 @@ def build_payload(cfg):
 
     embed = {
         "title": "🎯 CS2 — Games of the Day",
-        "description": "\n".join(desc),
+        "description": "\n".join(desc) + (f"\n\n{body}" if body else ""),
         "color": EMBED_COLOR,
         "fields": fields,
         "footer": {"text": "HLTV.org"},
     }
-    while embed["fields"] and embed_size(embed) > EMBED_CAP:
+    while embed["fields"] and (embed_size(embed) > EMBED_CAP
+                               or len(embed["fields"]) > MAX_FIELDS):
         embed["fields"].pop()
-        embed["description"] = embed["description"].rstrip() + "\n(truncated)"
+        if not embed["description"].endswith("(truncated)"):
+            embed["description"] = embed["description"].rstrip() + "\n(truncated)"
 
     payload = {
         "username": "CS2 Games of the Day",

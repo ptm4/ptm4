@@ -67,8 +67,37 @@ digest twice. A failed post retries every 15 minutes, and after 2 hours the webh
 
 Finished matches lead with the winner, and map scores are oriented winner-first. A match makes
 the digest if either team is in the **VRS top N** (`vrs_top_n`, default 32) or HLTV rates it
-`min_stars`+ (default 1; set 0 to disable). Fields are packed line-by-line — a blind truncation
-would sever a markdown link and break the whole embed.
+`min_stars`+ (default 1; set 0 to disable).
+
+The whole day goes in the embed description as one block — Discord puts vertical space around
+every field, so a list split across fields reads as unrelated groups with gaps in it. Past the
+description's 4096 characters it falls back to fields, chunked at 1024 each. Either way every
+match is listed rather than trailing off in a "+N more", and lines are never cut mid-way: a
+severed markdown link breaks the whole embed.
+
+`DETAIL_CAP` (default 24) bounds how many match pages a scrape opens, and **only those matches
+get a stream link and map scores** — set it below a day's notable-match count and the tail of
+the digest quietly loses its streams.
+
+### Which stream gets linked
+
+**Only the tournament organizer's official broadcast, preferring its English feed.** A big
+match carries 40+ stream boxes — watch parties, casters, personal channels — in no useful
+order, and HLTV marks none of them "official" on the match page. Two signals identify the real
+one:
+
+1. **The channel name matches the event name** — "Esports World Cup" on
+   `twitch.tv/EWC_plus_en` for *Esports World Cup 2026*. Digits are ignored so "CCT 3" still
+   matches "CCT 2026 Europe Series 7", and generic words ("Open Qualifier") never match alone.
+2. **HLTV's own classification.** The `/matches` sidebar tags each live channel
+   `ORGANIZER` / `CASTER` / `STREAMER`; every scrape harvests the organizers into
+   `/data/organizers.json`. That registry only grows, because an event's stream has to be
+   recognisable hours before it goes on air, when it isn't live yet and so isn't in the sidebar.
+
+English is preferred via the box's flag or an `_en` channel suffix, which also picks the right
+one when an event runs two simultaneous English feeds (`EWC_plus_en` vs `EWC_Plus_EN2`).
+**If no organizer stream is found, the line carries no link** rather than pointing at some
+stranger's stream.
 
 ## Config (`/data/config.json`, in the `hltvbot_data` volume)
 

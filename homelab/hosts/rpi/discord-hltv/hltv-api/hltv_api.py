@@ -52,7 +52,10 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/151.0.0.0 Safari/537.36")
 
 VRS_CACHE_HOURS = 24
-DETAIL_CAP = int(os.environ.get("DETAIL_CAP", "12"))   # match pages per scrape
+# Match pages per scrape. Only these get map scores and a stream link, so the cap
+# has to cover a full day's notable matches — a big event fields ~16 — or the
+# tail of the digest silently loses its streams.
+DETAIL_CAP = int(os.environ.get("DETAIL_CAP", "24"))
 PAGE_DELAY = float(os.environ.get("PAGE_DELAY", "2"))  # seconds between page loads
 READY_BUDGET = 45          # seconds to wait for real content after a navigation
 SCRAPE_RETRIES = 3
@@ -203,17 +206,28 @@ def scrape(fn):
 
 
 # ── extractors (JS run in the page) ───────────────────────────────────────────
-JS_MATCHES = """() => [...document.querySelectorAll('.match')].map(m => {
-  const stars = [...m.querySelectorAll('.match-rating i')];
-  const a = m.querySelector('a[href^="/matches/"]');
-  return {
-    url: a ? a.getAttribute('href') : null,
-    unix: m.querySelector('.match-time')?.getAttribute('data-unix') || null,
-    bo: (m.querySelector('.match-meta')?.textContent || '').trim(),
-    event: m.querySelector('.match-event')?.getAttribute('data-event-headline') || null,
-    teams: [...m.querySelectorAll('.match-teamname')].map(e => e.textContent.trim()),
-    stars: stars.filter(i => !i.classList.contains('faded')).length,
-  };
+# The matches page carries two things we want: the day's fixtures, and the
+# sidebar's stream directory — the only place HLTV states whether a channel is a
+# tournament ORGANIZER rather than a caster or a random streamer.
+JS_MATCHES = """() => ({
+  matches: [...document.querySelectorAll('.match')].map(m => {
+    const stars = [...m.querySelectorAll('.match-rating i')];
+    const a = m.querySelector('a[href^="/matches/"]');
+    return {
+      url: a ? a.getAttribute('href') : null,
+      unix: m.querySelector('.match-time')?.getAttribute('data-unix') || null,
+      bo: (m.querySelector('.match-meta')?.textContent || '').trim(),
+      event: m.querySelector('.match-event')?.getAttribute('data-event-headline') || null,
+      teams: [...m.querySelectorAll('.match-teamname')].map(e => e.textContent.trim()),
+      stars: stars.filter(i => !i.classList.contains('faded')).length,
+    };
+  }),
+  streams: [...document.querySelectorAll('.streams-stream')].map(s => ({
+    title: s.getAttribute('data-frontpage-stream-title'),
+    type: s.getAttribute('data-frontpage-stream-type'),
+    flag: s.getAttribute('data-frontpage-stream-flag-name'),
+    viewers: +(s.getAttribute('data-frontpage-stream-viewers') || 0),
+  })),
 })"""
 
 JS_RESULTS = """() => [...document.querySelectorAll('.result-con')].map(r => {
@@ -237,6 +251,11 @@ JS_MATCH = """() => ({
     scores: [...m.querySelectorAll('.results-team-score')].map(s => s.textContent.trim()),
     played: !!m.querySelector('.played'),
   })),
+  streamBoxes: [...document.querySelectorAll('.stream-box-embed')].map(e => ({
+    name: e.textContent.trim(),
+    flag: e.querySelector('img.flag')?.getAttribute('title') || null,
+    embed: e.getAttribute('data-stream-embed') || null,
+  })),
   team1: document.querySelector('.team1-gradient .teamName')?.textContent.trim() || null,
   team2: document.querySelector('.team2-gradient .teamName')?.textContent.trim() || null,
   score1: document.querySelector('.team1-gradient .won, .team1-gradient .lost')?.textContent.trim() || null,
@@ -244,14 +263,6 @@ JS_MATCH = """() => ({
   unix: document.querySelector('.timeAndEvent .time')?.getAttribute('data-unix') || null,
   event: document.querySelector('.timeAndEvent .event a')?.textContent.trim() || null,
   countdown: document.querySelector('.countdown')?.textContent.trim() || null,
-  streams: [...document.querySelectorAll('.stream-box')].map(s => ({
-    // .stream-box-embed holds just the name; the box's own text also carries
-    // the viewer count, which reads as garbage in a Discord link label.
-    text: (s.querySelector('.stream-box-embed')?.textContent || s.textContent || '')
-            .trim().slice(0, 60),
-    embed: s.getAttribute('data-stream-embed'),
-    href: s.querySelector('a')?.getAttribute('href') || null,
-  })),
 })"""
 
 JS_VRS = """() => ({
@@ -294,25 +305,69 @@ def stream_url(box):
     return h if h.startswith("http") else None
 
 
-def pick_stream(streams):
-    """The 'main' stream: HLTV lists them best-first, so take the first real
-    one — skipping demo downloads, VOD-per-map boxes and 'No streams yet'."""
-    for s in streams or []:
-        text = re.sub(r"\s+", " ", (s.get("text") or "")).strip()
-        low = text.lower()
-        if not text or low.startswith(("demo", "no streams")):
+ENGLISH_FLAGS = {"united kingdom", "united states", "other", "australia", "canada"}
+# words that say nothing about *which* organizer a stream belongs to
+EVENT_STOPWORDS = {"open", "closed", "qualifier", "qualifiers", "series", "season",
+                   "playoffs", "finals", "final", "group", "stage", "division",
+                   "league", "cup", "regional", "europe", "asia", "americas"}
+
+
+def name_tokens(s):
+    return [t for t in re.split(r"[^a-z0-9]+", str(s or "").lower()) if t]
+
+
+def matches_event(stream_name, event):
+    """True if a channel name reads like the event's own broadcast.
+    'Esports World Cup' → event 'Esports World Cup 2026'. Digits are ignored so
+    'CCT 1' still matches 'CCT 2026 Europe Series 7', and generic words alone
+    ('Open Qualifier') never carry a match on their own."""
+    ev = set(name_tokens(event))
+    st = [t for t in name_tokens(stream_name) if not t.isdigit()]
+    strong = [t for t in st if t not in EVENT_STOPWORDS]
+    if not strong or not ev:
+        return False
+    return all(t in ev for t in strong)
+
+
+def is_english(box, url):
+    if (box.get("flag") or "").strip().lower() in ENGLISH_FLAGS:
+        return True
+    # organizers name their language feeds in the channel: EWC_plus_en, blast_en …
+    return bool(re.search(r"[_-]en(?:g|glish)?(?:\b|_|$)", url or "", re.I))
+
+
+def pick_stream(boxes, event, organizers):
+    """The **official** broadcast for this match, or nothing.
+
+    HLTV lists every stream a match has — 40+ for a big event, mostly watch
+    parties and personal channels, in no useful order. Only two things identify
+    the organizer's own feed: the channel name matching the event, or HLTV's
+    sidebar typing that channel ORGANIZER. Anything else is somebody's stream,
+    so we return None rather than link a random one."""
+    best = None
+    for b in boxes or []:
+        name = re.sub(r"\s+", " ", (b.get("name") or "")).strip()
+        low = name.lower()
+        if not name or low.startswith(("demo", "no streams")):
             continue
-        url = stream_url(s)
+        name = re.sub(r"\s*\(Map \d+[^)]*\)", "", name).strip(" -–—")
+        url = stream_url(b)
         if not url:
             continue
-        name = re.sub(r"\s*\(Map \d+[^)]*\)", "", text)      # VOD boxes
-        name = re.sub(r"\s+\d[\d,.]*[km]?$", "", name, flags=re.I)  # trailing viewers
-        name = name.strip(" -–—")
-        if not name:                                          # fall back to the channel
-            m = re.search(r"twitch\.tv/([^/?#]+)", url)
-            name = m.group(1) if m else "stream"
-        return {"name": name[:28], "url": url}
-    return None
+        by_event = matches_event(name, event)
+        by_registry = norm_key(name) in organizers
+        if not (by_event or by_registry):
+            continue
+        # the event's own channel outranks a generically-typed organizer, and an
+        # English feed outranks the same organizer's other-language channels
+        rank = (by_event, is_english(b, url), organizers.get(norm_key(name), 0))
+        if best is None or rank > best[0]:
+            best = (rank, {"name": name[:28], "url": url})
+    return best[1] if best else None
+
+
+def norm_key(s):
+    return re.sub(r"[^a-z0-9]", "", str(s or "").lower())
 
 
 def map_name(n):
@@ -374,7 +429,7 @@ def norm_from_result(row):
     }
 
 
-def apply_detail(m, d):
+def apply_detail(m, d, organizers=None):
     """Fold a match page's data into a normalized match."""
     maps = []
     for mp in d.get("maps") or []:
@@ -391,7 +446,8 @@ def apply_detail(m, d):
             continue
     if maps:
         m["maps"] = maps
-    st = pick_stream(d.get("streams"))
+    st = pick_stream(d.get("streamBoxes"), d.get("event") or m.get("event"),
+                     organizers or {})
     if st:
         m["stream"] = st
     for key, src in (("score1", "score1"), ("score2", "score2")):
@@ -421,7 +477,9 @@ def scrape_day(date_str, tzname):
     look_back = day_start - 6 * 3600
 
     now = int(time.time())
-    rows = _browser.fetch("/matches", ".match", JS_MATCHES)
+    listing = _browser.fetch("/matches", ".match", JS_MATCHES)
+    rows = listing.get("matches") or []
+    organizers = merge_organizers(listing.get("streams"))
     matches = {}
     for r in rows:
         m = norm_from_list(r, now)
@@ -448,7 +506,7 @@ def scrape_day(date_str, tzname):
     for m in ordered[:DETAIL_CAP]:
         try:
             d = _browser.fetch(f"/matches/{m['id']}/x", ".mapholder, .teamName", JS_MATCH)
-            apply_detail(m, d)
+            apply_detail(m, d, organizers)
         except Challenged:
             raise
         except Exception as e:
@@ -462,6 +520,44 @@ def scrape_day(date_str, tzname):
         "stale": False,
         "matches": ordered,
     }
+
+
+ORGANIZERS_PATH = os.path.join(DATA_DIR, "organizers.json")
+
+
+def load_organizers():
+    """{normalized channel name: peak viewers seen}. Only ever grows: the sidebar
+    lists organizers that are live *right now*, but an event's stream must be
+    recognisable hours before it goes on air, so what we learn is kept."""
+    try:
+        with open(ORGANIZERS_PATH) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def merge_organizers(sidebar):
+    known = load_organizers()
+    changed = False
+    for s in sidebar or []:
+        if (s.get("type") or "").upper() != "ORGANIZER":
+            continue
+        k = norm_key(s.get("title"))
+        if not k:
+            continue
+        v = max(int(s.get("viewers") or 0), known.get(k, 0))
+        if known.get(k) != v:
+            known[k] = v
+            changed = True
+    if changed:
+        try:
+            tmp = ORGANIZERS_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(known, f)
+            os.replace(tmp, ORGANIZERS_PATH)
+        except OSError:
+            pass
+    return known
 
 
 def lastgood_path(date_str):

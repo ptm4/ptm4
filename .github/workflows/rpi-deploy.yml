@@ -100,21 +100,6 @@ jobs:
         working-directory: /srv/docker/compose
         run: docker compose up -d --remove-orphans
 
-      - name: Restart webapp to pick up code changes
-        working-directory: /srv/docker/compose
-        run: docker compose restart webapp
-
-      - name: API smoke against the restarted backend
-        # Runs INSIDE the webapp container (the Pi host has no node). Hits Fastify
-        # directly on :3000 and compares against the committed v1 baseline — a missing
-        # route or a response that lost fields marks the deploy red. Rollback stays
-        # manual (see webapp/ROLLBACK.md), per house style.
-        working-directory: /srv/docker/compose
-        run: |
-          sleep 8   # let npm install + boot finish inside the container
-          docker compose exec -T webapp node /app/scripts/smoke-api.mjs \
-            --base http://127.0.0.1:3000 --compare /app/scripts/smoke-baseline.json
-
       - name: Build and restart notes-api
         working-directory: /srv/docker/compose
         run: |
@@ -128,6 +113,28 @@ jobs:
         run: |
           docker compose build hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
           docker compose up -d hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
+
+      - name: Restart webapp to pick up code changes
+        working-directory: /srv/docker/compose
+        run: docker compose restart webapp
+
+      - name: API smoke against the fully deployed stack
+        # Runs INSIDE the webapp container (the Pi host has no node). Hits Fastify
+        # directly on :3000 and compares against the committed baseline — a missing
+        # route or a response that lost fields marks the deploy red. Rollback stays
+        # manual (see webapp/ROLLBACK.md), per house style.
+        #
+        # This runs AFTER the bots are rebuilt, not before: the baseline describes
+        # what the backend serves once everything is deployed, and most of those
+        # responses are proxied straight from a bot. Smoking first meant any commit
+        # that changed a bot's response shape failed against the still-old bot —
+        # and the failure then skipped the very step that would have fixed it
+        # (deploy of 2026-08-12, discord-hltv's post_time → post_times).
+        working-directory: /srv/docker/compose
+        run: |
+          sleep 8   # let npm install + boot finish inside the container
+          docker compose exec -T webapp node /app/scripts/smoke-api.mjs \
+            --base http://127.0.0.1:3000 --compare /app/scripts/smoke-baseline.json
 
       - name: Restart nginx to pick up config changes
         working-directory: /srv/docker/compose
