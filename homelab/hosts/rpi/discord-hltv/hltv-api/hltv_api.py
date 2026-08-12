@@ -89,6 +89,12 @@ def _browser_worker():
             box["error"] = e
         finally:
             done.set()
+            # Shut the browser down once the queue drains. We scrape a handful of
+            # times a day; a resident Chromium is all cost — CPU, memory, and open
+            # connections — for a ~3s saving. The clearance cookie lives in the
+            # on-disk profile, so a cold start is still an authenticated one.
+            if _jobs.empty():
+                _browser.close()
 
 
 def in_browser(fn, timeout=JOB_TIMEOUT):
@@ -136,7 +142,12 @@ class Browser:
             locale="en-US",
             timezone_id="America/New_York",
             args=["--disable-blink-features=AutomationControlled",
-                  "--disable-dev-shm-usage", "--no-sandbox"],
+                  "--disable-dev-shm-usage", "--no-sandbox",
+                  # we only ever read the DOM; decoding team logos and ad creative
+                  # is pure cost. A flag, not request interception — intercepting
+                  # deadlocks Playwright's sync API and risks breaking the
+                  # Cloudflare challenge, which loads third-party assets.
+                  "--blink-settings=imagesEnabled=false"],
         )
         if CHROME_CHANNEL:
             kw["channel"] = CHROME_CHANNEL

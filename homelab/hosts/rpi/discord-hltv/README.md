@@ -35,7 +35,16 @@ cost real time to discover, so don't undo them:
 A **persistent browser profile** lives on the `hltvapi_data` volume, so the Cloudflare clearance
 cookie survives restarts and the service looks like one returning visitor. Pacing is
 deliberately gentle: 3 scheduled scrapes a day, a 10-minute response cache, 2s between page
-loads, at most 12 match-detail pages per scrape.
+loads, at most `DETAIL_CAP` match-detail pages per scrape.
+
+**The browser only runs during a scrape.** It is launched on demand and shut down as soon as
+the job queue drains, because a resident Chromium is not free at idle: HLTV's ad and analytics
+scripts keep executing after the DOM is parsed, and a browser left up held ~1.4 cores and
+550 MB indefinitely on the Pi (measured 2026-08-12). Shutting it down leaves a ~6 MB Python
+process between scrapes and costs ~3s of cold start on the next one — a trivial price at three
+scrapes a day. Images are also disabled via `--blink-settings=imagesEnabled=false`; we only
+read the DOM. Do **not** switch that to Playwright request interception: routing deadlocks the
+sync API, and blocking third-party requests breaks the Cloudflare challenge.
 
 **Interactive challenges are never solved automatically.** If one ever appears, the scrape
 aborts, `/health` reports `challenge_detected`, and the digest fails loudly (see below). To
