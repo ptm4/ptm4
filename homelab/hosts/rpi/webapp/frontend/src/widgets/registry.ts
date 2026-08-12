@@ -17,7 +17,8 @@ import {
   VpnWidget, WeatherWidget,
 } from './services';
 import {
-  BotsWidget, DownloadsWidget, LeetifyTrendWidget, NotificationsWidget, StreamsWidget,
+  BotsWidget, Cs2MatchesWidget, DownloadsWidget, LeetifyTrendWidget, NotificationsWidget,
+  StreamsWidget,
 } from './integrations';
 import { ALL_LINKS, LINK_GROUPS } from '../lib/links';
 
@@ -227,6 +228,22 @@ export const WIDGETS: WidgetDef[] = [
     component: StreamsWidget,
     defaults: { w: 4, h: 2 },
     min: { w: 2, h: 2 },
+  },
+  {
+    type: 'cs2-matches',
+    label: 'CS2 matches',
+    description: "Today's HLTV slate — live scores, upcoming with stream links, results with map scores.",
+    component: Cs2MatchesWidget,
+    defaults: { w: 4, h: 5 },
+    min: { w: 3, h: 3 },
+    options: [
+      { key: 'limit', label: 'Matches per section', type: 'number', min: 3, max: 20 },
+      { key: 'sections', label: 'Show', type: 'select', choices: [
+        { value: 'all', label: 'Everything' },
+        { value: 'upcoming', label: 'Live + upcoming' },
+        { value: 'results', label: 'Results only' },
+      ] },
+    ],
   },
   {
     type: 'leetify-trend',

@@ -441,7 +441,7 @@
       "last_status",
       "next_post_at",
       "ok",
-      "post_time",
+      "post_times",
       "timezone"
     ]
   },
@@ -450,6 +450,16 @@
     "keys": [
       "as_of",
       "teams"
+    ]
+  },
+  "GET /api/hltv/day": {
+    "status": 200,
+    "keys": [
+      "date",
+      "fetched_at",
+      "matches",
+      "stale",
+      "vrs_as_of"
     ]
   },
   "GET /": {

@@ -90,16 +90,24 @@ export const BOTS: BotDef[] = [
     extras: ['teams'],
   },
   {
+    // The only bot that posts more than once a day, so it takes a list of times
+    // instead of COMMON's single `post_time` picker. The generic renderer shows a
+    // list as "00:00,07:00" and the bot accepts that string back verbatim.
     id: 'hltv',
     label: 'HLTV',
     icon: '🎯',
     container: 'discord-hltv',
     fields: [
-      ...COMMON,
+      { key: 'post_times', label: 'Post times', type: 'text', placeholder: '00:00, 07:00, 18:00',
+        help: 'Comma-separated HH:MM (24h) — one post per slot' },
+      ...COMMON.filter((f) => f.key !== 'post_time'),
       { key: 'vrs_top_n', label: 'VRS top N', type: 'number' },
+      { key: 'min_stars', label: 'Min HLTV stars', type: 'number', help: '0–5; 0 disables the star filter' },
       { key: 'post_when_empty', label: 'Post when no matches', type: 'boolean' },
+      { key: 'alert_on_failure', label: 'Alert on failure', type: 'boolean',
+        help: 'Post a warning if HLTV stays unreachable for 2h' },
     ],
-    passthrough: ['timezone', 'tiers'],
+    passthrough: ['timezone'],
     extras: ['vrs'],
   },
 ];

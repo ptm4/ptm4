@@ -1,6 +1,6 @@
 {
   "host": "tux",
-  "generated_at": "2026-08-08T05:21:58Z",
+  "generated_at": "2026-08-12T02:46:37Z",
   "generated_by": "homelab/agentic/probe.py",
   "workspace": {
     "repo_root": "/home/ptm/opti/ptm/repo/ptm4",
@@ -30,7 +30,7 @@
           "id": "claude_skills",
           "label": ".claude/skills registers all agentic skills",
           "status": "pass",
-          "detail": "5/5 discoverable"
+          "detail": "6/6 discoverable"
         },
         {
           "id": "claude_rules",

@@ -103,6 +103,7 @@ const MANIFEST = [
   { method: 'GET', path: '/api/sports/teams?q=x', expect: [400], note: 'missing ?league= is local validation' },
   { method: 'GET', path: '/api/hltv/status', expect: [200, 502] },
   { method: 'GET', path: '/api/hltv/vrs', expect: [200, 502] },
+  { method: 'GET', path: '/api/hltv/day', expect: [200, 502] },
 
   // static contract
   { method: 'GET', path: '/', expect: [200], html: true },

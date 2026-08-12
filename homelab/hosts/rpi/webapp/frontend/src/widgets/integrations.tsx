@@ -109,6 +109,110 @@ export function StreamsWidget() {
   );
 }
 
+// ── CS2 matches ─────────────────────────────────────────────────────────────
+// Today's HLTV slate, same notable-match filter the Discord digest uses: live
+// scores, what's coming with a stream link, and results with per-map scores.
+interface Cs2Match {
+  id?: string; url?: string; event?: string; stars?: number; bo?: string;
+  team1?: string; team2?: string; start_unix?: number;
+  status?: 'upcoming' | 'live' | 'finished';
+  score1?: number | null; score2?: number | null;
+  maps?: { name?: string; s1?: number; s2?: number }[];
+  stream?: { name?: string; url?: string } | null;
+}
+interface Cs2Day {
+  date?: string; fetched_at?: number; stale?: boolean;
+  vrs_as_of?: string; matches?: Cs2Match[];
+}
+
+function clockOf(unix?: number) {
+  if (!unix) return '—';
+  return new Date(unix * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function Cs2Row({ m }: { m: Cs2Match }) {
+  const name = <>{m.team1 ?? 'TBD'} <span className="t-dim">vs</span> {m.team2 ?? 'TBD'}</>;
+  if (m.status === 'finished') {
+    // Winner first, so the result reads without decoding which side is which.
+    const flip = (m.score2 ?? 0) > (m.score1 ?? 0);
+    const [w, l] = flip ? [m.team2, m.team1] : [m.team1, m.team2];
+    const [ws, ls] = flip ? [m.score2, m.score1] : [m.score1, m.score2];
+    const maps = (m.maps ?? [])
+      .map((mp) => `${mp.name} ${flip ? mp.s2 : mp.s1}–${flip ? mp.s1 : mp.s2}`)
+      .join(' · ');
+    return (
+      <div className="kv-row">
+        <span className="mono">✅</span>
+        <span>
+          <a href={m.url} target="_blank" rel="noreferrer"><strong>{w}</strong> {ws}–{ls} {l}</a>
+          {maps && <span className="t-dim"> · {maps}</span>}
+        </span>
+      </div>
+    );
+  }
+  const live = m.status === 'live';
+  return (
+    <div className="kv-row">
+      <span className="mono">{live ? '🔴' : clockOf(m.start_unix)}</span>
+      <span>
+        <a href={m.url} target="_blank" rel="noreferrer">
+          {live && m.score1 != null ? <>{m.team1} {m.score1}–{m.score2} {m.team2}</> : name}
+        </a>
+        {m.stream?.url && (
+          <> · <a href={m.stream.url} target="_blank" rel="noreferrer">📺 {m.stream.name}</a></>
+        )}
+      </span>
+    </div>
+  );
+}
+
+export function Cs2MatchesWidget({ options }: { options?: Record<string, unknown> }) {
+  const limit = Number(options?.limit ?? 10) || 10;
+  const sections = String(options?.sections ?? 'all');
+  const q = useQuery({
+    queryKey: ['hltv-day'],
+    queryFn: () => get<Cs2Day>('/api/hltv/day', 25_000),
+    refetchInterval: 60_000,
+    retry: 0,
+  });
+
+  if (q.isError) {
+    return <WidgetFrame title="CS2 today"><WidgetError message="hltv bot unreachable" /></WidgetFrame>;
+  }
+
+  const all = q.data?.matches ?? [];
+  const pick = (s: Cs2Match['status']) => all.filter((m) => m.status === s);
+  const groups: [string, Cs2Match[]][] = [
+    ['Live', sections === 'results' ? [] : pick('live')],
+    ['Upcoming', sections === 'results' ? [] : pick('upcoming')],
+    ['Results', sections === 'upcoming' ? [] : pick('finished')],
+  ];
+  const shown = groups.reduce((n, [, ms]) => n + ms.length, 0);
+
+  return (
+    <WidgetFrame
+      title="CS2 today"
+      meta={q.data?.fetched_at
+        ? <span title={q.data.stale ? 'HLTV unreachable — showing the last good scrape' : undefined}>
+            {q.data.stale ? '⚠ ' : ''}{relTime(new Date(q.data.fetched_at * 1000).toISOString())}
+          </span>
+        : undefined}
+      scroll
+    >
+      {q.isLoading && <WidgetLoading />}
+      {!q.isLoading && shown === 0 && <div className="t-dim">No notable matches today.</div>}
+      {groups.map(([label, ms]) => ms.length > 0 && (
+        <div key={label}>
+          <div className="t-dim">{label}</div>
+          <div className="kv-rows">
+            {ms.slice(0, limit).map((m, i) => <Cs2Row key={m.id ?? i} m={m} />)}
+          </div>
+        </div>
+      ))}
+    </WidgetFrame>
+  );
+}
+
 // ── leetify trend ───────────────────────────────────────────────────────────
 interface LeetifyHistory { history: { date: string }[] }
 

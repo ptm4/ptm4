@@ -244,9 +244,12 @@ services:
     container_name: discord-hltv
     restart: unless-stopped
     logging: *default-logging
+    depends_on:
+      - hltv-api
     environment:
       TZ: "America/New_York"
       DISCORD_WEBHOOK_URL_HLTV: ${DISCORD_WEBHOOK_URL_HLTV:-}
+      HLTV_API_URL: "http://hltv-api:8080"
     volumes:
       - hltvbot_data:/data
     expose:
@@ -258,6 +261,33 @@ services:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 60s
       timeout: 5s
+      retries: 3
+
+  # Our own read-only HLTV.org API: HLTV publishes none and blocks plain HTTP
+  # clients, so this drives a real Chromium and parses the rendered DOM.
+  # Chromium bursts to a few hundred MB during a scrape — the caps keep it away
+  # from Pi-hole's headroom, since this Pi is the LAN's only DNS server.
+  hltv-api:
+    build: ./discord-hltv/hltv-api
+    container_name: hltv-api
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+    volumes:
+      - hltvapi_data:/data        # browser profile (keeps the CF clearance) + caches
+    expose:
+      - "8080"
+    networks:
+      - internal
+    mem_limit: 768m
+    cpus: 2
+    shm_size: 256m                # Chromium crashes on the 64MB default
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 60s
+      timeout: 10s
       retries: 3
 
   nginx-webapp:
@@ -330,6 +360,7 @@ volumes:
   jellyfinbot_data:
   sportsbot_data:
   hltvbot_data:
+  hltvapi_data:
   pihole_data:
   dnsmasq_data:
   db_data:

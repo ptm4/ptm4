@@ -122,10 +122,12 @@ jobs:
           docker compose up -d notes-api
 
       - name: Build and restart discord bots
+        # hltv-api ships inside discord-hltv/, so the bot-copy step above already
+        # placed its build context. Build it first: discord-hltv depends on it.
         working-directory: /srv/docker/compose
         run: |
-          docker compose build discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
-          docker compose up -d discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
+          docker compose build hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
+          docker compose up -d hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
 
       - name: Restart nginx to pick up config changes
         working-directory: /srv/docker/compose
