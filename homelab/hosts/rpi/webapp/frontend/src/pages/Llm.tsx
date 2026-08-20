@@ -8,8 +8,10 @@ import { get, post, put, del } from '../lib/api';
 import { toast } from '../lib/toast';
 import { Markdown } from '../components/Markdown';
 
-interface LlamaStatus { model?: string; running?: boolean; [k: string]: unknown }
-interface ModelsResp { models?: { name: string; size?: number }[]; current?: string }
+interface LlamaBattery { percentage?: number; temperature?: number; plugged?: string }
+interface LlamaStatus { model?: string; running?: boolean; battery?: LlamaBattery; [k: string]: unknown }
+// llama-ctl returns models as plain filename strings; older builds used {name,size}.
+interface ModelsResp { models?: (string | { name: string; size?: number })[]; current?: string }
 interface RunbooksResp { runbooks?: { name: string; bytes?: number }[] }
 interface AskResp { answer?: string; error?: string; ms?: number }
 interface ChatResp { choices?: { message?: { content?: string } }[] }
@@ -112,13 +114,24 @@ export default function LlmPage() {
           </p>
         ) : (
           <div className="kv-rows">
-            <div className="kv-row"><span>model</span><span className="mono">{status.data?.model ?? '—'}</span></div>
             {Object.entries(status.data ?? {})
-              .filter(([k]) => !['model', 'running'].includes(k))
+              .filter(([k]) => !['model', 'running', 'battery'].includes(k))
               .slice(0, 6)
               .map(([k, v]) => (
-                <div className="kv-row" key={k}><span>{k}</span><span>{String(v)}</span></div>
+                <div className="kv-row" key={k}>
+                  <span>{k}</span>
+                  <span>{typeof v === 'object' && v !== null ? JSON.stringify(v) : String(v)}</span>
+                </div>
               ))}
+            {status.data?.battery && (
+              <div className="kv-row">
+                <span>battery</span>
+                <span>
+                  {status.data.battery.percentage}% · {status.data.battery.temperature}°C
+                  {status.data.battery.plugged?.startsWith('PLUGGED') ? ' · charging' : ''}
+                </span>
+              </div>
+            )}
           </div>
         )}
         {(models.data?.models?.length ?? 0) > 0 && (
@@ -128,7 +141,10 @@ export default function LlmPage() {
               onChange={(e) => switchModel.mutate(e.target.value)}
               disabled={switchModel.isPending}
             >
-              {models.data!.models!.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+              {models.data!.models!.map((m) => {
+                const name = typeof m === 'string' ? m : m.name;
+                return <option key={name} value={name}>{name}</option>;
+              })}
             </select>
             <button className="tb-btn" onClick={() => qc.invalidateQueries({ queryKey: ['llama-status'] })}>
               <RefreshCw /> Refresh

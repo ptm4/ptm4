@@ -1,0 +1,90 @@
+#!/data/data/com.termux/files/usr/bin/python3
+"""Prime llama-server's prompt cache, persisting warmed KV state per model.
+
+Flow (2026-08-20, built after model swaps cost 20+ min):
+  1. Wait until the server actually serves the model named in the runit run
+     script — during a switch the OLD process answers /health while draining.
+  2. Restore that model's saved slot state from ~/slot-states if one exists
+     (requires --slot-save-path in the run script).
+  3. Send a 1-token prime request: with restored state this only prefills the
+     diff since the save (seconds if runbooks unchanged); cold it's the full
+     ~10 min prefill.
+  4. Save the refreshed state back to disk.
+Net effect: each model pays the full prefill once ever; swaps and reboots come
+back warm in roughly load-weights + restore time. Models whose architecture
+can't serialize state (some hybrids) just log the save failure and stay on the
+old cold-prefill behavior."""
+import sys, os, json, re, time, urllib.request
+
+sys.path.insert(0, os.path.expanduser("~/llamactl"))
+import askcore
+
+PREFIX = os.environ.get("PREFIX", "/data/data/com.termux/files/usr")
+RUN_SCRIPT = os.path.join(PREFIX, "var/service/llama/run")
+WAIT_S = 1200  # a draining prefill + a no-mmap model load can take this long
+
+
+def post(path, obj, timeout=60):
+    req = urllib.request.Request(
+        askcore.LLAMA_URL + path, data=json.dumps(obj).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def target_model():
+    try:
+        m = re.search(r"-m\s+(\S+\.gguf)", open(RUN_SCRIPT).read())
+        return m.group(1) if m else None
+    except Exception:
+        return None
+
+
+def served_model():
+    try:
+        with urllib.request.urlopen(askcore.LLAMA_URL + "/v1/models", timeout=5) as r:
+            return json.load(r)["data"][0]["id"]
+    except Exception:
+        return None
+
+
+target = target_model()
+deadline = time.time() + WAIT_S
+while time.time() < deadline:
+    served = served_model()
+    if served and (target is None or served == target):
+        break
+    time.sleep(5)
+else:
+    print("warm skipped: server never came up serving %s" % target)
+    sys.exit(1)
+
+state_file = os.path.basename(served) + ".state.bin"
+t = time.time()
+try:
+    r = post("/slots/0?action=restore", {"filename": state_file}, timeout=600)
+    print("state restored in %ds: %s" % (time.time() - t, r))
+except Exception as e:
+    print("no state restored (%s) — cold prefill ahead" % e)
+
+payload = {
+    "messages": [
+        {"role": "system", "content": askcore.build_system_prompt()},
+        {"role": "user", "content": "warmup"},
+    ],
+    "max_tokens": 1,
+}
+t = time.time()
+try:
+    post("/v1/chat/completions", payload, timeout=1800)
+    print("warmed in %ds" % (time.time() - t))
+except Exception as e:
+    print("warm failed:", e)
+    sys.exit(1)
+
+try:
+    t = time.time()
+    post("/slots/0?action=save", {"filename": state_file}, timeout=600)
+    print("state saved in %ds: %s" % (time.time() - t, state_file))
+except Exception as e:
+    print("state save failed (expected for archs without state support):", e)

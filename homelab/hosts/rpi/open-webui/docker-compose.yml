@@ -1,0 +1,38 @@
+# Open WebUI — real chat interface (streaming, history) for the phone's local
+# LLM. Talks to llama-ctl's OpenAI-compatible endpoint (android:8081/v1), which
+# injects the runbook grounding for the "homelab-grounded" model and passes
+# "raw" through. Added 2026-08-20.
+#
+# Source of truth: homelab/hosts/rpi/open-webui/ in the ptm4 repo.
+# Deploy: scp to rpi:/srv/docker/compose/open-webui/ && docker compose up -d
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    ports:
+      - "3010:8080"
+    environment:
+      - WEBUI_AUTH=False                                  # trusted LAN, no auth — matches the stack
+      - ENABLE_SIGNUP=False
+      - WEBUI_NAME=Homelab LLM
+      - ENABLE_OLLAMA_API=False
+      - OPENAI_API_BASE_URL=http://192.168.1.54:8081/v1   # llama-ctl grounded proxy (android, DHCP-reserved)
+      - OPENAI_API_KEY=homelab                            # placeholder; llama-ctl has no auth
+      - ENABLE_WEB_SEARCH=False                           # keep the heavy extras off a 4GB Pi
+      - ENABLE_IMAGE_GENERATION=False
+      # every one of these fires an EXTRA hidden model call per message — the
+      # phone serves ONE slot, so they'd queue behind (and double) every chat
+      - ENABLE_TITLE_GENERATION=False
+      - ENABLE_TAGS_GENERATION=False
+      - ENABLE_FOLLOW_UP_GENERATION=False
+      - ENABLE_AUTOCOMPLETE_GENERATION=False
+      - ENABLE_RETRIEVAL_QUERY_GENERATION=False
+    volumes:
+      - open-webui-data:/app/backend/data
+    # rpi is the DNS/DHCP SPOF: cap the container so a misbehaving UI OOMs
+    # itself instead of pressuring Pi-hole. 900m starved first boot (torch
+    # runtime); ~1.1-1.3GB observed steady-state.
+    mem_limit: 1600m
+    restart: unless-stopped
+volumes:
+  open-webui-data:
