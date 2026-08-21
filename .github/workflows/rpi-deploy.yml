@@ -14,6 +14,9 @@ on:
       - "homelab/hosts/rpi/discord-jellyfin/**"
       - "homelab/hosts/rpi/discord-sports/**"
       - "homelab/hosts/rpi/discord-hltv/**"
+      # the workflow itself: a deploy-logic fix must deploy (commit fbf6fe0
+      # changed only this file and silently triggered nothing)
+      - ".github/workflows/rpi-deploy.yml"
   workflow_dispatch:   # allow manual trigger from GitHub UI
 
 jobs:

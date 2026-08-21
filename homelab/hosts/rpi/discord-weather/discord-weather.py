@@ -40,7 +40,7 @@ API_PORT = 8080
 
 OM_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OM_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
-EMBED_COLOR = 0x58B9FF  # sky blue
+EMBED_COLOR = 0x556B2F  # olive drab — scoutmaster khaki, not weather-app blue
 
 DEFAULT_CONFIG = {
     "enabled": True,
@@ -138,9 +138,15 @@ def validate_config(cfg):
         return "witty_names must be a list of at most 20 names"
     seen = set()
     for n in names:
-        # letters/digits/space/.'- only: no @ (mention injection), no markdown chars
-        if not isinstance(n, str) or not re.fullmatch(r"[A-Za-z0-9 .'\-]{1,40}", n.strip()):
-            return f"invalid name {n!r} — letters, digits, spaces, . ' - only, max 40 chars"
+        # letters/digits/space/.'-_ plus an optional leading @ so Discord handles
+        # work as roast names. @everyone/@here stay blocked: mentions are
+        # allow-listed in the payload, so a name rendering as either would ping
+        # the whole channel every single morning.
+        if not isinstance(n, str) or not re.fullmatch(r"@?[A-Za-z0-9 .'_\-]{1,40}", n.strip()):
+            return (f"invalid name {n!r} — letters, digits, spaces, . ' - _ "
+                    "and an optional leading @, max 40 chars")
+        if n.strip().lstrip("@").strip().lower() in ("everyone", "here"):
+            return f"name {n.strip()!r} would ping the whole channel — not allowed"
         if n.strip().lower() in seen:
             return f"duplicate name {n.strip()!r}"
         seen.add(n.strip().lower())
@@ -246,7 +252,7 @@ def location_field(loc, fc):
     # CAPS title anchored by the town's condition emoji — field names render at
     # a fixed size, so hierarchy comes from contrast, not font size
     if fc is None:
-        return {"name": f"📍 {loc['name'].upper()}", "value": "⚠️ data unavailable", "inline": True}
+        return {"name": f"📍 {loc['name'].upper()}", "value": "⚠️ no report filed — unacceptable", "inline": True}
     hum = f"{fc['humidity']}%" if fc["humidity"] is not None else "—"
     return {
         "name": f"{fc['emoji']} {loc['name'].upper()}",
@@ -292,17 +298,19 @@ def build_payload(cfg):
     date_str = now.strftime("%A, %B %d, %Y").replace(" 0", " ")
     desc = f"**{date_str}**"
     if first_fc:
-        desc += f"\nSunrise {first_fc['sunrise']} · Sunset {first_fc['sunset']}"
+        desc += (f"\nSunrise {first_fc['sunrise']} · Sunset {first_fc['sunset']}"
+                 " — daylight is issued once, use it")
     payload = {
-        "username": "Daily Weather Report",
+        # The whole post is in-character: Mr. Murf files the morning briefing.
+        "username": "Mr. Murf",
         # explicit allow-list so @everyone/@here in the message actually ping
         "allowed_mentions": {"parse": ["everyone", "roles", "users"]},
         "embeds": [{
-            "title": "🌤️ Daily Weather Report",
+            "title": "🌤️ Scoutmaster's Morning Briefing",
             "description": desc,
             "color": EMBED_COLOR,
             "fields": spaced,
-            "footer": {"text": "Open-Meteo"},
+            "footer": {"text": "Forecast: Open-Meteo. Standards: Mr. Murf."},
         }],
     }
     witty_entry = None

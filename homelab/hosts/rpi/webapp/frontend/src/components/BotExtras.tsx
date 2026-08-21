@@ -58,8 +58,12 @@ export function WittyCard({ enabled, names, onChange }: {
     if (!n) return;
     // Mirror the bot's PUT /config validation so a bad name fails here, at the
     // input, instead of failing the whole save with a bare server 400.
-    if (!/^[A-Za-z0-9 .'-]{1,40}$/.test(n)) {
-      toast("Names can only use letters, digits, spaces, . ' - (max 40 chars).", 'warn');
+    if (!/^@?[A-Za-z0-9 .'_-]{1,40}$/.test(n)) {
+      toast("Names can use letters, digits, spaces, . ' - _ and an optional leading @ (max 40 chars).", 'warn');
+      return;
+    }
+    if (/^@?\s*(everyone|here)$/i.test(n)) {
+      toast('That name would ping the whole channel every morning — pick another.', 'warn');
       return;
     }
     if (names.length >= 20) {
