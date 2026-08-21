@@ -37,17 +37,23 @@ import threading
 import time
 from datetime import datetime
 
-VERSION = 3          # bump when TEMPLATES change incompatibly -> forces a fresh pool
+VERSION = 4          # bump when TEMPLATES change incompatibly -> forces a fresh pool
                      # v2 (2026-08-21): full content refresh — Mr. Murf voice
-                     # v3 (2026-08-21): +64 templates (brotherhood warmth, pure
+                     # v3 (2026-08-21): +76 templates (brotherhood warmth, pure
                      # bits, Murf self-deprecation); harshest lines re-turned and
                      # the adj/praise banks stripped of worth-attacks
+                     # v4 (2026-08-21): selection fairness — ranking now scores a
+                     # window rather than the whole queue, and nameless bits get
+                     # a per-cycle quota. Without both, 26 weekday-pinned lines
+                     # monopolised their days and the 16 bits drew once a quarter.
 CYCLE_SIZE = 90      # ~3 months of daily draws before a reshuffle
 HISTORY_SIZE = 180   # recent (template, name) pairs barred from the next cycle (~6 months)
 HISTORY_MAX = 400    # how much history we keep on disk
 ANY_PER_TAGGED = 2   # cycle composition: 2 generic lines per weather/day line
 PER_TEMPLATE_CAP = 2  # max times one template appears per cycle (two-name templates
                       # have hundreds of name permutations and would swamp the shuffle)
+SELECT_WINDOW = 12   # how far into the shuffled queue ranking looks; see _select
+BIT_EVERY = 9        # cycle slots per nameless "pure bit" (CYCLE_SIZE // this)
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TAGS = ("any", "hot", "cold", "rain", "snow", "nice")
@@ -593,8 +599,12 @@ class WittyPool:
         recent = {tuple(h) for h in history[-window:]} if window else set()
         fresh = [p for p in pairs if (p[0]["id"], p[1]) not in recent] or pairs
 
-        generic = [p for p in fresh if p[0]["tag"] == "any" and not p[0]["days"]]
-        tagged = [p for p in fresh if not (p[0]["tag"] == "any" and not p[0]["days"])]
+        bits = [p for p in fresh if not p[0]["uses_name"]]
+        generic = [p for p in fresh if p[0]["uses_name"]
+                   and p[0]["tag"] == "any" and not p[0]["days"]]
+        tagged = [p for p in fresh if p[0]["uses_name"]
+                  and not (p[0]["tag"] == "any" and not p[0]["days"])]
+        random.shuffle(bits)
         random.shuffle(generic)
         random.shuffle(tagged)
 
@@ -612,6 +622,14 @@ class WittyPool:
                     used.add(key)
                     return p
             return None
+
+        # A nameless bit is ONE pair (no name to permute) against thousands of
+        # named ones, so left to the shuffle it shows up about once a quarter.
+        # Give the bits a quota first; the final shuffle scatters them.
+        for _ in range(min(len(bits), CYCLE_SIZE // BIT_EVERY)):
+            p = take(bits)
+            if p:
+                cycle.append(p)
 
         while len(cycle) < CYCLE_SIZE and (generic or tagged):
             for _ in range(ANY_PER_TAGGED):
@@ -671,17 +689,34 @@ class WittyPool:
 
     # -- selection ------------------------------------------------------------
     def _select(self, state, bucket, avail, today):
-        best = None
-        for i, entry in enumerate(state.get("pending") or []):
-            tpl = TEMPLATES_BY_ID.get(entry.get("t"))
-            if tpl is None or not _eligible(tpl, bucket, avail, today):
-                continue
-            rank = _rank(tpl)
-            if best is None or rank < best[0]:
-                best = (rank, i, entry)
-                if rank == 0:
-                    break
-        return best[1:] if best else None
+        """Best-ranked eligible entry from the FRONT of the queue, not the whole
+        queue. Ranking alone is absolute — a weekday-pinned line outranks every
+        generic one — so with 26 day-pinned templates the first fortnight was
+        nothing but "It's Tuesday" lines while 130+ others waited. Scoring only
+        a window of the (already shuffled) pending list makes the pinned line
+        win when it happens to come up rather than every single time, which is
+        the behaviour the ranking was reaching for. Still fully deterministic:
+        same state + same morning = same line, so a retry re-posts identically,
+        and reroll still works by rotating its pick out of the window."""
+        pending = state.get("pending") or []
+
+        def best_in(indexed):
+            best = None
+            for i, entry in indexed:
+                tpl = TEMPLATES_BY_ID.get(entry.get("t"))
+                if tpl is None or not _eligible(tpl, bucket, avail, today):
+                    continue
+                rank = _rank(tpl)
+                if best is None or rank < best[0]:
+                    best = (rank, i, entry)
+                    if rank == 0:
+                        break
+            return best
+
+        hit = best_in(list(enumerate(pending))[:SELECT_WINDOW])
+        if hit is None:   # nothing eligible up front — fall back to the full queue
+            hit = best_in(enumerate(pending))
+        return hit[1:] if hit else None
 
     def _peek(self, names, fc=None, now=None):
         """Choose today's line without consuming it. Assumes the lock is held."""
