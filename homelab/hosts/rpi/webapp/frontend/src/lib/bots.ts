@@ -45,7 +45,8 @@ export const BOTS: BotDef[] = [
       ...COMMON,
       { key: 'witty_enabled', label: 'Witty messages', type: 'boolean', help: 'Madlibs roast line in the daily post' },
     ],
-    passthrough: ['locations', 'witty_names', 'timezone'],
+    // locations and witty_names have structured editors (extras) — no longer passthrough.
+    passthrough: ['timezone'],
     extras: ['geocode', 'witty'],
   },
   {
@@ -86,7 +87,7 @@ export const BOTS: BotDef[] = [
     icon: '🏟️',
     container: 'discord-sports',
     fields: [...COMMON],
-    passthrough: ['timezone', 'teams', 'leagues'],
+    passthrough: ['timezone', 'leagues'],
     extras: ['teams'],
   },
   {
@@ -133,4 +134,54 @@ export interface DiscordEmbed {
 export interface BotPreview {
   payload?: { content?: string; username?: string; embeds?: DiscordEmbed[] };
   failed?: string[];
+}
+
+// ── structured-editor payloads (components/BotExtras.tsx) ────────────────────
+
+export interface WeatherLocation { name: string; lat: number; lon: number }
+
+export interface GeocodeResult {
+  name: string;
+  admin1?: string;
+  country?: string;
+  lat: number;
+  lon: number;
+}
+
+export interface WittyStatus {
+  available?: boolean;
+  reason?: string;
+  enabled?: boolean;
+  remaining?: number;
+  cycle?: number;
+  history?: number;
+  next_generic?: string | null;
+  last_posted?: { at?: number; text?: string } | null;
+  pool_size?: number;
+}
+
+export interface WittyReroll {
+  ok?: boolean;
+  skipped?: string;
+  next?: string | null;
+  remaining?: number;
+  note?: string;
+  error?: string;
+}
+
+// The bot stores whatever the search returned, so keep the shape open.
+export interface SportsTeam {
+  name: string;
+  league?: string;
+  abbrev?: string;
+  [k: string]: unknown;
+}
+
+export interface VrsList { as_of?: string; teams?: string[] }
+
+export interface JellyfinCheck {
+  ok?: boolean;
+  server_name?: string;
+  version?: string;
+  error?: string;
 }

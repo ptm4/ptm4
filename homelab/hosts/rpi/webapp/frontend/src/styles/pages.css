@@ -103,6 +103,37 @@
 .embed-field-value { font-size: var(--fs-md); color: var(--ink-2); white-space: pre-wrap; }
 .embed-footer { margin-top: var(--s3); font-size: var(--fs-xs); color: var(--ink-3); }
 
+/* bot structured-config editors (witty pool, locations, teams, vrs, jf check) */
+.bot-extra .w-head { margin-bottom: var(--s2); }
+.bot-extra.is-dim > *:not(.w-head) { opacity: .55; }
+.bot-extra .w-actions { margin-top: var(--s3); }
+.witty-pool .kv-row > span:last-child { text-align: right; }
+.bot-list { display: flex; flex-direction: column; }
+.bot-list-row {
+  display: flex; align-items: center; gap: var(--s2);
+  padding: var(--s2) 0; border-bottom: 1px solid var(--glass-border);
+  font-size: var(--fs-md);
+}
+.bot-list-row:last-child { border-bottom: 0; }
+.bot-list-row .spacer { flex: 1; }
+.bot-list-row svg { width: 14px; height: 14px; color: var(--ink-3); flex: 0 0 auto; }
+.bot-list-meta { font-size: var(--fs-sm); color: var(--ink-3); }
+.bot-add-row { display: flex; gap: var(--s2); margin-top: var(--s3); }
+.bot-add-row input, .bot-add-row select {
+  flex: 1; min-width: 0;
+  padding: 5px var(--s2);
+  background: var(--bg-inset);
+  color: var(--ink);
+  border: 1px solid var(--glass-border-2);
+  border-radius: var(--r);
+  font: inherit;
+}
+.bot-add-row select { flex: 0 0 auto; }
+.bot-add-row .tb-btn { flex: 0 0 auto; }
+.geo-results { display: flex; flex-direction: column; gap: var(--s1); margin-top: var(--s2); }
+.geo-results .tb-btn { justify-content: flex-start; text-align: left; }
+.vrs-list { max-height: 320px; overflow-y: auto; }
+
 /* ── llm ────────────────────────────────────────────────────────────────── */
 .llm-page { display: flex; flex-direction: column; gap: var(--s3); max-width: 900px; }
 .llm-input, .runbook-editor textarea {
