@@ -69,11 +69,14 @@ jobs:
         # rsync --delete (was cp -r): removed/renamed files must disappear on the Pi
         # too — cp left the pre-redesign frontend at the served root forever, and the
         # v2 app's content-hashed bundles would otherwise accumulate unboundedly.
-        # backend/node_modules is excluded so the warm install survives (the 2-3s
-        # restart window the compose command comment relies on).
+        # node_modules (any depth) is excluded: backend/'s so the warm install
+        # survives (the 2-3s restart window the compose command comment relies on),
+        # and because a root-owned stray (container-created, e.g. the orphaned
+        # frontend/node_modules from the v2 dev era) makes --delete fail the whole
+        # step as the ptm runner (deploy #84, 2026-08-21).
         run: |
           mkdir -p /srv/docker/compose/webapp
-          rsync -a --delete --exclude 'backend/node_modules' \
+          rsync -a --delete --exclude 'node_modules' \
             "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp/" /srv/docker/compose/webapp/
           cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
