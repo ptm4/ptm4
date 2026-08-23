@@ -38,6 +38,17 @@ provided `HL_DB_TOKEN` is exported in the shell that launched Claude Code.
 | `hl_schema` | Tables, row counts and querying hints — call before `hl_query` |
 | `hl_query` | Read-only SQL for anything the shaped tools do not cover |
 
+### Claude Desktop
+
+Desktop can't read `.mcp.json` and only launches stdio servers, so it goes through
+`homelab/tools/homelab-db/mcp_stdio_bridge.py` — a stdlib stdio→HTTP shim (tux has no
+node, so `npx mcp-remote` was never an option). Installed copy lives at
+`~/.local/bin/hl-mcp-bridge.py` (local disk on purpose: a hung CIFS mount must not stall
+Desktop startup); registered in `~/.config/Claude/claude_desktop_config.json` under
+`mcpServers.homelab` with the token in its `env` block. After editing the bridge in the
+repo, re-copy it. Restart Desktop fully (quit, not close-window) to pick up config
+changes.
+
 **Start with `hl_incidents` when something is broken.** Several failures here look like
 something they are not — healthy containers plus "services down" is usually DNS on the
 *checking* host; a whole host vanishing at once is usually hardware, not software.
