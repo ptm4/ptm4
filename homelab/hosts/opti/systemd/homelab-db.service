@@ -1,0 +1,40 @@
+[Unit]
+# Read-only HTTP + MCP front door for homelab.db on :9100.
+#   /api/*  -> the webapp's widgets and Data page
+#   /mcp    -> Claude Code sessions (MCP, pinned to spec 2025-06-18)
+#
+# Install on opti (the deploy workflow does this on push):
+#   sudo cp homelab-db.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-db
+#
+# Requires HL_DB_TOKEN in /etc/hl-agents.env — the service refuses to start without it
+# rather than silently exposing the database to the whole LAN.
+Description=Homelab DB server (read-only JSON API + MCP on :9100)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /srv/red
+Type=simple
+User=ptm
+EnvironmentFile=-/etc/hl-agents.env
+WorkingDirectory=/srv/red/fs/ptm/repo/ptm4/homelab/tools/homelab-db
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/tools/homelab-db/server.py
+Restart=on-failure
+RestartSec=10
+
+# Queries run on a read-only connection; the only write is the query_audit row, which is
+# why the database directory is still ReadWritePaths rather than ReadOnlyPaths.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/srv/red/opsdb
+MemoryMax=384M
+# LAN plus the WireGuard tunnel — nothing here should ever answer from the internet.
+IPAddressAllow=192.168.1.0/24 10.213.87.0/24 127.0.0.0/8
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

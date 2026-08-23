@@ -333,3 +333,23 @@
   font: inherit;
   padding: 2px 6px;
 }
+
+/* ── data-flow page ─────────────────────────────────────────────────────── */
+/* Four stage columns on desktop; on narrow screens they stack, which reads as
+   the same producer -> store -> index -> consumer order top to bottom. */
+.dataflow-page { display: flex; flex-direction: column; gap: var(--s3); }
+.flow-stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s3);
+  align-items: start;
+}
+.flow-stage { display: flex; flex-direction: column; gap: var(--s2); min-width: 0; }
+.flow-stage > header { display: flex; align-items: baseline; gap: var(--s2); }
+.flow-stage > header h3 { margin: 0; font-size: 0.95rem; }
+.flow-card { display: flex; flex-direction: column; gap: 4px; padding: var(--s2); min-width: 0; }
+.flow-card.is-stale { border-color: var(--warn); }
+.flow-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s2); }
+.flow-source { font-size: 0.78rem; word-break: break-word; }
+.flow-meta { display: flex; flex-wrap: wrap; gap: var(--s2); font-size: 0.78rem; }
+.flow-notes { margin: 2px 0 0; font-size: 0.78rem; line-height: 1.45; }

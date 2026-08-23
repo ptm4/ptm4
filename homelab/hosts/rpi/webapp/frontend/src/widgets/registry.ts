@@ -20,6 +20,7 @@ import {
   BotsWidget, Cs2MatchesWidget, DownloadsWidget, LeetifyTrendWidget, NotificationsWidget,
   StreamsWidget,
 } from './integrations';
+import { ChangesWidget, DbHealthWidget, LongTrendsWidget } from './hldb';
 import { ALL_LINKS, LINK_GROUPS } from '../lib/links';
 
 export interface OptionDef {
@@ -259,6 +260,46 @@ export const WIDGETS: WidgetDef[] = [
     description: 'qBittorrent reachability behind the VPN namespace.',
     component: DownloadsWidget,
     defaults: { w: 3, h: 2 },
+    min: { w: 2, h: 2 },
+  },
+  {
+    type: 'changes',
+    label: 'What changed',
+    description: 'Containers, mounts and services added, removed or changed across the fleet — from homelab.db, which keeps the history the nightly fragments overwrite.',
+    component: ChangesWidget,
+    defaults: { w: 4, h: 4 },
+    min: { w: 3, h: 2 },
+    options: [
+      { key: 'days', label: 'Window (days)', type: 'number', min: 1, max: 120 },
+      { key: 'host', label: 'Host', type: 'select', choices: [{ value: '', label: 'All hosts' }, ...HOSTS] },
+    ],
+  },
+  {
+    type: 'long-trends',
+    label: 'Long-range trend',
+    description: 'Months of a collector metric — disk, pool, memory, latency — well past the 48h the in-memory vitals rings hold.',
+    component: LongTrendsWidget,
+    defaults: { w: 4, h: 3 },
+    min: { w: 3, h: 2 },
+    options: [
+      { key: 'metric', label: 'Metric', type: 'select', choices: [
+        { value: 'pool_used_pct', label: 'ZFS pool used %' },
+        { value: 'disk_used_pct', label: 'Root disk used %' },
+        { value: 'mem_used_gib', label: 'Memory used GiB' },
+        { value: 'pending_count', label: 'Pending updates' },
+        { value: 'gateway_avg_ms', label: 'Gateway latency' },
+        { value: 'internet_avg_ms', label: 'Internet latency' },
+      ] },
+      { key: 'days', label: 'Window (days)', type: 'number', min: 7, max: 400 },
+      { key: 'host', label: 'Host', type: 'select', choices: [{ value: '', label: 'All hosts' }, ...HOSTS] },
+    ],
+  },
+  {
+    type: 'db-health',
+    label: 'Homelab DB',
+    description: 'Whether every data feed is still feeding, how much is indexed, and how far the history reaches. Watches the thing that watches everything else.',
+    component: DbHealthWidget,
+    defaults: { w: 3, h: 3 },
     min: { w: 2, h: 2 },
   },
 ];

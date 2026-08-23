@@ -1,0 +1,15 @@
+[Unit]
+# Every 30 minutes at :12 and :42 — deliberately offset from the collectors' own
+# :00/:30 GitHub Actions cron so the ingest reads a finished report rather than racing
+# the writer. The daily maintenance block (backup snapshot, prune, 92-data-flows.md)
+# is triggered from inside the same run once ~20h have passed, so there is no second
+# unit to keep in sync.
+Description=Run the homelab DB ingest every 30 minutes (offset from the collectors)
+
+[Timer]
+OnCalendar=*:12,42
+RandomizedDelaySec=60
+Persistent=true
+
+[Install]
+WantedBy=timers.target

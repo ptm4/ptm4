@@ -481,5 +481,72 @@
   "GET /streams/": {
     "status": 200,
     "keys": null
+  },
+  "GET /api/hldb/health": {
+    "status": 200,
+    "keys": [
+      "configured",
+      "ok",
+      "upstream"
+    ]
+  },
+  "GET /api/hldb/status": {
+    "status": 200,
+    "keys": [
+      "changes_last_7d",
+      "database",
+      "doctor",
+      "hosts",
+      "open_findings",
+      "services",
+      "stale_datasets"
+    ]
+  },
+  "GET /api/hldb/dataplane": {
+    "status": 200,
+    "keys": [
+      "database",
+      "datasets"
+    ]
+  },
+  "GET /api/hldb/changes?days=7": {
+    "status": 200,
+    "keys": [
+      "days",
+      "event_count",
+      "events",
+      "host"
+    ]
+  },
+  "GET /api/hldb/metrics?metric=disk_used_pct&days=7": {
+    "status": 200,
+    "keys": [
+      "days",
+      "metric",
+      "series"
+    ]
+  },
+  "GET /api/hldb/search?q=gluetun": {
+    "status": 200,
+    "keys": [
+      "hit_count",
+      "hits",
+      "matched",
+      "note",
+      "query",
+      "strategy"
+    ]
+  },
+  "GET /api/hldb/host/opti": {
+    "status": 200,
+    "keys": [
+      "containers",
+      "curated",
+      "host",
+      "latest_reports",
+      "nodes",
+      "open_findings",
+      "recent_changes"
+    ]
   }
 }

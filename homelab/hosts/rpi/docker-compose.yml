@@ -133,6 +133,12 @@ services:
       # nginx proxies /hls straight to the same host and port.
       STREAM_URL: ${STREAM_URL:-http://192.168.1.6:8098}
       HL_STREAM_TOKEN: ${HL_STREAM_TOKEN:-}
+      # homelab-db on opti (routes/hldb.js) — the queryable index behind the Data page
+      # and the changes/trends/db-health widgets. Read-only upstream; the token must
+      # match HL_DB_TOKEN in opti's /etc/hl-agents.env and stays server-side. Addressed
+      # by IP on purpose: this must still answer when Pi-hole (i.e. DNS) is the problem.
+      HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
+      HL_DB_TOKEN: ${HL_DB_TOKEN:-}
     volumes:
       - ./webapp:/app
       - /mnt/opti-fs/ptm/security-reports:/reports:ro

@@ -180,7 +180,65 @@ def _claude_wire_checks():
     checks.append(check("claude_hook_scripts", "harness hook scripts present & valid",
                         not missing_scripts,
                         "ok" if not missing_scripts else f"problem: {missing_scripts}"))
+    # 7. the homelab MCP server — .mcp.json is committed (unlike .claude/, it is not
+    #    gitignored), so this checks the file rather than materializing it. Whether the
+    #    server is actually up is reported as detail, never as a failure: opti being
+    #    down is an operational fact, not workspace drift.
+    checks.append(_claude_mcp_check())
     return checks
+
+
+MCP_CONFIG_REL = ".mcp.json"
+MCP_SERVER_NAME = "homelab"
+
+
+def _claude_mcp_check():
+    path = os.path.join(REPO_ROOT, MCP_CONFIG_REL)
+    try:
+        with open(path, encoding="utf-8") as f:
+            conf = json.load(f)
+    except FileNotFoundError:
+        return check("claude_mcp", f"{MCP_CONFIG_REL} registers the homelab MCP server",
+                     False, "no .mcp.json")
+    except (json.JSONDecodeError, OSError) as e:
+        return check("claude_mcp", f"{MCP_CONFIG_REL} registers the homelab MCP server",
+                     False, f"unreadable: {e}")
+
+    server = (conf.get("mcpServers") or {}).get(MCP_SERVER_NAME)
+    if not server:
+        return check("claude_mcp", f"{MCP_CONFIG_REL} registers the homelab MCP server",
+                     False, f"no '{MCP_SERVER_NAME}' entry")
+    # A url entry without `type` is treated as a config error by Claude Code and the
+    # server is skipped silently — worth catching here rather than wondering why the
+    # tools never appear.
+    if not server.get("type"):
+        return check("claude_mcp", f"{MCP_CONFIG_REL} registers the homelab MCP server",
+                     False, "entry has no 'type' (Claude Code skips it silently)")
+
+    detail = f"{server.get('type')} {server.get('url', '')}"
+    if "${" in json.dumps(server.get("headers") or {}):
+        # The token is expanded from the environment; without it every call 401s.
+        if not os.environ.get("HL_DB_TOKEN"):
+            detail += " — HL_DB_TOKEN not set in this shell"
+    detail += f"; {_mcp_reachable(server.get('url'))}"
+    return check("claude_mcp", f"{MCP_CONFIG_REL} registers the homelab MCP server",
+                 True, detail)
+
+
+def _mcp_reachable(url):
+    """One-second liveness probe, reported as detail only. Never blocks the report."""
+    if not url:
+        return "no url"
+    try:
+        import socket
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=1.0):
+            return f"reachable at {host}:{port}"
+    except OSError:
+        return "not reachable (opti down or service stopped)"
 
 
 def _claude_wire():

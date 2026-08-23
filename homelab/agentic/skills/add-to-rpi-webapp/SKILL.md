@@ -5,19 +5,28 @@ description: Add a page, tab, or API route to the homelab dashboard at webapp.rp
 
 # Add something to the rpi webapp
 
-The homelab dashboard is an Express + vanilla-JS app on the rpi. There is no build
-step and no framework — you add files and they are served.
+The homelab dashboard is a **Fastify backend + React/Vite frontend** on the rpi, with the
+old vanilla-JS app still served alongside it at `/legacy/`.
 
 | | |
 |---|---|
 | **URL** | `https://webapp.rpi.lan:8443/` (self-signed cert — expect a browser warning) |
 | **Repo source** | `homelab/hosts/rpi/webapp/` — edit here, this is authoritative |
 | **Deployed to** | `/srv/docker/compose/webapp/` on rpi, **bind-mounted** into the container at `/app` |
-| **Container** | `webapp` (`node:lts-alpine`, runs `npm install --omit=dev && node index.js`) |
+| **Container** | `webapp` (`node:lts-alpine`, runs `npm install --omit=dev && node server.js`) |
 | **Reverse proxy** | container `nginx-webapp` terminates TLS on `192.168.1.10:8443` |
 
-Because the source directory is bind-mounted, **static frontend files are live the
-instant they land on disk** — no rebuild, no restart. Only backend JS needs a restart.
+Two different iteration loops, and mixing them up wastes time:
+
+- **`frontend/` (React/Vite) is built by CI.** Editing a `.tsx` file changes nothing
+  until `rpi-deploy.yml` runs `npm run build` and ships `frontend/dist/`. There is no
+  live-on-copy for the v2 app.
+- **`frontend-legacy/` and `backend/` are bind-mounted**, so legacy static files are live
+  the instant they land on disk; backend changes need the container restarted.
+
+**Adding a card to the board is a different skill** — see
+[`add-webapp-widget`](../add-webapp-widget/SKILL.md). Use this skill for a full page, a
+standalone view, or an API route.
 
 ## 1. Decide the shape
 
@@ -25,9 +34,12 @@ Three kinds of addition. Pick by how much chrome the thing needs:
 
 | Shape | Use when | Where |
 |---|---|---|
-| **Standalone page** | Self-contained view with its own layout, canvas, or heavy CSS — diagrams, maps, reports | `frontend/<name>/index.html` (+ its own `data.json`, assets) |
-| **SPA tab** | Fits the dashboard's existing sidebar + card idiom | a route in `frontend/app.js`, rendered into `#view` |
+| **React page** | Fits the dashboard's sidebar + card idiom — the default for anything new | `frontend/src/pages/<Name>.tsx` + a `<Route>` in `frontend/src/App.tsx` + an `<Item>` in `frontend/src/components/Sidebar.tsx` |
+| **Standalone page** | Self-contained view with its own layout, canvas, or heavy CSS — diagrams, maps | `frontend-legacy/<name>/index.html` (+ its own `data.json`, assets), mounted in `backend/plugins/static.js` |
 | **API route only** | Just exposing data (proxying a service, reading a file) | `backend/routes/<name>.js` |
+
+`pages/DataFlow.tsx` is a small, current example of the React-page shape: one query, an
+error state, a stage layout, and its CSS in `styles/pages.css`.
 
 Existing standalone pages: `frontend/architecture/`, `frontend/agentic/`,
 `frontend/samba/` (editor for opti's `[red]` share config — proxies the dispatcher's
@@ -74,23 +86,34 @@ noblenumbat.
 
 ### Backend route
 
+A route is a Fastify plugin — an async function taking `app`, with paths relative to the
+prefix it is registered under:
+
 ```js
 // backend/routes/thing.js
-const express = require('express');
-const router = express.Router();
-router.get('/status', (req, res) => res.json({ ok: true }));
-module.exports = router;
+module.exports = async function thingRoutes(app) {
+  app.get('/status', async () => ({ ok: true }));
+};
 ```
 
-Register it in `backend/index.js` beside the others:
+Register it in `backend/app.js` beside the others:
 
 ```js
-const thingRouter = require('./routes/thing');
-app.use('/api/thing', thingRouter);
+await app.register(require('./routes/thing'), { prefix: '/api/thing' });
 ```
+
+For anything that proxies another service, use `proxyJson` from `backend/lib/upstream.js`
+rather than hand-rolling fetch — `routes/hldb.js` is a short example, including how to
+degrade to a 503 with a reason when the upstream host is down.
 
 **`/api/health` is taken** by the webapp's own healthcheck — that is why the health bot
 proxy lives at `/api/healthdigest`.
+
+**Every new route must be added to `scripts/smoke-api.mjs` and `scripts/smoke-baseline.json`
+in the same commit.** The deploy runs the smoke suite inside the container and fails if a
+route is missing or its top-level response keys shrank. Note the corollary: a response
+whose key set varies with the data (a key present only when there are results) will fail
+the deploy on some future day — keep the shape constant and use `null`.
 
 Data already available inside the container (read-only mounts from opti's pool):
 
@@ -112,6 +135,11 @@ are already answered:
 | `/api/timers` | systemd timers per host (parsed from the agent fragments) |
 | `/api/vitals/:host` | ~6h of 30s-resolution CPU / memory / temp / network, for sparklines |
 | `/api/pihole/summary` | live FTL stats + blocking state (needs `PIHOLE_WEB_PASSWORD` in the container env) |
+| `/api/hldb/*` | **anything historical** — homelab.db on opti: `metrics` (months of any collector metric, not just pool/disk), `changes` (when a container appeared or vanished), `search` (FTS over every runbook), `status`, `dataplane`, `host/:host` |
+
+The file-backed read-models above can only answer questions about *now*, because the files
+they read are overwritten. If you need history, correlation across collectors, or search,
+it is already in `homelab.db` — see `homelab/tools/homelab-db/README.md`.
 
 Note the collector cadence when deciding what to trust: **homelab-doctor and network run
 every 30 min, but hardware and software run only once a day** — so anything CPU/memory
@@ -138,20 +166,34 @@ Two routes. **Both matter** — the direct copy makes it live, the commit makes 
 
 Peter commits his own work, so don't commit or push. To make a change live now:
 
-> **2026-08-10 redesign in progress:** the old vanilla frontend was renamed
-> `frontend-legacy/` (served at `/legacy/` + the standalone paths) and a new
-> React/Vite app lives in `frontend/` (built by CI, output `frontend/dist/`).
-> This skill's per-file recipes describe the LEGACY app; new pages belong in the
-> React app. This file gets rewritten when the redesign stabilizes (P7).
+> **React pages have no fast path.** `frontend/` is a Vite build shipped by CI, so an
+> rsync of `.tsx` sources changes nothing. Verify off-box instead (below), then push.
+> Only `frontend-legacy/` and `backend/` are bind-mounted.
 
 ```bash
-# static frontend only — served immediately, no restart
+# legacy static frontend only — served immediately, no restart
 rsync -av homelab/hosts/rpi/webapp/frontend-legacy/ rpi:/srv/docker/compose/webapp/frontend-legacy/
 
 # backend route changes also need the Node process re-exec'd
 rsync -av homelab/hosts/rpi/webapp/backend/ rpi:/srv/docker/compose/webapp/backend/
 ssh rpi 'cd /srv/docker/compose && docker compose restart webapp'
 ```
+
+### Verify off-box before pushing
+
+tux has no `node`; noblenumbat does. Copy the webapp there and exercise it for real —
+this catches a TypeScript error or a broken route before CI does:
+
+```bash
+rsync -a --exclude node_modules --exclude dist \
+  homelab/hosts/rpi/webapp/{backend,frontend,frontend-legacy,scripts} noblenumbat:/tmp/hlbuild/
+ssh noblenumbat 'cd /tmp/hlbuild/frontend && npm ci && npm run build'   # tsc --noEmit + vite build
+ssh noblenumbat 'cd /tmp/hlbuild/backend  && npm ci && npm test'        # 49 fastify.inject parity tests
+```
+
+Copy `frontend-legacy/` too, or the parity tests fail on the standalone-page routes for a
+reason that has nothing to do with your change. To exercise a route without opening a
+port, use `fastify.inject()` the way `backend/test/parity.test.js` does.
 
 ### Persistence (CI)
 

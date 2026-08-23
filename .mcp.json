@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "homelab": {
+      "type": "http",
+      "url": "http://192.168.1.11:9100/mcp",
+      "headers": {
+        "Authorization": "Bearer ${HL_DB_TOKEN}"
+      }
+    }
+  }
+}

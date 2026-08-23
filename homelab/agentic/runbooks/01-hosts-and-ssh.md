@@ -29,6 +29,11 @@ Storage and control plane. Debian 12, Intel i5-3570, 5.7 GiB RAM.
   cold copy ("attic"), refreshed weekly by `homelab-coldcopy.timer` (Sun 04:00).
 - **Agent dispatcher** on `:9099` (`hl-agent-dispatcher.service`) — enable/disable + run-now for
   the runners, driven by the webapp.
+- **homelab-db** on `:9100` (`homelab-db.service`) — read-only JSON API + MCP over
+  `homelab.db`, the queryable index of every report, host fact and runbook. Fed by
+  `homelab-db-ingest.timer` (`*:12,42`). The database lives on its own ZFS dataset
+  `red/opsdb` (**not** under `red/fs`, so it is unreachable over CIFS — SQLite WAL over a
+  network filesystem is unsafe). See [`09-homelab-db.md`](09-homelab-db.md).
 - Self-hosted **x86 CI runner** (`actions.runner.ptm4-ptm4.opti`), xrdp on `:3389`.
 - SSH: `ssh opti` (user `ptm`, `~/.ssh/homelab`). Also reachable with `~/.claude/opti_key`.
 

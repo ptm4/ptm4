@@ -17,6 +17,7 @@ import TrendsPage from './pages/Trends';
 import UpdatesPage from './pages/Updates';
 import ContainersPage from './pages/Containers';
 import PiholePage from './pages/Pihole';
+import DataFlowPage from './pages/DataFlow';
 
 export default function App() {
   return (
@@ -43,6 +44,7 @@ export default function App() {
               <Route path="/updates" element={<UpdatesPage />} />
               <Route path="/containers" element={<ContainersPage />} />
               <Route path="/pihole" element={<PiholePage />} />
+              <Route path="/data" element={<DataFlowPage />} />
               <Route path="/settings" element={<PageStub title="Settings" phase="P4 — board engine" />} />
               <Route path="*" element={<PageStub title="Not found" phase="404" />} />
             </Routes>

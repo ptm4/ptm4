@@ -2,7 +2,7 @@
   "meta": {
     "title": "Homelab architecture",
     "subtitle": "Four hosts, 25 containers, one storage pool \u2014 and how they actually depend on each other.",
-    "generatedAt": "2026-08-08T05:19:35+00:00",
+    "generatedAt": "2026-08-21T22:07:25+00:00",
     "probedAt": "2026-08-08T03:00:00Z",
     "generator": "homelab/tools/architecture/build-arch-data.py",
     "liveEndpoint": "/api/architecture/live",
@@ -777,6 +777,26 @@
       "notes": "hardware-latest \u00b7 software-latest \u00b7 network-latest \u00b7 homelab-doctor-latest. The rpi webapp mounts this read-only at /agent-logs."
     },
     {
+      "id": "homelab-db",
+      "label": "homelab.db",
+      "host": "opti",
+      "category": "storage",
+      "group": "control",
+      "sublabel": "SQLite on red/opsdb \u00b7 queryable index",
+      "kind": "dataset",
+      "notes": "Everything the homelab knows, as rows: collector history back to June 2026, host inventory, container change history, and FTS over every runbook. Deliberately on its own dataset OUTSIDE the Samba-exported red/fs \u2014 SQLite WAL over CIFS is unsafe, so only opti-local processes open it."
+    },
+    {
+      "id": "homelab-db-server",
+      "label": "homelab-db server",
+      "host": "opti",
+      "category": "infra",
+      "group": "control",
+      "sublabel": "Python :9100 \u00b7 read-only JSON API + MCP",
+      "kind": "service",
+      "notes": "Serves the webapp's Data page and the `homelab` MCP tools a Claude Code session uses. Bearer token + Origin/Host validation; MCP pinned to spec 2025-06-18."
+    },
+    {
       "id": "opti-runner",
       "label": "Actions runner (x86)",
       "host": "opti",
@@ -1457,6 +1477,27 @@
       "to": "agents",
       "label": "starts a run",
       "kind": "control"
+    },
+    {
+      "id": "e-agentlogs-hldb",
+      "from": "agent-logs",
+      "to": "homelab-db",
+      "label": "ingested every 30 min",
+      "kind": "control"
+    },
+    {
+      "id": "e-hldb-server",
+      "from": "homelab-db",
+      "to": "homelab-db-server",
+      "label": "read-only queries",
+      "kind": "control"
+    },
+    {
+      "id": "e-webapp-hldb",
+      "from": "webapp",
+      "to": "homelab-db-server",
+      "label": "Data page + widgets :9100",
+      "kind": "http"
     },
     {
       "id": "e-agents-logs",
@@ -2333,6 +2374,18 @@
       "unit": "hl-agent-dispatcher.service",
       "when": "always on",
       "what": "Agent control API on :9099"
+    },
+    {
+      "host": "opti",
+      "unit": "homelab-db.service",
+      "when": "always on",
+      "what": "homelab.db read-only API + MCP on :9100"
+    },
+    {
+      "host": "opti",
+      "unit": "homelab-db-ingest.timer",
+      "when": "*:12,42",
+      "what": "Folds reports, architecture data and docs into homelab.db"
     },
     {
       "host": "opti",

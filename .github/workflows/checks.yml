@@ -41,6 +41,12 @@ jobs:
       - name: Architecture data validates
         run: python3 homelab/tools/architecture/build-arch-data.py --check
 
+      - name: Homelab DB schema + dataset registry validate
+        # Applies schema.sql to an in-memory database and ingests a fixture report, so a
+        # broken migration or a malformed dataset registry fails here rather than on the
+        # next :12 timer run. No LAN or filesystem access needed.
+        run: python3 homelab/tools/homelab-db/ingest.py --check
+
       - name: Webapp backend syntax
         # find-based so plugins/ lib/ test/ are swept too — a glob here silently
         # narrowed when the backend grew subdirectories (2026-08-10 Fastify port)

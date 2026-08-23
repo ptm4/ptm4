@@ -78,6 +78,15 @@ const MANIFEST = [
   { method: 'POST', path: '/api/samba/config', body: { content: '' }, expect: [400] },
   { method: 'POST', path: '/api/samba/rollback', body: { stamp: 'x' }, expect: [400] },
 
+  // homelab-db on opti (503 when HOMELAB_DB_URL is unset or opti is unreachable)
+  { method: 'GET', path: '/api/hldb/health', expect: [200], note: 'always 200; the body carries ok/configured' },
+  { method: 'GET', path: '/api/hldb/status', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/dataplane', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/changes?days=7', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/metrics?metric=disk_used_pct&days=7', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/search?q=gluetun', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/host/opti', expect: [200, 502, 503] },
+
   // agentic (workspace-mount dependent)
   { method: 'GET', path: '/api/agentic', expect: [200, 503] },
   { method: 'POST', path: '/api/agentic/wire/vim', expect: [400] },

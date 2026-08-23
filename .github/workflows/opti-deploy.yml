@@ -20,6 +20,7 @@ on:
     paths:
       - "homelab/hosts/opti/**"
       - "homelab/tools/automation/**"
+      - "homelab/tools/homelab-db/**"
   workflow_dispatch:
 
 jobs:
@@ -54,7 +55,13 @@ jobs:
           sleep 2
           systemctl is-active hl-agent-dispatcher
 
+      - name: Restart homelab-db services (they also run from the pool working copy)
+        run: |
+          sudo systemctl restart homelab-db homelab-db-vitals
+          sleep 2
+          systemctl is-active homelab-db homelab-db-vitals
+
       - name: Verify timers
         run: |
-          sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-autoupdate.timer homelab-autoreboot.timer
-          systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer --no-legend --no-pager
+          sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-autoupdate.timer homelab-autoreboot.timer homelab-db-ingest.timer
+          systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-db-ingest.timer --no-legend --no-pager

@@ -1,6 +1,6 @@
 {
   "host": "tux",
-  "generated_at": "2026-08-12T02:46:37Z",
+  "generated_at": "2026-08-22T00:30:04Z",
   "generated_by": "homelab/agentic/probe.py",
   "workspace": {
     "repo_root": "/home/ptm/opti/ptm/repo/ptm4",
@@ -55,6 +55,12 @@
           "label": "harness hook scripts present & valid",
           "status": "pass",
           "detail": "ok"
+        },
+        {
+          "id": "claude_mcp",
+          "label": ".mcp.json registers the homelab MCP server",
+          "status": "pass",
+          "detail": "http http://192.168.1.11:9100/mcp — HL_DB_TOKEN not set in this shell; reachable at 192.168.1.11:9100"
         }
       ],
       "wired": true

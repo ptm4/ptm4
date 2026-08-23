@@ -15,7 +15,7 @@ router"; that hardware doesn't exist, confirmed 2026-07-31). All four hosts are 
 | Alias | IP | OS | Role — what it contains |
 |---|---|---|---|
 | `tux` | .3 | CachyOS | **You are usually here.** Workstation. No services; nothing depends on it. |
-| `opti` | .11 | Debian 12 | **Storage + control plane.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; x86 CI runner; xrdp `:3389`. |
+| `opti` | .11 | Debian 12 | **Storage + control plane.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; **homelab-db `:9100`** (queryable index + MCP); x86 CI runner; xrdp `:3389`. |
 | `rpi` | .10 | Ubuntu 22.04 (RPi 4) | **DNS + web.** Pi-hole (DNS *and* DHCP for the whole LAN); dashboard webapp `:8443`; Vaultwarden `:443`; notes `:3002`; 5 `discord-*` bots; ARM64 CI runner. ~12 containers. |
 | `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. ~13 containers. YAMS compose at `/opt/yams/`. |
 | `android` | .54 | Termux | Galaxy S10. llama.cpp `:8080` (local LLM). **Intermittent — often offline.** |
@@ -67,6 +67,23 @@ will get a hard denial rather than a warning.
   and say what needs committing.
 - **Never enable DHCP on the router (TP-Link Archer).** It races Pi-hole and presents as "all
   the servers are down".
+
+## Ask the database before you probe
+
+opti runs **homelab-db** (`:9100`), a queryable index of everything the homelab already
+knows: every collector report back to June 2026, host inventory, container change history,
+and full-text search over every runbook and rule. A session in this repo gets it as the
+`homelab` MCP server (see `.mcp.json`).
+
+- `hl_search_docs` — **try this first for any "how does X work here" question.** The
+  answer is usually already written in a runbook.
+- `hl_status` — current health in one call. `hl_host <host>` — everything about one box.
+- `hl_changes` — what containers/mounts changed, and when. `hl_metrics` — long-range trends.
+- `hl_query` + `hl_schema` — read-only SQL for anything else.
+
+If the tools aren't present, `HL_DB_TOKEN` is probably not exported in the shell that
+launched Claude Code. Falling back to SSH is fine — but check here first; it is faster and
+does not touch a live host. Details: `runbooks/09-homelab-db.md`.
 
 ## Working conventions
 

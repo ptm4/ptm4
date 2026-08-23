@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-07-26T22:45:08Z",
+  "generated_at": "2026-08-22T00:30:04Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
   "workspace": {
@@ -72,6 +72,14 @@
         ]
       },
       {
+        "name": "add-webapp-widget",
+        "description": "Add a widget to the homelab dashboard's board (the card grid at webapp.rpi.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.",
+        "path": "homelab/agentic/skills/add-webapp-widget",
+        "files": [
+          "SKILL.md"
+        ]
+      },
+      {
         "name": "homelab-ssh",
         "description": "SSH into a homelab server (opti, rpi, noblenumbat, or android) to run commands, check status, or make changes on that box. Use whenever a query names one of these hosts and doing anything about it requires actually logging in (not just reading about it in docs).",
         "path": "homelab/agentic/skills/homelab-ssh",
@@ -93,6 +101,7 @@
         "path": "homelab/agentic/skills/radarr-add",
         "files": [
           "SKILL.md",
+          "scripts/__pycache__/add_movies.cpython-314.pyc",
           "scripts/add_movies.py"
         ]
       },
@@ -102,6 +111,7 @@
         "path": "homelab/agentic/skills/sonarr-add",
         "files": [
           "SKILL.md",
+          "scripts/__pycache__/add_series.cpython-314.pyc",
           "scripts/add_series.py"
         ]
       }
@@ -158,6 +168,16 @@
         "file": "07-llm-troubleshooting.md",
         "path": "homelab/agentic/runbooks/07-llm-troubleshooting.md",
         "title": "Local LLM Troubleshooting"
+      },
+      {
+        "file": "08-android-s10-server.md",
+        "path": "homelab/agentic/runbooks/08-android-s10-server.md",
+        "title": "android — Galaxy S10 server (SM-G973U)"
+      },
+      {
+        "file": "09-homelab-db.md",
+        "path": "homelab/agentic/runbooks/09-homelab-db.md",
+        "title": "homelab.db — the queryable homelab"
       }
     ],
     "harness": [

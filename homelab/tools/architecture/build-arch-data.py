@@ -439,6 +439,17 @@ NODES = [
       sublabel="JSON reports on the pool", kind="dataset",
       notes="hardware-latest · software-latest · network-latest · homelab-doctor-latest. "
             "The rpi webapp mounts this read-only at /agent-logs."),
+    N("homelab-db", "homelab.db", "opti", "storage", "control",
+      sublabel="SQLite on red/opsdb · queryable index", kind="dataset",
+      notes="Everything the homelab knows, as rows: collector history back to June 2026, "
+            "host inventory, container change history, and FTS over every runbook. "
+            "Deliberately on its own dataset OUTSIDE the Samba-exported red/fs — SQLite "
+            "WAL over CIFS is unsafe, so only opti-local processes open it."),
+    N("homelab-db-server", "homelab-db server", "opti", "infra", "control",
+      sublabel="Python :9100 · read-only JSON API + MCP", kind="service",
+      notes="Serves the webapp's Data page and the `homelab` MCP tools a Claude Code "
+            "session uses. Bearer token + Origin/Host validation; MCP pinned to spec "
+            "2025-06-18."),
     N("opti-runner", "Actions runner (x86)", "opti", "infra", "control",
       sublabel="self-hosted · runs the agent workflow", kind="service"),
     N("opti-timers", "systemd timers", "opti", "infra", "control",
@@ -627,6 +638,9 @@ EDGES = [
 
     # opti control plane
     E("e-dispatch-agents", "dispatcher", "agents", "starts a run", "control"),
+    E("e-agentlogs-hldb", "agent-logs", "homelab-db", "ingested every 30 min", "control"),
+    E("e-hldb-server", "homelab-db", "homelab-db-server", "read-only queries", "control"),
+    E("e-webapp-hldb", "webapp", "homelab-db-server", "Data page + widgets :9100", "http"),
     E("e-agents-logs", "agents", "agent-logs", "writes JSON reports", "storage"),
     E("e-agents-rpi", "agents", "rpi-sshd", "SSH probe", "control"),
     E("e-agents-nn", "agents", "nn-remote", "SSH probe", "control"),
@@ -950,6 +964,8 @@ AUTOMATION = [
     {"host": "opti", "unit": "homelab-docs.timer", "when": "daily ~05:16", "what": "Regenerates homelab docs"},
     {"host": "opti", "unit": "opti-health-digest.timer", "when": "daily 06:30", "what": "Feeds the Discord health bot"},
     {"host": "opti", "unit": "hl-agent-dispatcher.service", "when": "always on", "what": "Agent control API on :9099"},
+    {"host": "opti", "unit": "homelab-db.service", "when": "always on", "what": "homelab.db read-only API + MCP on :9100"},
+    {"host": "opti", "unit": "homelab-db-ingest.timer", "when": "*:12,42", "what": "Folds reports, architecture data and docs into homelab.db"},
     {"host": "opti", "unit": "homelab-coldcopy.timer", "when": "Sun 04:00", "what": "Refreshes the cold copy (ZFS red → old mergerfs pair)"},
     {"host": "opti", "unit": "zfs-scrub-monthly@red.timer", "when": "monthly", "what": "ZFS scrub of the red pool"},
     {"host": "noblenumbat", "unit": "vpn-stack-heal.timer", "when": "every 2 min", "what": "Repairs Gluetun's forwarded port"},

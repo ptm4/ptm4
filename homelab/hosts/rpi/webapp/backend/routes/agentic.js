@@ -41,12 +41,23 @@ function liveWiring() {
   const skillsDir = path.join(WORKSPACE_DIR, '.claude', 'skills');
   const discoverable = names.filter(n => exists(path.join(skillsDir, n, 'SKILL.md')));
   const settings = exists(path.join(WORKSPACE_DIR, '.claude', 'settings.local.json'));
+  // .mcp.json is committed (only .claude/ is gitignored), so unlike the rest of the
+  // wiring it is checked, never materialized. Mirrors probe.py's _claude_mcp_check.
+  const mcpConf = readJson(path.join(WORKSPACE_DIR, '.mcp.json'));
+  const mcpServer = mcpConf && mcpConf.mcpServers && mcpConf.mcpServers.homelab;
+  const mcpOk = Boolean(mcpServer && mcpServer.type);
+  const mcpDetail = !mcpConf ? 'no .mcp.json'
+    : !mcpServer ? "no 'homelab' entry"
+      : !mcpServer.type ? "entry has no 'type' (Claude Code skips it silently)"
+        : `${mcpServer.type} ${mcpServer.url || ''}`;
+
   const cChecks = [
     check('claude_md', 'CLAUDE.md directs Claude to homelab/agentic', mdRefs,
       mdRefs ? 'present & references agentic' : (exists(claudeMd) ? 'exists but no agentic reference' : 'no CLAUDE.md')),
     check('claude_skills', '.claude/skills registers all agentic skills', names.length > 0 && discoverable.length === names.length,
       `${discoverable.length}/${names.length} discoverable`),
     check('claude_settings', '.claude settings present', settings, settings ? 'settings.local.json found' : 'none'),
+    check('claude_mcp', '.mcp.json registers the homelab MCP server', mcpOk, mcpDetail),
   ];
   out.claude = { name: 'Claude Code', wireable: WIREABLE.has('claude'), wired: cChecks.every(c => c.status === 'pass'), checks: cChecks };
 

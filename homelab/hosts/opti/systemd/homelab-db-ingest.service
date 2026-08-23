@@ -1,0 +1,31 @@
+[Unit]
+# Folds the homelab's existing JSON reports, the merged architecture data and the docs
+# corpus into homelab.db — the queryable index the MCP server and the webapp's Data page
+# read. Reads only; the collectors keep writing their JSON exactly as before.
+#
+# Install on opti (the deploy workflow does this on push):
+#   sudo cp homelab-db-ingest.service homelab-db-ingest.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-db-ingest.timer
+#
+# Runs from the working copy on the pool, like the dispatcher and the docs generators.
+# The mountpoint guard stops a boot-race from running against an empty /srv/red.
+Description=Homelab DB ingest (reports + architecture + docs -> homelab.db)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /srv/red
+Type=oneshot
+User=ptm
+# '-' prefix: missing env file is non-fatal (the script falls back to path defaults)
+EnvironmentFile=-/etc/hl-agents.env
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/tools/homelab-db/ingest.py
+
+# The database is the only thing this writes outside the pool paths it reads.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+ReadWritePaths=/srv/red/opsdb /srv/red/fs/ptm/homelab-db /srv/red/fs/ptm/repo/ptm4/homelab/agentic/generated
+MemoryMax=512M
