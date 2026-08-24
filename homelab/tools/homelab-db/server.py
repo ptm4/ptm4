@@ -185,13 +185,31 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         parsed = urlparse(self.path)
-        if parsed.path != "/mcp":
-            if not self._gate():
-                return
-            return self._send(404, {"error": "not found"})
         if not self._gate():
             return
-        return self._handle_mcp()
+        if parsed.path == "/mcp":
+            return self._handle_mcp()
+        if parsed.path == "/api/query":
+            return self._handle_query()
+        return self._send(404, {"error": "not found"})
+
+    def _handle_query(self):
+        """The webapp's SQL console. Same function, same guardrails, same audit row as
+        the hl_query MCP tool — the browser is just a third client of it."""
+        payload = self._body()
+        if not isinstance(payload, dict):
+            return self._send(400, {"error": "body must be JSON: {sql, params?}"})
+        started = time.time()
+        conn = db.connect_ro()
+        try:
+            result, is_error = mcp_tools.call_tool(conn, "hl_query", payload)
+        finally:
+            conn.close()
+        elapsed = round((time.time() - started) * 1000, 1)
+        audit(self._client(), "hl_query", f"console: {str(payload.get('sql'))[:400]}",
+              _rows_of(result), elapsed, not is_error,
+              result.get("error") if is_error else None)
+        return self._send(400 if is_error else 200, result)
 
     # ── JSON API (the webapp's half) ────────────────────────────────────────────
     API_ROUTES = {

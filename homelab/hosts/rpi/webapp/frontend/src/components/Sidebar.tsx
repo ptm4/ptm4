@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Grid2x2, SlidersHorizontal, FileText, Shield, ScrollText,
   Bot, Crosshair, BrainCircuit, Link2, Network, Workflow, ServerCog,
-  ExternalLink, TrendingUp, Tv, Boxes, ShieldCheck, Database,
+  ExternalLink, TrendingUp, Tv, Boxes, ShieldCheck, Database, Terminal,
 } from 'lucide-react';
 
 // External = full page loads (legacy standalone pages + notes). They keep their
@@ -51,6 +51,7 @@ export function Sidebar() {
         <Item to="/logs" label="Logs" icon={ScrollText} />
         <Item to="/trends" label="Trends" icon={TrendingUp} />
         <Item to="/data" label="Data" icon={Database} />
+        <Item to="/query" label="Query" icon={Terminal} />
       </div>
 
       <div className="nav-group">

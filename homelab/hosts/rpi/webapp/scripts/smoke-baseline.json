@@ -548,5 +548,19 @@
       "open_findings",
       "recent_changes"
     ]
+  },
+  "GET /api/hldb/schema": {
+    "status": 200,
+    "keys": [
+      "hints",
+      "schema",
+      "tables"
+    ]
+  },
+  "POST /api/hldb/query": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
   }
 }

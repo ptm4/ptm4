@@ -81,4 +81,33 @@ module.exports = async function hldbRoutes(app) {
 
   app.get('/host/:host', async (req, reply) =>
     upstream(reply, `/api/host/${encodeURIComponent(req.params.host)}`));
+
+  app.get('/schema', async (req, reply) => upstream(reply, '/api/schema'));
+
+  // The Query page's console. Read-only is enforced by the upstream engine (a read-only
+  // file descriptor plus a default-deny authorizer), not by anything here — this proxy
+  // adds no SQL parsing of its own, because a second, weaker validator would only invite
+  // drift from the real one. Every query lands in the upstream audit trail.
+  app.post('/query', async (req, reply) => {
+    if (!HOMELAB_DB_URL) {
+      return reply.code(503).send({
+        ok: false,
+        error: 'homelab-db not configured',
+        hint: 'Set HOMELAB_DB_URL (and HL_DB_TOKEN) in the webapp service env.',
+      });
+    }
+    const headers = HL_DB_TOKEN ? { Authorization: `Bearer ${HL_DB_TOKEN}` } : undefined;
+    try {
+      const { status, data } = await proxyJson(
+        HOMELAB_DB_URL, 'POST', '/api/query', req.body || {}, TIMEOUT_MS, headers,
+      );
+      return reply.code(status).send(data);
+    } catch (err) {
+      return reply.code(503).send({
+        ok: false,
+        error: `homelab-db unreachable: ${err.message}`,
+        hint: 'opti may be down, or homelab-db.service stopped.',
+      });
+    }
+  });
 };

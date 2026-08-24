@@ -1,16 +1,16 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-08-23T04:21:17+00:00`
+> Generated: `2026-08-24T04:20:57+00:00`
 
 
 ## Agent sync status
 
 | Host | Agent | Last synced | Containers | Collection errors |
 |---|---|---|---|---|
-| noblenumbat | 0.4.0 | 21m ago | 15 | none |
-| opti | 0.4.0 | 21m ago | 0 | none |
-| rpi | 0.4.0 | 20m ago | 16 | none |
+| noblenumbat | 0.4.0 | 20m ago | 15 | none |
+| opti | 0.4.0 | 20m ago | 0 | none |
+| rpi | 0.4.0 | 19m ago | 16 | none |
 
 
 ## Nodes
@@ -87,6 +87,8 @@ Every node on the architecture map. `Live` columns come from the newest agent sy
 | ZFS pool · red | storage | — | n/a | — | /srv/red · 3.6 TB · 16% used |
 | agent-logs/ | storage | — | n/a | — | JSON reports on the pool |
 | attic · cold copy | storage | — | n/a | — | old sda+sdb pair · noauto · weekly |
+| homelab-db server | infra | — | n/a | — | Python :9100 · read-only JSON API + MCP |
+| homelab.db | storage | — | n/a | — | SQLite on red/opsdb · queryable index |
 | sda · 466 GB HDD | storage | — | n/a | — | ST500DM002 · ext4 root + attic branch |
 | sdb · 596 GB HDD | storage | — | n/a | — | Hitachi HTS5475 · NTFS · attic branch (ro) |
 | sdc · 4 TB WD Red Plus | storage | — | n/a | — | WD40EFZZ · ZFS vdev |

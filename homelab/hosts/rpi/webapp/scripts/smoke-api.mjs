@@ -86,6 +86,8 @@ const MANIFEST = [
   { method: 'GET', path: '/api/hldb/metrics?metric=disk_used_pct&days=7', expect: [200, 502, 503] },
   { method: 'GET', path: '/api/hldb/search?q=gluetun', expect: [200, 502, 503] },
   { method: 'GET', path: '/api/hldb/host/opti', expect: [200, 502, 503] },
+  { method: 'GET', path: '/api/hldb/schema', expect: [200, 502, 503] },
+  { method: 'POST', path: '/api/hldb/query', body: {}, expect: [400, 502, 503], note: 'empty body -> upstream 400 (sql required); proves the console route exists without running SQL' },
 
   // agentic (workspace-mount dependent)
   { method: 'GET', path: '/api/agentic', expect: [200, 503] },
