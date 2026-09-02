@@ -1,0 +1,240 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — P100 Teletext</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<!-- v3 mockup E: the surprise — "teletext" / Ceefax-school broadcast data page.
+     The original information-dense dashboard: page numbers, double-height
+     headers, the 8-color broadcast palette on black, block-mosaic bars,
+     fastext color keys as the version switcher. Older-net than the old net.
+     Single-theme by design: broadcast is black. -->
+<style>
+  :root {
+    --blk: #000000;
+    --wht: #f2f2f2;
+    --yel: #ffe800;
+    --cyn: #00e8e8;
+    --grn: #17e35f;
+    --mag: #ff4fd8;
+    --red: #ff3b30;
+    --blu: #1414c8;      /* filled-bar / header-band blue */
+    --blu-dim: #0a0a50;  /* "off" mosaic cells */
+    --dim: #6f6f6f;
+    --px: "VT323", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--blk);
+    color: var(--wht);
+    font-family: var(--px);
+    font-size: 19px;              /* VT323 runs small — this is ~13px optical */
+    line-height: 1.28;
+    letter-spacing: .01em;
+    font-variant-numeric: tabular-nums;
+    padding: 14px 16px 64px;
+    text-transform: uppercase;
+  }
+  a { color: var(--cyn); text-decoration: none; }
+  a:hover { background: var(--cyn); color: var(--blk); }
+  .page { max-width: 1180px; margin: 0 auto; }
+
+  /* ── broadcast header ───────────────────────────────────────────────── */
+  .mast { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  .mast .pno { color: var(--wht); }
+  .mast .svc { color: var(--grn); }
+  .mast .date { margin-left: auto; color: var(--yel); }
+  .mast .time { color: var(--wht); }
+  .banner {
+    margin: 8px 0 16px;
+    background: var(--blu);
+    color: var(--yel);
+    padding: 1px 12px;
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0 16px;
+    font-size: 30px;               /* the double-height row */
+    transform-origin: left center;
+  }
+  .banner .r { color: var(--wht); }
+
+  /* ── page blocks ────────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 18px 26px; }
+  .blk4 { grid-column: span 4; min-width: 0; }
+  .blk6 { grid-column: span 6; min-width: 0; }
+  .blk8 { grid-column: span 8; min-width: 0; }
+  .blk12 { grid-column: span 12; min-width: 0; }
+  @media (max-width: 1000px) { .blk4, .blk6, .blk8 { grid-column: span 6; } }
+  @media (max-width: 660px)  { .blk4, .blk6, .blk8, .blk12 { grid-column: span 12; } }
+
+  .phead {
+    display: flex; gap: 10px; align-items: baseline;
+    background: var(--blu); color: var(--wht); padding: 0 8px; margin-bottom: 6px;
+  }
+  .phead .no { color: var(--yel); }
+  .phead .meta { margin-left: auto; color: var(--cyn); font-size: 16px; }
+
+  .li { display: flex; gap: 10px; align-items: baseline; padding: 1px 0; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c { color: var(--cyn); } .y { color: var(--yel); } .g { color: var(--grn); }
+  .r { color: var(--red); } .m { color: var(--mag); } .d { color: var(--dim); }
+  .sm { font-size: 16px; }
+
+  /* mosaic bars: on-cells colored, off-cells deep blue — the teletext way */
+  .bar { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
+  .bar .lab { width: 92px; color: var(--cyn); flex: none; }
+  .bar .cells { flex: 1; overflow: hidden; white-space: nowrap; color: var(--grn); }
+  .bar .cells .off { color: var(--blu-dim); }
+  .bar .cells.warn { color: var(--yel); }
+  .bar .pct { width: 52px; text-align: right; color: var(--wht); flex: none; }
+
+  .spark { color: var(--cyn); }
+
+  /* hosts */
+  .host { padding: 5px 0 7px; border-bottom: 2px solid #101010; }
+  .host:last-child { border-bottom: 0; }
+  .hostrow { display: flex; gap: 12px; align-items: baseline; }
+  .hostrow .name { color: var(--yel); }
+  .hostrow .role { color: var(--dim); font-size: 16px; }
+  .hostrow .st { margin-left: auto; }
+  .hoststats { display: flex; gap: 16px; flex-wrap: wrap; color: var(--cyn); font-size: 17px; }
+  .hoststats b { color: var(--wht); font-weight: 400; }
+
+  /* table */
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 18px; }
+  th { text-align: left; color: var(--cyn); font-weight: 400; padding: 0 18px 2px 0; }
+  td { padding: 0 18px 1px 0; color: var(--wht); }
+  td:first-child { color: var(--yel); }
+
+  /* fastext footer */
+  .fastext {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: flex; gap: 0; background: var(--blk); border-top: 2px solid #111;
+    padding: 8px 16px 10px; flex-wrap: wrap; row-gap: 4px;
+  }
+  .fkey { flex: 1; min-width: 130px; text-align: center; padding: 1px 8px; color: var(--blk); cursor: pointer; }
+  .fkey.red { background: var(--red); } .fkey.grn { background: var(--grn); }
+  .fkey.yel { background: var(--yel); } .fkey.cyn { background: var(--cyn); }
+  .fastext .idx { flex: 0 0 auto; color: var(--dim); padding: 1px 12px; min-width: 0; }
+
+  :focus-visible { outline: 2px solid var(--yel); outline-offset: 1px; }
+</style>
+
+<div class="page">
+  <div class="mast">
+    <span class="pno">P100</span>
+    <span class="svc">POCKETFAX</span>
+    <span class="d">HOMELAB SERVICE</span>
+    <span class="date">MON 24 AUG</span>
+    <span class="time">21:47/12</span>
+  </div>
+
+  <div class="banner"><span>PERT'S POCKET · ALL SYSTEMS GO</span><span class="r">4/4 UP</span></div>
+
+  <div class="grid">
+    <!-- P101 fleet -->
+    <div class="blk8">
+      <div class="phead"><span class="no">P101</span> FLEET <span class="meta">DOCTOR 24M AGO</span></div>
+      <div class="li"><span class="grow c">HOSTS REACHABLE</span><span class="g">4/4 OK</span></div>
+      <div class="li"><span class="grow c">CONTAINERS UP</span><span class="g">31/31 OK</span></div>
+      <div class="li"><span class="grow c">IMAGE UPDATES PENDING</span><span class="y">4 WARN</span></div>
+      <div class="li"><span class="grow c">OPEN FINDINGS</span><span class="g">NONE</span></div>
+
+      <div class="host" style="margin-top:8px">
+        <div class="hostrow"><span class="name">OPTI</span><span class="role">STORAGE · CONTROL · UP 29D</span><span class="st g">OK</span></div>
+        <div class="hoststats"><span>LOAD <b>0.16</b></span><span>MEM <b>48%</b></span><span><b>30&deg;C</b></span><span>NET <b>&darr;63K &uarr;170K</b></span><span class="spark">▂▂▁▃▂▅▃▄▂▄▃▃</span></div>
+      </div>
+      <div class="host">
+        <div class="hostrow"><span class="name">RPI</span><span class="role">DNS · DHCP · WEB · UP 20D</span><span class="st g">OK</span></div>
+        <div class="hoststats"><span>LOAD <b>0.55</b></span><span>MEM <b>58%</b></span><span><b>40&deg;C</b></span><span>DOCKER <b>16/16</b></span><span class="spark">▃▄▂▅▃▆▄▇▄▅▃▄</span></div>
+      </div>
+      <div class="host">
+        <div class="hostrow"><span class="name">NOBLENUMBAT</span><span class="role">MEDIA · UP 1D 8H</span><span class="st g">OK</span></div>
+        <div class="hoststats"><span>LOAD <b>0.00</b></span><span>MEM <b>20%</b></span><span><b>46&deg;C</b></span><span>VPN <b class="g">OK</b> · <b>15/15</b></span><span class="spark">▁▁▂▁▁▂▁▁▁▂▁▁</span></div>
+      </div>
+      <div class="host">
+        <div class="hostrow"><span class="name">ANDROID</span><span class="role">LLAMA.CPP · S10 · INTERMITTENT BY DESIGN</span><span class="st g">OK</span></div>
+      </div>
+    </div>
+
+    <!-- P105 storage -->
+    <div class="blk4">
+      <div class="phead"><span class="no">P105</span> STORAGE</div>
+      <div class="bar"><span class="lab">RED·ZFS</span><span class="cells">████<span class="off">██████████████</span></span><span class="pct">19%</span></div>
+      <div class="bar"><span class="lab">OPTI OS</span><span class="cells warn">██████████████<span class="off">████</span></span><span class="pct">77%</span></div>
+      <div class="bar"><span class="lab">RPI SD</span><span class="cells">█████<span class="off">█████████████</span></span><span class="pct">29%</span></div>
+      <div class="bar"><span class="lab">NN OS</span><span class="cells">███<span class="off">███████████████</span></span><span class="pct">18%</span></div>
+      <div class="li sm"><span class="grow d">0.7 / 3.7 TB USED ON THE POOL</span></div>
+
+      <div class="phead" style="margin-top:14px"><span class="no">P106</span> PI-HOLE</div>
+      <div class="bar"><span class="lab">BLOCKED</span><span class="cells">████<span class="off">██████████████</span></span><span class="pct">22.4%</span></div>
+      <div class="li"><span class="grow c">QUERIES TODAY</span><span>31,842</span></div>
+      <div class="li"><span class="grow c">DENIED</span><span>7,134</span></div>
+      <div class="li"><span class="grow c">GRAVITY</span><span>1.19M</span></div>
+
+      <div class="phead" style="margin-top:14px"><span class="no">P115</span> LLM</div>
+      <div class="li"><span class="grow">LFM2.5-2.6B</span><span class="g">WARM</span></div>
+      <div class="li sm"><span class="grow d">ANDROID:8080 · 11 TOK/S</span></div>
+    </div>
+
+    <!-- P107 activity -->
+    <div class="blk8">
+      <div class="phead"><span class="no">P107</span> ACTIVITY <span class="meta">LATEST REPORTS</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">07:00</span><span class="grow">WEATHER BOT POSTED THE DAILY REPORT</span><span class="g">SENT</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">06:32</span><span class="grow">VPN-HEAL RENEWED NAT-PMP · PORT 52644</span><span class="g">OK</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">04:15</span><span class="grow">DOCTOR: 4/4 SERVICES · 4/4 HOSTS</span><span class="g">GREEN</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">02:00</span><span class="grow">ATTIC WEEKLY COLD COPY · 41 GIB IN 12M</span><span class="g">DONE</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">-1D</span><span class="grow">BITWARDEN 1.34.0 AVAILABLE ON RPI</span><span class="y">UPDATE</span></div>
+      <div class="li"><span class="y sm" style="width:52px; flex:none">-1D</span><span class="grow">HL-DB INGEST · 14/14 FEEDS · 61D INDEXED</span><span class="g">FED</span></div>
+
+      <div class="phead" style="margin-top:14px"><span class="no">P112</span> UPDATES <span class="meta">4 PENDING</span></div>
+      <div class="li"><span class="grow">BITWARDEN <span class="d sm">RPI</span></span><span class="y">1.34.0</span></div>
+      <div class="li"><span class="grow">JELLYFIN <span class="d sm">NN</span></span><span class="y">10.10.4</span></div>
+      <div class="li"><span class="grow">PROWLARR <span class="d sm">NN</span></span><span class="y">1.31</span></div>
+      <div class="li"><span class="grow">GLUETUN <span class="d sm">NN</span></span><span class="y">3.40</span></div>
+    </div>
+
+    <!-- P110 sport -->
+    <div class="blk4">
+      <div class="phead"><span class="no">P110</span> CS2 SPORT <span class="meta">HLTV · VRS</span></div>
+      <div class="li"><span class="m sm" style="width:52px; flex:none">LIVE</span><span class="grow">VITALITY V SPIRIT <span class="d sm">MIRAGE M2</span></span><span class="m">9–7</span></div>
+      <div class="li"><span class="c sm" style="width:52px; flex:none">19:00</span><span class="grow">FAZE V MOUZ</span><span class="d sm">BO3</span></div>
+      <div class="li"><span class="c sm" style="width:52px; flex:none">21:30</span><span class="grow">NAVI V G2</span><span class="d sm">BO3</span></div>
+      <div class="li"><span class="c sm" style="width:52px; flex:none">FT</span><span class="grow">FALCONS V LIQUID</span><span class="g">2–1</span></div>
+
+      <div class="phead" style="margin-top:14px"><span class="no">P111</span> BOTS</div>
+      <div class="li"><span class="grow">WEATHER</span><span class="d sm">07:00</span><span class="g">ON</span></div>
+      <div class="li"><span class="grow">HEALTHDIGEST</span><span class="d sm">08:00</span><span class="g">ON</span></div>
+      <div class="li"><span class="grow">HLTV</span><span class="d sm">09:00</span><span class="g">ON</span></div>
+      <div class="li"><span class="grow">SPORTS</span><span class="d sm">10:00</span><span class="g">ON</span></div>
+      <div class="li"><span class="grow">JELLYFIN</span><span class="d sm">18:00</span><span class="g">ON</span></div>
+
+      <div class="phead" style="margin-top:14px"><span class="no">P113</span> WEATHER</div>
+      <div class="li"><span class="y" style="font-size:30px">78&deg;F</span><span class="grow c sm" style="white-space:normal">PARTLY CLOUDY · FEELS 81&deg; · RAIN 20%</span></div>
+      <div class="li sm"><span class="grow d">TOMORROW 82/68 · STORMS AFTER 2PM</span></div>
+    </div>
+
+    <!-- P120 containers detail -->
+    <div class="blk12">
+      <div class="phead"><span class="no">P120</span> CONTAINERS <span class="meta">DETAIL PAGE PREVIEW · 31/31</span></div>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>NAME</th><th>HOST</th><th>UP</th><th>IMAGE</th><th>STATE</th><th>NOTES</th></tr></thead>
+        <tbody>
+          <tr><td>GLUETUN</td><td>NOBLENUMBAT</td><td>20H</td><td>QMCGAW/GLUETUN</td><td class="g">HEALTHY</td><td class="d">VPN NAMESPACE</td></tr>
+          <tr><td>JELLYFIN</td><td>NOBLENUMBAT</td><td>32H</td><td>JELLYFIN/JELLYFIN</td><td class="g">UP</td><td></td></tr>
+          <tr><td>BITWARDEN</td><td>RPI</td><td>10H</td><td>VAULTWARDEN/SERVER</td><td class="y">UPDATE 1.34.0</td><td></td></tr>
+          <tr><td>PIHOLE</td><td>RPI</td><td>2W</td><td>PIHOLE/PIHOLE</td><td class="g">HEALTHY</td><td class="d">DNS · DHCP</td></tr>
+          <tr><td>QBITTORRENT</td><td>NOBLENUMBAT</td><td>20H</td><td>LINUXSERVER/QBITTORRENT</td><td class="g">UP</td><td class="d">VIA GLUETUN</td></tr>
+          <tr><td>WEBAPP</td><td>RPI</td><td>10H</td><td>NODE:LTS-ALPINE</td><td class="g">UP</td><td class="d">THIS APP</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="fastext">
+  <span class="fkey red">V1 LEGACY</span>
+  <span class="fkey grn">V2</span>
+  <span class="fkey yel">V3</span>
+  <span class="fkey cyn">EDIT BOARD</span>
+  <span class="idx">INDEX 100</span>
+</div>

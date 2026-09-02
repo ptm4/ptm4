@@ -1,0 +1,280 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Netscape '96</title>
+<!-- v3 mockup F: "netscape '96" — the site as a 1996 document. Times display
+     type, true link-blue/visited-purple, <hr> rules, HTML-3.2 bordered tables,
+     bracket links, 88x31 badges, a visitor counter. No window chrome, no
+     parody: a utility PAGE from the old web, kept ruthlessly functional.
+     Single-theme by design: 1996 pages were light. -->
+<style>
+  :root {
+    --paper:   #ffffff;
+    --ink:     #000000;
+    --ink-2:   #444444;
+    --ink-3:   #777777;
+    --link:    #0000ee;
+    --visited: #551a8b;
+    --rule:    #999999;
+    --cellbrd: #aaaaaa;
+    --cellhd:  #d8d8d8;
+    --ok:      #007000;
+    --warn:    #a05a00;
+    --crit:    #c00000;
+    --serif: "Times New Roman", Times, Georgia, serif;
+    --mono: "Courier New", ui-monospace, Courier, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--paper); color: var(--ink);
+    font: 400 15px/1.4 var(--serif);
+    padding: 14px 18px 40px;
+  }
+  .sheet { max-width: 1120px; margin: 0 auto; }
+  a { color: var(--link); }
+  a.v { color: var(--visited); }
+  .num, .mono { font-family: var(--mono); font-size: 13px; }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 10px 0; }
+  hr.thick { border-top: 3px double var(--rule); }
+
+  /* masthead */
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: .01em; }
+  .tagline { font-style: italic; color: var(--ink-2); }
+  .updated { font-size: 12.5px; color: var(--ink-3); }
+  .navrow { font-size: 15px; padding: 4px 0; }
+  .navrow b { font-weight: 700; }
+
+  /* fleet notice */
+  .notice { font-size: 15px; padding: 2px 0 0; }
+  .notice .ok { color: var(--ok); font-weight: 700; }
+  .notice .warn { color: var(--warn); font-weight: 700; }
+
+  /* three columns, dense-calm skeleton in 1996 clothes */
+  .cols { display: grid; grid-template-columns: 240px minmax(0,1fr) 280px; gap: 26px; margin-top: 14px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr 1fr; } .colC { grid-column: span 2; } }
+  @media (max-width: 660px)  { .cols { grid-template-columns: 1fr; } .colC { grid-column: span 1; } }
+  .col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+  h2 {
+    font-size: 19px; font-weight: 700; padding-bottom: 2px;
+    border-bottom: 1px solid var(--rule);
+    display: flex; align-items: baseline;
+  }
+  h2 .meta { margin-left: auto; font-size: 12px; font-weight: 400; font-style: italic; color: var(--ink-3); }
+  section > h2 { margin-bottom: 6px; }
+
+  .li { display: flex; gap: 8px; align-items: baseline; padding: 1.5px 0; font-size: 14.5px; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { color: var(--ink-2); }
+  .faint { color: var(--ink-3); font-size: 13px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); }
+  b.st { font-weight: 700; }
+
+  /* the 1996 data table: single-pixel borders, gray header row */
+  table.data { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  table.data th, table.data td { border: 1px solid var(--cellbrd); padding: 3px 8px; text-align: left; }
+  table.data th { background: var(--cellhd); font-weight: 700; }
+  table.data td { font-family: var(--mono); font-size: 12.5px; }
+  table.data td.rowname { font-family: var(--serif); font-size: 13.5px; font-weight: 700; }
+  .tablewrap { overflow-x: auto; }
+
+  /* ASCII meter, courier */
+  .meter { font-family: var(--mono); font-size: 13px; white-space: nowrap; overflow: hidden; }
+  .meter .lab { display: inline-block; width: 78px; }
+  .meter .track { color: var(--ink-3); }
+  .meter b { font-weight: 400; }
+
+  /* hosts */
+  .host { padding: 6px 0; border-bottom: 1px dotted var(--cellbrd); }
+  .host:last-child { border-bottom: 0; }
+  .hostrow { display: flex; gap: 10px; align-items: baseline; }
+  .hostrow .name { font-weight: 700; font-size: 16px; }
+  .hostrow .role { font-style: italic; color: var(--ink-3); font-size: 13px; }
+  .hostrow .st { margin-left: auto; }
+  .hoststats { font-family: var(--mono); font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+  .hostacts { font-size: 13px; margin-top: 1px; }
+
+  .clock { font-family: var(--mono); }
+  .clock .t { font-size: 30px; }
+  .wx { font-size: 14.5px; }
+  .wx .deg { font-size: 22px; font-family: var(--mono); }
+
+  blink, .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { blink, .blink { animation: none; } }
+
+  /* footer: badges + counter */
+  footer { margin-top: 26px; text-align: center; font-size: 12.5px; color: var(--ink-3); }
+  .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 10px 0; }
+  .badge {
+    width: 88px; height: 31px; flex: none;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    font: 700 9px/1.1 Verdana, Geneva, sans-serif; letter-spacing: .02em;
+    border: 1px solid #666; color: #fff; text-transform: uppercase;
+  }
+  .b1 { background: #000080; } .b2 { background: #006600; }
+  .b3 { background: #cc0000; } .b4 { background: #333333; }
+  .b5 { background: linear-gradient(#555, #111); color: #7fff7f; }
+  .counter { font-family: var(--mono); background: #000; color: #7fff7f; padding: 1px 6px; letter-spacing: 2px; }
+
+  :focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
+</style>
+
+<div class="sheet">
+  <table style="width:100%; border-collapse:collapse"><tr>
+    <td style="vertical-align:baseline">
+      <h1>Pert's Pocket</h1>
+      <div class="tagline">The Homelab Home Page &mdash; est. 2026 &middot; version 3</div>
+    </td>
+    <td style="text-align:right; vertical-align:top" class="updated">
+      Last updated: <span class="mono">Mon, 24 Aug 2026 21:47:12</span><br>
+      Maintained by <a href="#">ptm@tux.lan</a> &middot; UI: <a class="v" href="#">v1</a> | <a class="v" href="#">v2</a> | <b>v3</b>
+    </td>
+  </tr></table>
+
+  <hr class="thick">
+  <div class="navrow">
+    [ <b>Home</b> | <a href="#">Operations</a> | <a href="#">Media</a> | <a href="#">CS2</a> | <a class="v" href="#">Agentic</a> | <a href="#">Search (&#8984;K)</a> ]
+  </div>
+  <hr>
+
+  <div class="notice">
+    <span class="ok">&#9679; All systems operational.</span>
+    4 of 4 hosts up &middot; 31 of 31 containers running &middot; <span class="warn">4 image updates pending</span> &middot; 0 open findings.
+    <span class="faint">(doctor report, 24 minutes ago)</span>
+  </div>
+
+  <div class="cols">
+    <!-- left -->
+    <div class="col">
+      <section class="clock">
+        <div class="t">21:47:12</div>
+        <div class="faint">Monday, August 24, 1996+30</div>
+        <div class="wx" style="margin-top:6px"><span class="deg">78&deg;F</span> partly cloudy<br><span class="faint">feels 81&deg; &middot; rain 20% &middot; 7AM post sent &#10003;</span></div>
+      </section>
+
+      <section>
+        <h2>Pi-hole <span class="meta">live</span></h2>
+        <div class="meter"><span class="lab">blocked</span><span class="track">[<b>#####</b>...............]</span> 22.4%</div>
+        <div class="li"><span class="grow dim">queries today</span><span class="num">31,842</span></div>
+        <div class="li"><span class="grow dim">denied</span><span class="num">7,134</span></div>
+        <div class="li"><span class="grow dim">gravity list</span><span class="num">1.19M</span></div>
+        <div class="li"><span class="grow"><a href="#">Pause 5 min</a> &middot; <a href="#">Open admin</a></span></div>
+      </section>
+
+      <section>
+        <h2>Storage</h2>
+        <div class="meter"><span class="lab">red (zfs)</span><span class="track">[<b>####</b>................]</span> 19%</div>
+        <div class="meter"><span class="lab">opti os</span><span class="track">[<b class="warn">###############</b>.....]</span> <span class="warn">77%</span></div>
+        <div class="meter"><span class="lab">rpi sd</span><span class="track">[<b>######</b>..............]</span> 29%</div>
+        <div class="meter"><span class="lab">nn os</span><span class="track">[<b>####</b>................]</span> 18%</div>
+        <div class="faint" style="margin-top:3px">0.7 of 3.7 TB used on the pool.</div>
+      </section>
+
+      <section>
+        <h2>Local LLM</h2>
+        <div class="li"><span class="grow">LFM2.5-2.6B</span><b class="st ok">RUNNING</b></div>
+        <div class="faint">android:8080 &middot; slot warm &middot; 11 tok/s</div>
+      </section>
+    </div>
+
+    <!-- center -->
+    <div class="col">
+      <section>
+        <h2>The Fleet <span class="meta">what the doctor saw</span></h2>
+        <div class="host">
+          <div class="hostrow"><span class="name">opti</span><span class="role">storage &middot; control plane</span><span class="st ok num">UP 29d</span></div>
+          <div class="hoststats">load 0.16 &middot; mem 48%/5.7G &middot; 30&deg;C &middot; net &darr;63K &uarr;170K &middot; cpu3h ▂▂▁▃▂▅▃▄▂▄▃▃</div>
+          <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+        </div>
+        <div class="host">
+          <div class="hostrow"><span class="name">rpi</span><span class="role">DNS &middot; DHCP &middot; web</span><span class="st ok num">UP 20d</span></div>
+          <div class="hoststats">load 0.55 &middot; mem 58%/3.7G &middot; 40&deg;C &middot; docker 16/16 &middot; cpu3h ▃▄▂▅▃▆▄▇▄▅▃▄</div>
+          <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+        </div>
+        <div class="host">
+          <div class="hostrow"><span class="name">noblenumbat</span><span class="role">media stack</span><span class="st ok num">UP 1d 8h</span></div>
+          <div class="hoststats">load 0.00 &middot; mem 20%/15.4G &middot; 46&deg;C &middot; vpn OK &middot; 15/15 &middot; cpu3h ▁▁▂▁▁▂▁▁▁▂▁▁</div>
+          <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+        </div>
+        <div class="host">
+          <div class="hostrow"><span class="name">android</span><span class="role">llama.cpp &middot; S10</span><span class="st ok num">REACHABLE</span></div>
+          <div class="faint">Intermittent by design; keepalives active, phantom killer off.</div>
+        </div>
+      </section>
+
+      <section>
+        <h2>What's New <span class="meta">activity from the reports</span></h2>
+        <div class="li"><span class="num" style="width:48px; flex:none">07:00</span><span class="grow dim"><b>discord-weather</b> posted the daily report</span><b class="st ok">OK</b></div>
+        <div class="li"><span class="num" style="width:48px; flex:none">06:32</span><span class="grow dim"><b>vpn-stack-heal</b> renewed the NAT-PMP lease (port 52644)</span><b class="st ok">OK</b></div>
+        <div class="li"><span class="num" style="width:48px; flex:none">04:15</span><span class="grow dim"><b>homelab-doctor</b> 4/4 services, 4/4 hosts</span><b class="st ok">OK</b></div>
+        <div class="li"><span class="num" style="width:48px; flex:none">02:00</span><span class="grow dim"><b>attic-sync</b> weekly cold copy, 41 GiB in 12m</span><b class="st ok">OK</b></div>
+        <div class="li"><span class="num" style="width:48px; flex:none">-1d</span><span class="grow dim"><b>arch-agent</b> bitwarden 1.33.1 &rarr; 1.34.0 on rpi</span><b class="st warn">NEW!</b></div>
+        <div class="li"><span class="num" style="width:48px; flex:none">-1d</span><span class="grow dim"><b>hl-db</b> nightly ingest, 14/14 feeds, 61 days indexed</span><b class="st ok">OK</b></div>
+      </section>
+    </div>
+
+    <!-- right -->
+    <div class="col colC">
+      <section>
+        <h2>CS2 Today <span class="meta">HLTV &middot; VRS</span></h2>
+        <div class="li"><b class="crit blink" style="width:48px; flex:none; font-size:12px">LIVE</b><span class="grow">Vitality vs Spirit <span class="faint">(Mirage, map 2)</span></span><b class="num crit">9-7</b></div>
+        <div class="li"><span class="num faint" style="width:48px; flex:none">19:00</span><span class="grow">FaZe vs MOUZ <span class="faint">(EPL)</span></span><span class="num faint">bo3</span></div>
+        <div class="li"><span class="num faint" style="width:48px; flex:none">21:30</span><span class="grow">NAVI vs G2 <span class="faint">(EPL)</span></span><span class="num faint">bo3</span></div>
+        <div class="li"><span class="num faint" style="width:48px; flex:none">FT</span><span class="grow">Falcons vs Liquid <span class="faint">(13-10, 9-13, 13-6)</span></span><b class="num ok">2-1</b></div>
+      </section>
+
+      <section>
+        <h2>Robot Roster <span class="meta">discord bots</span></h2>
+        <div class="li"><span class="grow">weather</span><span class="num faint">07:00</span><b class="st ok">ON</b></div>
+        <div class="li"><span class="grow">healthdigest</span><span class="num faint">08:00</span><b class="st ok">ON</b></div>
+        <div class="li"><span class="grow">hltv</span><span class="num faint">09:00</span><b class="st ok">ON</b></div>
+        <div class="li"><span class="grow">sports</span><span class="num faint">10:00</span><b class="st ok">ON</b></div>
+        <div class="li"><span class="grow">jellyfin</span><span class="num faint">18:00</span><b class="st ok">ON</b></div>
+      </section>
+
+      <section>
+        <h2>Updates <span class="meta">4 pending</span></h2>
+        <div class="li"><span class="grow">bitwarden <span class="faint">(rpi)</span></span><b class="st warn num">1.34.0</b></div>
+        <div class="li"><span class="grow">jellyfin <span class="faint">(nn)</span></span><b class="st warn num">10.10.4</b></div>
+        <div class="li"><span class="grow">prowlarr <span class="faint">(nn)</span></span><b class="st warn num">1.31</b></div>
+        <div class="li"><span class="grow">gluetun <span class="faint">(nn)</span></span><b class="st warn num">3.40</b></div>
+      </section>
+
+      <section>
+        <h2>Streams</h2>
+        <div class="faint">No active slots. <a href="#">Open the stream station</a>.</div>
+      </section>
+    </div>
+  </div>
+
+  <hr>
+  <section>
+    <h2>Containers <span class="meta">detail page preview &middot; 31/31 running</span></h2>
+    <div class="tablewrap">
+    <table class="data">
+      <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="rowname">gluetun</td><td>noblenumbat</td><td>20h</td><td>qmcgaw/gluetun</td><td><b class="ok">healthy</b></td><td>vpn namespace</td></tr>
+        <tr><td class="rowname">jellyfin</td><td>noblenumbat</td><td>32h</td><td>jellyfin/jellyfin</td><td><b class="ok">up</b></td><td>&nbsp;</td></tr>
+        <tr><td class="rowname">bitwarden</td><td>rpi</td><td>10h</td><td>vaultwarden/server</td><td><b class="warn">update</b></td><td>1.34.0 available</td></tr>
+        <tr><td class="rowname">pihole</td><td>rpi</td><td>2w</td><td>pihole/pihole</td><td><b class="ok">healthy</b></td><td>dns &middot; dhcp</td></tr>
+        <tr><td class="rowname">qbittorrent</td><td>noblenumbat</td><td>20h</td><td>linuxserver/qbittorrent</td><td><b class="ok">up</b></td><td>via gluetun</td></tr>
+        <tr><td class="rowname">webapp</td><td>rpi</td><td>10h</td><td>node:lts-alpine</td><td><b class="ok">up</b></td><td>this app</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <footer>
+    <hr class="thick">
+    <div class="badges">
+      <span class="badge b1">Powered by Fastify</span>
+      <span class="badge b2">Pi-hole inside</span>
+      <span class="badge b5">ZFS: 3.7 TB</span>
+      <span class="badge b3">Best viewed in any browser</span>
+      <span class="badge b4">Y2K Ready&#8482;</span>
+    </div>
+    You are visitor <span class="counter">004,721</span> since June 2026.<br>
+    <a href="#">Sign the guestbook</a> &middot; <a class="v" href="#">View source</a> &middot; This page is frames-free and 100% self-hosted.
+  </footer>
+</div>

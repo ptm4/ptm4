@@ -1,0 +1,329 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — GitHub Dark</title>
+<!-- v3 mockup L: "github dark" — the homelab spoken in fluent Primer. Not just
+     the palette: the grammar. Hosts are pinned repositories, the doctor's
+     history is the contribution graph, storage is the language bar, activity
+     is a commit list, updates are releases, statuses are issue labels.
+     Single-theme by design: this one commits to GitHub dark (#0d1117). -->
+<style>
+  :root {
+    --canvas:   #0d1117;
+    --surface:  #161b22;
+    --surface2: #21262d;
+    --border:   #30363d;
+    --border2:  #21262d;
+    --ink:      #e6edf3;
+    --ink-2:    #8d96a0;
+    --ink-3:    #6e7681;
+    --blue:     #58a6ff;
+    --green:    #3fb950;
+    --green-2:  #26a641;
+    --green-3:  #196c2e;
+    --green-4:  #033a16;
+    --amber:    #d29922;
+    --red:      #f85149;
+    --purple:   #a371f7;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--canvas); color: var(--ink); font: 400 14px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .mono { font-family: var(--mono); font-size: 12px; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); }
+
+  /* ── global header ──────────────────────────────────────────────────── */
+  .ghead { background: var(--surface); border-bottom: 1px solid var(--border); }
+  .ghead .in { max-width: 1216px; margin: 0 auto; padding: 12px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .ghead .logo { width: 26px; height: 26px; border-radius: 50%; background: var(--ink); color: var(--canvas); display: grid; place-items: center; font-weight: 700; font-size: 13px; flex: none; }
+  .crumb { font-weight: 600; }
+  .crumb .sep { color: var(--ink-3); font-weight: 400; margin: 0 4px; }
+  .pill { font-size: 11px; font-weight: 500; color: var(--ink-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+  .gsearch {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px;
+    color: var(--ink-3); font-size: 13px; width: 260px; max-width: 46vw; background: var(--canvas);
+  }
+  .gsearch .kbd { margin-left: auto; font: 500 10px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, var(--purple), var(--blue)); flex: none; }
+
+  /* ── repo header ────────────────────────────────────────────────────── */
+  .rhead { max-width: 1216px; margin: 0 auto; padding: 16px 16px 0; }
+  .rtitle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .rtitle h1 { font-size: 20px; font-weight: 400; }
+  .rtitle h1 b { font-weight: 600; }
+  .rtitle .pill { text-transform: none; }
+  .racts { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--ink); font-size: 12px; font-weight: 500; padding: 3px 12px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--ink-3); }
+  .btn .cnt { border-left: 1px solid var(--border); padding-left: 8px; margin-left: 2px; color: var(--ink-2); }
+  .btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 6px; margin-top: 12px; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab { display: flex; align-items: center; gap: 7px; padding: 8px 12px 10px; color: var(--ink-2); font-size: 14px; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab:hover { color: var(--ink); text-decoration: none; }
+  .tab.on { color: var(--ink); border-color: #f78166; font-weight: 600; }
+  .tab .cnt { font-size: 11px; background: var(--surface2); border-radius: 999px; padding: 0 7px; color: var(--ink-2); }
+  .tab .cnt.warn { color: var(--amber); }
+
+  /* ── layout ─────────────────────────────────────────────────────────── */
+  .page { max-width: 1216px; margin: 0 auto; padding: 20px 16px 60px; display: grid; grid-template-columns: minmax(0,1fr) 296px; gap: 24px; }
+  @media (max-width: 900px) { .page { grid-template-columns: 1fr; } }
+  .main { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+  h3.sec { font-size: 14px; font-weight: 600; margin-bottom: -6px; }
+  h3.sec .dim { font-weight: 400; font-size: 12px; }
+
+  /* pinned host cards */
+  .pins { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 660px) { .pins { grid-template-columns: 1fr; } }
+  .pin { border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; background: var(--canvas); display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  .pin .head { display: flex; gap: 8px; align-items: center; }
+  .pin .head .name { font-weight: 600; color: var(--blue); font-size: 14px; }
+  .pin .head .pill { margin-left: auto; }
+  .pin .desc { font-size: 12px; color: var(--ink-2); }
+  .pin .stats { display: flex; gap: 14px; font-size: 12px; color: var(--ink-2); flex-wrap: wrap; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; vertical-align: -1px; margin-right: 4px; }
+  .dot.g { background: var(--green); } .dot.a { background: var(--amber); } .dot.b { background: var(--blue); } .dot.p { background: var(--purple); }
+  .pin .meterrow { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--ink-3); }
+  .meter { flex: 1; height: 6px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--green-2); }
+  .meter.warn i { background: var(--amber); }
+  .pin .acts { display: flex; gap: 10px; font-size: 12px; }
+
+  /* label pills (issue labels) */
+  .label { font-size: 11px; font-weight: 500; border-radius: 999px; padding: 1px 9px; border: 1px solid; }
+  .label.ok   { color: #56d364; border-color: rgba(86,211,100,.4); background: rgba(46,160,67,.15); }
+  .label.warn { color: #e3b341; border-color: rgba(227,179,65,.4); background: rgba(187,128,9,.15); }
+  .label.crit { color: #ff7b72; border-color: rgba(255,123,114,.4); background: rgba(248,81,73,.15); }
+  .label.info { color: #79c0ff; border-color: rgba(121,192,255,.4); background: rgba(56,139,253,.15); }
+
+  /* Box component */
+  .box { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .box > .bhead { background: var(--surface); border-bottom: 1px solid var(--border); padding: 9px 14px; font-size: 13px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; }
+  .box > .bhead .dim { font-weight: 400; font-size: 12px; margin-left: auto; }
+  .brow { display: flex; gap: 10px; align-items: baseline; padding: 8px 14px; border-top: 1px solid var(--border2); font-size: 13px; }
+  .box .brow:first-of-type, .box .bhead + .brow { border-top: 0; }
+  .brow:hover { background: #161b2266; }
+  .brow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .brow .t { font: 400 11.5px var(--mono); color: var(--ink-3); min-width: 44px; }
+  .check { color: var(--green); font-weight: 700; }
+
+  /* contribution graph */
+  .contrib { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+  .cgrid { display: grid; grid-template-rows: repeat(7, 10px); grid-auto-flow: column; grid-auto-columns: 10px; gap: 3px; overflow-x: auto; padding-bottom: 2px; }
+  .c { width: 10px; height: 10px; border-radius: 2px; background: var(--surface2); }
+  .c.l1 { background: var(--green-4); } .c.l2 { background: var(--green-3); }
+  .c.l3 { background: var(--green-2); } .c.l4 { background: var(--green); }
+  .c.warn { background: var(--amber); } .c.crit { background: var(--red); }
+  .clegend { display: flex; gap: 4px; align-items: center; font-size: 11px; color: var(--ink-3); justify-content: flex-end; }
+
+  /* table */
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 600px; }
+  th { text-align: left; font-size: 12px; color: var(--ink-2); font-weight: 600; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  td { padding: 7px 14px; border-top: 1px solid var(--border2); color: var(--ink-2); }
+  td:first-child { color: var(--blue); font-weight: 600; }
+
+  /* sidebar */
+  .sidebox h4 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .sidebox { border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  .sidebox:last-child { border-bottom: 0; }
+  .kv { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 13px; }
+  .kv .grow { flex: 1; min-width: 0; color: var(--ink-2); }
+  /* language bar = storage */
+  .langbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; gap: 1px; margin: 6px 0 8px; }
+  .langbar i { display: block; }
+  .lang { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); }
+  .lang span b { color: var(--ink); font-weight: 600; }
+
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+</style>
+
+<div class="ghead"><div class="in">
+  <span class="logo">P</span>
+  <span class="crumb">ptm<span class="sep">/</span>homelab<span class="sep">/</span><a href="#">pocket</a></span>
+  <span class="pill">Private</span>
+  <span class="gsearch">Type <b>/</b> to search <span class="kbd">⌘K</span></span>
+  <span class="avatar" title="ptm"></span>
+</div></div>
+
+<div class="rhead">
+  <div class="rtitle">
+    <h1>ptm / <b>pocket</b></h1>
+    <span class="pill">self-hosted</span>
+    <div class="racts">
+      <button class="btn">&#128065; Watch <span class="cnt">4 hosts</span></button>
+      <button class="btn">&#9095; Version: v3 &#9662; <span class="cnt">v1 · v2</span></button>
+      <button class="btn">&#9733; Star <span class="cnt">31</span></button>
+      <button class="btn primary">Run doctor</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <a class="tab on" href="#">&#128214; Overview</a>
+    <a class="tab" href="#">&#9638; Boards <span class="cnt">2</span></a>
+    <a class="tab" href="#">&#9881; Operations</a>
+    <a class="tab" href="#">&#128230; Containers <span class="cnt">31</span></a>
+    <a class="tab" href="#">&#8593; Updates <span class="cnt warn">4</span></a>
+    <a class="tab" href="#">&#128737; Security <span class="cnt">0</span></a>
+    <a class="tab" href="#">&#128202; Trends</a>
+    <a class="tab" href="#">&#128172; Bots <span class="cnt">5</span></a>
+  </div>
+</div>
+
+<div class="page">
+  <div class="main">
+    <h3 class="sec">Pinned hosts <span class="dim">· live vitals · doctor 24m ago</span></h3>
+    <div class="pins">
+      <div class="pin">
+        <div class="head"><span class="name">opti</span><span class="mono dim">up 29d</span><span class="pill">storage · control</span></div>
+        <div class="desc">ZFS pool <b>red</b> · Samba · dispatcher · homelab-db · CI runner</div>
+        <div class="stats"><span><span class="dot g"></span>load 0.16</span><span>mem 48% / 5.7 GiB</span><span>30&deg;C</span><span>&darr;63K &uarr;170K</span></div>
+        <div class="meterrow">os disk<span class="meter warn"><i style="width:77%"></i></span>77%</div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot&hellip;</a></div>
+      </div>
+      <div class="pin">
+        <div class="head"><span class="name">rpi</span><span class="mono dim">up 20d</span><span class="pill">DNS · DHCP · web</span></div>
+        <div class="desc">Pi-hole for the whole LAN · this dashboard · Vaultwarden · 5 bots</div>
+        <div class="stats"><span><span class="dot g"></span>load 0.55</span><span>mem 58% / 3.7 GiB</span><span>40&deg;C</span><span>16/16 containers</span></div>
+        <div class="meterrow">sd card<span class="meter"><i style="width:29%"></i></span>29%</div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot&hellip;</a></div>
+      </div>
+      <div class="pin">
+        <div class="head"><span class="name">noblenumbat</span><span class="mono dim">up 1d 8h</span><span class="pill">media</span></div>
+        <div class="desc">Jellyfin · *arr stack · qBittorrent behind Gluetun VPN</div>
+        <div class="stats"><span><span class="dot g"></span>load 0.00</span><span>mem 20% / 15.4 GiB</span><span>46&deg;C</span><span>vpn ok · 15/15</span></div>
+        <div class="meterrow">os disk<span class="meter"><i style="width:18%"></i></span>18%</div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot&hellip;</a></div>
+      </div>
+      <div class="pin">
+        <div class="head"><span class="name">android</span><span class="mono dim">reachable</span><span class="pill">llm</span></div>
+        <div class="desc">llama.cpp on the S10 · LFM2.5-2.6B · slot warm · 11 tok/s</div>
+        <div class="stats"><span><span class="dot g"></span>intermittent by design</span><span>keepalives active</span></div>
+        <div class="acts"><a href="#">Open WebUI</a><a href="#">llamactl</a></div>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="bhead">&#10003; 62 green days <span class="dim">doctor history · amber = degraded · red = outage</span></div>
+      <div class="contrib">
+        <div class="cgrid">
+          <span class="c l3"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span>
+          <span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span>
+          <span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c crit"></span><span class="c warn"></span><span class="c l3"></span><span class="c l4"></span>
+          <span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span>
+          <span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span>
+          <span class="c warn"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span>
+          <span class="c l4"></span><span class="c crit"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span>
+          <span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span>
+          <span class="c l4"></span><span class="c l4"></span><span class="c l4"></span><span class="c l3"></span><span class="c l4"></span><span class="c l4"></span><span class="c l4"></span>
+        </div>
+        <div class="clegend">Less <span class="c"></span><span class="c l1"></span><span class="c l2"></span><span class="c l3"></span><span class="c l4"></span> More</div>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="bhead">Activity <span class="dim">latest report events</span></div>
+      <div class="brow"><span class="t">07:00</span><span class="grow"><b>discord-weather</b> <span class="dim">posted the daily report — witty pool consumed one line</span></span><span class="check">&#10003;</span></div>
+      <div class="brow"><span class="t">06:32</span><span class="grow"><b>vpn-stack-heal</b> <span class="dim">renewed the NAT-PMP lease · port 52644 unchanged</span></span><span class="check">&#10003;</span></div>
+      <div class="brow"><span class="t">04:15</span><span class="grow"><b>homelab-doctor</b> <span class="dim">4/4 services · 4/4 hosts</span></span><span class="check">&#10003;</span></div>
+      <div class="brow"><span class="t">02:00</span><span class="grow"><b>attic-sync</b> <span class="dim">weekly cold copy · 41 GiB in 12m</span></span><span class="check">&#10003;</span></div>
+      <div class="brow"><span class="t">-1d</span><span class="grow"><b>arch-agent</b> <span class="dim">bitwarden 1.33.1 &rarr; 1.34.0 available on rpi</span></span><span class="label warn">update</span></div>
+      <div class="brow"><span class="t">-1d</span><span class="grow"><b>hl-db</b> <span class="dim">nightly ingest · 14/14 feeds · 61 days indexed</span></span><span class="check">&#10003;</span></div>
+    </div>
+
+    <div class="box">
+      <div class="bhead">Containers <span class="dim">detail page preview · 31/31 running</span></div>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>gluetun</td><td>noblenumbat</td><td class="mono">20h</td><td class="mono">qmcgaw/gluetun</td><td><span class="label ok">healthy</span> <span class="label info">vpn ns</span></td></tr>
+          <tr><td>jellyfin</td><td>noblenumbat</td><td class="mono">32h</td><td class="mono">jellyfin/jellyfin</td><td><span class="label ok">up</span></td></tr>
+          <tr><td>bitwarden</td><td>rpi</td><td class="mono">10h</td><td class="mono">vaultwarden/server</td><td><span class="label warn">update 1.34.0</span></td></tr>
+          <tr><td>pihole</td><td>rpi</td><td class="mono">2w</td><td class="mono">pihole/pihole</td><td><span class="label ok">healthy</span> <span class="label info">dns · dhcp</span></td></tr>
+          <tr><td>qbittorrent</td><td>noblenumbat</td><td class="mono">20h</td><td class="mono">linuxserver/qbittorrent</td><td><span class="label ok">up</span></td></tr>
+          <tr><td>webapp</td><td>rpi</td><td class="mono">10h</td><td class="mono">node:lts-alpine</td><td><span class="label ok">up</span> <span class="label info">this app</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- sidebar -->
+  <div class="side">
+    <div class="sidebox">
+      <h4>About</h4>
+      <div class="kv"><span class="grow">One LAN, four hosts, 31 containers, zero drama. All systems operational.</span></div>
+      <div class="kv" style="margin-top:6px; gap:6px; flex-wrap:wrap">
+        <span class="label ok">4/4 hosts</span><span class="label ok">31/31 up</span><span class="label warn">4 updates</span><span class="label ok">0 findings</span>
+      </div>
+      <div class="kv" style="margin-top:8px"><span class="grow faint">&#128337; 21:47 · Mon Aug 24 · doctor 24m ago</span></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>Storage <span class="faint" style="font-weight:400">· like a language bar</span></h4>
+      <div class="langbar">
+        <i style="width:19%; background:#f1e05a" title="red zfs"></i>
+        <i style="width:38%; background:#3178c6" title="opti os"></i>
+        <i style="width:15%; background:#563d7c" title="rpi sd"></i>
+        <i style="width:9%; background:#e34c26" title="nn os"></i>
+        <i style="flex:1; background:var(--surface2)" title="free"></i>
+      </div>
+      <div class="lang">
+        <span><span class="dot" style="background:#f1e05a"></span>red·zfs <b>19%</b></span>
+        <span><span class="dot" style="background:#3178c6"></span>opti os <b>77%</b></span>
+        <span><span class="dot" style="background:#563d7c"></span>rpi sd <b>29%</b></span>
+        <span><span class="dot" style="background:#e34c26"></span>nn os <b>18%</b></span>
+      </div>
+      <div class="kv" style="margin-top:6px"><span class="grow faint">0.7 / 3.7 TB used on the pool</span></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>Releases <span class="faint" style="font-weight:400">· pending updates</span></h4>
+      <div class="kv"><span class="grow">bitwarden <span class="faint">rpi</span></span><span class="label warn">1.34.0</span></div>
+      <div class="kv"><span class="grow">jellyfin <span class="faint">nn</span></span><span class="label warn">10.10.4</span></div>
+      <div class="kv"><span class="grow">prowlarr <span class="faint">nn</span></span><span class="label warn">1.31</span></div>
+      <div class="kv"><span class="grow">gluetun <span class="faint">nn</span></span><span class="label warn">3.40</span></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>Pi-hole</h4>
+      <div class="kv"><span class="grow">Blocked today</span><b>22.4%</b></div>
+      <div class="kv"><span class="grow">Queries</span><span class="mono">31,842</span></div>
+      <div class="kv"><span class="grow">Gravity</span><span class="mono">1.19M</span></div>
+      <div class="kv"><span class="grow"><a href="#">Pause 5 min</a> · <a href="#">Admin</a></span></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>CS2 today <span class="faint" style="font-weight:400">· HLTV · VRS</span></h4>
+      <div class="kv"><span class="label crit">LIVE</span><span class="grow">Vitality–Spirit <span class="faint">Mirage m2</span></span><b class="mono" style="color:var(--red)">9–7</b></div>
+      <div class="kv"><span class="t mono faint">19:00</span><span class="grow">FaZe–MOUZ</span><span class="mono faint">bo3</span></div>
+      <div class="kv"><span class="t mono faint">21:30</span><span class="grow">NAVI–G2</span><span class="mono faint">bo3</span></div>
+      <div class="kv"><span class="t mono faint">final</span><span class="grow">Falcons–Liquid</span><b class="mono" style="color:var(--green)">2–1</b></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>Environments <span class="faint" style="font-weight:400">· bots</span></h4>
+      <div class="kv"><span class="dot g"></span><span class="grow">weather</span><span class="mono faint">07:00</span></div>
+      <div class="kv"><span class="dot g"></span><span class="grow">healthdigest</span><span class="mono faint">08:00</span></div>
+      <div class="kv"><span class="dot g"></span><span class="grow">hltv</span><span class="mono faint">09:00</span></div>
+      <div class="kv"><span class="dot g"></span><span class="grow">sports</span><span class="mono faint">10:00</span></div>
+      <div class="kv"><span class="dot g"></span><span class="grow">jellyfin</span><span class="mono faint">18:00</span></div>
+    </div>
+
+    <div class="sidebox">
+      <h4>Weather</h4>
+      <div class="kv"><b style="font-size:22px">78&deg;F</b><span class="grow dim" style="margin-left:8px">Partly cloudy · feels 81&deg; · rain 20%</span></div>
+      <div class="kv"><span class="grow faint">7AM post sent &#10003; · tomorrow 82/68, storms</span></div>
+    </div>
+  </div>
+</div>

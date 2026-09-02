@@ -1,0 +1,274 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — PocketAmp</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<!-- v3 mockup H: the rogue one — "PocketAmp". The homelab as a 1998 media
+     player: brushed-charcoal skin, gold bevel accents, a green LCD deck,
+     spectrum analyzer for CPU, the EQ as storage sliders, and the playlist IS
+     the fleet — uptime rendered as track time. It really whips the llama's ass.
+     Single-theme by design: skins are skins. -->
+<style>
+  :root {
+    --metal:   #23252c;
+    --metal-2: #2c2f38;
+    --metal-3: #383c48;
+    --bev-hi:  #4d5260;
+    --bev-lo:  #0d0e12;
+    --gold:    #c8a24b;
+    --gold-2:  #8a6f33;
+    --lcd-bg:  #061407;
+    --lcd:     #35ff77;
+    --lcd-dim: #1a7a3c;
+    --pl-bg:   #000000;
+    --pl:      #00e050;
+    --pl-dim:  #0a7a30;
+    --sel:     #0000c6;
+    --white:   #d8dae0;
+    --amber:   #ffc94d;
+    --red:     #ff4d42;
+    --chrome: 10px Verdana, Geneva, Tahoma, sans-serif;
+    --lcdfont: "VT323", ui-monospace, "Cascadia Mono", Menlo, monospace;
+    --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #101014;
+    background-image: radial-gradient(ellipse at 30% 0%, #16161c, #0b0b0e 70%);
+    color: var(--white);
+    font: var(--chrome);
+    line-height: 1.45;
+    padding: 20px 14px 40px;
+    font-variant-numeric: tabular-nums;
+  }
+  a { color: var(--gold); text-decoration: none; }
+  a:hover { color: #ffd66e; text-decoration: underline; }
+
+  .rack { max-width: 1150px; margin: 0 auto; display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
+  .w4 { grid-column: span 4; min-width: 0; } .w6 { grid-column: span 6; min-width: 0; }
+  .w8 { grid-column: span 8; min-width: 0; } .w12 { grid-column: span 12; min-width: 0; }
+  @media (max-width: 1000px) { .w4, .w6, .w8 { grid-column: span 6; } }
+  @media (max-width: 660px)  { .w4, .w6, .w8, .w12 { grid-column: span 12; } }
+
+  /* a skin window */
+  .amp {
+    background: linear-gradient(180deg, var(--metal-2), var(--metal));
+    border: 1px solid var(--bev-lo);
+    box-shadow: inset 0 1px 0 var(--bev-hi), 0 6px 16px rgba(0,0,0,.5);
+    border-radius: 3px;
+    display: flex; flex-direction: column;
+  }
+  .tbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 3px 8px;
+    background:
+      repeating-linear-gradient(90deg, transparent 0 3px, rgba(255,255,255,.05) 3px 4px),
+      linear-gradient(180deg, var(--metal-3), var(--metal-2));
+    border-bottom: 1px solid var(--bev-lo);
+    box-shadow: inset 0 1px 0 var(--bev-hi);
+    font: 700 9px Verdana, sans-serif; letter-spacing: .18em; color: var(--gold);
+    text-transform: uppercase; white-space: nowrap; overflow: hidden;
+  }
+  .tbar .btns { margin-left: auto; display: flex; gap: 4px; }
+  .tbar .b { width: 9px; height: 9px; background: var(--metal-3); border: 1px solid var(--bev-lo); box-shadow: inset 0 1px 0 var(--bev-hi); flex: none; }
+  .bd { padding: 9px 10px 11px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+
+  /* LCD surfaces */
+  .lcd {
+    background: var(--lcd-bg);
+    border: 1px solid #000;
+    box-shadow: inset 0 0 12px rgba(0,0,0,.8), inset 0 0 4px #000;
+    color: var(--lcd);
+    font-family: var(--lcdfont);
+    padding: 6px 10px;
+    text-shadow: 0 0 6px rgba(53,255,119,.4);
+  }
+  .lcd .dim { color: var(--lcd-dim); text-shadow: none; }
+  .lcd .amber { color: var(--amber); }
+  .lcd .red { color: var(--red); }
+
+  /* main deck */
+  .deck-top { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  .bigtime { font-size: 46px; line-height: 1; letter-spacing: 2px; }
+  .deckstats { font-size: 19px; display: flex; flex-direction: column; justify-content: center; gap: 1px; }
+  .marquee { overflow: hidden; white-space: nowrap; font-size: 21px; }
+  .marquee span { display: inline-block; padding-left: 100%; animation: scroll 18s linear infinite; }
+  @keyframes scroll { to { transform: translateX(-100%); } }
+  @media (prefers-reduced-motion: reduce) { .marquee span { animation: none; padding-left: 0; } }
+
+  /* spectrum analyzer */
+  .spectrum { display: flex; align-items: flex-end; gap: 3px; height: 44px; flex: 1; min-width: 140px; padding: 4px 6px; }
+  .spectrum i { flex: 1; background: linear-gradient(180deg, var(--red) 0 18%, var(--amber) 18% 42%, var(--lcd) 42% 100%); animation: bounce 1.2s ease-in-out infinite alternate; transform-origin: bottom; }
+  .spectrum i:nth-child(2n) { animation-duration: .9s; } .spectrum i:nth-child(3n) { animation-duration: 1.5s; }
+  .spectrum i:nth-child(4n) { animation-duration: .7s; } .spectrum i:nth-child(5n) { animation-duration: 1.1s; }
+  @keyframes bounce { from { transform: scaleY(.25); } to { transform: scaleY(1); } }
+  @media (prefers-reduced-motion: reduce) { .spectrum i { animation: none; } }
+
+  /* transport */
+  .transport { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+  .tbtn {
+    background: linear-gradient(180deg, var(--metal-3), var(--metal));
+    border: 1px solid var(--bev-lo); box-shadow: inset 0 1px 0 var(--bev-hi);
+    color: var(--white); font: 700 10px Verdana, sans-serif;
+    padding: 4px 10px; cursor: pointer; border-radius: 2px;
+  }
+  .tbtn:hover { color: var(--gold); }
+  .tbtn:active { box-shadow: inset 0 2px 4px rgba(0,0,0,.6); }
+  .transport .hint { color: #6a6e7a; font-size: 9px; margin-left: 4px; }
+  .toggles { margin-left: auto; display: flex; gap: 4px; }
+  .tog { font: 700 9px Verdana, sans-serif; padding: 2px 7px; border: 1px solid var(--bev-lo); box-shadow: inset 0 1px 0 var(--bev-hi); color: #6a6e7a; }
+  .tog.on { color: var(--lcd); background: #0a1a0c; }
+
+  /* EQ sliders (storage) */
+  .eq { display: flex; gap: 14px; align-items: flex-end; padding: 4px 2px 0; flex-wrap: wrap; }
+  .band { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 44px; }
+  .slider { position: relative; width: 8px; height: 88px; background: #14151a; border: 1px solid var(--bev-lo); box-shadow: inset 0 1px 3px #000; }
+  .slider .fill { position: absolute; bottom: 0; left: 0; right: 0; background: linear-gradient(180deg, var(--lcd), #0d5f2b); }
+  .slider .fill.warn { background: linear-gradient(180deg, var(--amber), #7a5410); }
+  .slider .knob { position: absolute; left: -6px; right: -6px; height: 9px; background: linear-gradient(180deg, #565b6a, #23252c); border: 1px solid var(--bev-lo); box-shadow: inset 0 1px 0 var(--bev-hi); }
+  .band .lab { font-size: 9px; color: #8a8e9a; text-transform: uppercase; letter-spacing: .06em; }
+  .band .val { font-family: var(--lcdfont); font-size: 17px; color: var(--lcd); }
+  .band .val.warn { color: var(--amber); }
+
+  /* playlist */
+  .plist { background: var(--pl-bg); border: 1px solid #000; box-shadow: inset 0 0 10px rgba(0,0,0,.8); font-family: var(--lcdfont); font-size: 18px; color: var(--pl); padding: 4px 8px; }
+  .pl-row { display: flex; gap: 8px; align-items: baseline; padding: 0 2px; white-space: nowrap; }
+  .pl-row .n { color: var(--pl-dim); width: 22px; flex: none; text-align: right; }
+  .pl-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .pl-row .len { color: var(--pl-dim); }
+  .pl-row.sel { background: var(--sel); color: #fff; }
+  .pl-row.sel .n, .pl-row.sel .len { color: #9a9aff; }
+  .pl-row .warn { color: var(--amber); } .pl-row .red { color: var(--red); }
+  .pl-foot { display: flex; gap: 6px; padding: 5px 8px 0; font-size: 9px; color: #6a6e7a; }
+  .pl-foot .r { margin-left: auto; }
+
+  /* small labeled lcd rows */
+  .lrow { display: flex; gap: 8px; align-items: baseline; font-size: 18px; padding: 0; }
+  .lrow .k { color: var(--lcd-dim); width: 74px; flex: none; text-transform: uppercase; font-size: 15px; }
+  .lrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .tablewrap { overflow-x: auto; }
+
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+</style>
+
+<div class="rack">
+  <!-- ── MAIN DECK ─────────────────────────────────────────────────────── -->
+  <div class="amp w8">
+    <div class="tbar">Pert's PocketAmp 3.0 <span style="color:#6a6e7a">· it really whips the homelab's&hellip;</span><span class="btns"><span class="b"></span><span class="b"></span><span class="b"></span></span></div>
+    <div class="bd">
+      <div class="deck-top">
+        <div class="lcd" style="display:flex; gap:14px; align-items:center; flex:2; min-width:250px">
+          <div class="bigtime">21:47</div>
+          <div class="deckstats">
+            <span><span class="dim">HOSTS</span> 4/4 <span class="dim">· CONT</span> 31/31</span>
+            <span><span class="dim">UPD</span> <span class="amber">4</span> <span class="dim">· FINDINGS</span> 0</span>
+            <span class="dim">DOCTOR 24M AGO · 44.1 LAN STEREO</span>
+          </div>
+        </div>
+        <div class="lcd spectrum" aria-label="fleet cpu, decorative">
+          <i style="height:30%"></i><i style="height:55%"></i><i style="height:42%"></i><i style="height:75%"></i><i style="height:60%"></i><i style="height:35%"></i><i style="height:88%"></i><i style="height:50%"></i><i style="height:66%"></i><i style="height:40%"></i><i style="height:58%"></i><i style="height:28%"></i><i style="height:70%"></i><i style="height:45%"></i>
+        </div>
+      </div>
+      <div class="lcd marquee"><span>*** ALL SYSTEMS GO *** VPN-STACK-HEAL RENEWED NAT-PMP LEASE (PORT 52644) *** BITWARDEN 1.34.0 AVAILABLE ON RPI *** WEATHER: 78&deg;F PARTLY CLOUDY, RAIN 20%, 7AM POST SENT *** ATTIC COLD COPY 41 GIB IN 12M *** LIVE NOW: VITALITY 9-7 SPIRIT (MIRAGE MAP 2) ***</span></div>
+      <div class="transport">
+        <button class="tbtn" title="Run doctor now">&#9654;</button>
+        <button class="tbtn" title="Pause Pi-hole 5 min">&#10073;&#10073;</button>
+        <button class="tbtn" title="Refetch all widgets">&#8635;</button>
+        <button class="tbtn" title="Edit board">EJECT</button>
+        <span class="hint">play=doctor · pause=pi-hole · rw=refetch · eject=edit board</span>
+        <span class="toggles"><span class="tog on">V3</span><span class="tog">V2</span><span class="tog">V1</span><span class="tog on">EQ</span><span class="tog on">PL</span></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EQ = STORAGE ──────────────────────────────────────────────────── -->
+  <div class="amp w4">
+    <div class="tbar">Equalizer — Storage<span class="btns"><span class="b"></span><span class="b"></span></span></div>
+    <div class="bd">
+      <div class="eq">
+        <div class="band"><div class="slider"><div class="fill" style="height:19%"></div><div class="knob" style="bottom:17%"></div></div><span class="val">19</span><span class="lab">red·zfs</span></div>
+        <div class="band"><div class="slider"><div class="fill warn" style="height:77%"></div><div class="knob" style="bottom:75%"></div></div><span class="val warn">77</span><span class="lab">opti os</span></div>
+        <div class="band"><div class="slider"><div class="fill" style="height:29%"></div><div class="knob" style="bottom:27%"></div></div><span class="val">29</span><span class="lab">rpi sd</span></div>
+        <div class="band"><div class="slider"><div class="fill" style="height:18%"></div><div class="knob" style="bottom:16%"></div></div><span class="val">18</span><span class="lab">nn os</span></div>
+        <div class="band"><div class="slider"><div class="fill" style="height:22%"></div><div class="knob" style="bottom:20%"></div></div><span class="val">22</span><span class="lab">pi-hole</span></div>
+      </div>
+      <div style="font-size:9px; color:#6a6e7a; text-align:center">0.7 / 3.7 TB ON THE POOL · PREAMP = BLOCKED %</div>
+    </div>
+  </div>
+
+  <!-- ── PLAYLIST = FLEET ──────────────────────────────────────────────── -->
+  <div class="amp w6">
+    <div class="tbar">Playlist — Fleet <span style="color:#6a6e7a">· uptime is the track length</span><span class="btns"><span class="b"></span><span class="b"></span></span></div>
+    <div class="bd">
+      <div class="plist">
+        <div class="pl-row sel"><span class="n">1.</span><span class="t">opti — Storage &amp; Control Plane (load 0.16 · 30&deg;C)</span><span class="len">696:00:00</span></div>
+        <div class="pl-row"><span class="n">2.</span><span class="t">rpi — DNS · DHCP · Web (load 0.55 · 40&deg;C · 16/16)</span><span class="len">497:00:00</span></div>
+        <div class="pl-row"><span class="n">3.</span><span class="t">noblenumbat — Media Stack (vpn ok · 15/15)</span><span class="len">32:00:00</span></div>
+        <div class="pl-row"><span class="n">4.</span><span class="t">android — llama.cpp feat. LFM2.5-2.6B <span class="warn">(intermittent mix)</span></span><span class="len">--:--</span></div>
+      </div>
+      <div class="pl-foot"><span>[ <a href="#">term</a> ]</span><span>[ <a href="#">update</a> ]</span><span>[ <a href="#">reboot&hellip;</a> ]</span><span class="r">4 tracks · total 50d 17h</span></div>
+    </div>
+  </div>
+
+  <!-- ── NOW PLAYING = ACTIVITY ────────────────────────────────────────── -->
+  <div class="amp w6">
+    <div class="tbar">Recently Played — Activity<span class="btns"><span class="b"></span><span class="b"></span></span></div>
+    <div class="bd">
+      <div class="plist">
+        <div class="pl-row"><span class="n">&#9654;</span><span class="t">discord-weather — Daily Report (Morning Mix)</span><span class="len">07:00</span></div>
+        <div class="pl-row"><span class="n">&#9654;</span><span class="t">vpn-stack-heal — NAT-PMP Renewal <span class="dim">(port 52644)</span></span><span class="len">06:32</span></div>
+        <div class="pl-row"><span class="n">&#9654;</span><span class="t">homelab-doctor — All Green (4/4 Extended Cut)</span><span class="len">04:15</span></div>
+        <div class="pl-row"><span class="n">&#9654;</span><span class="t">attic-sync — Weekly Cold Copy (41 GiB)</span><span class="len">02:00</span></div>
+        <div class="pl-row"><span class="n">&#9835;</span><span class="t"><span class="warn">arch-agent — bitwarden 1.34.0 (Update Available)</span></span><span class="len">-1d</span></div>
+        <div class="pl-row"><span class="n">&#9835;</span><span class="t">hl-db — Nightly Ingest (14/14 Feeds · 61d)</span><span class="len">-1d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MINI LCDs ─────────────────────────────────────────────────────── -->
+  <div class="amp w4">
+    <div class="tbar">CS2 — HLTV Radio<span class="btns"><span class="b"></span></span></div>
+    <div class="bd"><div class="lcd">
+      <div class="lrow"><span class="k red">live</span><span class="grow">VITALITY–SPIRIT <span class="dim">MIRAGE M2</span></span><span class="red">9-7</span></div>
+      <div class="lrow"><span class="k">19:00</span><span class="grow">FAZE–MOUZ</span><span class="dim">BO3</span></div>
+      <div class="lrow"><span class="k">21:30</span><span class="grow">NAVI–G2</span><span class="dim">BO3</span></div>
+      <div class="lrow"><span class="k">final</span><span class="grow">FALCONS–LIQUID</span><span>2-1</span></div>
+    </div></div>
+  </div>
+
+  <div class="amp w4">
+    <div class="tbar">Bots — Scheduled Sets<span class="btns"><span class="b"></span></span></div>
+    <div class="bd"><div class="lcd">
+      <div class="lrow"><span class="k">07:00</span><span class="grow">WEATHER</span><span>ON</span></div>
+      <div class="lrow"><span class="k">08:00</span><span class="grow">HEALTHDIGEST</span><span>ON</span></div>
+      <div class="lrow"><span class="k">09:00</span><span class="grow">HLTV</span><span>ON</span></div>
+      <div class="lrow"><span class="k">10:00</span><span class="grow">SPORTS</span><span>ON</span></div>
+      <div class="lrow"><span class="k">18:00</span><span class="grow">JELLYFIN</span><span>ON</span></div>
+    </div></div>
+  </div>
+
+  <div class="amp w4">
+    <div class="tbar">Updates — 4 In Queue<span class="btns"><span class="b"></span></span></div>
+    <div class="bd"><div class="lcd">
+      <div class="lrow"><span class="k">rpi</span><span class="grow">BITWARDEN</span><span class="amber">1.34.0</span></div>
+      <div class="lrow"><span class="k">nn</span><span class="grow">JELLYFIN</span><span class="amber">10.10.4</span></div>
+      <div class="lrow"><span class="k">nn</span><span class="grow">PROWLARR</span><span class="amber">1.31</span></div>
+      <div class="lrow"><span class="k">nn</span><span class="grow">GLUETUN</span><span class="amber">3.40</span></div>
+    </div></div>
+  </div>
+
+  <!-- ── LIBRARY = CONTAINERS ──────────────────────────────────────────── -->
+  <div class="amp w12">
+    <div class="tbar">Media Library — Containers <span style="color:#6a6e7a">· detail page preview · 31/31</span><span class="btns"><span class="b"></span><span class="b"></span></span></div>
+    <div class="bd tablewrap">
+      <div class="plist" style="min-width:640px">
+        <div class="pl-row"><span class="n" style="width:34px">01.</span><span class="t" style="flex:2">gluetun</span><span class="t dim">noblenumbat · qmcgaw/gluetun · vpn namespace</span><span class="len">20:00:00</span></div>
+        <div class="pl-row"><span class="n" style="width:34px">02.</span><span class="t" style="flex:2">jellyfin</span><span class="t dim">noblenumbat · jellyfin/jellyfin</span><span class="len">32:00:00</span></div>
+        <div class="pl-row"><span class="n" style="width:34px">03.</span><span class="t warn" style="flex:2">bitwarden (update 1.34.0)</span><span class="t dim">rpi · vaultwarden/server</span><span class="len">10:00:00</span></div>
+        <div class="pl-row"><span class="n" style="width:34px">04.</span><span class="t" style="flex:2">pihole</span><span class="t dim">rpi · pihole/pihole · dns+dhcp</span><span class="len">336:00:00</span></div>
+        <div class="pl-row"><span class="n" style="width:34px">05.</span><span class="t" style="flex:2">qbittorrent</span><span class="t dim">noblenumbat · via gluetun</span><span class="len">20:00:00</span></div>
+        <div class="pl-row"><span class="n" style="width:34px">06.</span><span class="t" style="flex:2">webapp</span><span class="t dim">rpi · node:lts-alpine · this app</span><span class="len">10:00:00</span></div>
+      </div>
+    </div>
+  </div>
+</div>

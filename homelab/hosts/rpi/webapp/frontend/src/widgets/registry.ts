@@ -18,7 +18,7 @@ import {
 } from './services';
 import {
   BotsWidget, Cs2MatchesWidget, DownloadsWidget, LeetifyTrendWidget, NotificationsWidget,
-  StreamsWidget,
+  PriceWatchWidget, StreamsWidget,
 } from './integrations';
 import { ChangesWidget, DbHealthWidget, LongTrendsWidget } from './hldb';
 import { ALL_LINKS, LINK_GROUPS } from '../lib/links';
@@ -292,6 +292,25 @@ export const WIDGETS: WidgetDef[] = [
       ] },
       { key: 'days', label: 'Window (days)', type: 'number', min: 7, max: 400 },
       { key: 'host', label: 'Host', type: 'select', choices: [{ value: '', label: 'All hosts' }, ...HOSTS] },
+    ],
+  },
+  {
+    type: 'price-watch',
+    label: 'Price watch',
+    description: 'PC-part prices for the opti rebuild — Newegg/eBay/Amazon, trend sparklines, green pill when an item hits its buy target.',
+    component: PriceWatchWidget,
+    defaults: { w: 4, h: 4 },
+    min: { w: 3, h: 2 },
+    options: [
+      { key: 'category', label: 'Category', type: 'select', choices: [
+        { value: '', label: 'All parts' },
+        { value: 'cpu', label: 'CPU' },
+        { value: 'mobo', label: 'Motherboard' },
+        { value: 'ram', label: 'RAM' },
+        { value: 'psu', label: 'PSU' },
+        { value: 'ssd', label: 'SSD' },
+        { value: 'case', label: 'Case' },
+      ] },
     ],
   },
   {

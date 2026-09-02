@@ -1,0 +1,248 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Ops Feed</title>
+<!-- v3 mockup N: "ops feed" — the homelab as a single chronological stream.
+     Everything that happens (reports, heals, bot posts, updates, matches)
+     lands in one triageable timeline: filter it, ack it, act on it. A pinned
+     "Now" rail keeps live vitals in view. Feed paradigm, not a grid.
+     Single-theme by design: warm charcoal dark. -->
+<style>
+  :root {
+    --bg:      #16141a;
+    --rail:    #1a1820;
+    --card:    #201d26;
+    --card-2:  #282430;
+    --line:    #2f2b3a;
+    --ink:     #e9e5f0;
+    --ink-2:   #9c94ac;
+    --ink-3:   #665f76;
+    --ember:   #ff8a5c;         /* the one accent */
+    --ok:      #52d68a;
+    --warn:    #e8b04b;
+    --crit:    #f2635f;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 13.5px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
+  a { color: var(--ember); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .num { font-family: var(--mono); font-size: 12px; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); font-size: 12px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); }
+
+  /* header */
+  header { display: flex; gap: 14px; align-items: center; padding: 12px 18px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: rgba(22,20,26,.92); backdrop-filter: blur(6px); z-index: 5; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 15px; }
+  .brand .v { color: var(--ember); }
+  .search { flex: 1; min-width: 140px; max-width: 380px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; color: var(--ink-3); font-size: 12.5px; background: var(--rail); }
+  header .r { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  .vbtn { border: 1px solid var(--line); background: var(--rail); color: var(--ink-3); border-radius: 6px; padding: 3px 9px; font: 600 11px var(--mono); cursor: pointer; }
+  .vbtn.on { color: var(--ember); border-color: #4a3328; background: #241d1c; }
+
+  .shell { max-width: 1220px; margin: 0 auto; display: grid; grid-template-columns: 190px minmax(0,1fr) 300px; gap: 20px; padding: 18px; }
+  @media (max-width: 1000px) { .shell { grid-template-columns: 170px minmax(0,1fr); } .now { display: none; } }
+  @media (max-width: 660px)  { .shell { grid-template-columns: 1fr; } .filters { flex-direction: row !important; overflow-x: auto; } }
+
+  /* filter rail */
+  .filters { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 64px; align-self: start; }
+  .f { display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-radius: 8px; color: var(--ink-2); font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .f:hover { background: var(--rail); color: var(--ink); }
+  .f.on { background: var(--card); color: var(--ink); font-weight: 600; }
+  .f .cnt { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+  .f .cnt.hot { color: var(--warn); font-weight: 700; }
+  .fgroup { margin-top: 12px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 0 10px 4px; }
+
+  /* feed */
+  .feed { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; padding: 4px 0; }
+  .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; gap: 12px; min-width: 0; }
+  .item.unread { border-left: 3px solid var(--ember); }
+  .item.live { border-color: #4a2a2c; }
+  .av { width: 30px; height: 30px; border-radius: 8px; flex: none; display: grid; place-items: center; font: 700 12px var(--sans); color: #16141a; }
+  .av.bot { background: var(--ok); } .av.heal { background: var(--ember); } .av.doc { background: #8fd0ff; }
+  .av.sync { background: #b6a6e8; } .av.upd { background: var(--warn); } .av.cs { background: var(--crit); color: #fff; }
+  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .head .who { font-weight: 600; }
+  .head .what { color: var(--ink-2); }
+  .head .t { margin-left: auto; font: 400 11px var(--mono); color: var(--ink-3); }
+  .excerpt { color: var(--ink-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+  .chips { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+  .chip { font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 1px 9px; }
+  .chip.ok { color: var(--ok); background: rgba(82,214,138,.1); }
+  .chip.warn { color: var(--warn); background: rgba(232,176,75,.12); }
+  .chip.crit { color: var(--crit); background: rgba(242,99,95,.12); }
+  .chip.act { color: var(--ink-2); background: var(--card-2); cursor: pointer; }
+  .chip.act:hover { color: var(--ember); }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--crit); align-self: center; animation: pulse 1.4s ease infinite; flex: none; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(242,99,95,.15); } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+  /* now rail */
+  .now { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 64px; align-self: start; min-width: 0; }
+  .ncard { background: var(--rail); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; }
+  .ncard h3 { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: flex; }
+  .ncard h3 .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .nrow { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 12.5px; }
+  .nrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .meter { flex: 1; height: 5px; border-radius: 3px; background: var(--card-2); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--ink-3); }
+  .meter.warn i { background: var(--warn); }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 560px; }
+  th { text-align: left; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 3px 12px 5px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 12px 5px 0; border-bottom: 1px solid #262230; color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; }
+
+  :focus-visible { outline: 2px solid var(--ember); outline-offset: 1px; }
+</style>
+
+<header>
+  <span class="brand">Pert's Pocket <span class="v">/ feed</span></span>
+  <span class="search">Search the stream… ⌘K</span>
+  <span class="r">
+    <span class="faint num">4/4 hosts · 31/31 up · doctor 24m</span>
+    <button class="vbtn">v1</button><button class="vbtn">v2</button><button class="vbtn on">v3</button>
+  </span>
+</header>
+
+<div class="shell">
+  <!-- filters -->
+  <nav class="filters">
+    <span class="f on">Everything <span class="cnt">9</span></span>
+    <span class="f">Needs action <span class="cnt hot">4</span></span>
+    <span class="f">Health</span>
+    <span class="f">Bots</span>
+    <span class="f">Media</span>
+    <span class="f">CS2</span>
+    <span class="f">Security</span>
+    <span class="fgroup">Hosts</span>
+    <span class="f">opti</span>
+    <span class="f">rpi</span>
+    <span class="f">noblenumbat</span>
+    <span class="f">android</span>
+  </nav>
+
+  <!-- the stream -->
+  <div class="feed">
+    <div class="divider">Live</div>
+    <div class="item live">
+      <span class="pulse"></span>
+      <div class="body">
+        <div class="head"><span class="who">Vitality — Spirit</span><span class="what crit num" style="font-size:14px; font-weight:700">9–7</span><span class="what">Mirage · map 2 · EPL playoffs</span><span class="t">now</span></div>
+        <div class="chips"><span class="chip crit">LIVE</span><span class="chip act">Watch stream</span><span class="chip act">Full slate — FaZe–MOUZ 19:00 · NAVI–G2 21:30</span></div>
+      </div>
+    </div>
+
+    <div class="divider">Today</div>
+    <div class="item">
+      <span class="av bot">W</span>
+      <div class="body">
+        <div class="head"><span class="who">discord-weather</span><span class="what">posted the daily report</span><span class="t">07:00</span></div>
+        <div class="excerpt">"78° and partly cloudy, feels 81. Rain 20% — and yes Kevin, that's still drier than your aim." · witty pool: 41 lines left</div>
+        <div class="chips"><span class="chip ok">sent</span><span class="chip act">Open #weather</span></div>
+      </div>
+    </div>
+    <div class="item">
+      <span class="av heal">V</span>
+      <div class="body">
+        <div class="head"><span class="who">vpn-stack-heal</span><span class="what">renewed the NAT-PMP lease</span><span class="t">06:32</span></div>
+        <div class="excerpt">Forwarded port unchanged (52644) · gluetun healthy · qBittorrent reachable through the namespace</div>
+        <div class="chips"><span class="chip ok">auto-healed</span><span class="chip act">status.json</span></div>
+      </div>
+    </div>
+    <div class="item">
+      <span class="av doc">D</span>
+      <div class="body">
+        <div class="head"><span class="who">homelab-doctor</span><span class="what">4/4 services · 4/4 hosts — nothing to report</span><span class="t">04:15</span></div>
+        <div class="chips"><span class="chip ok">all green</span><span class="chip act">Full report</span></div>
+      </div>
+    </div>
+    <div class="item">
+      <span class="av sync">A</span>
+      <div class="body">
+        <div class="head"><span class="who">attic-sync</span><span class="what">weekly cold copy finished</span><span class="t">02:00</span></div>
+        <div class="excerpt">41 GiB in 12m to /srv/attic · next run Sunday 02:00</div>
+        <div class="chips"><span class="chip ok">done</span></div>
+      </div>
+    </div>
+
+    <div class="divider">Yesterday</div>
+    <div class="item unread">
+      <span class="av upd">U</span>
+      <div class="body">
+        <div class="head"><span class="who">arch-agent</span><span class="what">4 image updates available</span><span class="t">-1d</span></div>
+        <div class="excerpt">bitwarden 1.33.1 → 1.34.0 (rpi) · jellyfin 10.10.4, prowlarr 1.31, gluetun 3.40 (nn)</div>
+        <div class="chips"><span class="chip warn">needs action</span><span class="chip act">Apply from Cockpit</span><span class="chip act">Ack</span><span class="chip act">Snooze 7d</span></div>
+      </div>
+    </div>
+    <div class="item">
+      <span class="av doc">H</span>
+      <div class="body">
+        <div class="head"><span class="who">hl-db</span><span class="what">nightly ingest complete</span><span class="t">-1d</span></div>
+        <div class="excerpt">14/14 feeds · 61 days indexed · 2.1 GB — watching the thing that watches everything else</div>
+        <div class="chips"><span class="chip ok">fed</span></div>
+      </div>
+    </div>
+    <div class="item">
+      <span class="av cs">C</span>
+      <div class="body">
+        <div class="head"><span class="who">Falcons — Liquid</span><span class="what num">2–1 <span class="dim">(13-10 · 9-13 · 13-6)</span></span><span class="t">-1d</span></div>
+        <div class="chips"><span class="chip ok">final</span><span class="chip act">Match page</span></div>
+      </div>
+    </div>
+
+    <div class="divider">Reference · containers <span class="faint" style="letter-spacing:0; text-transform:none">(detail page preview · 31/31)</span></div>
+    <div class="item" style="display:block">
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Host</th><th>Up</th><th>Image</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td class="num">qmcgaw/gluetun</td><td class="ok">healthy · vpn ns</td></tr>
+          <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td class="num">jellyfin/jellyfin</td><td class="ok">up</td></tr>
+          <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td class="num">vaultwarden/server</td><td class="warn">update 1.34.0</td></tr>
+          <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td class="num">pihole/pihole</td><td class="ok">healthy · dns+dhcp</td></tr>
+          <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td class="num">linuxserver/qbittorrent</td><td class="ok">up · via gluetun</td></tr>
+          <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td class="num">node:lts-alpine</td><td class="ok">up · this app</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- pinned "now" rail -->
+  <aside class="now">
+    <div class="ncard">
+      <h3>Now <span class="meta faint num">21:47 · Mon Aug 24</span></h3>
+      <div class="nrow"><span class="grow">opti <span class="faint">· up 29d</span></span><span class="num">0.16 · 48% · 30&deg;</span></div>
+      <div class="nrow"><span class="grow">rpi <span class="faint">· up 20d</span></span><span class="num">0.55 · 58% · 40&deg;</span></div>
+      <div class="nrow"><span class="grow">noblenumbat <span class="faint">· up 1d8h</span></span><span class="num">0.00 · 20% · 46&deg;</span></div>
+      <div class="nrow"><span class="grow">android <span class="faint">· llm warm</span></span><span class="num ok">ok</span></div>
+      <div class="nrow" style="margin-top:4px"><span class="grow faint">terminal · autoupdate · reboot per host on hover</span></div>
+    </div>
+    <div class="ncard">
+      <h3>Storage</h3>
+      <div class="nrow"><span style="width:58px" class="faint">red·zfs</span><span class="meter"><i style="width:19%"></i></span><span class="num">19%</span></div>
+      <div class="nrow"><span style="width:58px" class="faint">opti os</span><span class="meter warn"><i style="width:77%"></i></span><span class="num warn">77%</span></div>
+      <div class="nrow"><span style="width:58px" class="faint">rpi sd</span><span class="meter"><i style="width:29%"></i></span><span class="num">29%</span></div>
+      <div class="nrow"><span style="width:58px" class="faint">nn os</span><span class="meter"><i style="width:18%"></i></span><span class="num">18%</span></div>
+    </div>
+    <div class="ncard">
+      <h3>Pi-hole <span class="meta faint">live</span></h3>
+      <div class="nrow"><span class="grow">22.4% blocked</span><span class="num faint">7,134 / 31,842</span></div>
+      <div class="nrow"><span class="grow faint">gravity 1.19M · <a href="#">pause 5m</a></span></div>
+    </div>
+    <div class="ncard">
+      <h3>Weather</h3>
+      <div class="nrow"><span style="font-size:20px; font-weight:700">78&deg;</span><span class="grow" style="white-space:normal; margin-left:6px">partly cloudy · feels 81&deg; · rain 20%</span></div>
+    </div>
+    <div class="ncard">
+      <h3>Bots <span class="meta ok">5/5 on</span></h3>
+      <div class="nrow"><span class="grow faint">next: weather 07:00 · digest 08:00 · hltv 09:00</span></div>
+    </div>
+  </aside>
+</div>

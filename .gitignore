@@ -61,4 +61,7 @@ vaultwarden-data/
 *.log
 logs/
 
+# ── DLSS 5 injector skill (789 MB of mod binaries — keep out of git history) ──
+homelab/agentic/skills/dlss5-injector/
+
 .claude

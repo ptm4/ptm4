@@ -562,5 +562,17 @@
     "keys": [
       "error"
     ]
+  },
+  "GET /api/pricewatch": {
+    "status": 200,
+    "keys": [
+      "below_target",
+      "history",
+      "items",
+      "run_at",
+      "status",
+      "summary",
+      "tool"
+    ]
   }
 }

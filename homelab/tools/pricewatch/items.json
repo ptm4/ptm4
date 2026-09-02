@@ -1,0 +1,149 @@
+{
+  "_comment": "Tracked parts for the opti hypervisor rebuild (see homelab/hosts/opti/proxmox-migration.md). target_price = buy-window threshold that raises a homelab-db finding. eBay is NOT trackable from opti: ebay.com 403s server-side fetchers on TLS fingerprint (urllib AND curl, verified 2026-08-24) — same lesson as hltv, only full Chromium passes. eBay items would need the official Browse API (OAuth). RAM and NVMe are the 2025-26 spiked categories the tracker exists for; the used-eBay RAM floor (~$120 for 2x16 3200) is watched manually.",
+  "items": [
+    {
+      "id": "cpu-5600-newegg",
+      "label": "Ryzen 5 5600",
+      "category": "cpu",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/amd-ryzen-5-5000-series-ryzen-5-5600-vermeer-socket-am4-desktop-cpu-processor/p/N82E16819113747",
+      "target_price": 105,
+      "note": "no-cooler SKU; $116.99 on 2026-08-24, floor has been ~$105-110"
+    },
+    {
+      "id": "cpu-5700x-newegg",
+      "label": "Ryzen 7 5700X",
+      "category": "cpu",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/amd-ryzen-7-5000-series-ryzen-7-5700x-vermeer-socket-am4-desktop-cpu-processor/p/N82E16819113746",
+      "target_price": 145,
+      "note": "the +2-core upgrade; $158.99 on 2026-08-24"
+    },
+    {
+      "id": "mobo-b550mk-newegg",
+      "label": "Gigabyte B550M K",
+      "category": "mobo",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/gigabyte-b550m-k-micro-atx-motherboard-amd-b550-am4/p/N82E16813145434",
+      "target_price": 60,
+      "note": "budget pick, 4x SATA 2x M.2; $69.99 standing floor"
+    },
+    {
+      "id": "mobo-b550m-pro4-newegg",
+      "label": "ASRock B550M Pro4",
+      "category": "mobo",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/asrock-b550m-pro4-micro-atx-amd-motherboard-amd-b550-am4/p/N82E16813157939",
+      "target_price": 80,
+      "note": "the ZFS pick: 6x SATA; $89.99 on 2026-08-24, dips to $75-80"
+    },
+    {
+      "id": "ram-2x16-puskill-newegg",
+      "label": "PUSKILL KillBlade 2x16 3200 (new)",
+      "category": "ram",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/puskill-killblade-32gb-2-x-16gb-ddr4-3200-pc4-25600-cas-latency-16-memory-desktop-memory-black-white/p/0RN-00WR-00039",
+      "target_price": 130,
+      "note": "cheapest NEW 32GB kit found ($178.99 on 2026-08-24); off-brand, tracked as the new-kit floor"
+    },
+    {
+      "id": "ram-2x16-teamgroup-amazon",
+      "label": "TeamGroup Elite 2x16 3200 (new)",
+      "category": "ram",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B08T17RQ87",
+      "target_price": 120,
+      "note": "cheapest new name-brand; $190.99 on 2026-08-24 (was ~$60 mid-2025, DDR4 spike)"
+    },
+    {
+      "id": "ram-2x16-ripjaws-new-amazon",
+      "label": "G.Skill Ripjaws V 2x16 3200 (new)",
+      "category": "ram",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B0171GQR0C",
+      "target_price": 130,
+      "note": "$209.89 on 2026-08-24; CL16 reference kit for spike trending"
+    },
+    {
+      "id": "psu-asrock-650g-newegg",
+      "label": "ASRock PRO-650G 650W Gold",
+      "category": "psu",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/asrock-pro-series-atx-3-1-compatible-650-w-80-plus-gold-certified-power-supply-black-pro-650g/p/N82E16817955024",
+      "target_price": 45,
+      "note": "ATX 3.1 Gold at $49.99 is already good; grab at $45"
+    },
+    {
+      "id": "psu-msi-a650gl-amazon",
+      "label": "MSI MAG A650GL 650W modular",
+      "category": "psu",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B0CGFZVGF9",
+      "target_price": 70,
+      "note": "quality fully-modular option, 10y warranty; $79.99 on 2026-08-24"
+    },
+    {
+      "id": "ssd-p400lite-amazon",
+      "label": "Patriot P400 Lite 1TB NVMe",
+      "category": "ssd",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B0BTDP6P7Y",
+      "target_price": 120,
+      "note": "cheapest 1TB Gen4; $149.99 on 2026-08-24 (~2x the 2024 floor, NAND spike)"
+    },
+    {
+      "id": "ssd-nv3-amazon",
+      "label": "Kingston NV3 1TB NVMe",
+      "category": "ssd",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B0DBR3DZWG",
+      "target_price": 120,
+      "note": "$160.99 on 2026-08-24; buy instantly under $100"
+    },
+    {
+      "id": "ssd-sn770-newegg",
+      "label": "WD Black SN770 1TB NVMe",
+      "category": "ssd",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/western-digital-1tb-black-sn770-nvme/p/N82E16820250217",
+      "target_price": 120,
+      "note": "quality reference for the NAND trend; $168.02 on 2026-08-24"
+    },
+    {
+      "id": "cooler-ax120-amazon",
+      "label": "Thermalright AX120 R SE",
+      "category": "cpu",
+      "retailer": "amazon",
+      "url": "https://www.amazon.com/dp/B09LHBFPJ6",
+      "target_price": 16,
+      "note": "needed for the no-cooler 5600; ~$17.90 stable"
+    },
+    {
+      "id": "case-node804-newegg",
+      "label": "Fractal Node 804 (case)",
+      "category": "case",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/fractal-design-micro-atx-cube-case-node-804-aluminum-steel-computer-case-black-fd-ca-node-804-bl/p/N82E16811352047",
+      "target_price": 110,
+      "note": "mATX cube, dual-chamber, 8x 3.5; price has swung $100-187 over the last year"
+    },
+    {
+      "id": "case-jonsbo-n4-newegg",
+      "label": "Jonsbo N4 (case)",
+      "category": "case",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/jonsbo-micro-atx-mini-itx-steel-wood-cases-black/p/2AM-006A-000F1",
+      "target_price": 120,
+      "note": "black cube + walnut strip, mATX, 6x 3.5 (4 hot-swap); add one 120mm for the drive chamber"
+    },
+    {
+      "id": "case-jonsbo-n6-newegg",
+      "label": "Jonsbo N6 (case)",
+      "category": "case",
+      "retailer": "newegg",
+      "url": "https://www.newegg.com/JONSBO-N6/p/2AM-006A-000J4",
+      "target_price": 160,
+      "note": "Feb 2026 release, 9x 3.5 hot-swap trays, mATX; pre-order batches ship end of Aug 2026"
+    }
+  ]
+}

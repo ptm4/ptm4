@@ -1,0 +1,324 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Pocket Dark</title>
+<!-- v3 mockup O: "pocket dark" — GitHub-dark INSPIRED, not a GitHub site.
+     Takes Primer's sensibility (true-dark canvas, hairline-bordered boxes
+     with quiet header rows, label pills, blue reserved for interactive,
+     tabular numbers, calm density) and applies it to the dashboard's own
+     content model: boards, hosts, widgets. No repos, no stars, no cosplay.
+     Single-theme by design: committed dark. -->
+<style>
+  :root {
+    --canvas:   #0d1117;
+    --surface:  #161b22;
+    --surface2: #21262d;
+    --border:   #30363d;
+    --border2:  #21262d;
+    --ink:      #e6edf3;
+    --ink-2:    #8d96a0;
+    --ink-3:    #6e7681;
+    --blue:     #58a6ff;
+    --green:    #3fb950;
+    --amber:    #d29922;
+    --red:      #f85149;
+    --purple:   #a371f7;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--canvas); color: var(--ink); font: 400 13.5px/1.5 var(--sans); font-variant-numeric: tabular-nums; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .num { font-family: var(--mono); font-size: 12px; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); font-size: 12px; }
+  .g { color: var(--green); } .a { color: var(--amber); } .r { color: var(--red); }
+
+  /* ── top bar ────────────────────────────────────────────────────────── */
+  .top { border-bottom: 1px solid var(--border); background: var(--canvas); position: sticky; top: 0; z-index: 5; }
+  .top .in { max-width: 1240px; margin: 0 auto; padding: 10px 16px 0; }
+  .top .row1 { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .brand { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 14.5px; }
+  .brand .mark { width: 20px; height: 20px; border-radius: 6px; background: linear-gradient(135deg, var(--purple), var(--blue)); }
+  .search { display: flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 6px; padding: 3px 10px; color: var(--ink-3); font-size: 12.5px; width: 250px; max-width: 40vw; margin-left: auto; }
+  .search .kbd { margin-left: auto; font: 500 10px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: none; color: var(--ink-3); font: 600 11px var(--mono); padding: 4px 10px; cursor: pointer; }
+  .seg button.on { background: var(--surface2); color: var(--ink); }
+  .tabs { display: flex; gap: 4px; margin-top: 8px; overflow-x: auto; }
+  .tab { padding: 7px 12px 9px; color: var(--ink-2); font-size: 13.5px; border-bottom: 2px solid transparent; white-space: nowrap; }
+  .tab:hover { color: var(--ink); text-decoration: none; }
+  .tab.on { color: var(--ink); border-color: var(--purple); font-weight: 600; }
+  .tab .cnt { font-size: 11px; background: var(--surface2); border-radius: 999px; padding: 0 7px; color: var(--ink-2); margin-left: 5px; }
+  .tab .cnt.warn { color: var(--amber); }
+
+  /* ── page ───────────────────────────────────────────────────────────── */
+  .page { max-width: 1240px; margin: 0 auto; padding: 16px 16px 60px; display: flex; flex-direction: column; gap: 14px; }
+
+  /* fleet strip */
+  .fleet { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .stat { display: flex; gap: 7px; align-items: baseline; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); padding: 5px 12px; font-size: 12.5px; color: var(--ink-2); }
+  .stat b { color: var(--ink); font-size: 14px; font-weight: 600; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+  .dot.g { background: var(--green); } .dot.a { background: var(--amber); }
+  .fleet .end { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--ink); font-size: 12px; font-weight: 500; padding: 3px 12px; cursor: pointer; }
+  .btn:hover { border-color: var(--ink-3); }
+
+  /* grid of boxes */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+  .box { grid-column: span 4; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+  .b6 { grid-column: span 6; } .b8 { grid-column: span 8; } .b12 { grid-column: span 12; } .b3 { grid-column: span 3; }
+  @media (max-width: 1000px) { .box, .b6, .b8, .b3 { grid-column: span 6; } }
+  @media (max-width: 660px)  { .box, .b6, .b8, .b3, .b12 { grid-column: span 12; } }
+  .bh { display: flex; gap: 8px; align-items: baseline; padding: 8px 14px; border-bottom: 1px solid var(--border2); font-size: 12.5px; font-weight: 600; }
+  .bh .meta { margin-left: auto; font-weight: 400; font-size: 11.5px; color: var(--ink-3); }
+  .bb { padding: 10px 14px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+
+  /* label pills */
+  .label { font-size: 11px; font-weight: 500; border-radius: 999px; padding: 1px 9px; border: 1px solid; white-space: nowrap; }
+  .label.ok   { color: #56d364; border-color: rgba(86,211,100,.35); background: rgba(46,160,67,.12); }
+  .label.warn { color: #e3b341; border-color: rgba(227,179,65,.35); background: rgba(187,128,9,.12); }
+  .label.crit { color: #ff7b72; border-color: rgba(255,123,114,.35); background: rgba(248,81,73,.12); }
+  .label.info { color: #79c0ff; border-color: rgba(121,192,255,.35); background: rgba(56,139,253,.12); }
+
+  /* host box */
+  .hostline { display: flex; gap: 10px; align-items: baseline; }
+  .hostline .name { font-size: 15px; font-weight: 600; }
+  .hostline .role { font-size: 11.5px; color: var(--ink-3); }
+  .hostline .up { margin-left: auto; font: 400 11px var(--mono); color: var(--green); }
+  .vitals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .vit .l { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  .vit .v { font-size: 14px; font-weight: 600; }
+  .vit .v small { font-weight: 400; color: var(--ink-3); font-size: 10.5px; }
+  .spark { width: 100%; height: 30px; margin-top: 2px; }
+  .spark polyline { fill: none; stroke: var(--blue); stroke-width: 1.5; }
+  .spark path { fill: rgba(88,166,255,.12); }
+  .spark circle { fill: var(--blue); }
+  .meterrow { display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: var(--ink-2); }
+  .meterrow .lab { width: 52px; flex: none; color: var(--ink-3); }
+  .meter { flex: 1; height: 6px; border-radius: 3px; background: var(--surface2); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--green); }
+  .meter.warn i { background: var(--amber); }
+  .acts { display: flex; gap: 12px; font-size: 12px; margin-top: 2px; }
+
+  /* list rows */
+  .lrow { display: flex; gap: 10px; align-items: baseline; padding: 3px 0; font-size: 12.5px; border-top: 1px solid var(--border2); }
+  .bb .lrow:first-child { border-top: 0; }
+  .lrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lrow .t { font: 400 11px var(--mono); color: var(--ink-3); min-width: 42px; }
+
+  /* table */
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 620px; }
+  th { text-align: left; font-size: 11.5px; color: var(--ink-2); font-weight: 600; padding: 7px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  td { padding: 6px 14px; border-top: 1px solid var(--border2); color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; }
+  tr:hover td { background: #161b2280; }
+
+  :focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+</style>
+
+<div class="top"><div class="in">
+  <div class="row1">
+    <span class="brand"><span class="mark"></span> Pert's Pocket</span>
+    <span class="faint">home board · saved 01:05</span>
+    <span class="search">Jump to anything… <span class="kbd">⌘K</span></span>
+    <span class="seg"><button>v1</button><button>v2</button><button class="on">v3</button></span>
+    <button class="btn">Edit board</button>
+  </div>
+  <div class="tabs">
+    <a class="tab on" href="#">Home</a>
+    <a class="tab" href="#">Dashboard</a>
+    <a class="tab" href="#">Cockpit</a>
+    <a class="tab" href="#">Containers <span class="cnt">31</span></a>
+    <a class="tab" href="#">Updates <span class="cnt warn">4</span></a>
+    <a class="tab" href="#">Reports</a>
+    <a class="tab" href="#">Security <span class="cnt">0</span></a>
+    <a class="tab" href="#">Bots <span class="cnt">5</span></a>
+    <a class="tab" href="#">CS2</a>
+    <a class="tab" href="#">Data</a>
+  </div>
+</div></div>
+
+<div class="page">
+  <div class="fleet">
+    <span class="stat"><span class="dot g"></span><b>4/4</b> hosts</span>
+    <span class="stat"><span class="dot g"></span><b>31/31</b> containers</span>
+    <span class="stat"><span class="dot a"></span><b>4</b> updates</span>
+    <span class="stat"><span class="dot g"></span><b>0</b> findings</span>
+    <span class="end"><span class="faint num">doctor 24m ago · 21:47</span></span>
+  </div>
+
+  <div class="grid">
+    <!-- hosts -->
+    <section class="box">
+      <div class="bh">opti <span class="meta">storage · control plane</span></div>
+      <div class="bb">
+        <div class="hostline"><span class="up num">up 29d</span><span class="label ok" style="margin-left:auto">healthy</span></div>
+        <div class="vitals">
+          <div class="vit"><div class="l">Load</div><div class="v num">0.16</div></div>
+          <div class="vit"><div class="l">Mem</div><div class="v num">48%<small> /5.7G</small></div></div>
+          <div class="vit"><div class="l">Temp</div><div class="v num">30&deg;</div></div>
+          <div class="vit"><div class="l">Net</div><div class="v num" style="font-size:11.5px">&darr;63K &uarr;170K</div></div>
+        </div>
+        <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="opti cpu 3h">
+          <path d="M0,23 L20,21 40,24 60,19 80,22 100,15 120,20 140,17 160,21 180,18 200,20 L200,30 0,30 Z"/>
+          <polyline points="0,23 20,21 40,24 60,19 80,22 100,15 120,20 140,17 160,21 180,18 200,20"/><circle cx="200" cy="20" r="2.2"/>
+        </svg>
+        <div class="meterrow"><span class="lab">red·zfs</span><span class="meter"><i style="width:19%"></i></span><span class="num">19%</span></div>
+        <div class="meterrow"><span class="lab">os</span><span class="meter warn"><i style="width:77%"></i></span><span class="num a">77%</span></div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot…</a></div>
+      </div>
+    </section>
+
+    <section class="box">
+      <div class="bh">rpi <span class="meta">DNS · DHCP · web</span></div>
+      <div class="bb">
+        <div class="hostline"><span class="up num">up 20d</span><span class="label ok" style="margin-left:auto">healthy</span></div>
+        <div class="vitals">
+          <div class="vit"><div class="l">Load</div><div class="v num">0.55</div></div>
+          <div class="vit"><div class="l">Mem</div><div class="v num">58%<small> /3.7G</small></div></div>
+          <div class="vit"><div class="l">Temp</div><div class="v num">40&deg;</div></div>
+          <div class="vit"><div class="l">Docker</div><div class="v num">16/16</div></div>
+        </div>
+        <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="rpi cpu 3h">
+          <path d="M0,19 L20,17 40,21 60,14 80,17 100,11 120,15 140,8 160,14 180,12 200,13 L200,30 0,30 Z"/>
+          <polyline points="0,19 20,17 40,21 60,14 80,17 100,11 120,15 140,8 160,14 180,12 200,13"/><circle cx="200" cy="13" r="2.2"/>
+        </svg>
+        <div class="meterrow"><span class="lab">sd</span><span class="meter"><i style="width:29%"></i></span><span class="num">29%</span></div>
+        <div class="meterrow"><span class="lab">dns</span><span class="meter"><i style="width:100%"></i></span><span class="num g">ok</span></div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot…</a></div>
+      </div>
+    </section>
+
+    <section class="box">
+      <div class="bh">noblenumbat <span class="meta">media stack</span></div>
+      <div class="bb">
+        <div class="hostline"><span class="up num">up 1d 8h</span><span class="label ok" style="margin-left:auto">healthy</span></div>
+        <div class="vitals">
+          <div class="vit"><div class="l">Load</div><div class="v num">0.00</div></div>
+          <div class="vit"><div class="l">Mem</div><div class="v num">20%<small> /15.4G</small></div></div>
+          <div class="vit"><div class="l">Temp</div><div class="v num">46&deg;</div></div>
+          <div class="vit"><div class="l">VPN</div><div class="v g" style="font-size:12px">ok · pf</div></div>
+        </div>
+        <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="nn cpu 3h">
+          <path d="M0,26 L20,25 40,26 60,24 80,26 100,22 120,25 140,24 160,26 180,25 200,25 L200,30 0,30 Z"/>
+          <polyline points="0,26 20,25 40,26 60,24 80,26 100,22 120,25 140,24 160,26 180,25 200,25"/><circle cx="200" cy="25" r="2.2"/>
+        </svg>
+        <div class="meterrow"><span class="lab">os</span><span class="meter"><i style="width:18%"></i></span><span class="num">18%</span></div>
+        <div class="meterrow"><span class="lab">docker</span><span class="meter"><i style="width:100%"></i></span><span class="num g">15/15</span></div>
+        <div class="acts"><a href="#">Terminal</a><a href="#">Autoupdate</a><a href="#">Reboot…</a></div>
+      </div>
+    </section>
+
+    <!-- activity -->
+    <section class="box b8">
+      <div class="bh">Activity <span class="meta">latest report events</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="t">07:00</span><span class="grow"><b>discord-weather</b> <span class="dim">posted the daily report — witty pool consumed one line</span></span><span class="label ok">sent</span></div>
+        <div class="lrow"><span class="t">06:32</span><span class="grow"><b>vpn-stack-heal</b> <span class="dim">renewed the NAT-PMP lease · port 52644 unchanged</span></span><span class="label ok">healed</span></div>
+        <div class="lrow"><span class="t">04:15</span><span class="grow"><b>homelab-doctor</b> <span class="dim">4/4 services · 4/4 hosts — nothing to report</span></span><span class="label ok">green</span></div>
+        <div class="lrow"><span class="t">02:00</span><span class="grow"><b>attic-sync</b> <span class="dim">weekly cold copy · 41 GiB in 12m</span></span><span class="label ok">done</span></div>
+        <div class="lrow"><span class="t">-1d</span><span class="grow"><b>arch-agent</b> <span class="dim">bitwarden 1.33.1 → 1.34.0 available on rpi</span></span><span class="label warn">update</span></div>
+        <div class="lrow"><span class="t">-1d</span><span class="grow"><b>hl-db</b> <span class="dim">nightly ingest · 14/14 feeds · 61 days indexed</span></span><span class="label ok">fed</span></div>
+      </div>
+    </section>
+
+    <!-- pihole + llm stacked -->
+    <section class="box">
+      <div class="bh">Pi-hole <span class="meta">rpi · live</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="grow dim">blocked today</span><b class="num" style="font-size:14px">22.4%</b></div>
+        <div class="meterrow"><span class="meter"><i style="width:22.4%"></i></span></div>
+        <div class="lrow"><span class="grow dim">queries · denied</span><span class="num">31,842 · 7,134</span></div>
+        <div class="lrow"><span class="grow dim">gravity</span><span class="num">1.19M</span></div>
+        <div class="acts"><a href="#">Pause 5 min</a><a href="#">Admin</a></div>
+      </div>
+      <div class="bh" style="border-top:1px solid var(--border2)">Local LLM</div>
+      <div class="bb">
+        <div class="lrow"><span class="grow">LFM2.5-2.6B</span><span class="label ok">warm</span></div>
+        <div class="lrow"><span class="grow faint">android:8080 · 11 tok/s · <a href="#">Open WebUI</a></span></div>
+      </div>
+    </section>
+
+    <!-- storage -->
+    <section class="box">
+      <div class="bh">Storage <span class="meta">0.7 / 3.7 TB pool</span></div>
+      <div class="bb">
+        <div class="meterrow"><span class="lab">red·zfs</span><span class="meter"><i style="width:19%"></i></span><span class="num">19%</span></div>
+        <div class="meterrow"><span class="lab">opti os</span><span class="meter warn"><i style="width:77%"></i></span><span class="num a">77%</span></div>
+        <div class="meterrow"><span class="lab">rpi sd</span><span class="meter"><i style="width:29%"></i></span><span class="num">29%</span></div>
+        <div class="meterrow"><span class="lab">nn os</span><span class="meter"><i style="width:18%"></i></span><span class="num">18%</span></div>
+        <div class="lrow" style="margin-top:2px"><span class="grow faint">weekly cold copy to /srv/attic · last: 02:00 ✓</span></div>
+      </div>
+    </section>
+
+    <!-- cs2 -->
+    <section class="box">
+      <div class="bh">CS2 today <span class="meta">HLTV · VRS</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="t r" style="font-weight:700">LIVE</span><span class="grow">Vitality — Spirit <span class="faint">Mirage m2</span></span><b class="num r">9–7</b></div>
+        <div class="lrow"><span class="t">19:00</span><span class="grow">FaZe — MOUZ</span><span class="num faint">bo3</span></div>
+        <div class="lrow"><span class="t">21:30</span><span class="grow">NAVI — G2</span><span class="num faint">bo3</span></div>
+        <div class="lrow"><span class="t">final</span><span class="grow">Falcons — Liquid <span class="faint">13-10 · 9-13 · 13-6</span></span><b class="num g">2–1</b></div>
+      </div>
+    </section>
+
+    <!-- updates -->
+    <section class="box b3">
+      <div class="bh">Updates <span class="meta a">4 pending</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="grow">bitwarden <span class="faint">rpi</span></span><span class="label warn">1.34.0</span></div>
+        <div class="lrow"><span class="grow">jellyfin <span class="faint">nn</span></span><span class="label warn">10.10.4</span></div>
+        <div class="lrow"><span class="grow">prowlarr <span class="faint">nn</span></span><span class="label warn">1.31</span></div>
+        <div class="lrow"><span class="grow">gluetun <span class="faint">nn</span></span><span class="label warn">3.40</span></div>
+      </div>
+    </section>
+
+    <!-- bots -->
+    <section class="box b3">
+      <div class="bh">Bots <span class="meta">5 scheduled</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="grow">weather</span><span class="num faint">07:00</span></div>
+        <div class="lrow"><span class="grow">healthdigest</span><span class="num faint">08:00</span></div>
+        <div class="lrow"><span class="grow">hltv</span><span class="num faint">09:00</span></div>
+        <div class="lrow"><span class="grow">sports</span><span class="num faint">10:00</span></div>
+        <div class="lrow"><span class="grow">jellyfin</span><span class="num faint">18:00</span></div>
+      </div>
+    </section>
+
+    <!-- weather + android -->
+    <section class="box b3">
+      <div class="bh">Weather <span class="meta">7AM sent ✓</span></div>
+      <div class="bb">
+        <div class="lrow"><b style="font-size:22px" class="num">78&deg;</b><span class="grow dim" style="white-space:normal; margin-left:6px">partly cloudy · feels 81&deg; · rain 20%</span></div>
+        <div class="lrow"><span class="grow faint">tomorrow 82/68 · storms after 2 PM</span></div>
+      </div>
+    </section>
+    <section class="box b3">
+      <div class="bh">android <span class="meta">llm host</span></div>
+      <div class="bb">
+        <div class="lrow"><span class="grow">reachable</span><span class="label ok">ok</span></div>
+        <div class="lrow"><span class="grow faint">intermittent by design · keepalives on · phantom killer off</span></div>
+      </div>
+    </section>
+
+    <!-- containers -->
+    <section class="box b12">
+      <div class="bh">Containers <span class="meta">detail page preview · 31/31 running</span></div>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td class="num">qmcgaw/gluetun</td><td><span class="label ok">healthy</span> <span class="label info">vpn ns</span></td></tr>
+          <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td class="num">jellyfin/jellyfin</td><td><span class="label ok">up</span></td></tr>
+          <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td class="num">vaultwarden/server</td><td><span class="label warn">update 1.34.0</span></td></tr>
+          <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td class="num">pihole/pihole</td><td><span class="label ok">healthy</span> <span class="label info">dns · dhcp</span></td></tr>
+          <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td class="num">linuxserver/qbittorrent</td><td><span class="label ok">up</span></td></tr>
+          <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td class="num">node:lts-alpine</td><td><span class="label ok">up</span> <span class="label info">this app</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+  </div>
+</div>

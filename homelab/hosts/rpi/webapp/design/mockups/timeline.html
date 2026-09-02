@@ -1,0 +1,195 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Timeline</title>
+<!-- v3 mockup Q: "timeline" — stream take two. A single vertical timeline
+     with a rail of colored dots, day headers, and quiet entries: no avatars,
+     no chat-app energy. A sticky vitals bar keeps "now" pinned on top while
+     history scrolls. Graphite palette, one desaturated teal accent.
+     Single-theme by design. -->
+<style>
+  :root {
+    --bg:      #121417;
+    --bar:     #16191d;
+    --card:    #1b1f24;
+    --line:    #272c33;
+    --rail:    #2e343d;
+    --ink:     #e4e8ec;
+    --ink-2:   #98a1ab;
+    --ink-3:   #626b76;
+    --teal:    #57c4a8;
+    --ok:      #55c47e;
+    --warn:    #d8a94e;
+    --crit:    #e5645e;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 13.5px/1.55 var(--sans); font-variant-numeric: tabular-nums; }
+  a { color: var(--teal); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .num { font-family: var(--mono); font-size: 12px; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); font-size: 12px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); }
+
+  /* ── sticky now-bar ─────────────────────────────────────────────────── */
+  .nowbar { position: sticky; top: 0; z-index: 6; background: rgba(18,20,23,.94); backdrop-filter: blur(6px); border-bottom: 1px solid var(--line); }
+  .nowbar .in { max-width: 980px; margin: 0 auto; padding: 10px 18px 8px; }
+  .row1 { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .brand { font-weight: 700; font-size: 14.5px; }
+  .brand .v { color: var(--teal); font-weight: 500; }
+  .row1 .r { margin-left: auto; display: flex; gap: 6px; align-items: baseline; }
+  .vbtn { border: 1px solid var(--line); background: var(--card); color: var(--ink-3); border-radius: 6px; padding: 2px 9px; font: 600 11px var(--mono); cursor: pointer; }
+  .vbtn.on { color: var(--teal); border-color: #2c4a42; }
+  .vitals { display: flex; gap: 6px 18px; margin-top: 7px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); overflow-x: auto; }
+  .vitals b { color: var(--ink); font-weight: 600; }
+  .vitals .host { white-space: nowrap; }
+  .vitals .host .pip { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-right: 5px; }
+  .vitals .sep { color: var(--ink-3); }
+  .vitals .warnpip { background: var(--warn) !important; }
+
+  /* ── timeline ───────────────────────────────────────────────────────── */
+  .page { max-width: 980px; margin: 0 auto; padding: 20px 18px 60px; }
+  .tl { position: relative; padding-left: 28px; }
+  .tl::before { content: ""; position: absolute; left: 9px; top: 4px; bottom: 4px; width: 2px; background: var(--rail); border-radius: 2px; }
+
+  .day { position: relative; margin: 18px 0 8px; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3); font-weight: 700; }
+  .day::before { content: ""; position: absolute; left: -25px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--bg); border: 2px solid var(--rail); }
+  .tl > .day:first-child { margin-top: 0; }
+
+  .entry { position: relative; padding: 7px 0 7px 4px; }
+  .entry::before { content: ""; position: absolute; left: -23px; top: 15px; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--bg); }
+  .entry.w::before { background: var(--warn); }
+  .entry.c::before { background: var(--crit); }
+  .entry.i::before { background: var(--ink-3); }
+  .ehead { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .ehead .t { font: 400 11.5px var(--mono); color: var(--ink-3); min-width: 46px; }
+  .ehead .title { font-weight: 600; }
+  .ehead .what { color: var(--ink-2); }
+  .ebody { color: var(--ink-2); font-size: 12.5px; padding-left: 56px; max-width: 62ch; }
+  .eacts { padding-left: 56px; margin-top: 3px; display: flex; gap: 14px; font-size: 12px; }
+  .eacts .quiet { color: var(--ink-3); }
+  @media (max-width: 560px) { .ebody, .eacts { padding-left: 0; } }
+
+  /* needs-action entry gets a card */
+  .entry.action .inner {
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+    border-radius: 8px; padding: 9px 13px; margin-top: 2px;
+  }
+  .entry.action .ebody, .entry.action .eacts { padding-left: 0; }
+
+  /* live entry */
+  .entry.live .inner { background: var(--card); border: 1px solid #43302f; border-radius: 8px; padding: 9px 13px; }
+  .entry.live .ebody, .entry.live .eacts { padding-left: 0; }
+  .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--crit); animation: pulse 1.4s ease infinite; vertical-align: baseline; margin-right: 5px; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 5px rgba(229,100,94,.14); } }
+  @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+  /* reference block */
+  .ref { margin-top: 26px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+  .ref h2 { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; display: flex; }
+  .ref h2 .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 580px; }
+  th { text-align: left; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 3px 12px 6px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 12px 5px 0; border-bottom: 1px solid #20242a; color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; }
+
+  :focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+</style>
+
+<div class="nowbar"><div class="in">
+  <div class="row1">
+    <span class="brand">Pert's Pocket <span class="v">/ timeline</span></span>
+    <span class="faint num">21:47 · Mon Aug 24 · doctor 24m ago</span>
+    <span class="r">
+      <span class="faint" style="margin-right:6px">⌘K</span>
+      <button class="vbtn">v1</button><button class="vbtn">v2</button><button class="vbtn on">v3</button>
+    </span>
+  </div>
+  <div class="vitals">
+    <span class="host"><span class="pip"></span><b>opti</b> 0.16 · 48% · 30&deg; · <span class="warn">os 77%</span></span>
+    <span class="sep">·</span>
+    <span class="host"><span class="pip"></span><b>rpi</b> 0.55 · 58% · 40&deg; · 16/16</span>
+    <span class="sep">·</span>
+    <span class="host"><span class="pip"></span><b>nn</b> 0.00 · 20% · 46&deg; · vpn ok</span>
+    <span class="sep">·</span>
+    <span class="host"><span class="pip"></span><b>android</b> llm warm</span>
+    <span class="sep">·</span>
+    <span class="host">pi-hole <b>22.4%</b> blocked</span>
+    <span class="sep">·</span>
+    <span class="host">78&deg; partly cloudy</span>
+  </div>
+</div></div>
+
+<div class="page">
+  <div class="tl">
+    <div class="day">Live</div>
+    <div class="entry c live">
+      <div class="inner">
+        <div class="ehead" style="flex-wrap:wrap"><span><span class="pulse"></span><b>Vitality — Spirit</b></span><span class="crit num" style="font-weight:700; font-size:14px">9–7</span><span class="what">Mirage · map 2 · EPL playoffs</span></div>
+        <div class="eacts"><a href="#">Watch stream</a><span class="quiet">later: FaZe–MOUZ 19:00 · NAVI–G2 21:30</span></div>
+      </div>
+    </div>
+
+    <div class="day">Today · Monday</div>
+    <div class="entry">
+      <div class="ehead"><span class="t">07:00</span><span class="title">discord-weather</span><span class="what">posted the daily report</span></div>
+      <div class="ebody">"78° and partly cloudy, feels 81. Rain 20% — still drier than Kevin's aim." · witty pool: 41 lines left</div>
+      <div class="eacts"><a href="#">Open #weather</a></div>
+    </div>
+    <div class="entry">
+      <div class="ehead"><span class="t">06:32</span><span class="title">vpn-stack-heal</span><span class="what">renewed the NAT-PMP lease</span></div>
+      <div class="ebody">Forwarded port unchanged (52644) · gluetun healthy · qBittorrent reachable.</div>
+    </div>
+    <div class="entry">
+      <div class="ehead"><span class="t">04:15</span><span class="title">homelab-doctor</span><span class="what">4/4 services · 4/4 hosts — nothing to report</span></div>
+      <div class="eacts"><a href="#">Full report</a></div>
+    </div>
+    <div class="entry i">
+      <div class="ehead"><span class="t">02:00</span><span class="title">attic-sync</span><span class="what">weekly cold copy — 41 GiB in 12m</span></div>
+    </div>
+
+    <div class="day">Yesterday · Sunday</div>
+    <div class="entry w action">
+      <div class="inner">
+        <div class="ehead"><span class="t">18:40</span><span class="title">arch-agent</span><span class="what">4 image updates available</span></div>
+        <div class="ebody">bitwarden 1.33.1 → 1.34.0 (rpi) · jellyfin 10.10.4, prowlarr 1.31, gluetun 3.40 (nn)</div>
+        <div class="eacts"><a href="#">Apply from Cockpit</a><a href="#">Ack</a><a class="quiet" href="#">Snooze 7d</a></div>
+      </div>
+    </div>
+    <div class="entry">
+      <div class="ehead"><span class="t">03:00</span><span class="title">hl-db</span><span class="what">nightly ingest — 14/14 feeds · 61 days indexed · 2.1 GB</span></div>
+    </div>
+    <div class="entry i">
+      <div class="ehead"><span class="t">22:10</span><span class="title">Falcons — Liquid</span><span class="what num">2–1 <span class="faint">(13-10 · 9-13 · 13-6)</span></span></div>
+    </div>
+    <div class="entry">
+      <div class="ehead"><span class="t">09:00</span><span class="title">discord-hltv</span><span class="what">posted the morning slate — 6 matches, 2 VRS top-10 clashes</span></div>
+    </div>
+
+    <div class="day">Saturday</div>
+    <div class="entry">
+      <div class="ehead"><span class="t">04:15</span><span class="title">homelab-doctor</span><span class="what">all green — 47th consecutive green day</span></div>
+    </div>
+    <div class="entry i">
+      <div class="ehead"><span class="t">—</span><span class="faint">quiet day. the best kind.</span></div>
+    </div>
+  </div>
+
+  <div class="ref">
+    <h2>Containers <span class="meta faint">detail page preview · 31/31 running</span></h2>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Name</th><th>Host</th><th>Up</th><th>Image</th><th>State</th></tr></thead>
+      <tbody>
+        <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td class="num">qmcgaw/gluetun</td><td class="ok">healthy · vpn ns</td></tr>
+        <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td class="num">jellyfin/jellyfin</td><td class="ok">up</td></tr>
+        <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td class="num">vaultwarden/server</td><td class="warn">update 1.34.0</td></tr>
+        <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td class="num">pihole/pihole</td><td class="ok">healthy · dns+dhcp</td></tr>
+        <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td class="num">linuxserver/qbittorrent</td><td class="ok">up · via gluetun</td></tr>
+        <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td class="num">node:lts-alpine</td><td class="ok">up · this app</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>

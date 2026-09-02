@@ -1,0 +1,295 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Avionics MFD</title>
+<!-- v3 mockup K: "avionics" — the homelab as a glass-cockpit multifunction
+     display. Bezel soft keys frame a black screen; hosts are engines on an
+     EICAS page (vertical tape gauges), storage is arc dials with amber
+     redlines, feeds are CDU text pages. Strict avionics palette: green =
+     normal, cyan = labels, white = values, amber = caution, magenta = live.
+     Single-theme by design: cockpit displays are black. -->
+<style>
+  :root {
+    --bezel:   #17181c;
+    --bezel-2: #22242a;
+    --screen:  #000000;
+    --grn:     #00e04a;
+    --cyn:     #35d9e8;
+    --wht:     #f0f4f0;
+    --amb:     #ffb84d;
+    --mag:     #ff4fd8;
+    --dim:     #2a5c3a;
+    --line:    #123320;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: #0a0b0d;
+    color: var(--grn);
+    font: 400 12.5px/1.4 var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding: 16px 10px 30px;
+    text-transform: uppercase;
+  }
+  a { color: var(--cyn); text-decoration: none; }
+  a:hover { background: var(--cyn); color: #000; }
+
+  .mfd {
+    max-width: 1120px; margin: 0 auto;
+    background: linear-gradient(180deg, var(--bezel-2), var(--bezel));
+    border-radius: 14px;
+    border: 1px solid #000;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 10px 30px rgba(0,0,0,.6);
+    padding: 8px 14px 10px;
+  }
+  .keys { display: flex; gap: 8px; justify-content: space-between; padding: 6px 6px; flex-wrap: wrap; }
+  .key {
+    background: linear-gradient(180deg, #2c2e36, #191b20);
+    border: 1px solid #000; border-radius: 4px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+    color: #9aa2ac; font: 700 10px var(--mono); letter-spacing: .12em;
+    padding: 5px 0; cursor: pointer; flex: 1; min-width: 62px; text-align: center;
+  }
+  .key:active { box-shadow: inset 0 2px 5px rgba(0,0,0,.8); }
+  .key.on { color: var(--grn); text-shadow: 0 0 5px rgba(0,224,74,.6); }
+  .key.warnk { color: var(--amb); }
+
+  .screen {
+    background: var(--screen);
+    border: 2px solid #000; border-radius: 6px;
+    box-shadow: inset 0 0 24px rgba(0,0,0,.9), inset 0 0 3px #071;
+    padding: 12px 14px 14px;
+  }
+  .dim { color: var(--dim); }
+  .cyn { color: var(--cyn); } .wht { color: var(--wht); } .amb { color: var(--amb); } .mag { color: var(--mag); }
+
+  /* top annunciator line */
+  .annun { display: flex; gap: 18px; flex-wrap: wrap; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 6px; margin-bottom: 12px; }
+  .annun .title { color: var(--cyn); font-size: 14px; letter-spacing: .18em; }
+  .annun .r { margin-left: auto; display: flex; gap: 16px; }
+
+  .cols { display: grid; grid-template-columns: 235px minmax(0,1fr) 265px; gap: 22px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr 1fr; } .colC { grid-column: span 2; } }
+  @media (max-width: 660px)  { .cols { grid-template-columns: 1fr; } .colC { grid-column: span 1; } }
+  .col { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+  h2 { font-size: 11px; font-weight: 400; letter-spacing: .22em; color: var(--cyn); border-bottom: 1px solid var(--line); padding-bottom: 2px; margin-bottom: 6px; display: flex; }
+  h2 .meta { margin-left: auto; color: var(--dim); letter-spacing: .06em; }
+
+  .li { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sm { font-size: 11px; }
+
+  /* arc dial */
+  .dials { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; }
+  .dial { width: 96px; text-align: center; }
+  .dial svg { width: 96px; height: 58px; display: block; }
+  .dial .track { fill: none; stroke: var(--line); stroke-width: 7; }
+  .dial .fill { fill: none; stroke: var(--grn); stroke-width: 7; stroke-linecap: butt; }
+  .dial .fill.warn { stroke: var(--amb); }
+  .dial .redline { stroke: var(--amb); stroke-width: 10; }
+  .dial .v { font-size: 17px; color: var(--wht); margin-top: -34px; }
+  .dial .l { font-size: 10px; color: var(--cyn); letter-spacing: .1em; margin-top: 16px; }
+
+  /* EICAS host column */
+  .engines { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .engines { grid-template-columns: 1fr; } }
+  .eng { border: 1px solid var(--line); border-radius: 3px; padding: 8px 10px 10px; min-width: 0; }
+  .eng .head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+  .eng .head .n { color: var(--wht); font-size: 14px; letter-spacing: .12em; }
+  .eng .head .role { color: var(--dim); font-size: 10px; }
+  .eng .head .st { margin-left: auto; color: var(--grn); font-size: 11px; }
+  .tapes { display: flex; gap: 12px; justify-content: space-between; }
+  .tape { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+  .tapetrack {
+    position: relative; width: 14px; height: 74px;
+    border: 1px solid var(--line);
+    background: repeating-linear-gradient(0deg, transparent 0 8px, var(--line) 8px 9px);
+  }
+  .tapetrack i { position: absolute; left: 1px; right: 1px; bottom: 1px; background: var(--grn); opacity: .9; }
+  .tapetrack i.warn { background: var(--amb); }
+  .tapetrack .bug { position: absolute; left: -5px; right: -5px; height: 2px; background: var(--amb); }
+  .tape .v { color: var(--wht); font-size: 13px; }
+  .tape .l { color: var(--cyn); font-size: 9.5px; letter-spacing: .08em; }
+  .eng .foot { display: flex; gap: 8px; margin-top: 7px; font-size: 10.5px; }
+  .eng .foot .r { margin-left: auto; color: var(--dim); }
+
+  .when { width: 46px; flex: none; color: var(--dim); font-size: 11px; }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 620px; }
+  th { text-align: left; color: var(--cyn); font-weight: 400; font-size: 10px; letter-spacing: .18em; padding: 2px 14px 3px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 2px 14px 2px 0; color: var(--wht); border-bottom: 1px solid #081a10; }
+  td.g { color: var(--grn); }
+
+  .blink { animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: .2; } }
+  @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
+
+  :focus-visible { outline: 2px solid var(--cyn); outline-offset: 1px; }
+</style>
+
+<div class="mfd">
+  <div class="keys">
+    <span class="key on">HOME</span><span class="key">OPS</span><span class="key">MEDIA</span><span class="key">CS2</span><span class="key">AGNT</span><span class="key">RPTS</span><span class="key">LOGS</span><span class="key">QRY</span>
+  </div>
+
+  <div class="screen">
+    <div class="annun">
+      <span class="title">POCKET MFD · SYS PAGE</span>
+      <span>HOSTS <span class="wht">4/4</span></span>
+      <span>CONT <span class="wht">31/31</span></span>
+      <span class="amb">UPD 4</span>
+      <span>FIND <span class="wht">0</span></span>
+      <span class="r"><span class="dim">DOCTOR 24M</span><span class="wht">21:47:12Z</span><span class="dim">MON 24 AUG</span></span>
+    </div>
+
+    <div class="cols">
+      <!-- left: dials -->
+      <div class="col">
+        <section>
+          <h2>STORAGE <span class="meta">PCT USED</span></h2>
+          <div class="dials">
+            <div class="dial">
+              <svg viewBox="0 0 108 62"><path class="track" d="M 8 56 A 48 48 0 0 1 100 56"/><line class="redline" x1="88" y1="24" x2="94" y2="19"/><path class="fill" d="M 8 56 A 48 48 0 0 1 100 56" stroke-dasharray="28.7 151" /></svg>
+              <div class="v">19</div><div class="l">RED·ZFS</div>
+            </div>
+            <div class="dial">
+              <svg viewBox="0 0 108 62"><path class="track" d="M 8 56 A 48 48 0 0 1 100 56"/><line class="redline" x1="88" y1="24" x2="94" y2="19"/><path class="fill warn" d="M 8 56 A 48 48 0 0 1 100 56" stroke-dasharray="116.3 151"/></svg>
+              <div class="v amb">77</div><div class="l">OPTI OS</div>
+            </div>
+            <div class="dial">
+              <svg viewBox="0 0 108 62"><path class="track" d="M 8 56 A 48 48 0 0 1 100 56"/><line class="redline" x1="88" y1="24" x2="94" y2="19"/><path class="fill" d="M 8 56 A 48 48 0 0 1 100 56" stroke-dasharray="43.8 151"/></svg>
+              <div class="v">29</div><div class="l">RPI SD</div>
+            </div>
+            <div class="dial">
+              <svg viewBox="0 0 108 62"><path class="track" d="M 8 56 A 48 48 0 0 1 100 56"/><line class="redline" x1="88" y1="24" x2="94" y2="19"/><path class="fill" d="M 8 56 A 48 48 0 0 1 100 56" stroke-dasharray="27.2 151"/></svg>
+              <div class="v">18</div><div class="l">NN OS</div>
+            </div>
+          </div>
+          <div class="li sm"><span class="grow dim">POOL 0.7 / 3.7 TB · REDLINE 80</span></div>
+        </section>
+
+        <section>
+          <h2>DNS FILTER <span class="meta">PI-HOLE</span></h2>
+          <div class="li"><span class="grow cyn">BLOCKED</span><span class="wht">22.4%</span></div>
+          <div class="li"><span class="grow cyn">QUERIES</span><span class="wht">31842</span></div>
+          <div class="li"><span class="grow cyn">DENIED</span><span class="wht">7134</span></div>
+          <div class="li"><span class="grow cyn">GRAVITY</span><span class="wht">1.19M</span></div>
+          <div class="li sm"><span class="grow"><a href="#">PAUSE 5M</a> · <a href="#">ADMIN</a></span></div>
+        </section>
+
+        <section>
+          <h2>WX <span class="meta">OUTSIDE AIR</span></h2>
+          <div class="li"><span class="wht" style="font-size:26px">78&deg;F</span><span class="grow sm dim" style="white-space:normal">PARTLY CLOUDY · FEELS 81 · RAIN 20% · 07:00 POST SENT</span></div>
+        </section>
+
+        <section>
+          <h2>LLM</h2>
+          <div class="li"><span class="grow wht">LFM2.5-2.6B</span><span>WARM</span></div>
+          <div class="li sm"><span class="grow dim">ANDROID:8080 · 11 TOK/S</span></div>
+        </section>
+      </div>
+
+      <!-- center: EICAS engines = hosts -->
+      <div class="col">
+        <section>
+          <h2>FLEET <span class="meta">EICAS · TAPES = LOAD/MEM/TEMP</span></h2>
+          <div class="engines">
+            <div class="eng">
+              <div class="head"><span class="n">OPTI</span><span class="role">STORAGE·CTL</span><span class="st">UP 29D</span></div>
+              <div class="tapes">
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:80%"></div><i style="height:8%"></i></div><span class="v">0.16</span><span class="l">LOAD</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:85%"></div><i style="height:48%"></i></div><span class="v">48</span><span class="l">MEM%</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:78%"></div><i style="height:35%"></i></div><span class="v">30</span><span class="l">TEMP</span></div>
+              </div>
+              <div class="foot"><a href="#">TRM</a><a href="#">UPD</a><a href="#">RBT</a><span class="r">&darr;63K &uarr;170K</span></div>
+            </div>
+            <div class="eng">
+              <div class="head"><span class="n">RPI</span><span class="role">DNS·DHCP·WEB</span><span class="st">UP 20D</span></div>
+              <div class="tapes">
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:80%"></div><i style="height:18%"></i></div><span class="v">0.55</span><span class="l">LOAD</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:85%"></div><i style="height:58%"></i></div><span class="v">58</span><span class="l">MEM%</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:78%"></div><i style="height:47%"></i></div><span class="v">40</span><span class="l">TEMP</span></div>
+              </div>
+              <div class="foot"><a href="#">TRM</a><a href="#">UPD</a><a href="#">RBT</a><span class="r">DOCK 16/16</span></div>
+            </div>
+            <div class="eng">
+              <div class="head"><span class="n">NN</span><span class="role">MEDIA</span><span class="st">UP 1D8H</span></div>
+              <div class="tapes">
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:80%"></div><i style="height:2%"></i></div><span class="v">0.00</span><span class="l">LOAD</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:85%"></div><i style="height:20%"></i></div><span class="v">20</span><span class="l">MEM%</span></div>
+                <div class="tape"><div class="tapetrack"><div class="bug" style="bottom:78%"></div><i style="height:54%"></i></div><span class="v">46</span><span class="l">TEMP</span></div>
+              </div>
+              <div class="foot"><a href="#">TRM</a><a href="#">UPD</a><a href="#">RBT</a><span class="r">VPN OK · 15/15</span></div>
+            </div>
+          </div>
+          <div class="li sm" style="margin-top:6px"><span class="grow dim">ENG 4 ANDROID · LLAMA.CPP · INTERMITTENT BY DESIGN · KEEPALIVE ACTIVE</span><span>OK</span></div>
+        </section>
+
+        <section>
+          <h2>EVENT LOG <span class="meta">CAS MESSAGES</span></h2>
+          <div class="li"><span class="when">07:00</span><span class="grow">WEATHER BOT POSTED DAILY REPORT</span><span class="sm">SENT</span></div>
+          <div class="li"><span class="when">06:32</span><span class="grow">VPN-HEAL RENEWED NAT-PMP · PORT 52644</span><span class="sm">OK</span></div>
+          <div class="li"><span class="when">04:15</span><span class="grow">DOCTOR 4/4 SERVICES · 4/4 HOSTS</span><span class="sm">OK</span></div>
+          <div class="li"><span class="when">02:00</span><span class="grow">ATTIC COLD COPY 41 GIB IN 12M</span><span class="sm">OK</span></div>
+          <div class="li"><span class="when">-1D</span><span class="grow amb">BITWARDEN 1.34.0 AVAILABLE ON RPI</span><span class="sm amb">UPD</span></div>
+          <div class="li"><span class="when">-1D</span><span class="grow">HL-DB INGEST 14/14 FEEDS · 61D</span><span class="sm">OK</span></div>
+        </section>
+      </div>
+
+      <!-- right: CDU pages -->
+      <div class="col colC">
+        <section>
+          <h2>CS2 <span class="meta">HLTV · VRS</span></h2>
+          <div class="li"><span class="when mag blink">LIVE</span><span class="grow wht">VITALITY–SPIRIT <span class="dim sm">MIRAGE M2</span></span><span class="mag">9-7</span></div>
+          <div class="li"><span class="when">19:00</span><span class="grow wht">FAZE–MOUZ</span><span class="dim sm">BO3</span></div>
+          <div class="li"><span class="when">21:30</span><span class="grow wht">NAVI–G2</span><span class="dim sm">BO3</span></div>
+          <div class="li"><span class="when">FT</span><span class="grow wht">FALCONS–LIQUID</span><span class="g">2-1</span></div>
+        </section>
+
+        <section>
+          <h2>BOTS <span class="meta">SKED</span></h2>
+          <div class="li"><span class="grow wht">WEATHER</span><span class="dim sm">07:00</span><span>ON</span></div>
+          <div class="li"><span class="grow wht">HEALTHDIGEST</span><span class="dim sm">08:00</span><span>ON</span></div>
+          <div class="li"><span class="grow wht">HLTV</span><span class="dim sm">09:00</span><span>ON</span></div>
+          <div class="li"><span class="grow wht">SPORTS</span><span class="dim sm">10:00</span><span>ON</span></div>
+          <div class="li"><span class="grow wht">JELLYFIN</span><span class="dim sm">18:00</span><span>ON</span></div>
+        </section>
+
+        <section>
+          <h2>UPDATES <span class="meta">CAUTION · 4</span></h2>
+          <div class="li"><span class="grow wht">BITWARDEN <span class="dim sm">RPI</span></span><span class="amb">1.34.0</span></div>
+          <div class="li"><span class="grow wht">JELLYFIN <span class="dim sm">NN</span></span><span class="amb">10.10.4</span></div>
+          <div class="li"><span class="grow wht">PROWLARR <span class="dim sm">NN</span></span><span class="amb">1.31</span></div>
+          <div class="li"><span class="grow wht">GLUETUN <span class="dim sm">NN</span></span><span class="amb">3.40</span></div>
+        </section>
+
+        <section>
+          <h2>STREAMS</h2>
+          <div class="li sm"><span class="grow dim">NO ACTIVE SLOTS — <a href="#">OPEN STATION</a></span></div>
+        </section>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <h2>CONTAINERS <span class="meta">DETAIL PAGE PREVIEW · 31/31</span></h2>
+      <div class="tablewrap">
+      <table>
+        <thead><tr><th>NAME</th><th>HOST</th><th>UP</th><th>IMAGE</th><th>STATE</th><th>NOTES</th></tr></thead>
+        <tbody>
+          <tr><td>GLUETUN</td><td>NN</td><td>20H</td><td class="g">QMCGAW/GLUETUN</td><td class="g">HEALTHY</td><td class="g">VPN NAMESPACE</td></tr>
+          <tr><td>JELLYFIN</td><td>NN</td><td>32H</td><td class="g">JELLYFIN/JELLYFIN</td><td class="g">UP</td><td></td></tr>
+          <tr><td class="amb">BITWARDEN</td><td>RPI</td><td>10H</td><td class="g">VAULTWARDEN/SERVER</td><td class="amb">UPDATE 1.34.0</td><td></td></tr>
+          <tr><td>PIHOLE</td><td>RPI</td><td>2W</td><td class="g">PIHOLE/PIHOLE</td><td class="g">HEALTHY</td><td class="g">DNS · DHCP</td></tr>
+          <tr><td>QBITTORRENT</td><td>NN</td><td>20H</td><td class="g">LINUXSERVER/QBITTORRENT</td><td class="g">UP</td><td class="g">VIA GLUETUN</td></tr>
+          <tr><td>WEBAPP</td><td>RPI</td><td>10H</td><td class="g">NODE:LTS-ALPINE</td><td class="g">UP</td><td class="g">THIS APP</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="keys" style="padding-top:8px">
+    <span class="key">V1 LEGACY</span><span class="key">V2</span><span class="key on">V3</span><span class="key">SET DFLT</span><span class="key">EDIT BRD</span><span class="key">⌘K SRCH</span><span class="key warnk">UPD 4</span><span class="key">RFSH</span>
+  </div>
+</div>

@@ -1,0 +1,343 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Rackmount</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&display=swap">
+<!-- v3 mockup I: "rackmount" — the homelab drawn as its own rack. Every widget
+     is a faceplate: brushed dark metal, engraved labels, hex screws, real LED
+     indicators, inset LCD readout windows, segmented meters. The PocketAmp
+     materials (LCD glass, metal, glow) without the media-player metaphor.
+     Single-theme by design: server rooms are dark. -->
+<style>
+  :root {
+    --room:    #0b0c0e;
+    --plate:   #1d1f24;
+    --plate-2: #25272e;
+    --plate-3: #2e313a;
+    --edge-hi: #3c404c;
+    --edge-lo: #000000;
+    --etch:    #9aa2b0;      /* engraved label ink */
+    --etch-2:  #5c626e;
+    --lcd-bg:  #081408;
+    --lcd:     #45ff8a;
+    --lcd-dim: #1e6e3e;
+    --amb-bg:  #171006;
+    --amb:     #ffb454;
+    --red:     #ff4a3d;
+    --led-g:   #3dff7a;
+    --led-a:   #ffb454;
+    --led-off: #2a2d34;
+    --sans: "Segoe UI", -apple-system, "Noto Sans", Verdana, sans-serif;
+    --lcdfont: "VT323", ui-monospace, "Cascadia Mono", Menlo, monospace;
+    --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--room);
+    background-image: radial-gradient(ellipse at 50% -10%, #15171b, var(--room) 60%);
+    color: var(--etch);
+    font: 400 11px/1.45 var(--sans);
+    letter-spacing: .04em;
+    padding: 22px 12px 46px;
+    font-variant-numeric: tabular-nums;
+  }
+  a { color: var(--lcd); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ── the rack ───────────────────────────────────────────────────────── */
+  .rack {
+    max-width: 1080px; margin: 0 auto;
+    display: grid; grid-template-columns: 26px minmax(0,1fr) 26px;
+  }
+  .rail {
+    background: linear-gradient(90deg, #101216, #1a1c21 50%, #101216);
+    border: 1px solid #000;
+    background-image: radial-gradient(circle at 50% 10px, #05060a 3.2px, #22242a 3.8px, transparent 5px);
+    background-size: 100% 44px;
+  }
+  .units { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; min-width: 0; }
+
+  /* a rack unit / faceplate */
+  .unit {
+    position: relative;
+    background:
+      repeating-linear-gradient(0deg, transparent 0 2px, rgba(255,255,255,.014) 2px 3px),
+      linear-gradient(180deg, var(--plate-2), var(--plate));
+    border: 1px solid var(--edge-lo);
+    box-shadow: inset 0 1px 0 var(--edge-hi), inset 0 -1px 0 #0a0b0d, 0 3px 10px rgba(0,0,0,.45);
+    border-radius: 2px;
+    padding: 10px 26px 12px;
+  }
+  .screw {
+    position: absolute; width: 9px; height: 9px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #4a4e59, #16181c 70%);
+    box-shadow: inset 0 0 2px #000, 0 1px 0 rgba(255,255,255,.05);
+  }
+  .screw::after { content: ""; position: absolute; left: 1px; right: 1px; top: 4px; height: 1px; background: #000; transform: rotate(35deg); }
+  .screw.tl { top: 6px; left: 7px; } .screw.tr { top: 6px; right: 7px; }
+  .screw.bl { bottom: 6px; left: 7px; } .screw.br { bottom: 6px; right: 7px; }
+
+  .plabel {
+    display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap;
+    font-size: 10px; font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+    color: var(--etch); text-shadow: 0 -1px 0 #000, 0 1px 0 rgba(255,255,255,.05);
+    margin-bottom: 8px;
+  }
+  .plabel .sub { font-weight: 400; letter-spacing: .12em; color: var(--etch-2); }
+  .plabel .right { margin-left: auto; display: flex; gap: 6px; align-items: center; font-weight: 400; letter-spacing: .1em; color: var(--etch-2); }
+
+  /* LEDs */
+  .led { width: 7px; height: 7px; border-radius: 50%; background: var(--led-off); box-shadow: inset 0 1px 1px #000; flex: none; display: inline-block; vertical-align: baseline; }
+  .led.g { background: var(--led-g); box-shadow: 0 0 6px rgba(61,255,122,.7), inset 0 0 2px rgba(255,255,255,.6); }
+  .led.a { background: var(--led-a); box-shadow: 0 0 6px rgba(255,180,84,.7), inset 0 0 2px rgba(255,255,255,.6); }
+  .led.r { background: var(--red);  box-shadow: 0 0 6px rgba(255,74,61,.7), inset 0 0 2px rgba(255,255,255,.6); }
+
+  /* LCD window */
+  .lcd {
+    background: var(--lcd-bg);
+    border: 1px solid #000;
+    border-radius: 2px;
+    box-shadow: inset 0 2px 8px rgba(0,0,0,.9), inset 0 0 2px #000, 0 1px 0 rgba(255,255,255,.05);
+    color: var(--lcd);
+    font-family: var(--lcdfont);
+    padding: 5px 10px;
+    text-shadow: 0 0 5px rgba(69,255,138,.35);
+    font-size: 18px;
+    letter-spacing: .02em;
+  }
+  .lcd { overflow: hidden; min-width: 0; }
+  .lcd .dim { color: var(--lcd-dim); text-shadow: none; }
+  .lcd .amb { color: var(--amb); text-shadow: 0 0 5px rgba(255,180,84,.35); }
+  .lcd .red { color: var(--red); text-shadow: 0 0 5px rgba(255,74,61,.4); }
+  .lcd.amber { background: var(--amb-bg); color: var(--amb); text-shadow: 0 0 5px rgba(255,180,84,.3); }
+  .lcd.amber .dim { color: #7a5a28; }
+
+  /* segmented meter */
+  .seg { display: flex; gap: 8px; align-items: center; }
+  .seg .lab { width: 62px; flex: none; font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; color: var(--etch-2); }
+  .segtrack {
+    flex: 1; height: 12px; background: #0c0e10; border: 1px solid #000; border-radius: 2px;
+    box-shadow: inset 0 1px 4px rgba(0,0,0,.8); position: relative; overflow: hidden;
+  }
+  .segtrack i {
+    position: absolute; inset: 2px auto 2px 2px; display: block;
+    background: linear-gradient(90deg, #1e9e52, var(--lcd));
+    box-shadow: 0 0 6px rgba(69,255,138,.4);
+  }
+  .segtrack.warn i { background: linear-gradient(90deg, #9e6a1e, var(--amb)); box-shadow: 0 0 6px rgba(255,180,84,.4); }
+  .segtrack::after {
+    content: ""; position: absolute; inset: 0;
+    background: repeating-linear-gradient(90deg, transparent 0 6px, #0c0e10 6px 8px);
+  }
+  .seg .val { width: 44px; text-align: right; font-family: var(--lcdfont); font-size: 16px; color: var(--lcd); flex: none; }
+  .seg .val.warn { color: var(--amb); }
+
+  /* recessed button */
+  .btn {
+    background: linear-gradient(180deg, var(--plate-3), var(--plate));
+    border: 1px solid #000; box-shadow: inset 0 1px 0 var(--edge-hi);
+    color: var(--etch); font: 700 9px var(--sans); letter-spacing: .14em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 2px; cursor: pointer;
+  }
+  .btn:hover { color: var(--lcd); }
+  .btn:active { box-shadow: inset 0 2px 4px rgba(0,0,0,.7); }
+  .btn.lit { color: var(--lcd); text-shadow: 0 0 4px rgba(69,255,138,.5); }
+
+  /* layout inside units */
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (max-width: 900px) { .grid3 { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } }
+  .grid2 > div, .grid3 > div { min-width: 0; }
+  .row > * { min-width: 0; }
+
+  /* host bay */
+  .bay {
+    border: 1px solid #000; border-radius: 2px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), inset 0 0 10px rgba(0,0,0,.35);
+    background: linear-gradient(180deg, #202229, #1a1c21);
+    padding: 8px 10px 10px;
+    display: flex; flex-direction: column; gap: 7px; min-width: 0;
+  }
+  .bay .head { display: flex; gap: 8px; align-items: baseline; font-size: 11px; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  .bay .head .role { font-weight: 400; letter-spacing: .08em; color: var(--etch-2); font-size: 9.5px; }
+  .bay .head .led { margin-left: auto; }
+  .bay .lcd { font-size: 16px; }
+  .bay .lcd .big { font-size: 21px; }
+  .bay .acts { display: flex; gap: 5px; }
+
+  /* lcd list rows */
+  .lrow { display: flex; gap: 8px; align-items: baseline; white-space: nowrap; }
+  .lrow .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .lrow .k { color: var(--lcd-dim); flex: none; }
+
+  .tablewrap { overflow-x: auto; }
+
+  :focus-visible { outline: 2px solid var(--lcd); outline-offset: 1px; }
+</style>
+
+<div class="rack">
+  <div class="rail"></div>
+  <div class="units">
+
+    <!-- 1U: master status -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="row">
+        <span style="font-size:12px; font-weight:700; letter-spacing:.26em; text-transform:uppercase">Pert's Pocket <span style="color:var(--etch-2)">· MK III</span></span>
+        <span class="lcd" style="flex:1; min-width:200px; display:flex; gap:16px">
+          <span>21:47:12</span>
+          <span class="dim">MON 24 AUG</span>
+          <span style="margin-left:auto">HOSTS 4/4 <span class="dim">·</span> CONT 31/31 <span class="dim">·</span> <span class="amb">UPD 4</span> <span class="dim">·</span> FIND 0</span>
+        </span>
+        <span class="row" style="gap:5px">
+          <button class="btn">V1</button><button class="btn">V2</button><button class="btn lit">V3</button>
+          <button class="btn">⌘K</button><button class="btn">Edit</button>
+        </span>
+      </div>
+    </div>
+
+    <!-- 3U: host bays -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="plabel">Compute &amp; Control <span class="sub">fleet bays · doctor 24m ago</span>
+        <span class="right"><span class="led g"></span> power <span class="led g"></span> link <span class="led a"></span> updates</span>
+      </div>
+      <div class="grid3">
+        <div class="bay">
+          <div class="head">opti <span class="role">storage · ctl</span><span class="led g"></span></div>
+          <div class="lcd">
+            <div class="lrow"><span class="big">0.16</span><span class="dim">LOAD</span><span style="margin-left:auto" class="big">30&deg;C</span></div>
+            <div class="lrow"><span>MEM 48% <span class="dim">/5.7G</span></span><span style="margin-left:auto">UP 29D</span></div>
+            <div class="lrow"><span class="dim">NET</span><span>&darr;63K &uarr;170K</span><span style="margin-left:auto" class="dim">▂▂▁▃▂▅▃▄▂▄</span></div>
+          </div>
+          <div class="acts"><button class="btn">Term</button><button class="btn">Update</button><button class="btn">Reboot</button></div>
+        </div>
+        <div class="bay">
+          <div class="head">rpi <span class="role">dns · dhcp · web</span><span class="led g"></span></div>
+          <div class="lcd">
+            <div class="lrow"><span class="big">0.55</span><span class="dim">LOAD</span><span style="margin-left:auto" class="big">40&deg;C</span></div>
+            <div class="lrow"><span>MEM 58% <span class="dim">/3.7G</span></span><span style="margin-left:auto">UP 20D</span></div>
+            <div class="lrow"><span class="dim">DOCK</span><span>16/16</span><span style="margin-left:auto" class="dim">▃▄▂▅▃▆▄▇▄▅</span></div>
+          </div>
+          <div class="acts"><button class="btn">Term</button><button class="btn">Update</button><button class="btn">Reboot</button></div>
+        </div>
+        <div class="bay">
+          <div class="head">noblenumbat <span class="role">media</span><span class="led g"></span></div>
+          <div class="lcd">
+            <div class="lrow"><span class="big">0.00</span><span class="dim">LOAD</span><span style="margin-left:auto" class="big">46&deg;C</span></div>
+            <div class="lrow"><span>MEM 20% <span class="dim">/15.4G</span></span><span style="margin-left:auto">UP 1D8H</span></div>
+            <div class="lrow"><span class="dim">VPN</span><span>OK · PF 52644</span><span style="margin-left:auto">15/15</span></div>
+          </div>
+          <div class="acts"><button class="btn">Term</button><button class="btn">Update</button><button class="btn">Reboot</button></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px; font-size:9.5px; color:var(--etch-2); letter-spacing:.14em">
+        <span><span class="led g"></span> ANDROID · LLAMA.CPP · LFM2.5-2.6B · SLOT WARM · 11 TOK/S <span style="opacity:.6">(intermittent by design)</span></span>
+      </div>
+    </div>
+
+    <!-- 2U: storage + pi-hole -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="grid2">
+        <div>
+          <div class="plabel">Storage Array <span class="sub">red · zfs · 0.7/3.7 TB</span></div>
+          <div style="display:flex; flex-direction:column; gap:5px">
+            <div class="seg"><span class="lab">red·zfs</span><span class="segtrack"><i style="width:19%"></i></span><span class="val">19</span></div>
+            <div class="seg"><span class="lab">opti os</span><span class="segtrack warn"><i style="width:77%"></i></span><span class="val warn">77</span></div>
+            <div class="seg"><span class="lab">rpi sd</span><span class="segtrack"><i style="width:29%"></i></span><span class="val">29</span></div>
+            <div class="seg"><span class="lab">nn os</span><span class="segtrack"><i style="width:18%"></i></span><span class="val">18</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="plabel">DNS Filter <span class="sub">pi-hole · rpi</span>
+            <span class="right"><span class="led g"></span> ftl</span>
+          </div>
+          <div class="seg" style="margin-bottom:6px"><span class="lab">blocked</span><span class="segtrack"><i style="width:22.4%"></i></span><span class="val">22</span></div>
+          <div class="lcd" style="font-size:16px">
+            <div class="lrow"><span class="k">QUERIES</span><span>31,842</span><span class="k" style="margin-left:auto">DENIED</span><span>7,134</span></div>
+            <div class="lrow"><span class="k">GRAVITY</span><span>1.19M DOMAINS</span><span style="margin-left:auto"><a href="#">PAUSE 5M</a></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2U: activity tape + weather -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="grid2" style="grid-template-columns: minmax(0,1.6fr) minmax(0,1fr)">
+        <div>
+          <div class="plabel">Event Log <span class="sub">latest reports</span></div>
+          <div class="lcd" style="font-size:16px">
+            <div class="lrow"><span class="k">07:00</span><span class="t">DISCORD-WEATHER POSTED THE DAILY REPORT</span><span>SENT</span></div>
+            <div class="lrow"><span class="k">06:32</span><span class="t">VPN-HEAL RENEWED NAT-PMP · PORT 52644</span><span>OK</span></div>
+            <div class="lrow"><span class="k">04:15</span><span class="t">DOCTOR 4/4 SERVICES · 4/4 HOSTS</span><span>OK</span></div>
+            <div class="lrow"><span class="k">02:00</span><span class="t">ATTIC COLD COPY · 41 GIB IN 12M</span><span>OK</span></div>
+            <div class="lrow"><span class="k">-1D</span><span class="t amb">BITWARDEN 1.34.0 AVAILABLE ON RPI</span><span class="amb">UPD</span></div>
+            <div class="lrow"><span class="k">-1D</span><span class="t">HL-DB INGEST 14/14 FEEDS · 61D</span><span>OK</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="plabel">Environment <span class="sub">outside</span></div>
+          <div class="lcd amber" style="font-size:17px">
+            <div class="lrow"><span style="font-size:30px">78&deg;F</span><span class="t" style="white-space:normal; line-height:1.15">PARTLY CLOUDY<br><span class="dim">FEELS 81&deg; · RAIN 20%</span></span></div>
+            <div class="lrow"><span class="dim">07:00 POST</span><span>SENT ✓</span><span style="margin-left:auto" class="dim">TMRW 82/68 STORMS</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2U: feeds -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="grid2">
+        <div>
+          <div class="plabel">CS2 Monitor <span class="sub">hltv · vrs</span>
+            <span class="right"><span class="led r"></span> live</span>
+          </div>
+          <div class="lcd" style="font-size:16px">
+            <div class="lrow"><span class="red">LIVE</span><span class="t">VITALITY–SPIRIT <span class="dim">MIRAGE M2</span></span><span class="red">9–7</span></div>
+            <div class="lrow"><span class="k">19:00</span><span class="t">FAZE–MOUZ</span><span class="dim">BO3</span></div>
+            <div class="lrow"><span class="k">21:30</span><span class="t">NAVI–G2</span><span class="dim">BO3</span></div>
+            <div class="lrow"><span class="k">FINAL</span><span class="t">FALCONS–LIQUID <span class="dim">13-10 · 9-13 · 13-6</span></span><span>2–1</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="plabel">Bot Bank <span class="sub">5 scheduled</span>
+            <span class="right"><span class="led g"></span><span class="led g"></span><span class="led g"></span><span class="led g"></span><span class="led g"></span></span>
+          </div>
+          <div class="lcd" style="font-size:16px">
+            <div class="lrow"><span class="t">WEATHER</span><span class="k">07:00</span><span>ON</span></div>
+            <div class="lrow"><span class="t">HEALTHDIGEST</span><span class="k">08:00</span><span>ON</span></div>
+            <div class="lrow"><span class="t">HLTV</span><span class="k">09:00</span><span>ON</span></div>
+            <div class="lrow"><span class="t">SPORTS · JELLYFIN</span><span class="k">10:00 · 18:00</span><span>ON</span></div>
+          </div>
+          <div class="plabel" style="margin-top:8px">Update Queue <span class="sub">4 pending</span></div>
+          <div class="lcd amber" style="font-size:15px">
+            <div class="lrow"><span class="t">BITWARDEN <span class="dim">RPI</span></span><span>1.34.0</span></div>
+            <div class="lrow"><span class="t">JELLYFIN · PROWLARR · GLUETUN <span class="dim">NN</span></span><span>3 MORE</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3U: containers detail -->
+    <div class="unit">
+      <span class="screw tl"></span><span class="screw tr"></span><span class="screw bl"></span><span class="screw br"></span>
+      <div class="plabel">Container Matrix <span class="sub">detail page preview · 31/31 running</span></div>
+      <div class="tablewrap">
+        <div class="lcd" style="font-size:16px; min-width:620px">
+          <div class="lrow"><span class="k" style="width:110px">NAME</span><span class="k" style="width:110px">HOST</span><span class="k" style="width:50px">UP</span><span class="k t">IMAGE</span><span class="k" style="width:90px">STATE</span></div>
+          <div class="lrow"><span style="width:110px">GLUETUN</span><span class="dim" style="width:110px">NN</span><span style="width:50px">20H</span><span class="dim t">QMCGAW/GLUETUN · VPN NS</span><span style="width:90px">HEALTHY</span></div>
+          <div class="lrow"><span style="width:110px">JELLYFIN</span><span class="dim" style="width:110px">NN</span><span style="width:50px">32H</span><span class="dim t">JELLYFIN/JELLYFIN</span><span style="width:90px">UP</span></div>
+          <div class="lrow"><span class="amb" style="width:110px">BITWARDEN</span><span class="dim" style="width:110px">RPI</span><span style="width:50px">10H</span><span class="dim t">VAULTWARDEN/SERVER</span><span class="amb" style="width:90px">UPD 1.34</span></div>
+          <div class="lrow"><span style="width:110px">PIHOLE</span><span class="dim" style="width:110px">RPI</span><span style="width:50px">2W</span><span class="dim t">PIHOLE/PIHOLE · DNS+DHCP</span><span style="width:90px">HEALTHY</span></div>
+          <div class="lrow"><span style="width:110px">QBITTORRENT</span><span class="dim" style="width:110px">NN</span><span style="width:50px">20H</span><span class="dim t">VIA GLUETUN</span><span style="width:90px">UP</span></div>
+          <div class="lrow"><span style="width:110px">WEBAPP</span><span class="dim" style="width:110px">RPI</span><span style="width:50px">10H</span><span class="dim t">NODE:LTS-ALPINE · THIS APP</span><span style="width:90px">UP</span></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <div class="rail"></div>
+</div>

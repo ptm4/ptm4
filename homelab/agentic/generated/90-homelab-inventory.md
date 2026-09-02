@@ -1,7 +1,7 @@
 # Homelab Inventory (live)
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten each run by `homelab/tools/architecture/gen-agentic-docs.py` from `GET /api/architecture/data`. Any manual change here is overwritten on the next run.
-> Generated: `2026-08-24T04:20:57+00:00`
+> Generated: `2026-09-01T04:20:11+00:00`
 
 
 ## Agent sync status
