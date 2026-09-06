@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en" data-expanded="false">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="color-scheme" content="dark">
+  <title>PTMonitor v2 · Workstation</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="widget">
+    <header id="header" data-tauri-drag-region>
+      <div class="brand" data-tauri-drag-region><span class="brand-mark" aria-hidden="true">▥</span><div><strong>PT<span>MONITOR</span><sup>2</sup></strong><small id="host-name">YOUR WORKSTATION</small></div></div>
+      <div class="header-actions"><button id="btn-settings" class="icon-button" aria-label="Open settings" title="Settings">⚙</button><button id="btn-expand" class="icon-button" aria-label="Expand workstation details" title="Expand details">↗</button><button id="btn-hide" class="icon-button" aria-label="Hide to system tray" title="Hide to tray">−</button></div>
+    </header>
+    <div id="health-line" class="health-line"><span class="status-dot" id="health-dot"></span><span id="health-copy">Connecting to workstation…</span><span id="sample-age">WAIT</span></div>
+    <section id="compact" aria-label="Live workstation overview">
+      <div id="core-metrics" class="metric-stack"></div>
+      <section class="compact-storage"><div class="section-heading"><h2>STORAGE</h2><span id="storage-count">CAPACITY</span></div><div id="disk-list"></div></section>
+      <section class="compact-network"><div class="section-heading"><h2>NETWORK</h2><span id="adapter-name" title="Selected network adapter">—</span></div><div class="network-pair"><div><span class="flow down">↓</span><span class="network-value" id="net-down">—</span><small>DOWNLOAD</small></div><div><span class="flow up">↑</span><span class="network-value" id="net-up">—</span><small>UPLOAD</small></div></div></section>
+    </section>
+    <section id="details" aria-label="Workstation details" hidden>
+      <nav class="tabs" aria-label="Workstation views"><button class="tab active" data-tab="overview" aria-current="page">Overview</button><button class="tab" data-tab="sensors">Sensors <span id="sensor-count">0</span></button><button class="tab" data-tab="activity">Activity <span id="alert-count">0</span></button></nav>
+      <div class="detail-scroll" id="detail-scroll">
+        <section id="tab-overview" class="tab-panel">
+          <div class="view-heading"><div><h1>Workstation at a glance</h1><p id="hardware-summary">Waiting for hardware inventory</p></div><span class="time-window">LAST 60s</span></div>
+          <div id="chart-grid" class="chart-grid"></div>
+          <section class="detail-section"><div class="section-heading"><h2>HARDWARE VITALS</h2><span>LIVE SENSOR READINGS</span></div><div id="hardware-vitals" class="vital-grid"></div><p id="sensor-capability" class="capability-note"></p></section>
+          <section class="detail-section"><div class="section-heading"><h2>VOLUMES</h2><span>FREE SPACE · USED</span></div><div id="all-disks"></div></section>
+          <section class="detail-section"><div class="section-heading"><h2>NETWORK & DISK I/O</h2><span id="details-adapter"></span></div><div id="io-vitals" class="vital-grid"></div><p id="adapter-details" class="capability-note"></p></section>
+        </section>
+        <section id="tab-sensors" class="tab-panel" hidden>
+          <div class="view-heading"><div><h1>Every available sensor</h1><p>Hardware, source, live reading and observed range.</p></div></div>
+          <div id="sensor-status" class="info-card"></div><label class="search-label"><span class="sr-only">Filter sensors by hardware, type or name</span><input id="sensor-search" type="search" placeholder="Filter hardware, temperatures, fans…" autocomplete="off"></label>
+          <div class="table-heading"><span>HARDWARE / SENSOR</span><span>VALUE · MIN / MAX</span></div><div id="sensor-list"></div>
+        </section>
+        <section id="tab-activity" class="tab-panel" hidden>
+          <div class="view-heading"><div><h1>What’s using your workstation</h1><p>Top processes and recent threshold transitions.</p></div></div>
+          <div class="process-columns"><section><div class="section-heading"><h2>TOP CPU</h2><span>WHOLE SYSTEM</span></div><div id="top-cpu"></div></section><section><div class="section-heading"><h2>TOP MEMORY</h2><span>WORKING SET</span></div><div id="top-memory"></div></section></div>
+          <section class="detail-section"><div class="section-heading"><h2>ALERT TIMELINE</h2><span>THIS SESSION</span></div><div id="alert-list"></div></section>
+          <section class="detail-section"><div class="section-heading"><h2>COLLECTION HEALTH</h2><button id="btn-refresh-diagnostics" class="text-button">Refresh</button></div><pre id="diagnostics">Open this view to inspect the collector.</pre><button id="btn-diagnostics" class="secondary-button">Copy diagnostics</button><p class="capability-note">Includes process and hardware names. Review before sharing.</p></section>
+        </section>
+      </div>
+    </section>
+    <footer><span id="uptime">UPTIME —</span><button id="footer-detail" class="text-button">Workstation details ↗</button><span id="preview-label" hidden>DEMO DATA</span></footer>
+    <section id="settings-panel" hidden aria-label="PTMonitor settings">
+      <div class="panel-title"><div><h1>Make it yours</h1><p>Saved automatically on this workstation.</p></div><button id="btn-settings-close" class="icon-button" aria-label="Close settings">×</button></div>
+      <div class="settings-scroll">
+        <h2 class="settings-heading">DISPLAY & BEHAVIOR</h2>
+        <label class="setting"><span>Launch on Windows startup</span><input id="set-startup" type="checkbox"></label><label class="setting"><span>Start hidden in the tray</span><input id="set-start-hidden" type="checkbox"></label><label class="setting"><span>Click-through dashboard</span><input id="set-click-through" type="checkbox"></label>
+        <p class="settings-note">Click-through can always be disabled from the PTMonitor v2 tray menu.</p>
+        <label class="setting-block" for="set-background-opacity"><span>Background opacity <output id="background-opacity-value">90%</output></span><input id="set-background-opacity" type="range" min="25" max="100" step="5"></label><p class="settings-note">Adjust the background while keeping text and charts crisp.</p>
+        <label class="setting-block" for="set-opacity"><span>Overall opacity <output id="opacity-value">100%</output></span><input id="set-opacity" type="range" min="25" max="100" step="5"></label>
+        <button id="btn-snap" class="secondary-button">Snap to current monitor corner</button>
+        <h2 class="settings-heading">TELEMETRY</h2>
+        <label class="setting-block"><span>Network adapter</span><select id="set-adapter"><option value="">Auto · most active adapter</option></select></label><label class="setting"><span>Motherboard sensor discovery</span><input id="set-advanced" type="checkbox"></label>
+        <p class="settings-note" id="advanced-note">Some temperatures and fans require administrator access. Restarting with advanced access shows a Windows approval prompt and elevates PTMonitor for this session.</p><button id="btn-elevate" class="secondary-button">Restart as administrator…</button><div id="elevate-confirm" class="tray-tip" hidden><strong>Restart PTMonitor with elevated access?</strong><p>Windows will request your approval. This can expose additional hardware sensors; unsupported sensors still remain unavailable.</p><button id="btn-elevate-confirm" class="secondary-button">Restart and request access</button><button id="btn-elevate-cancel" class="text-button">Cancel</button></div>
+        <h2 class="settings-heading">ALERTS</h2><label class="setting"><span>Windows alert notifications</span><input id="set-toasts" type="checkbox"></label><p class="settings-note">Visual alerts are always available. Windows notifications are optional.</p>
+        <div class="threshold-heading"><span>THRESHOLD</span><span>WARN</span><span>CRITICAL</span></div><div id="threshold-controls"></div>
+        <div class="tray-tip"><strong>Keep a live reading in your taskbar</strong><p>Open Windows Settings → Personalization → Taskbar → Other system tray icons, then enable PTMonitor v2. The three bars are CPU, RAM and GPU; hover for exact readings.</p></div>
+      </div>
+    </section>
+    <div id="notice" role="alert" hidden><span id="notice-text"></span><button id="notice-dismiss" class="icon-button" aria-label="Dismiss message">×</button></div>
+  </main>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
