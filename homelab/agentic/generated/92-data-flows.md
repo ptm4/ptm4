@@ -1,7 +1,7 @@
 # Homelab data flows
 
 > ⚙️ **AUTO-GENERATED — do not hand-edit.** Rewritten by `homelab/tools/homelab-db/ingest.py` from the `datasets` registry in that file (the curated description of the data plane) joined with live ingest state.
-> Generated: `2026-09-02T01:42:55+00:00`
+> Generated: `2026-09-06T07:12:14+00:00`
 
 Every fact the homelab collects flows producer → store → `homelab.db` → consumer. Query any of it with the `homelab` MCP tools (`hl_status`, `hl_query`, `hl_search_docs`), or read it on the webapp's Data page.
 
@@ -9,13 +9,13 @@ Every fact the homelab collects flows producer → store → `homelab.db` → co
 
 | Dataset | Host | Source | Cadence | Freshness | Consumers |
 |---|---|---|---|---|---|
-| **hl-arch-agent fleet** | opti, rpi, noblenumbat | `:8787 (push at 00:00 local)` | 24.0h | 22h ago | arch fragments, vitals |
+| **hl-arch-agent fleet** | opti, rpi, noblenumbat | `:8787 (push at 00:00 local)` | 24.0h | 3h ago | arch fragments, vitals |
 | **Discord bot post freshness** | rpi | `GET /api/<bot>/status (via webapp)` | 0.5h | 0m ago | findings |
-| **Homelab collectors** | opti | `GitHub Actions homelab-agents.yml` | 0.5h | 1h ago | agent-logs |
+| **Homelab collectors** | opti | `GitHub Actions homelab-agents.yml` | 0.5h | 52m ago | agent-logs |
 | **Deployed-copy drift** | opti | `hash of /srv/docker/compose/webapp vs repo` | 0.5h | 0m ago | findings |
 | **Incident & decision registry** | git | `homelab/agentic/incidents.json` | on demand | 0m ago | hl_incidents, Claude sessions |
-| **Curated repo facts** | git | `homelab/{agentic,tools/architecture}` | on demand | 1h ago | docs, arch graph |
-| **Security auditors** | opti | `GitHub Actions homelab-agents.yml` | 24.0h | 12h ago | security-reports |
+| **Curated repo facts** | git | `homelab/{agentic,tools/architecture}` | on demand | 3h ago | docs, arch graph |
+| **Security auditors** | opti | `GitHub Actions homelab-agents.yml` | 24.0h | 19h ago | security-reports |
 
 - **hl-arch-agent fleet** — Pushes a full host fragment to the webapp; also serves /vitals counters and the control POSTs.
 - **Discord bot post freshness** — A dead daily bot is silent, and silence looks exactly like a quiet day.
@@ -29,15 +29,15 @@ Every fact the homelab collects flows producer → store → `homelab.db` → co
 
 | Dataset | Host | Source | Cadence | Freshness | Consumers |
 |---|---|---|---|---|---|
-| **agent-logs reports** | opti | `<agent-logs>/*-latest.json + dated dirs` | 0.5h | 1h ago | webapp, session hook, homelab-db |
+| **agent-logs reports** | opti | `<agent-logs>/*-latest.json + dated dirs` | 0.5h | 52m ago | webapp, session hook, homelab-db |
 | **Merged architecture data** | rpi | `GET /api/architecture/data` | 24.0h | 0m ago | gen-agentic-docs, homelab-db |
 | **LAN device inventory** | rpi | `pihole:/etc/pihole/dhcp.leases (over SSH)` | 0.5h | 0m ago | net_devices, change_events |
-| **Docs corpus** | git | `runbooks, rules, skills, generated docs` | on demand | 1h ago | Claude sessions, homelab-db FTS |
-| **Leetify CS2 stats** | opti | `<agent-logs>/leetify-latest.json` | on demand | 83d ago | cs2_matches, cs2_ratings |
+| **Docs corpus** | git | `runbooks, rules, skills, generated docs` | on demand | 3h ago | Claude sessions, homelab-db FTS |
+| **Leetify CS2 stats** | opti | `<agent-logs>/leetify-latest.json` | on demand | 87d ago | cs2_matches, cs2_ratings |
 | **Media library counters** | noblenumbat | `localhost *arr APIs (queried over SSH)` | 0.5h | 0m ago | media_counters |
 | **Pi-hole query stats** | rpi | `GET /api/pihole/summary (via webapp)` | 0.5h | 0m ago | pihole_daily |
 | **PC-part price watch** | opti | `<agent-logs>/pricewatch-latest.json` | 6.0h | 2h ago | price_history, findings, webapp widget |
-| **security-reports** | opti | `<security-reports>/*-latest.json` | 24.0h | 12h ago | webapp, homelab-db |
+| **security-reports** | opti | `<security-reports>/*-latest.json` | 24.0h | 19h ago | webapp, homelab-db |
 | **Uptime Kuma monitors** | rpi | `GET /api/uptime (via webapp)` | 0.5h | 0m ago | monitor_history |
 
 - **agent-logs reports** — Atomic tmp+fsync+rename. Still the transport; the DB indexes it rather than replacing it.
@@ -60,8 +60,8 @@ Every fact the homelab collects flows producer → store → `homelab.db` → co
 
 | Dataset | Host | Source | Cadence | Freshness | Consumers |
 |---|---|---|---|---|---|
-| **92-data-flows.md** | opti | `homelab/agentic/generated/92-data-flows.md` | 24.0h | 21h ago | Claude sessions |
-| **MCP + JSON API** | opti | `:9100 (/api, /mcp)` | on demand | 12h ago | Claude Code, webapp |
+| **92-data-flows.md** | opti | `homelab/agentic/generated/92-data-flows.md` | 24.0h | 20h ago | Claude sessions |
+| **MCP + JSON API** | opti | `:9100 (/api, /mcp)` | on demand | 17h ago | Claude Code, webapp |
 | **Webapp widgets + Data page** | rpi | `GET /api/hldb/*` | on demand | never | browser |
 
 - **92-data-flows.md** — So a future session can read the data plane instead of re-deriving it.
@@ -71,13 +71,13 @@ Every fact the homelab collects flows producer → store → `homelab.db` → co
 
 | Table | Rows |
 |---|---|
-| `agent_runs` | 382 |
-| `findings` | 931 |
-| `collector_metrics` | 22,432 |
-| `docs` | 208 |
+| `agent_runs` | 415 |
+| `findings` | 1,175 |
+| `collector_metrics` | 25,033 |
+| `docs` | 209 |
 | `change_events` | 110 |
 | `arch_nodes` | 70 |
 | `raw_documents` | 5 |
-| `vitals_samples` | 46,952 |
+| `vitals_samples` | 65,219 |
 
 History reaches back to **2026-06-07**.
