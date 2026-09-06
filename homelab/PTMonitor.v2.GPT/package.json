@@ -1,0 +1,16 @@
+{
+  "name": "ptmonitor-v2-gpt",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tauri dev",
+    "test": "node --test test/*.test.mjs",
+    "test:native": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:sensors": "powershell -NoProfile -ExecutionPolicy Bypass -File ./sensor-host/build.ps1 -TestOnly",
+    "build:sensors": "powershell -ExecutionPolicy Bypass -File ./sensor-host/build.ps1",
+    "build": "npm run build:sensors && tauri build --config src-tauri/tauri.bundle.conf.json"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  }
+}

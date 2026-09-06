@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs><linearGradient id="chip" x2="0.8" y2="1"><stop stop-color="#1e3040"/><stop offset="1" stop-color="#0b111d"/></linearGradient></defs>
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#chip)" stroke="#647d91" stroke-width="12"/>
+  <path d="M108 356V211Q108 199 120 199H160Q172 199 172 211V356Z" fill="#67baff"/>
+  <path d="M224 356V123Q224 111 236 111H276Q288 111 288 123V356Z" fill="#65e6ba"/>
+  <path d="M340 356V166Q340 154 352 154H392Q404 154 404 166V356Z" fill="#b49dff"/>
+  <path d="M108 397H404" stroke="#73899c" stroke-width="12" stroke-linecap="round"/>
+</svg>

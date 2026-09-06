@@ -1,0 +1,10 @@
+node_modules/
+src-tauri/target/
+sensor-host/bin/
+sensor-host/obj/
+src-tauri/resources/sensor-host/*.dll
+src-tauri/resources/sensor-host/*.pdb
+src-tauri/binaries/*.exe
+sensor-host/test-results/
+test-results/
+test/artifacts/

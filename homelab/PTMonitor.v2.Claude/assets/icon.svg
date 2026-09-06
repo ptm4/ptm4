@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#161b2a"/><stop offset="1" stop-color="#0e1119"/></linearGradient>
+    <linearGradient id="pulse" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a7bd5"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+  </defs>
+  <rect x="16" y="16" width="224" height="224" rx="44.8" fill="url(#tile)"/>
+  <rect x="16.5" y="16.5" width="223" height="223" rx="44.3" fill="none" stroke="#ffffff" stroke-opacity="0.08"/>
+  <line x1="43.52" y1="169.5" x2="212.48" y2="169.5" stroke="#ffffff" stroke-opacity="0.12"/>
+  <polyline points="43.52,158.72 81.92,153.60 107.52,79.36 133.12,199.68 158.72,128.00 184.32,143.36 212.48,107.52" fill="none" stroke="url(#pulse)" stroke-width="15.36" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="212.48" cy="107.52" r="30.4128" fill="#4caf7d" fill-opacity="0.28"/>
+  <circle cx="212.48" cy="107.52" r="13.823999" fill="#4caf7d"/>
+</svg>

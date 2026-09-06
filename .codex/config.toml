@@ -1,0 +1,3 @@
+[mcp_servers.homelab]
+url = "http://192.168.1.11:9100/mcp"
+bearer_token_env_var = "HL_DB_TOKEN"
