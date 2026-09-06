@@ -162,9 +162,35 @@ def _add_expansion_tables(conn):
     """)
 
 
+def _add_price_history(conn):
+    """v3 — pricewatch: PC-part price tracking for the opti hypervisor rebuild (2026-08).
+
+    One row per item per retailer per day (the collector runs more often; the last fetch
+    of the day wins). `error` non-NULL with a NULL price records a failed fetch — Amazon
+    blocks bots regularly, and a silent gap would read as "price unchanged"."""
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS price_history (
+        day          TEXT NOT NULL,               -- YYYY-MM-DD (UTC)
+        item         TEXT NOT NULL,               -- id from pricewatch/items.json
+        retailer     TEXT NOT NULL,               -- newegg | ebay | amazon
+        at           TEXT NOT NULL,               -- timestamp of the winning fetch
+        label        TEXT,
+        category     TEXT,                        -- cpu | mobo | ram | psu | ssd | case
+        price        REAL,
+        in_stock     INTEGER,
+        target_price REAL,
+        url          TEXT,
+        error        TEXT,
+        PRIMARY KEY (day, item, retailer)
+    ) WITHOUT ROWID;
+    CREATE INDEX IF NOT EXISTS idx_price_history_item ON price_history (item, day);
+    """)
+
+
 MIGRATIONS = [
     (1, _apply_schema),
     (2, _add_expansion_tables),
+    (3, _add_price_history),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]

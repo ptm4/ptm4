@@ -295,3 +295,79 @@ export function DownloadsWidget() {
     </WidgetFrame>
   );
 }
+
+// ── price watch ─────────────────────────────────────────────────────────────
+// The opti-rebuild part tracker: pricewatch on opti scrapes Newegg/eBay/Amazon four
+// times a day; this shows current price vs target with a per-item trend sparkline.
+// Buy windows (price at/below target) get the green pill — that is the whole point.
+interface PriceItem {
+  id: string;
+  label?: string;
+  category?: string;
+  retailer: string;
+  url?: string;
+  price: number | null;
+  in_stock?: number | null;
+  target_price?: number | null;
+  error?: string | null;
+}
+interface PriceReport {
+  run_at?: string;
+  summary?: string;
+  items?: PriceItem[];
+  history?: Record<string, { d: string; p: number }[]>;
+  below_target?: string[];
+}
+
+const money = (v: number) => (v >= 1000 ? `$${Math.round(v).toLocaleString()}` : `$${v.toFixed(2)}`);
+
+export function PriceWatchWidget({ options }: { options?: Record<string, unknown> }) {
+  const category = typeof options?.category === 'string' ? options.category : '';
+  const q = useQuery({
+    queryKey: ['pricewatch'],
+    queryFn: () => get<PriceReport>('/api/pricewatch', 12_000),
+    refetchInterval: 15 * 60_000,
+    retry: 0,
+  });
+  if (q.isLoading) return <WidgetFrame title="Price watch"><WidgetLoading /></WidgetFrame>;
+  if (q.isError || !q.data) {
+    return <WidgetFrame title="Price watch"><WidgetError message="pricewatch report unavailable" /></WidgetFrame>;
+  }
+  const report = q.data;
+  const items = (report.items ?? []).filter((it) => !category || it.category === category);
+  const history = report.history ?? {};
+
+  return (
+    <WidgetFrame title="Price watch" scroll meta={report.run_at ? relTime(report.run_at) : undefined}>
+      <div className="kv-rows">
+        {items.map((it) => {
+          const series = (history[it.id] ?? []).map((pt) => pt.p);
+          const below = it.price != null && it.target_price != null && it.price <= it.target_price;
+          return (
+            <div className="kv-row" key={it.id}>
+              <span>
+                {it.url
+                  ? <a href={it.url} target="_blank" rel="noreferrer">{it.label ?? it.id}</a>
+                  : (it.label ?? it.id)}
+                <span className="t-dim"> · {it.retailer}</span>
+              </span>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {series.length > 1 && <Sparkline values={series} width={64} height={18} />}
+                {it.price == null
+                  ? <Pill tone="warn">{it.error ? 'fetch failed' : 'no price'}</Pill>
+                  : below
+                    ? <Pill tone="ok">{money(it.price)} · buy</Pill>
+                    : <span>
+                        {money(it.price)}
+                        {it.target_price != null
+                          && <span className="t-dim"> / {money(it.target_price)}</span>}
+                      </span>}
+              </span>
+            </div>
+          );
+        })}
+        {items.length === 0 && <div className="t-dim">no tracked items{category ? ` in ${category}` : ''}</div>}
+      </div>
+    </WidgetFrame>
+  );
+}

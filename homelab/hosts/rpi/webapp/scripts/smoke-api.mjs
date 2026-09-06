@@ -89,6 +89,8 @@ const MANIFEST = [
   { method: 'GET', path: '/api/hldb/schema', expect: [200, 502, 503] },
   { method: 'POST', path: '/api/hldb/query', body: {}, expect: [400, 502, 503], note: 'empty body -> upstream 400 (sql required); proves the console route exists without running SQL' },
 
+  { method: 'GET', path: '/api/pricewatch', expect: [200, 502], note: '502 until the pricewatch collector has written its first report to agent-logs' },
+
   // agentic (workspace-mount dependent)
   { method: 'GET', path: '/api/agentic', expect: [200, 503] },
   { method: 'POST', path: '/api/agentic/wire/vim', expect: [400] },

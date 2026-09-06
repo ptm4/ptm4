@@ -1,0 +1,415 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Precision Dark</title>
+<!-- v3 mockup A: "precision dark" — Linear/Vercel-school ops UI.
+     Near-black flat surfaces, hairline borders, ONE electric accent (switchable
+     below: blue / violet / lime), tabular-nums metrics, hover-reveal detail.
+     Single-theme by design: this direction commits to dark. -->
+<style>
+  /* ── tokens ─────────────────────────────────────────────────────────── */
+  :root {
+    --bg:        #0b0c0f;
+    --surface:   #101216;
+    --surface-2: #15181d;
+    --line:      rgba(235, 240, 255, .07);
+    --line-2:    rgba(235, 240, 255, .13);
+    --ink:       #e8eaf0;
+    --ink-2:     #99a0ac;
+    --ink-3:     #5f6672;
+
+    --accent:      #4da3ff;           /* candidate A: electric blue */
+    --accent-dim:  rgba(77, 163, 255, .13);
+
+    --ok:    #46c26e;  --ok-dim:   rgba(70, 194, 110, .12);
+    --warn:  #d9a53a;  --warn-dim: rgba(217, 165, 58, .13);
+    --crit:  #f2555a;  --crit-dim: rgba(242, 85, 90, .13);
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --r: 8px;
+  }
+  :root[data-accent="violet"] { --accent: #a884ff; --accent-dim: rgba(168, 132, 255, .13); }
+  :root[data-accent="lime"]   { --accent: #b6e34b; --accent-dim: rgba(182, 227, 75, .12); }
+
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 13.5px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* ── shell ──────────────────────────────────────────────────────────── */
+  .shell { display: grid; grid-template-columns: 212px minmax(0,1fr); min-height: 100vh; }
+
+  .side {
+    border-right: 1px solid var(--line);
+    padding: 14px 10px;
+    display: flex; flex-direction: column; gap: 18px;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 2px 8px 10px; font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+  .brand .ver { margin-left: auto; font: 500 10px var(--mono); color: var(--ink-3); border: 1px solid var(--line-2); border-radius: 99px; padding: 1px 7px; }
+  .ngroup h3 { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 0 8px 6px; }
+  .nlink {
+    display: flex; align-items: center; gap: 9px;
+    padding: 5px 8px; border-radius: 6px; color: var(--ink-2);
+    font-size: 13px; font-weight: 450;
+  }
+  .nlink svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; opacity: .75; }
+  .nlink:hover { color: var(--ink); background: var(--surface-2); }
+  .nlink.on { color: var(--ink); background: var(--accent-dim); }
+  .nlink.on svg { color: var(--accent); opacity: 1; }
+  .nlink .k { margin-left: auto; font: 500 10px var(--mono); color: var(--ink-3); }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .top {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: rgba(11,12,15,.85); backdrop-filter: blur(8px); z-index: 5;
+  }
+  .crumb { font-size: 13px; color: var(--ink-2); }
+  .crumb b { color: var(--ink); font-weight: 550; }
+  .search {
+    margin-left: auto; display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 10px;
+    color: var(--ink-3); font-size: 12.5px; width: 240px;
+  }
+  .search .k { margin-left: auto; font: 500 10px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; }
+  .tbtn { border: 1px solid var(--line-2); background: none; color: var(--ink-2); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .tbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .vswitch { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+  .vswitch button { border: 0; background: none; color: var(--ink-3); font: 500 11px var(--mono); padding: 4px 9px; cursor: pointer; }
+  .vswitch button.on { background: var(--accent-dim); color: var(--accent); }
+
+  .content { padding: 20px; display: flex; flex-direction: column; gap: 20px; max-width: 1240px; }
+
+  /* board header */
+  .bhead { display: flex; align-items: baseline; gap: 12px; }
+  .bhead h1 { font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
+  .bhead .sub { font-size: 12px; color: var(--ink-3); }
+  .bhead .right { margin-left: auto; display: flex; gap: 8px; }
+
+  /* fleet strip */
+  .fleet {
+    display: flex; align-items: center; gap: 10px 26px; flex-wrap: wrap;
+    border: 1px solid var(--line); border-radius: var(--r);
+    padding: 10px 16px; background: var(--surface);
+  }
+  .fitem { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
+  .fitem .num { color: var(--ink); font-size: 13px; }
+  .pip { width: 7px; height: 7px; border-radius: 99px; }
+  .pip.ok { background: var(--ok); box-shadow: 0 0 8px var(--ok-dim), 0 0 3px var(--ok); }
+  .pip.warn { background: var(--warn); }
+  .fleet .age { margin-left: auto; font: 400 11px var(--mono); color: var(--ink-3); }
+
+  /* ── grid + cards ───────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+  .card {
+    grid-column: span 4;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    padding: 14px 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    transition: border-color .15s;
+    min-width: 0;
+  }
+  .card:hover { border-color: var(--line-2); }
+  .c6 { grid-column: span 6; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; } .c3 { grid-column: span 3; }
+  @media (max-width: 1000px) { .card, .c6, .c8, .c3 { grid-column: span 6; } }
+  @media (max-width: 700px)  { .shell { grid-template-columns: 1fr; } .side { display: none; } .card, .c6, .c8, .c3, .c12 { grid-column: span 12; } }
+
+  .chead { display: flex; align-items: baseline; gap: 8px; }
+  .chead h2 { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .chead .meta { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+
+  /* host card */
+  .hostline { display: flex; align-items: baseline; gap: 10px; }
+  .hostline .name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .hostline .role { font-size: 11px; color: var(--ink-3); }
+  .hostline .up { margin-left: auto; font: 400 11px var(--mono); color: var(--ok); }
+  .vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .vit { display: flex; flex-direction: column; gap: 1px; }
+  .vit .l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .vit .v { font-size: 15px; font-weight: 500; }
+  .vit .v small { font-size: 10.5px; color: var(--ink-3); font-weight: 400; margin-left: 4px; }
+  .spark { width: 100%; height: 34px; }
+  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .spark path { fill: var(--accent-dim); }
+  .spark circle { fill: var(--accent); }
+  .bar { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+  .bar.warn i { background: var(--warn); }
+  .diskrow { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-2); }
+  .diskrow .num { color: var(--ink); }
+  .diskrow .bar { flex: 1; }
+  /* hover-reveal actions */
+  .hact { display: flex; gap: 6px; max-height: 0; overflow: hidden; opacity: 0; transition: max-height .18s, opacity .18s, margin .18s; margin-top: -6px; }
+  .card:hover .hact, .card:focus-within .hact { max-height: 34px; opacity: 1; margin-top: 0; }
+  .hbtn { border: 1px solid var(--line-2); background: none; color: var(--ink-2); font-size: 11px; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  .hbtn:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* list rows (activity, containers, matches) */
+  .rows { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .rows .row:first-child { border-top: 0; }
+  .row .t { font: 400 11px var(--mono); color: var(--ink-3); min-width: 44px; }
+  .row .who { color: var(--ink-2); min-width: 118px; font-weight: 500; }
+  .row .what { color: var(--ink-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; }
+  .chip.ok   { color: var(--ok);   background: var(--ok-dim); }
+  .chip.warn { color: var(--warn); background: var(--warn-dim); }
+  .chip.crit { color: var(--crit); background: var(--crit-dim); }
+  .chip.info { color: var(--accent); background: var(--accent-dim); }
+
+  /* stat tiles */
+  .stat { display: flex; flex-direction: column; gap: 2px; justify-content: center; }
+  .stat .v { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .stat .v small { font-size: 12px; color: var(--ink-3); font-weight: 400; }
+  .stat .l { font-size: 11px; color: var(--ink-3); }
+
+  /* matches */
+  .match { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; padding: 7px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
+  .rows .match:first-child { border-top: 0; }
+  .match .when { font: 500 11px var(--mono); color: var(--ink-3); }
+  .match .when.live { color: var(--crit); }
+  .match .teams { color: var(--ink); font-weight: 500; }
+  .match .teams small { color: var(--ink-3); font-weight: 400; margin-left: 6px; }
+  .match .score { font: 600 13px var(--mono); }
+
+  /* table (detail strip) */
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+  tr:hover td { background: var(--surface-2); }
+  .tablewrap { overflow-x: auto; }
+
+  .divider { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; margin-top: 8px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  /* accent picker (mockup-only affordance) */
+  .accents { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--line-2); border-radius: 99px; padding: 8px 12px; z-index: 20; align-items: center; }
+  .accents span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
+  .accents button { width: 18px; height: 18px; border-radius: 99px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .accents button.on { border-color: var(--ink); }
+  .acc-blue { background: #4da3ff; } .acc-violet { background: #a884ff; } .acc-lime { background: #b6e34b; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="shell">
+  <nav class="side">
+    <div class="brand"><span class="dot"></span> Pert&rsquo;s Pocket <span class="ver">v3</span></div>
+    <div class="ngroup">
+      <h3>Boards</h3>
+      <a class="nlink on" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Home <span class="k">1</span></a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/></svg> Dashboard <span class="k">2</span></a>
+    </div>
+    <div class="ngroup">
+      <h3>Operations</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Cockpit</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M6 7V4h12v3"/></svg> Containers</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg> Pi-hole</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg> Trends</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Reports</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg> Data</a>
+    </div>
+    <div class="ngroup">
+      <h3>Services</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></svg> Discord bots</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg> CS2 / Leetify</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 1 5 5c0 2-1 3-2 4l-1 1v2h-4v-2l-1-1c-1-1-2-2-2-4a5 5 0 0 1 5-5z"/><path d="M10 19h4M11 22h2"/></svg> Local LLM</a>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="top">
+      <span class="crumb"><b>Home</b> · board</span>
+      <div class="search">Search or jump to&hellip; <span class="k">&#8984;K</span></div>
+      <div class="vswitch" title="UI version">
+        <button>v1</button><button>v2</button><button class="on">v3</button>
+      </div>
+      <button class="tbtn">Edit board</button>
+    </div>
+
+    <div class="content">
+      <div class="bhead">
+        <h1>Home</h1><span class="sub">10 widgets · saved 01:05</span>
+        <div class="right"></div>
+      </div>
+
+      <div class="fleet">
+        <span class="fitem"><span class="pip ok"></span><span class="num">4/4</span> hosts</span>
+        <span class="fitem"><span class="pip ok"></span><span class="num">31/31</span> containers</span>
+        <span class="fitem"><span class="pip warn"></span><span class="num">4</span> image updates</span>
+        <span class="fitem"><span class="pip ok"></span><span class="num">0</span> open findings</span>
+        <span class="age">doctor 24m ago</span>
+      </div>
+
+      <div class="grid">
+        <!-- opti -->
+        <section class="card">
+          <div class="hostline"><span class="name">opti</span><span class="role">storage · control plane</span><span class="up num">up 29d</span></div>
+          <div class="vitals">
+            <div class="vit"><span class="l">CPU load</span><span class="v num">0.16</span></div>
+            <div class="vit"><span class="l">Memory</span><span class="v num">48%<small>of 5.7 GiB</small></span></div>
+            <div class="vit"><span class="l">Temp</span><span class="v num">30&deg;C</span></div>
+            <div class="vit"><span class="l">Net</span><span class="v num" style="font-size:12.5px">&darr;63 &uarr;170 <small>KB/s</small></span></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 34" preserveAspectRatio="none" aria-label="opti CPU, last 3h">
+            <path d="M0,26 L20,24 40,27 60,22 80,25 100,18 120,23 140,20 160,24 180,21 200,23 L200,34 0,34 Z"/>
+            <polyline points="0,26 20,24 40,27 60,22 80,25 100,18 120,23 140,20 160,24 180,21 200,23"/>
+            <circle cx="200" cy="23" r="2.5"/>
+          </svg>
+          <div class="diskrow"><span>red&nbsp;<small>zfs</small></span><span class="bar"><i style="width:19%"></i></span><span class="num">19%</span></div>
+          <div class="diskrow"><span>os</span><span class="bar warn"><i style="width:77%"></i></span><span class="num">77%</span></div>
+          <div class="hact"><button class="hbtn">Terminal</button><button class="hbtn">Autoupdate</button><button class="hbtn">Reboot&hellip;</button></div>
+        </section>
+
+        <!-- rpi -->
+        <section class="card">
+          <div class="hostline"><span class="name">rpi</span><span class="role">DNS · DHCP · web</span><span class="up num">up 20d</span></div>
+          <div class="vitals">
+            <div class="vit"><span class="l">CPU load</span><span class="v num">0.55</span></div>
+            <div class="vit"><span class="l">Memory</span><span class="v num">58%<small>of 3.7 GiB</small></span></div>
+            <div class="vit"><span class="l">Temp</span><span class="v num">40&deg;C</span></div>
+            <div class="vit"><span class="l">Containers</span><span class="v num">16/16</span></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 34" preserveAspectRatio="none" aria-label="rpi CPU, last 3h">
+            <path d="M0,22 L20,20 40,24 60,18 80,21 100,15 120,19 140,12 160,18 180,16 200,17 L200,34 0,34 Z"/>
+            <polyline points="0,22 20,20 40,24 60,18 80,21 100,15 120,19 140,12 160,18 180,16 200,17"/>
+            <circle cx="200" cy="17" r="2.5"/>
+          </svg>
+          <div class="diskrow"><span>sd</span><span class="bar"><i style="width:29%"></i></span><span class="num">29%</span></div>
+          <div class="diskrow"><span>dns</span><span class="bar"><i style="width:100%"></i></span><span class="num" style="color:var(--ok)">ok</span></div>
+          <div class="hact"><button class="hbtn">Terminal</button><button class="hbtn">Autoupdate</button><button class="hbtn">Reboot&hellip;</button></div>
+        </section>
+
+        <!-- noblenumbat -->
+        <section class="card">
+          <div class="hostline"><span class="name">noblenumbat</span><span class="role">media stack</span><span class="up num">up 1d 8h</span></div>
+          <div class="vitals">
+            <div class="vit"><span class="l">CPU load</span><span class="v num">0.00</span></div>
+            <div class="vit"><span class="l">Memory</span><span class="v num">20%<small>of 15.4 GiB</small></span></div>
+            <div class="vit"><span class="l">Temp</span><span class="v num">46&deg;C</span></div>
+            <div class="vit"><span class="l">VPN</span><span class="v" style="color:var(--ok); font-size:13px">ok · port fwd</span></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 34" preserveAspectRatio="none" aria-label="noblenumbat CPU, last 3h">
+            <path d="M0,30 L20,29 40,30 60,28 80,30 100,26 120,29 140,28 160,30 180,29 200,29 L200,34 0,34 Z"/>
+            <polyline points="0,30 20,29 40,30 60,28 80,30 100,26 120,29 140,28 160,30 180,29 200,29"/>
+            <circle cx="200" cy="29" r="2.5"/>
+          </svg>
+          <div class="diskrow"><span>os</span><span class="bar"><i style="width:18%"></i></span><span class="num">18%</span></div>
+          <div class="diskrow"><span>15/15 up</span><span class="bar"><i style="width:100%"></i></span><span class="num" style="color:var(--ok)">ok</span></div>
+          <div class="hact"><button class="hbtn">Terminal</button><button class="hbtn">Autoupdate</button><button class="hbtn">Reboot&hellip;</button></div>
+        </section>
+
+        <!-- activity -->
+        <section class="card c8">
+          <div class="chead"><h2>Activity</h2><span class="meta">latest reports</span></div>
+          <div class="rows">
+            <div class="row"><span class="t">07:00</span><span class="who">discord-weather</span><span class="what">Posted the daily 7AM report — witty pool consumed one line</span><span class="chip ok">sent</span></div>
+            <div class="row"><span class="t">06:32</span><span class="who">vpn-stack-heal</span><span class="what">NAT-PMP lease renewed; forwarded port unchanged (52644)</span><span class="chip ok">healed</span></div>
+            <div class="row"><span class="t">04:15</span><span class="who">homelab-doctor</span><span class="what">4/4 services, 4/4 hosts — nothing to report</span><span class="chip ok">green</span></div>
+            <div class="row"><span class="t">02:00</span><span class="who">attic-sync</span><span class="what">Weekly cold copy to /srv/attic finished — 41 GiB, 12m</span><span class="chip ok">done</span></div>
+            <div class="row"><span class="t">-1d</span><span class="who">arch-agent</span><span class="what">bitwarden 1.33.1 → 1.34.0 available on rpi</span><span class="chip warn">update</span></div>
+          </div>
+        </section>
+
+        <!-- pi-hole -->
+        <section class="card">
+          <div class="chead"><h2>Pi-hole</h2><span class="meta">rpi · live</span></div>
+          <div class="stat"><span class="v num">22.4<small>% blocked</small></span><span class="l num">7,134 of 31,842 queries today</span></div>
+          <div class="bar"><i style="width:22.4%"></i></div>
+          <div class="diskrow"><span>gravity</span><span class="what num" style="flex:1; text-align:right; color:var(--ink-2)">1.19M domains</span></div>
+          <div class="hact"><button class="hbtn">Pause 5 min</button><button class="hbtn">Open Pi-hole</button></div>
+        </section>
+
+        <!-- storage -->
+        <section class="card">
+          <div class="chead"><h2>Storage</h2><span class="meta">pools &amp; disks</span></div>
+          <div class="stat"><span class="v num">0.7<small>/ 3.7 TB</small></span><span class="l">red · ZFS · opti</span></div>
+          <div class="bar"><i style="width:19%"></i></div>
+          <div class="rows" style="margin-top:4px">
+            <div class="row"><span class="who" style="min-width:90px">opti os</span><span class="bar" style="flex:1"><i style="width:77%; background:var(--warn)"></i></span><span class="num" style="color:var(--warn)">77%</span></div>
+            <div class="row"><span class="who" style="min-width:90px">rpi sd</span><span class="bar" style="flex:1"><i style="width:29%"></i></span><span class="num">29%</span></div>
+            <div class="row"><span class="who" style="min-width:90px">nn os</span><span class="bar" style="flex:1"><i style="width:18%"></i></span><span class="num">18%</span></div>
+          </div>
+        </section>
+
+        <!-- weather -->
+        <section class="card">
+          <div class="chead"><h2>Weather</h2><span class="meta">7AM post sent</span></div>
+          <div class="stat"><span class="v num">78&deg;<small>feels 81&deg;</small></span><span class="l">Partly cloudy · wind 8 mph · rain 20%</span></div>
+          <div class="rows" style="margin-top:2px">
+            <div class="row"><span class="who">Tomorrow</span><span class="what">82° / 68° — thunderstorms after 2 PM</span></div>
+          </div>
+        </section>
+
+        <!-- cs2 -->
+        <section class="card c6">
+          <div class="chead"><h2>CS2 · HLTV slate</h2><span class="meta">VRS top-20 only</span></div>
+          <div class="rows">
+            <div class="match"><span class="when live">LIVE</span><span class="teams">Vitality — Spirit<small>Mirage · map 2</small></span><span class="score num" style="color:var(--crit)">9–7</span></div>
+            <div class="match"><span class="when">19:00</span><span class="teams">FaZe — MOUZ<small>EPL playoffs</small></span><span class="score num" style="color:var(--ink-3)">bo3</span></div>
+            <div class="match"><span class="when">21:30</span><span class="teams">NAVI — G2<small>EPL playoffs</small></span><span class="score num" style="color:var(--ink-3)">bo3</span></div>
+            <div class="match"><span class="when">final</span><span class="teams">Falcons — Liquid<small>13–10 · 9–13 · 13–6</small></span><span class="score num">2–1</span></div>
+          </div>
+        </section>
+
+        <!-- llm + stats -->
+        <section class="card c3">
+          <div class="chead"><h2>Local LLM</h2></div>
+          <div class="stat"><span class="v" style="font-size:16px">LFM2.5-2.6B</span><span class="l">android:8080 · slot warm · 11 tok/s</span></div>
+          <span class="chip ok" style="align-self:flex-start">reachable</span>
+        </section>
+        <section class="card c3">
+          <div class="chead"><h2>Homelab DB</h2></div>
+          <div class="stat"><span class="v num">14<small>/ 14 feeds</small></span><span class="l num">61 days indexed · 2.1 GB</span></div>
+          <span class="chip ok" style="align-self:flex-start">all feeding</span>
+        </section>
+      </div>
+
+      <div class="divider">Detail page preview — Containers</div>
+
+      <section class="card c12" style="display:block">
+        <div class="chead" style="margin-bottom:10px"><h2>Containers</h2><span class="meta">31/31 up · fleet</span></div>
+        <div class="tablewrap">
+        <table>
+          <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th><th></th></tr></thead>
+          <tbody>
+            <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td>qmcgaw/gluetun</td><td><span class="chip ok">healthy</span></td><td class="num">vpn ns</td></tr>
+            <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td>jellyfin/jellyfin</td><td><span class="chip ok">up</span></td><td></td></tr>
+            <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td>vaultwarden/server</td><td><span class="chip warn">update 1.34.0</span></td><td></td></tr>
+            <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td>pihole/pihole</td><td><span class="chip ok">healthy</span></td><td>dns · dhcp</td></tr>
+            <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td>linuxserver/qbittorrent</td><td><span class="chip ok">up</span></td><td class="num">via gluetun</td></tr>
+            <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td>node:lts-alpine</td><td><span class="chip ok">up</span></td><td>this app</td></tr>
+          </tbody>
+        </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="accents" role="group" aria-label="Accent candidate">
+  <span>Accent</span>
+  <button class="acc-blue on" aria-label="Electric blue" onclick="setAcc('blue',this)"></button>
+  <button class="acc-violet" aria-label="Violet" onclick="setAcc('violet',this)"></button>
+  <button class="acc-lime" aria-label="Lime" onclick="setAcc('lime',this)"></button>
+</div>
+<script>
+  function setAcc(name, btn) {
+    document.documentElement.dataset.accent = name;
+    document.querySelectorAll('.accents button').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+</script>

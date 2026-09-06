@@ -1,0 +1,18 @@
+[Unit]
+# Fetches PC-part prices (Newegg/eBay/Amazon) for the opti hypervisor rebuild and writes
+# the standard collector report to agent-logs; homelab-db ingests it into price_history
+# and raises buy-window findings. Items + targets: homelab/tools/pricewatch/items.json.
+# Install on opti:
+#   sudo cp homelab-pricewatch.service homelab-pricewatch.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-pricewatch.timer
+Description=Homelab price watch (PC part prices -> agent-logs)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+
+[Service]
+ExecStartPre=/usr/bin/mountpoint -q /srv/red
+Type=oneshot
+User=ptm
+EnvironmentFile=/etc/hl-agents.env
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/tools/pricewatch/pricewatch.py

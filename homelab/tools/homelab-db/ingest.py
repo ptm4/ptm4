@@ -192,6 +192,11 @@ DATASETS = [
      "producer_host": "opti", "source": "<agent-logs>/leetify-latest.json", "format": "json",
      "cadence_hours": None, "stage": "store", "consumers": "cs2_matches, cs2_ratings",
      "notes": "Manual runs only (paid API). Broken out of the 135KB blob into columns so trends are queryable."},
+    {"id": "pricewatch", "label": "PC-part price watch", "producer": "homelab/tools/pricewatch/pricewatch.py",
+     "producer_host": "opti", "source": "<agent-logs>/pricewatch-latest.json", "format": "json",
+     "cadence_hours": 6, "stage": "store", "consumers": "price_history, findings, webapp widget",
+     "notes": "Newegg/eBay/Amazon prices for the opti hypervisor rebuild (2026-08). Items + buy "
+              "targets in pricewatch/items.json; a price at/below target raises a warn finding."},
 
     # ── the database ──
     {"id": "homelab-db", "label": "homelab.db", "producer": "homelab/tools/homelab-db/ingest.py",
@@ -1306,6 +1311,78 @@ def ingest_leetify(conn):
 
 # ── freshness ───────────────────────────────────────────────────────────────────────
 
+def ingest_pricewatch(conn, run_id):
+    """PC-part prices → price_history, plus buy-window findings.
+
+    Two signals fire a warn finding: an item at/below its configured target price, and a
+    ≥10% drop against the item's median over the trailing 30 days (the "beginning to dip"
+    signal the tracker exists for). Fetch failures land as rows with error set — Amazon
+    blocks bots routinely, and a gap that looks like "unchanged" would defeat the trend."""
+    path = os.path.join(agent_logs_dir(), "pricewatch-latest.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            report = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        mark_dataset(conn, "pricewatch", error=str(exc))
+        return 0
+
+    stamp = report.get("run_at") or now_iso()
+    day = str(stamp)[:10]
+    rows = 0
+    for it in report.get("items", []):
+        if not it.get("id") or not it.get("retailer"):
+            continue
+        conn.execute(
+            """INSERT INTO price_history
+                 (day, item, retailer, at, label, category, price, in_stock,
+                  target_price, url, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT (day, item, retailer) DO UPDATE SET
+                 at = excluded.at, price = excluded.price, in_stock = excluded.in_stock,
+                 target_price = excluded.target_price, error = excluded.error""",
+            (day, it["id"], it["retailer"], it.get("fetched_at") or stamp,
+             it.get("label"), it.get("category"), it.get("price"), it.get("in_stock"),
+             it.get("target_price"), it.get("url"), it.get("error")),
+        )
+        rows += 1
+
+        price = it.get("price")
+        if price is None:
+            continue
+        target = it.get("target_price")
+        if target is not None and price <= target:
+            conn.execute(
+                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
+                   VALUES (?, 'homelab-db', ?, 'warn', 'market', ?, 'pricewatch')""",
+                (run_id, stamp,
+                 "price-watch: %s at $%.2f (%s), at/below target $%.2f — buy window"
+                 % (it.get("label") or it["id"], price, it["retailer"], target)),
+            )
+            continue
+        med = conn.execute(
+            """SELECT price FROM price_history
+               WHERE item = ? AND retailer = ? AND price IS NOT NULL
+                 AND day >= date('now', '-30 day') AND day < ?
+               ORDER BY price LIMIT 1
+               OFFSET (SELECT COUNT(*) FROM price_history
+                        WHERE item = ? AND retailer = ? AND price IS NOT NULL
+                          AND day >= date('now', '-30 day') AND day < ?) / 2""",
+            (it["id"], it["retailer"], day, it["id"], it["retailer"], day),
+        ).fetchone()
+        if med and med["price"] and price <= med["price"] * 0.9:
+            conn.execute(
+                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
+                   VALUES (?, 'homelab-db', ?, 'warn', 'market', ?, 'pricewatch')""",
+                (run_id, stamp,
+                 "price-watch: %s dipping — $%.2f (%s) is %d%% under its 30-day median $%.2f"
+                 % (it.get("label") or it["id"], price, it["retailer"],
+                    round((1 - price / med["price"]) * 100), med["price"])),
+            )
+
+    mark_dataset(conn, "pricewatch", source_at=stamp, rows=rows)
+    return rows
+
+
 def freshness_findings(conn):
     """Generalises the doctor's stale-report check to every registered dataset.
 
@@ -1599,6 +1676,7 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
         stats["certificates"] = certs
         stats["cert_warnings"] = cert_warnings
         stats["smart_flags"] = check_smart(conn, run_id)
+        stats["prices"] = ingest_pricewatch(conn, run_id)
         checked, drifted, skipped = ingest_deploy_drift(conn, run_id)
         stats["deploy_drift"] = f"{drifted} drifted / {checked} checked" + (
             f" ({skipped} skipped: repo dirty)" if skipped else "")

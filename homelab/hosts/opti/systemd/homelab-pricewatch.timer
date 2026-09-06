@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the homelab price watch four times a day
+
+[Timer]
+# Off the hour on purpose, with jitter: retail sites see a boring residential visitor,
+# not a bot striking at :00. Four samples/day is plenty for daily trend granularity.
+OnCalendar=*-*-* 01,07,13,19:24:00
+RandomizedDelaySec=20m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

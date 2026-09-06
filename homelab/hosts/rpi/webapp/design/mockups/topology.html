@@ -1,0 +1,265 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Topology</title>
+<!-- v3 mockup M: "topology" — map-first ops. The hero is the LAN itself: a
+     live network graph (internet → Archer gateway → hosts) with glowing
+     edges, status halos, and the two real single-points-of-failure flagged
+     on the map. Click a node, read its inspector. Spatial navigation instead
+     of a grid of cards. Single-theme by design: dark navy console. -->
+<style>
+  :root {
+    --bg:      #070b14;
+    --panel:   #0d1424;
+    --panel-2: #131c31;
+    --line:    #1b2745;
+    --ink:     #c9d6f2;
+    --ink-2:   #7e8db0;
+    --ink-3:   #4d5a7a;
+    --cyan:    #4dc3ff;
+    --green:   #43e08c;
+    --amber:   #ffb454;
+    --red:     #ff5266;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg);
+    background-image: radial-gradient(ellipse at 50% -20%, #0c1526, var(--bg) 65%);
+    color: var(--ink);
+    font: 400 13px/1.5 var(--sans);
+    font-variant-numeric: tabular-nums;
+    padding: 14px 14px 40px;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .num { font-family: var(--mono); font-size: 12px; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); font-size: 12px; }
+  .g { color: var(--green); } .a { color: var(--amber); } .r { color: var(--red); } .c { color: var(--cyan); }
+
+  .wrap { max-width: 1220px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+
+  /* top bar */
+  .top { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  .top .brand { font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+  .top .brand .v { color: var(--cyan); font-weight: 500; }
+  .top .stats { display: flex; gap: 16px; color: var(--ink-2); font-size: 12.5px; }
+  .top .stats b { color: var(--ink); font-weight: 600; }
+  .top .r { margin-left: auto; display: flex; gap: 10px; align-items: baseline; }
+  .chip { border: 1px solid var(--line); border-radius: 6px; padding: 2px 10px; font-size: 12px; color: var(--ink-2); background: var(--panel); cursor: pointer; }
+  .chip.on { color: var(--cyan); border-color: #234; background: #0e1a2e; }
+
+  /* map + inspector */
+  .stage { display: grid; grid-template-columns: minmax(0,1fr) 320px; gap: 12px; }
+  @media (max-width: 940px) { .stage { grid-template-columns: 1fr; } }
+
+  .map { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; position: relative; overflow: hidden; }
+  .map::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      linear-gradient(rgba(77,195,255,.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(77,195,255,.04) 1px, transparent 1px);
+    background-size: 34px 34px;
+  }
+  .map svg { display: block; width: 100%; height: auto; position: relative; }
+  .map .legend { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 14px; font-size: 11px; color: var(--ink-3); flex-wrap: wrap; }
+  .lg { display: flex; gap: 5px; align-items: center; }
+  .lg i { width: 14px; height: 2px; background: var(--line); }
+  .lg i.link { background: var(--cyan); opacity: .5; }
+  .lg i.dep { background: var(--amber); height: 0; border-top: 2px dashed var(--amber); opacity: .7; }
+
+  /* svg styles */
+  .edge { stroke: rgba(77,195,255,.32); stroke-width: 1.6; }
+  .edge.faded { stroke: rgba(77,195,255,.14); }
+  .dep { stroke: var(--amber); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .55; fill: none; }
+  .node circle.halo { fill: none; stroke-width: 6; opacity: .25; }
+  .node circle.core { stroke-width: 1.5; }
+  .node.ok circle.core { fill: #0d2a1c; stroke: var(--green); }
+  .node.ok circle.halo { stroke: var(--green); }
+  .node.gw circle.core { fill: #102338; stroke: var(--cyan); }
+  .node.gw circle.halo { stroke: var(--cyan); }
+  .node.sel circle.sel { fill: none; stroke: var(--cyan); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .nlabel { fill: var(--ink); font: 600 13px var(--sans); text-anchor: middle; }
+  .nsub { fill: var(--ink-3); font: 400 10px var(--sans); text-anchor: middle; }
+  .nstat { fill: var(--ink-2); font: 400 10.5px var(--mono); text-anchor: middle; }
+  .spof { fill: var(--amber); font: 700 9px var(--sans); text-anchor: middle; letter-spacing: .08em; }
+  .cloudt { fill: var(--ink-2); font: 600 11px var(--sans); text-anchor: middle; }
+
+  /* inspector */
+  .insp { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .insp .head { display: flex; gap: 10px; align-items: baseline; }
+  .insp .head .name { font-size: 18px; font-weight: 700; }
+  .insp .head .role { color: var(--ink-3); font-size: 12px; }
+  .insp .head .up { margin-left: auto; color: var(--green); font-size: 12px; }
+  .vit { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .vit > div .l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .vit > div .v { font-size: 16px; font-weight: 600; }
+  .vit > div .v small { font-size: 11px; color: var(--ink-3); font-weight: 400; }
+  .meterline { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-2); }
+  .meterline .lab { width: 58px; flex: none; }
+  .meter { flex: 1; height: 5px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+  .meter i { display: block; height: 100%; background: var(--cyan); }
+  .meter.warn i { background: var(--amber); }
+  .insp .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+  .insp .deps { border-top: 1px solid var(--line); padding-top: 8px; font-size: 12px; color: var(--ink-2); }
+  .insp .deps b { color: var(--ink); }
+
+  /* lower strip */
+  .strip { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr); gap: 12px; }
+  @media (max-width: 940px) { .strip { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; min-width: 0; }
+  .card h2 { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: flex; }
+  .card h2 .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; }
+  .li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 12.5px; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .li .t { font: 400 11px var(--mono); color: var(--ink-3); width: 42px; flex: none; }
+
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; min-width: 600px; }
+  th { text-align: left; font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; padding: 4px 12px 6px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 5px 12px 5px 0; border-bottom: 1px solid #101a30; color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 600; }
+
+  :focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <span class="brand">Pert's Pocket <span class="v">/ topology</span></span>
+    <span class="stats"><span><b>4/4</b> hosts</span><span><b>31/31</b> containers</span><span class="a"><b>4</b> updates</span><span><b>0</b> findings</span></span>
+    <span class="r">
+      <span class="faint num">21:47 · doctor 24m</span>
+      <span class="chip">v1</span><span class="chip">v2</span><span class="chip on">v3</span><span class="chip">⌘K</span>
+    </span>
+  </div>
+
+  <div class="stage">
+    <div class="map">
+      <svg viewBox="0 0 820 360" role="img" aria-label="LAN topology map">
+        <!-- edges -->
+        <line class="edge faded" x1="410" y1="52" x2="410" y2="120"/>
+        <line class="edge" x1="410" y1="150" x2="120" y2="266"/>
+        <line class="edge" x1="410" y1="150" x2="310" y2="266"/>
+        <line class="edge" x1="410" y1="150" x2="520" y2="266"/>
+        <line class="edge" x1="410" y1="150" x2="710" y2="266"/>
+        <line class="edge faded" x1="410" y1="150" x2="640" y2="96"/>
+        <!-- dependency arcs: CIFS to opti, DNS to rpi -->
+        <path class="dep" d="M 690 276 C 560 340 420 330 336 282"/>
+        <path class="dep" d="M 140 278 C 260 336 400 330 496 284"/>
+        <!-- internet -->
+        <g class="node gw"><circle class="core" cx="410" cy="38" r="13"/><text class="cloudt" x="410" y="20">internet</text></g>
+        <!-- gateway -->
+        <g class="node gw">
+          <circle class="halo" cx="410" cy="136" r="20"/><circle class="core" cx="410" cy="136" r="15"/>
+          <text class="nlabel" x="410" y="171">archer</text>
+          <text class="nsub" x="410" y="184">gateway · .1 · wireguard</text>
+        </g>
+        <!-- android -->
+        <g class="node ok">
+          <circle class="halo" cx="640" cy="84" r="15"/><circle class="core" cx="640" cy="84" r="11"/>
+          <text class="nlabel" x="640" y="112" style="font-size:11px">android</text>
+          <text class="nsub" x="640" y="124">llm · .54 · intermittent</text>
+        </g>
+        <!-- hosts -->
+        <g class="node ok">
+          <circle class="halo" cx="120" cy="282" r="19"/><circle class="core" cx="120" cy="282" r="14"/>
+          <text class="nlabel" x="120" y="318">tux</text>
+          <text class="nsub" x="120" y="331">workstation · .3</text>
+        </g>
+        <g class="node ok sel">
+          <circle class="sel" cx="310" cy="282" r="24"/>
+          <circle class="halo" cx="310" cy="282" r="19"/><circle class="core" cx="310" cy="282" r="14"/>
+          <text class="nlabel" x="310" y="318">opti</text>
+          <text class="nsub" x="310" y="331">storage · control · .11</text>
+          <text class="nstat" x="310" y="344">load 0.16 · 30&deg;C · zfs 19%</text>
+          <text class="spof" x="310" y="252">STORAGE SPOF</text>
+        </g>
+        <g class="node ok">
+          <circle class="halo" cx="520" cy="282" r="19"/><circle class="core" cx="520" cy="282" r="14"/>
+          <text class="nlabel" x="520" y="318">rpi</text>
+          <text class="nsub" x="520" y="331">dns · dhcp · web · .10</text>
+          <text class="nstat" x="520" y="344">16/16 up · 40&deg;C</text>
+          <text class="spof" x="520" y="252">DNS SPOF</text>
+        </g>
+        <g class="node ok">
+          <circle class="halo" cx="710" cy="282" r="19"/><circle class="core" cx="710" cy="282" r="14"/>
+          <text class="nlabel" x="710" y="318">noblenumbat</text>
+          <text class="nsub" x="710" y="331">media · vpn · .6</text>
+          <text class="nstat" x="710" y="344">15/15 up · 46&deg;C</text>
+        </g>
+      </svg>
+      <div class="legend">
+        <span class="lg"><i class="link"></i> LAN link</span>
+        <span class="lg"><i class="dep"></i> depends on (CIFS &rarr; opti · DNS &rarr; rpi)</span>
+        <span class="lg"><span class="g">&#9679;</span> healthy</span>
+        <span class="lg"><span class="a">&#9679;</span> attention</span>
+        <span class="lg faint">click a node to inspect</span>
+      </div>
+    </div>
+
+    <!-- inspector: opti selected -->
+    <div class="insp">
+      <div class="head"><span class="name">opti</span><span class="role">storage · control plane · .11</span><span class="up num">up 29d</span></div>
+      <div class="vit">
+        <div><div class="l">CPU load</div><div class="v num">0.16</div></div>
+        <div><div class="l">Memory</div><div class="v num">48% <small>of 5.7 GiB</small></div></div>
+        <div><div class="l">Temp</div><div class="v num">30&deg;C</div></div>
+        <div><div class="l">Net</div><div class="v num" style="font-size:13px">&darr;63K &uarr;170K</div></div>
+      </div>
+      <div class="meterline"><span class="lab">red · zfs</span><span class="meter"><i style="width:19%"></i></span><span class="num">19%</span></div>
+      <div class="meterline"><span class="lab">os disk</span><span class="meter warn"><i style="width:77%"></i></span><span class="num a">77%</span></div>
+      <div class="acts"><span class="chip">Terminal</span><span class="chip">Autoupdate</span><span class="chip">Reboot&hellip;</span><span class="chip">homelab-db</span></div>
+      <div class="deps">
+        <b>3 hosts depend on this node.</b><br>
+        <span class="dim">noblenumbat mounts the pool over CIFS · rpi reads reports &amp; agent logs · tux's working copy lives here.</span><br>
+        <span class="faint">If opti goes down: media keeps playing until containers restart; this dashboard loses reports.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div class="card">
+      <h2>Activity <span class="meta faint">latest reports</span></h2>
+      <div class="li"><span class="t">07:00</span><span class="grow dim"><b style="color:var(--ink)">discord-weather</b> posted the daily report</span><span class="g num">ok</span></div>
+      <div class="li"><span class="t">06:32</span><span class="grow dim"><b style="color:var(--ink)">vpn-stack-heal</b> renewed NAT-PMP · port 52644</span><span class="g num">ok</span></div>
+      <div class="li"><span class="t">04:15</span><span class="grow dim"><b style="color:var(--ink)">homelab-doctor</b> 4/4 services · 4/4 hosts</span><span class="g num">ok</span></div>
+      <div class="li"><span class="t">02:00</span><span class="grow dim"><b style="color:var(--ink)">attic-sync</b> weekly cold copy · 41 GiB</span><span class="g num">ok</span></div>
+      <div class="li"><span class="t">-1d</span><span class="grow dim"><b style="color:var(--ink)">arch-agent</b> bitwarden 1.34.0 on rpi</span><span class="a num">upd</span></div>
+    </div>
+    <div class="card">
+      <h2>CS2 <span class="meta faint">HLTV · VRS</span></h2>
+      <div class="li"><span class="t r">LIVE</span><span class="grow">Vitality–Spirit <span class="faint">Mirage m2</span></span><span class="num r">9–7</span></div>
+      <div class="li"><span class="t">19:00</span><span class="grow">FaZe–MOUZ</span><span class="num faint">bo3</span></div>
+      <div class="li"><span class="t">21:30</span><span class="grow">NAVI–G2</span><span class="num faint">bo3</span></div>
+      <div class="li"><span class="t">final</span><span class="grow">Falcons–Liquid</span><span class="num g">2–1</span></div>
+      <h2 style="margin-top:10px">Weather</h2>
+      <div class="li"><span style="font-size:20px; font-weight:700">78&deg;</span><span class="grow dim">partly cloudy · feels 81&deg; · rain 20% · 7AM sent ✓</span></div>
+    </div>
+    <div class="card">
+      <h2>Pi-hole <span class="meta faint">rpi · live</span></h2>
+      <div class="li"><span class="grow dim">blocked</span><span class="num"><b>22.4%</b> · 7,134 of 31,842</span></div>
+      <h2 style="margin-top:10px">Updates <span class="meta a">4</span></h2>
+      <div class="li"><span class="grow">bitwarden <span class="faint">rpi</span></span><span class="a num">1.34.0</span></div>
+      <div class="li"><span class="grow">jellyfin · prowlarr · gluetun <span class="faint">nn</span></span><span class="a num">3</span></div>
+      <h2 style="margin-top:10px">Bots</h2>
+      <div class="li"><span class="grow dim">5/5 on schedule · next 07:00 weather</span><span class="g num">ok</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Containers <span class="meta faint">detail page preview · 31/31 running</span></h2>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>Name</th><th>Host</th><th>Up</th><th>Image</th><th>State</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td class="num">qmcgaw/gluetun</td><td class="g">healthy</td><td>vpn namespace</td></tr>
+        <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td class="num">jellyfin/jellyfin</td><td class="g">up</td><td></td></tr>
+        <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td class="num">vaultwarden/server</td><td class="a">update 1.34.0</td><td></td></tr>
+        <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td class="num">pihole/pihole</td><td class="g">healthy</td><td>dns · dhcp</td></tr>
+        <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td class="num">linuxserver/qbittorrent</td><td class="g">up</td><td>via gluetun</td></tr>
+        <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td class="num">node:lts-alpine</td><td class="g">up</td><td>this app</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>

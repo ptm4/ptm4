@@ -1,0 +1,287 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Portal '99</title>
+<!-- v3 mockup G: "portal '99" — the site as a 1999 web portal (Slashdot /
+     Excite school): navy masthead with a search box, boxed modules with teal
+     header bars, Verdana at 11px, dense link lists, NEW! flashes. The whole
+     dashboard reads like a personalized start page — because it is one.
+     Single-theme by design: portals were light gray. -->
+<style>
+  :root {
+    --page:    #e4e4e0;
+    --box:     #ffffff;
+    --boxbrd:  #999999;
+    --bar:     #006666;     /* the slashdot teal */
+    --bar2:    #004d4d;
+    --mast:    #000066;
+    --ink:     #111111;
+    --ink-2:   #444444;
+    --ink-3:   #767672;
+    --link:    #0000cc;
+    --visited: #660099;
+    --ok:      #007000;
+    --warn:    #b05c00;
+    --crit:    #cc0000;
+    --sans: Verdana, Geneva, Tahoma, sans-serif;
+    --mono: "Courier New", ui-monospace, Courier, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--page); color: var(--ink); font: 400 11.5px/1.5 var(--sans); padding: 0 0 40px; }
+  a { color: var(--link); }
+  a.v { color: var(--visited); }
+  .num { font-family: var(--mono); font-size: 11.5px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 14px; }
+
+  /* masthead */
+  .mast { background: var(--mast); color: #fff; }
+  .mast .wrap { display: flex; align-items: center; gap: 18px; padding: 10px 14px; flex-wrap: wrap; }
+  .logo { font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
+  .logo .tld { color: #ffcc00; }
+  .searchbox { display: flex; gap: 4px; margin-left: auto; }
+  .searchbox input {
+    font: 400 11.5px var(--sans); padding: 3px 6px; width: 200px; max-width: 44vw;
+    border: 1px solid #333; background: #fff; color: #000;
+  }
+  .searchbox button { font: 700 11px var(--sans); padding: 3px 10px; background: #ffcc00; border: 1px solid #333; cursor: pointer; }
+  .mast .vers { font-size: 10.5px; color: #b8b8e8; width: 100%; }
+  .mast .vers a { color: #b8b8e8; }
+  .mast .vers b { color: #ffcc00; }
+  .navstrip { background: var(--bar); }
+  .navstrip .wrap { display: flex; gap: 2px; padding: 0 14px; flex-wrap: wrap; }
+  .navstrip a { color: #fff; font-weight: 700; font-size: 11px; padding: 4px 12px; text-decoration: none; }
+  .navstrip a:hover, .navstrip a.on { background: var(--bar2); text-decoration: underline; }
+
+  /* ticker */
+  .ticker { background: #fff; border-bottom: 1px solid var(--boxbrd); }
+  .ticker .wrap { padding: 5px 14px; }
+  .ticker b.ok { color: var(--ok); }
+  .ticker b.warn { color: var(--warn); }
+
+  /* columns */
+  .cols { display: grid; grid-template-columns: 240px minmax(0,1fr) 280px; gap: 12px; padding-top: 12px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr 1fr; } .colC { grid-column: span 2; } }
+  @media (max-width: 660px)  { .cols { grid-template-columns: 1fr; } .colC { grid-column: span 1; } }
+  .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  /* the module box */
+  .mod { background: var(--box); border: 1px solid var(--boxbrd); }
+  .mod > h2 {
+    background: var(--bar); color: #fff; font-size: 11.5px; font-weight: 700;
+    padding: 3px 8px; display: flex; align-items: baseline; letter-spacing: .02em;
+  }
+  .mod > h2 .meta { margin-left: auto; font-weight: 400; font-size: 10px; color: #cfe8e8; }
+  .mod .bd { padding: 6px 8px 8px; }
+
+  .li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { color: var(--ink-2); }
+  .faint { color: var(--ink-3); font-size: 10.5px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); }
+  .new { color: var(--crit); font-size: 9px; font-weight: 700; vertical-align: super; }
+  .sq { color: var(--bar); font-size: 9px; margin-right: 3px; }
+
+  /* meters: table-cell bar, 1999 style */
+  .meterline { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+  .meterline .lab { width: 62px; flex: none; color: var(--ink-2); }
+  .mtrack { flex: 1; height: 10px; border: 1px solid var(--boxbrd); background: #f2f2ee; }
+  .mtrack i { display: block; height: 100%; background: var(--bar); }
+  .mtrack.warn i { background: #cc8800; }
+  .meterline .pct { width: 34px; text-align: right; flex: none; }
+
+  /* hosts */
+  .host { padding: 5px 0; border-bottom: 1px solid #dddddd; }
+  .host:last-child { border-bottom: 0; }
+  .hostrow { display: flex; gap: 8px; align-items: baseline; }
+  .hostrow .name { font-weight: 700; font-size: 12.5px; }
+  .hostrow .name a { text-decoration: none; }
+  .hostrow .role { color: var(--ink-3); font-size: 10.5px; }
+  .hostrow .st { margin-left: auto; font-weight: 700; }
+  .hoststats { color: var(--ink-2); font-size: 10.8px; margin-top: 1px; }
+  .hoststats .num { font-size: 10.8px; }
+  .hostacts { font-size: 10.5px; margin-top: 1px; }
+
+  .bignum { font-size: 26px; font-weight: 700; font-family: var(--sans); }
+
+  /* table */
+  .tablewrap { overflow-x: auto; }
+  table.data { border-collapse: collapse; width: 100%; font-size: 11px; }
+  table.data th { background: #ddddd8; border: 1px solid var(--boxbrd); padding: 3px 7px; text-align: left; }
+  table.data td { border: 1px solid #cccccc; padding: 3px 7px; }
+  table.data tr:nth-child(even) td { background: #f4f4f0; }
+  table.data td:first-child { font-weight: 700; }
+
+  footer { text-align: center; color: var(--ink-3); font-size: 10.5px; margin-top: 16px; }
+  footer .links a { margin: 0 6px; }
+
+  :focus-visible { outline: 2px solid var(--mast); outline-offset: 1px; }
+</style>
+
+<div class="mast">
+  <div class="wrap">
+    <span class="logo">pocket<span class="tld">.lan</span></span>
+    <span style="font-size:10.5px; color:#b8b8e8">My Homelab. My Portal.&trade;</span>
+    <span class="searchbox"><input placeholder="Search boards, hosts, containers... (Ctrl+K)"><button>Go!</button></span>
+    <span class="vers">version: <a href="#">v1 classic</a> | <a href="#">v2</a> | <b>v3 portal</b> &middot; Mon Aug 24, 21:47 &middot; <a href="#">edit this page</a></span>
+  </div>
+</div>
+<div class="navstrip">
+  <div class="wrap">
+    <a class="on" href="#">Home</a><a href="#">Operations</a><a href="#">Media</a><a href="#">CS2</a><a href="#">Agentic</a><a href="#">Reports</a><a href="#">Logs</a><a href="#">Query</a>
+  </div>
+</div>
+<div class="ticker">
+  <div class="wrap">
+    <b class="ok">&#9632; ALL SYSTEMS GO:</b> 4/4 hosts &middot; 31/31 containers &middot; <b class="warn">4 updates pending</b> &middot; 0 findings <span class="faint">&mdash; doctor, 24 min ago</span>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="cols">
+    <!-- left -->
+    <div class="col">
+      <div class="mod">
+        <h2>MY DAY <span class="meta">weather &middot; clock</span></h2>
+        <div class="bd">
+          <div class="li"><span class="bignum num">21:47</span><span class="grow faint" style="white-space:normal">Monday<br>August 24</span></div>
+          <div class="li"><span class="bignum">78&deg;</span><span class="grow dim" style="white-space:normal">Partly cloudy. Feels 81&deg;, rain 20%.<br><span class="faint">7AM post sent &#10003;</span></span></div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>PI-HOLE <span class="meta">live</span></h2>
+        <div class="bd">
+          <div class="meterline"><span class="lab">blocked</span><span class="mtrack"><i style="width:22.4%"></i></span><span class="pct num">22%</span></div>
+          <div class="li"><span class="grow dim">queries today</span><span class="num">31,842</span></div>
+          <div class="li"><span class="grow dim">denied</span><span class="num">7,134</span></div>
+          <div class="li"><span class="grow dim">gravity</span><span class="num">1.19M</span></div>
+          <div class="li faint"><span class="grow">[ <a href="#">pause 5 min</a> | <a href="#">admin</a> ]</span></div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>STORAGE</h2>
+        <div class="bd">
+          <div class="meterline"><span class="lab">red (zfs)</span><span class="mtrack"><i style="width:19%"></i></span><span class="pct num">19%</span></div>
+          <div class="meterline"><span class="lab">opti os</span><span class="mtrack warn"><i style="width:77%"></i></span><span class="pct num warn">77%</span></div>
+          <div class="meterline"><span class="lab">rpi sd</span><span class="mtrack"><i style="width:29%"></i></span><span class="pct num">29%</span></div>
+          <div class="meterline"><span class="lab">nn os</span><span class="mtrack"><i style="width:18%"></i></span><span class="pct num">18%</span></div>
+          <div class="faint">0.7 / 3.7 TB used on the pool</div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>LOCAL LLM</h2>
+        <div class="bd">
+          <div class="li"><span class="grow">LFM2.5-2.6B</span><b class="ok">warm</b></div>
+          <div class="faint">android:8080 &middot; 11 tok/s &middot; <a href="#">Open WebUI</a></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- center -->
+    <div class="col">
+      <div class="mod">
+        <h2>THE FLEET <span class="meta">doctor 24m ago</span></h2>
+        <div class="bd">
+          <div class="host">
+            <div class="hostrow"><span class="name"><a href="#">opti</a></span><span class="role">storage &middot; control plane</span><span class="st ok">UP 29d</span></div>
+            <div class="hoststats">load <span class="num">0.16</span> &middot; mem <span class="num">48%</span>/5.7G &middot; <span class="num">30&deg;C</span> &middot; net <span class="num">&darr;63K &uarr;170K</span></div>
+            <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name"><a href="#">rpi</a></span><span class="role">DNS &middot; DHCP &middot; web</span><span class="st ok">UP 20d</span></div>
+            <div class="hoststats">load <span class="num">0.55</span> &middot; mem <span class="num">58%</span>/3.7G &middot; <span class="num">40&deg;C</span> &middot; docker <span class="num">16/16</span></div>
+            <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name"><a href="#">noblenumbat</a></span><span class="role">media stack</span><span class="st ok">UP 1d 8h</span></div>
+            <div class="hoststats">load <span class="num">0.00</span> &middot; mem <span class="num">20%</span>/15.4G &middot; <span class="num">46&deg;C</span> &middot; vpn <b class="ok">OK</b> &middot; <span class="num">15/15</span></div>
+            <div class="hostacts">[ <a href="#">terminal</a> | <a href="#">autoupdate</a> | <a href="#">reboot&hellip;</a> ]</div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name"><a href="#">android</a></span><span class="role">llama.cpp &middot; S10</span><span class="st ok">REACHABLE</span></div>
+            <div class="faint">Intermittent by design; keepalives active.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>LATEST HEADLINES <span class="meta">activity</span></h2>
+        <div class="bd">
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>Weather bot</b> posts the daily report <span class="faint">(07:00)</span></span><b class="ok">OK</b></div>
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>vpn-stack-heal</b> renews NAT-PMP lease, port 52644 <span class="faint">(06:32)</span></span><b class="ok">OK</b></div>
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>Doctor</b>: 4/4 services, 4/4 hosts <span class="faint">(04:15)</span></span><b class="ok">OK</b></div>
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>attic-sync</b> cold copy done, 41 GiB in 12m <span class="faint">(02:00)</span></span><b class="ok">OK</b></div>
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>bitwarden 1.34.0</b> available on rpi <span class="faint">(yesterday)</span></span><span class="new">NEW!</span></div>
+          <div class="li"><span class="sq">&#9632;</span><span class="grow dim"><b>hl-db</b> ingested 14/14 feeds, 61 days indexed <span class="faint">(yesterday)</span></span><b class="ok">OK</b></div>
+          <div class="li faint"><span class="grow">[ <a href="#">all reports</a> | <a href="#">security</a> | <a class="v" href="#">trends</a> ]</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- right -->
+    <div class="col colC">
+      <div class="mod">
+        <h2>CS2 SCOREBOARD <span class="meta">HLTV &middot; VRS</span></h2>
+        <div class="bd">
+          <div class="li"><b class="crit" style="width:40px; flex:none; font-size:10px">LIVE</b><span class="grow">Vitality vs Spirit <span class="faint">Mirage m2</span></span><b class="num crit">9-7</b></div>
+          <div class="li"><span class="num faint" style="width:40px; flex:none">19:00</span><span class="grow">FaZe vs MOUZ</span><span class="num faint">bo3</span></div>
+          <div class="li"><span class="num faint" style="width:40px; flex:none">21:30</span><span class="grow">NAVI vs G2</span><span class="num faint">bo3</span></div>
+          <div class="li"><span class="num faint" style="width:40px; flex:none">FT</span><span class="grow">Falcons vs Liquid</span><b class="num ok">2-1</b></div>
+          <div class="li faint"><span class="grow">[ <a href="#">full slate</a> | <a class="v" href="#">leetify trend</a> ]</span></div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>BOT CHANNEL <span class="meta">5 on schedule</span></h2>
+        <div class="bd">
+          <div class="li"><span class="grow">weather</span><span class="num faint">07:00</span><b class="ok">on</b></div>
+          <div class="li"><span class="grow">healthdigest</span><span class="num faint">08:00</span><b class="ok">on</b></div>
+          <div class="li"><span class="grow">hltv</span><span class="num faint">09:00</span><b class="ok">on</b></div>
+          <div class="li"><span class="grow">sports</span><span class="num faint">10:00</span><b class="ok">on</b></div>
+          <div class="li"><span class="grow">jellyfin</span><span class="num faint">18:00</span><b class="ok">on</b></div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>DOWNLOAD.COM <span class="meta">updates &middot; 4</span></h2>
+        <div class="bd">
+          <div class="li"><span class="grow">bitwarden <span class="faint">rpi</span></span><b class="warn num">1.34.0</b><span class="new">NEW!</span></div>
+          <div class="li"><span class="grow">jellyfin <span class="faint">nn</span></span><b class="warn num">10.10.4</b></div>
+          <div class="li"><span class="grow">prowlarr <span class="faint">nn</span></span><b class="warn num">1.31</b></div>
+          <div class="li"><span class="grow">gluetun <span class="faint">nn</span></span><b class="warn num">3.40</b></div>
+          <div class="li faint"><span class="grow">[ <a href="#">apply from cockpit</a> ]</span></div>
+        </div>
+      </div>
+
+      <div class="mod">
+        <h2>STREAM STATION</h2>
+        <div class="bd faint">No active slots. <a href="#">Open the player</a>.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mod" style="margin-top:12px">
+    <h2>CONTAINERS <span class="meta">detail page preview &middot; 31/31 running</span></h2>
+    <div class="bd tablewrap">
+      <table class="data">
+        <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th><th>Notes</th></tr></thead>
+        <tbody>
+          <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td class="num">qmcgaw/gluetun</td><td><b class="ok">healthy</b></td><td>vpn namespace</td></tr>
+          <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td class="num">jellyfin/jellyfin</td><td><b class="ok">up</b></td><td>&nbsp;</td></tr>
+          <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td class="num">vaultwarden/server</td><td><b class="warn">update</b></td><td>1.34.0 available</td></tr>
+          <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td class="num">pihole/pihole</td><td><b class="ok">healthy</b></td><td>dns &middot; dhcp</td></tr>
+          <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td class="num">linuxserver/qbittorrent</td><td><b class="ok">up</b></td><td>via gluetun</td></tr>
+          <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td class="num">node:lts-alpine</td><td><b class="ok">up</b></td><td>this app</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    <div class="links">
+      <a href="#">About</a> &middot; <a href="#">Add to My Pocket</a> &middot; <a class="v" href="#">Make pocket.lan your homepage</a> &middot; <a href="#">Webmaster</a>
+    </div>
+    &copy; 1999&ndash;2026 pocket.lan network. All systems reserved.
+  </footer>
+</div>

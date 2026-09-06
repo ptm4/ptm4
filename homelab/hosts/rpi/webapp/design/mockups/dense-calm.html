@@ -1,0 +1,304 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Dense &amp; Calm</title>
+<!-- v3 mockup B: "dense & calm" — Glance-school information dashboard.
+     Text-first columns, hairline separators instead of card borders, muted
+     warm-dark palette, zero hover-dependence: everything readable at rest.
+     Single-theme by design: this direction commits to dark. -->
+<style>
+  :root {
+    --bg:      #191b20;
+    --bg-soft: #1e2127;
+    --line:    rgba(210, 218, 230, .09);
+    --ink:     #d3d8e0;
+    --ink-2:   #8d95a3;
+    --ink-3:   #626a78;
+    --link:    #91b1d8;          /* restrained slate-blue, links only */
+    --hot:     #d8a35c;          /* one warm highlight for "needs eyes" */
+    --ok:      #85b880;
+    --warn:    #d0a355;
+    --crit:    #d97b74;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 14px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: var(--link); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .93em; }
+
+  /* ── top nav: pages as tabs, Glance-style ───────────────────────────── */
+  header {
+    display: flex; align-items: center; gap: 26px;
+    max-width: 1180px; margin: 0 auto; padding: 18px 24px 0;
+  }
+  .brand { font-weight: 650; font-size: 15px; letter-spacing: -.01em; display: flex; gap: 8px; align-items: baseline; }
+  .brand small { font: 500 10px var(--mono); color: var(--ink-3); }
+  nav.tabs { display: flex; gap: 20px; }
+  nav.tabs a { color: var(--ink-3); font-weight: 500; font-size: 13.5px; padding-bottom: 10px; border-bottom: 2px solid transparent; }
+  nav.tabs a:hover { color: var(--ink-2); text-decoration: none; }
+  nav.tabs a.on { color: var(--ink); border-color: var(--hot); }
+  header .right { margin-left: auto; display: flex; gap: 14px; align-items: center; color: var(--ink-3); font-size: 12px; }
+  header .right .k { font: 500 10px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .vlinks { font: 500 11px var(--mono); color: var(--ink-3); }
+  .vlinks a { color: var(--ink-3); padding: 2px 5px; border-radius: 4px; }
+  .vlinks a.on { color: var(--hot); }
+  header hr { display: none; }
+  .rule { max-width: 1180px; margin: 0 auto; border: 0; border-top: 1px solid var(--line); }
+  @media (max-width: 660px) {
+    header { flex-wrap: wrap; gap: 12px 18px; }
+    nav.tabs { order: 3; width: 100%; overflow-x: auto; }
+    header .right { margin-left: auto; }
+  }
+
+  /* ── columns ────────────────────────────────────────────────────────── */
+  .page { max-width: 1180px; margin: 0 auto; padding: 22px 24px 60px; display: grid; grid-template-columns: 250px minmax(0,1fr) 290px; gap: 40px; }
+  @media (max-width: 1000px) { .page { grid-template-columns: 1fr 1fr; } .colC { grid-column: span 2; } }
+  @media (max-width: 660px)  { .page { grid-template-columns: 1fr; } .colC { grid-column: span 1; } }
+  .col { display: flex; flex-direction: column; gap: 30px; min-width: 0; }
+
+  section h2 {
+    font-size: 11px; font-weight: 650; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--ink-3); padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 10px;
+    display: flex; align-items: baseline;
+  }
+  section h2 .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; font-size: 11px; color: var(--ink-3); }
+
+  .li { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; font-size: 13.5px; }
+  .li + .li { border-top: 1px solid transparent; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .li .dim { color: var(--ink-2); }
+  .li .faint { color: var(--ink-3); font-size: 12px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 99px; vertical-align: baseline; margin-right: 2px; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.crit { background: var(--crit); }
+  .tag { font: 550 10.5px var(--mono); letter-spacing: .02em; }
+  .tag.ok { color: var(--ok); } .tag.warn { color: var(--warn); } .tag.crit { color: var(--crit); } .tag.hot { color: var(--hot); }
+
+  .meterline { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 13px; }
+  .meterline .lab { width: 64px; color: var(--ink-2); }
+  .meter { flex: 1; height: 3px; border-radius: 2px; background: var(--bg-soft); }
+  .meter i { display: block; height: 100%; border-radius: 2px; background: var(--ink-3); }
+  .meter.warn i { background: var(--warn); }
+  .meterline .num { width: 42px; text-align: right; color: var(--ink-2); }
+
+  /* clock / weather hero of the left column */
+  .clock .time { font: 300 44px/1 var(--sans); letter-spacing: -.03em; }
+  .clock .date { color: var(--ink-2); margin-top: 4px; font-size: 13px; }
+  .wx { display: flex; align-items: baseline; gap: 12px; margin-top: 2px; }
+  .wx .t { font-size: 26px; font-weight: 350; }
+  .wx .d { color: var(--ink-2); font-size: 13px; }
+
+  /* hosts as dense rows in the center column */
+  .host { padding: 10px 0; border-top: 1px solid var(--line); }
+  .host:first-of-type { border-top: 0; }
+  .hostrow { display: flex; align-items: baseline; gap: 10px; }
+  .hostrow .name { font-weight: 600; font-size: 14.5px; }
+  .hostrow .role { color: var(--ink-3); font-size: 12px; }
+  .hostrow .up { margin-left: auto; color: var(--ink-3); font-size: 12px; }
+  .hoststats { display: flex; gap: 22px; margin-top: 6px; flex-wrap: wrap; }
+  .hs { font-size: 12.5px; color: var(--ink-2); }
+  .hs b { color: var(--ink); font-weight: 550; }
+  .sparkrow { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+  .spark { width: 150px; height: 22px; flex: none; }
+  .spark polyline { fill: none; stroke: var(--ink-3); stroke-width: 1.4; }
+  .spark circle { fill: var(--hot); }
+  .sparkrow .cap { font-size: 11px; color: var(--ink-3); }
+
+  /* activity: timeline-flavored list */
+  .act .li { align-items: baseline; }
+  .act .t { font: 400 11px var(--mono); color: var(--ink-3); width: 42px; flex: none; }
+  .act .who { color: var(--ink); font-weight: 550; margin-right: 4px; }
+
+  /* matches */
+  .match { display: flex; align-items: baseline; gap: 10px; padding: 5px 0; font-size: 13.5px; }
+  .match .when { font: 500 11px var(--mono); color: var(--ink-3); width: 42px; flex: none; }
+  .match .when.live { color: var(--crit); }
+  .match .score { margin-left: auto; font: 600 13px var(--mono); }
+
+  /* detail preview table */
+  .detail { max-width: 1180px; margin: 0 auto; padding: 0 24px 70px; }
+  .divider { display: flex; align-items: center; gap: 12px; color: var(--ink-3); font-size: 11px; letter-spacing: .16em; text-transform: uppercase; margin: 10px 0 18px; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-size: 10.5px; font-weight: 650; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 6px 12px 8px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+
+  :focus-visible { outline: 2px solid var(--hot); outline-offset: 1px; }
+</style>
+
+<header>
+  <div class="brand">Pert&rsquo;s Pocket <small>v3</small></div>
+  <nav class="tabs">
+    <a class="on" href="#">Home</a>
+    <a href="#">Operations</a>
+    <a href="#">Media</a>
+    <a href="#">CS2</a>
+    <a href="#">Agentic</a>
+  </nav>
+  <div class="right">
+    <span class="vlinks"><a href="#">v1</a> · <a href="#">v2</a> · <a class="on" href="#">v3</a></span>
+    <span>search <span class="k">&#8984;K</span></span>
+  </div>
+</header>
+<hr class="rule">
+
+<div class="page">
+  <!-- ── left column: ambient ──────────────────────────────────────────── -->
+  <div class="col">
+    <section class="clock">
+      <div class="time num">21:47</div>
+      <div class="date">Monday, August 24</div>
+      <div class="wx"><span class="t num">78&deg;</span><span class="d">partly cloudy<br>feels 81&deg; · rain 20% · 7AM post sent</span></div>
+    </section>
+
+    <section>
+      <h2>Pi-hole <span class="meta">live</span></h2>
+      <div class="li"><span class="grow dim">blocked today</span><span class="num"><b>22.4%</b></span></div>
+      <div class="li"><span class="grow dim">queries</span><span class="num">31,842</span></div>
+      <div class="li"><span class="grow dim">gravity</span><span class="num">1.19M</span></div>
+      <div class="li"><span class="grow faint">rpi · DNS+DHCP for the LAN</span><span class="tag ok">ok</span></div>
+    </section>
+
+    <section>
+      <h2>Storage</h2>
+      <div class="meterline"><span class="lab">red · zfs</span><span class="meter"><i style="width:19%"></i></span><span class="num">19%</span></div>
+      <div class="meterline"><span class="lab">opti os</span><span class="meter warn"><i style="width:77%"></i></span><span class="num">77%</span></div>
+      <div class="meterline"><span class="lab">rpi sd</span><span class="meter"><i style="width:29%"></i></span><span class="num">29%</span></div>
+      <div class="meterline"><span class="lab">nn os</span><span class="meter"><i style="width:18%"></i></span><span class="num">18%</span></div>
+      <div class="li"><span class="grow faint">0.7 of 3.7 TB used on the pool</span></div>
+    </section>
+
+    <section>
+      <h2>Local LLM</h2>
+      <div class="li"><span class="grow">LFM2.5-2.6B</span><span class="tag ok">warm</span></div>
+      <div class="li"><span class="grow faint">android:8080 · 11 tok/s · Open WebUI → rpi:3010</span></div>
+    </section>
+  </div>
+
+  <!-- ── center column: the fleet ──────────────────────────────────────── -->
+  <div class="col">
+    <section>
+      <h2>Fleet <span class="meta">doctor 24m ago · all green</span></h2>
+      <div class="li">
+        <span><span class="dot ok"></span> <b class="num">4/4</b> <span class="dim">hosts</span></span>
+        <span><span class="dot ok"></span> <b class="num">31/31</b> <span class="dim">containers</span></span>
+        <span><span class="dot warn"></span> <b class="num">4</b> <span class="dim">updates</span></span>
+        <span><span class="dot ok"></span> <b class="num">0</b> <span class="dim">findings</span></span>
+      </div>
+
+      <div class="host">
+        <div class="hostrow"><span class="name">opti</span><span class="role">storage · control plane</span><span class="up num">up 29d</span></div>
+        <div class="hoststats">
+          <span class="hs">load <b class="num">0.16</b></span>
+          <span class="hs">mem <b class="num">48%</b> of 5.7 GiB</span>
+          <span class="hs"><b class="num">30&deg;C</b></span>
+          <span class="hs">net <b class="num">&darr;63 &uarr;170</b> KB/s</span>
+        </div>
+        <div class="sparkrow">
+          <svg class="spark" viewBox="0 0 150 22" preserveAspectRatio="none"><polyline points="0,16 15,15 30,17 45,13 60,15 75,10 90,14 105,12 120,15 135,12 150,14"/><circle cx="150" cy="14" r="2"/></svg>
+          <span class="cap">cpu · 3h</span>
+          <span class="cap" style="margin-left:auto"><a href="#">terminal</a> · <a href="#">update</a> · <a href="#">reboot</a></span>
+        </div>
+      </div>
+
+      <div class="host">
+        <div class="hostrow"><span class="name">rpi</span><span class="role">DNS · DHCP · web</span><span class="up num">up 20d</span></div>
+        <div class="hoststats">
+          <span class="hs">load <b class="num">0.55</b></span>
+          <span class="hs">mem <b class="num">58%</b> of 3.7 GiB</span>
+          <span class="hs"><b class="num">40&deg;C</b></span>
+          <span class="hs"><b class="num">16/16</b> containers</span>
+        </div>
+        <div class="sparkrow">
+          <svg class="spark" viewBox="0 0 150 22" preserveAspectRatio="none"><polyline points="0,13 15,12 30,15 45,10 60,12 75,8 90,11 105,6 120,10 135,9 150,10"/><circle cx="150" cy="10" r="2"/></svg>
+          <span class="cap">cpu · 3h</span>
+          <span class="cap" style="margin-left:auto"><a href="#">terminal</a> · <a href="#">update</a> · <a href="#">reboot</a></span>
+        </div>
+      </div>
+
+      <div class="host">
+        <div class="hostrow"><span class="name">noblenumbat</span><span class="role">media stack</span><span class="up num">up 1d 8h</span></div>
+        <div class="hoststats">
+          <span class="hs">load <b class="num">0.00</b></span>
+          <span class="hs">mem <b class="num">20%</b> of 15.4 GiB</span>
+          <span class="hs"><b class="num">46&deg;C</b></span>
+          <span class="hs">vpn <b style="color:var(--ok)">ok</b> · <b class="num">15/15</b></span>
+        </div>
+        <div class="sparkrow">
+          <svg class="spark" viewBox="0 0 150 22" preserveAspectRatio="none"><polyline points="0,19 15,18 30,19 45,17 60,19 75,16 90,18 105,17 120,19 135,18 150,18"/><circle cx="150" cy="18" r="2"/></svg>
+          <span class="cap">cpu · 3h</span>
+          <span class="cap" style="margin-left:auto"><a href="#">terminal</a> · <a href="#">update</a> · <a href="#">reboot</a></span>
+        </div>
+      </div>
+
+      <div class="host">
+        <div class="hostrow"><span class="name">android</span><span class="role">llama.cpp · S10</span><span class="up num">reachable</span></div>
+        <div class="hoststats"><span class="hs faint">intermittent by design — keepalive crons active, phantom killer off</span></div>
+      </div>
+    </section>
+
+    <section class="act">
+      <h2>Activity <span class="meta">from the latest reports</span></h2>
+      <div class="li"><span class="t">07:00</span><span class="grow dim"><span class="who">discord-weather</span> posted the daily report</span><span class="tag ok">sent</span></div>
+      <div class="li"><span class="t">06:32</span><span class="grow dim"><span class="who">vpn-stack-heal</span> renewed the NAT-PMP lease — port 52644 unchanged</span><span class="tag ok">healed</span></div>
+      <div class="li"><span class="t">04:15</span><span class="grow dim"><span class="who">homelab-doctor</span> 4/4 services, 4/4 hosts</span><span class="tag ok">green</span></div>
+      <div class="li"><span class="t">02:00</span><span class="grow dim"><span class="who">attic-sync</span> weekly cold copy — 41 GiB in 12m</span><span class="tag ok">done</span></div>
+      <div class="li"><span class="t">-1d</span><span class="grow dim"><span class="who">arch-agent</span> bitwarden 1.34.0 available on rpi</span><span class="tag hot">update</span></div>
+      <div class="li"><span class="t">-1d</span><span class="grow dim"><span class="who">hl-db</span> nightly ingest — 14/14 feeds, 61 days indexed</span><span class="tag ok">fed</span></div>
+    </section>
+  </div>
+
+  <!-- ── right column: feeds ───────────────────────────────────────────── -->
+  <div class="col colC">
+    <section>
+      <h2>CS2 today <span class="meta">HLTV · VRS</span></h2>
+      <div class="match"><span class="when live">LIVE</span><span class="grow">Vitality — Spirit <span class="faint">Mirage, map 2</span></span><span class="score num" style="color:var(--crit)">9–7</span></div>
+      <div class="match"><span class="when">19:00</span><span class="grow">FaZe — MOUZ <span class="faint">EPL playoffs</span></span><span class="score num faint">bo3</span></div>
+      <div class="match"><span class="when">21:30</span><span class="grow">NAVI — G2 <span class="faint">EPL playoffs</span></span><span class="score num faint">bo3</span></div>
+      <div class="match"><span class="when">final</span><span class="grow">Falcons — Liquid <span class="faint">13–10 · 9–13 · 13–6</span></span><span class="score num">2–1</span></div>
+    </section>
+
+    <section>
+      <h2>Discord bots <span class="meta">5 scheduled</span></h2>
+      <div class="li"><span class="grow">weather</span><span class="faint num">next 07:00</span><span class="tag ok">on</span></div>
+      <div class="li"><span class="grow">hltv</span><span class="faint num">next 09:00</span><span class="tag ok">on</span></div>
+      <div class="li"><span class="grow">healthdigest</span><span class="faint num">next 08:00</span><span class="tag ok">on</span></div>
+      <div class="li"><span class="grow">jellyfin</span><span class="faint num">next 18:00</span><span class="tag ok">on</span></div>
+      <div class="li"><span class="grow">sports</span><span class="faint num">next 10:00</span><span class="tag ok">on</span></div>
+    </section>
+
+    <section>
+      <h2>Updates <span class="meta">arch-agent</span></h2>
+      <div class="li"><span class="grow">bitwarden <span class="faint">rpi</span></span><span class="tag hot">1.34.0</span></div>
+      <div class="li"><span class="grow">jellyfin <span class="faint">nn</span></span><span class="tag hot">10.10.4</span></div>
+      <div class="li"><span class="grow">prowlarr <span class="faint">nn</span></span><span class="tag hot">1.31</span></div>
+      <div class="li"><span class="grow">gluetun <span class="faint">nn</span></span><span class="tag hot">3.40</span></div>
+    </section>
+
+    <section>
+      <h2>Streams</h2>
+      <div class="li"><span class="grow faint">no active slots — <a href="#">open the stream station</a></span></div>
+    </section>
+  </div>
+</div>
+
+<!-- ── detail page preview ─────────────────────────────────────────────── -->
+<div class="detail">
+  <div class="divider">Detail page preview — Containers</div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>Name</th><th>Host</th><th>Uptime</th><th>Image</th><th>State</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>gluetun</td><td>noblenumbat</td><td class="num">20h</td><td>qmcgaw/gluetun</td><td><span class="tag ok">healthy</span></td><td>vpn namespace</td></tr>
+      <tr><td>jellyfin</td><td>noblenumbat</td><td class="num">32h</td><td>jellyfin/jellyfin</td><td><span class="tag ok">up</span></td><td></td></tr>
+      <tr><td>bitwarden</td><td>rpi</td><td class="num">10h</td><td>vaultwarden/server</td><td><span class="tag hot">update 1.34.0</span></td><td></td></tr>
+      <tr><td>pihole</td><td>rpi</td><td class="num">2w</td><td>pihole/pihole</td><td><span class="tag ok">healthy</span></td><td>dns · dhcp</td></tr>
+      <tr><td>qbittorrent</td><td>noblenumbat</td><td class="num">20h</td><td>linuxserver/qbittorrent</td><td><span class="tag ok">up</span></td><td>via gluetun</td></tr>
+      <tr><td>webapp</td><td>rpi</td><td class="num">10h</td><td>node:lts-alpine</td><td><span class="tag ok">up</span></td><td>this app</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
