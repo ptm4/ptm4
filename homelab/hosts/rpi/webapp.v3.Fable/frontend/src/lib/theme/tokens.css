@@ -1,0 +1,183 @@
+/* ── Design tokens v3.0 — "Fable synthesis" in gruvbox ──────────────────────
+   Same variable grammar as v2's tokens.css (every --bg/--surface/--ink/--accent/
+   --ok/--warn/--crit name survives), so ported stylesheets keep working — only the
+   values changed. Structure is precision-dark's: a near-black canvas (gruvbox
+   dark0_hard), flat surfaces, hairline borders, ONE hot accent.
+
+     canvas   #1d2021 (bg0_h)   surface #282828 (bg0)   ink #ebdbb2 (fg1)
+     accent   #fabd2f  yellow  — interactive, focus, selection, sparklines
+     ok       #b8bb26  green   / warn #fe8019 orange / crit #fb4934 red
+     brand    #d3869b  purple  — identity only, never a status
+
+   Why warn is ORANGE: gruvbox yellow is the accent now, so "attention" had to move
+   one step down the ramp or every interactive element would look like a warning.
+   The accent is switchable (data-accent="orange"|"aqua") for the two people who
+   disagree; the status ramp does not move with it.
+
+   Light theme (gruvbox light, faded hues) is kept but demoted: solid surfaces, no
+   glass. frontend-legacy/tokens.css is re-anchored to these values at go-live.
+   ------------------------------------------------------------------------- */
+:root {
+  /* surfaces & ink — the gruvbox dark ramp, hard contrast */
+  --bg:        #1d2021;
+  --bg-inset:  #161819;
+  --surface:   #282828;
+  --surface-2: #32302f;
+  --surface-3: #3c3836;
+  --border:    rgba(235, 219, 178, .08);   /* hairline: fg1 at 8% */
+  --border-2:  rgba(235, 219, 178, .16);
+  --ink:       #ebdbb2;
+  --ink-2:     #a89984;
+  --ink-3:     #7c6f64;
+
+  /* interactive — gruvbox bright yellow (switchable, see [data-accent] below) */
+  --accent:          #fabd2f;
+  --accent-bright:   #fbcb47;
+  --accent-emphasis: #d79921;
+  --accent-dim:      rgba(250, 189, 47, .13);
+  --accent-muted:    rgba(250, 189, 47, .4);
+
+  /* identity — purple; never means healthy */
+  --brand:        #d3869b;
+  --brand-bright: #e0a3b3;
+  --brand-dim:    rgba(211, 134, 155, .14);
+  --brand-muted:  rgba(211, 134, 155, .4);
+
+  /* status — green good, red bad; warn is orange because yellow is the accent */
+  --ok:          #b8bb26;
+  --ok-bright:   #d5d155;
+  --ok-emphasis: #98971a;
+  --ok-dim:      rgba(184, 187, 38, .13);
+  --ok-muted:    rgba(184, 187, 38, .4);
+  --warn:        #fe8019;
+  --warn-dim:    rgba(254, 128, 25, .13);
+  --warn-muted:  rgba(254, 128, 25, .4);
+  --severe:      #d65d0e;
+  --crit:        #fb4934;
+  --crit-bright: #ff6c5a;
+  --crit-dim:    rgba(251, 73, 52, .13);
+  --crit-muted:  rgba(251, 73, 52, .4);
+
+  /* categorical — for charts and the topology map */
+  --c-network: #83a598;   /* blue  */
+  --c-storage: #b8bb26;   /* green */
+  --c-media:   #fe8019;   /* orange */
+  --c-apps:    #d3869b;   /* purple */
+  --c-aqua:    #8ec07c;
+
+  /* spacing scale */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px;
+  --s5: 24px; --s6: 32px; --s7: 48px;
+
+  /* type scale — a notch denser than v2 */
+  --fs-xs: 10.5px; --fs-sm: 12px;  --fs-base: 13.5px; --fs-md: 14px;
+  --fs-lg: 17px;   --fs-xl: 22px;  --fs-2xl: 30px;    --fs-hero: 40px;
+
+  /* radii & elevation — tightened for the precision-dark density */
+  --r-sm: 6px; --r: 8px; --r-lg: 12px;
+  --sh-1: 0 1px 2px rgba(0, 0, 0, .4);
+  --sh-2: 0 16px 40px rgba(0, 0, 0, .55);
+
+  --sidebar-w: 212px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+          Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+
+  /* ── glass layer ──────────────────────────────────────────────────────────
+     Board sliders write the --board-* intent; each theme derives its finals.
+     The default board is FLAT (opacity 1, no blur) — glass is opt-in per board. */
+  --board-glass-opacity: 1;
+  --board-blur: 0px;
+  --board-dim: 0.35;
+
+  --wallpaper-url: none;
+  --wallpaper-dim: var(--board-dim);
+  --glass-opacity: var(--board-glass-opacity);
+  --glass-blur: var(--board-blur);
+  --glass-bg: rgba(40, 40, 40, var(--glass-opacity));
+  --glass-bg-strong: rgba(40, 40, 40, 0.94);
+  --glass-border: var(--border);
+  --glass-border-2: var(--border-2);
+  --glass-radius: var(--r);
+  --glass-highlight: none;
+}
+
+/* accent alternatives — status ramp stays put */
+:root[data-accent="orange"] {
+  --accent: #fe8019; --accent-bright: #ff9a3c; --accent-emphasis: #d65d0e;
+  --accent-dim: rgba(254, 128, 25, .13); --accent-muted: rgba(254, 128, 25, .4);
+  --warn: #fabd2f; --warn-dim: rgba(250, 189, 47, .13); --warn-muted: rgba(250, 189, 47, .4);
+}
+:root[data-accent="aqua"] {
+  --accent: #8ec07c; --accent-bright: #a8d69a; --accent-emphasis: #689d6a;
+  --accent-dim: rgba(142, 192, 124, .13); --accent-muted: rgba(142, 192, 124, .4);
+}
+
+:root[data-theme="light"] {
+  /* gruvbox light with the faded hue set, so the toggle keeps its meaning */
+  --bg:        #fbf1c7;
+  --bg-inset:  #f2e5bc;
+  --surface:   #f9f5d7;
+  --surface-2: #f2e5bc;
+  --surface-3: #ebdbb2;
+  --border:    rgba(60, 56, 54, .12);
+  --border-2:  rgba(60, 56, 54, .24);
+  --ink:       #3c3836;
+  --ink-2:     #665c54;
+  --ink-3:     #7c6f64;
+  --accent:          #b57614;
+  --accent-bright:   #d79921;
+  --accent-emphasis: #b57614;
+  --accent-dim:      rgba(181, 118, 20, .12);
+  --accent-muted:    rgba(181, 118, 20, .4);
+  --brand:        #8f3f71;
+  --brand-bright: #b16286;
+  --brand-dim:    rgba(143, 63, 113, .1);
+  --brand-muted:  rgba(143, 63, 113, .4);
+  --ok:          #79740e;
+  --ok-bright:   #98971a;
+  --ok-emphasis: #79740e;
+  --ok-dim:      rgba(121, 116, 14, .12);
+  --ok-muted:    rgba(121, 116, 14, .4);
+  --warn:        #af3a03;
+  --warn-dim:    rgba(175, 58, 3, .1);
+  --warn-muted:  rgba(175, 58, 3, .4);
+  --severe:      #af3a03;
+  --crit:        #9d0006;
+  --crit-bright: #cc241d;
+  --crit-dim:    rgba(157, 0, 6, .1);
+  --crit-muted:  rgba(157, 0, 6, .4);
+  --c-network: #076678;
+  --c-storage: #79740e;
+  --c-media:   #af3a03;
+  --c-apps:    #8f3f71;
+  --c-aqua:    #427b58;
+  --sh-1: 0 1px 2px rgba(60, 56, 54, .08);
+  --sh-2: 0 8px 24px rgba(60, 56, 54, .14);
+
+  /* light mode never does glass: solid surfaces, a heavy veil over dark wallpapers */
+  --wallpaper-dim: calc(var(--board-dim) + 0.45);
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-border-2: var(--border-2);
+  --glass-highlight: none;
+}
+:root[data-theme="light"][data-accent="orange"] { --accent: #af3a03; --accent-bright: #d65d0e; --accent-emphasis: #af3a03; --accent-dim: rgba(175,58,3,.12); --accent-muted: rgba(175,58,3,.4); --warn: #b57614; --warn-dim: rgba(181,118,20,.12); --warn-muted: rgba(181,118,20,.4); }
+:root[data-theme="light"][data-accent="aqua"]   { --accent: #427b58; --accent-bright: #689d6a; --accent-emphasis: #427b58; --accent-dim: rgba(66,123,88,.12); --accent-muted: rgba(66,123,88,.4); }
+
+/* "Reduce glass": solid surfaces, no backdrop blur. */
+:root.reduce-glass {
+  --glass-bg: var(--surface);
+  --glass-bg-strong: var(--surface);
+  --glass-border: var(--border);
+  --glass-border-2: var(--border-2);
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass-bg: var(--surface);
+    --glass-bg-strong: var(--surface);
+    --glass-border: var(--border);
+    --glass-border-2: var(--border-2);
+  }
+}

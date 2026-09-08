@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- raspberry pie slice -->
+  <defs>
+    <linearGradient id="filling" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#d6356b"/>
+      <stop offset="100%" stop-color="#8a1a3f"/>
+    </linearGradient>
+  </defs>
+  <!-- crust (back layer, slightly bigger triangle wedge) -->
+  <path d="M32 6 L58 56 A30 30 0 0 1 6 56 Z" fill="#e9b873" stroke="#7a4a1e" stroke-width="2" stroke-linejoin="round"/>
+  <!-- filling on top -->
+  <path d="M32 14 L52 52 A22 22 0 0 1 12 52 Z" fill="url(#filling)" stroke="#5a0f29" stroke-width="1"/>
+  <!-- raspberries (clusters of small circles) -->
+  <g fill="#b71b4d" stroke="#5a0f29" stroke-width="0.5">
+    <circle cx="26" cy="34" r="2.4"/>
+    <circle cx="30" cy="37" r="2.4"/>
+    <circle cx="34" cy="33" r="2.4"/>
+    <circle cx="38" cy="38" r="2.4"/>
+    <circle cx="28" cy="44" r="2.4"/>
+    <circle cx="36" cy="46" r="2.4"/>
+    <circle cx="32" cy="42" r="2.4"/>
+  </g>
+  <!-- seed highlights -->
+  <g fill="#ffd1de" opacity="0.7">
+    <circle cx="25.2" cy="33.2" r="0.6"/>
+    <circle cx="29.2" cy="36.2" r="0.6"/>
+    <circle cx="33.2" cy="32.2" r="0.6"/>
+    <circle cx="37.2" cy="37.2" r="0.6"/>
+    <circle cx="27.2" cy="43.2" r="0.6"/>
+    <circle cx="35.2" cy="45.2" r="0.6"/>
+    <circle cx="31.2" cy="41.2" r="0.6"/>
+  </g>
+</svg>

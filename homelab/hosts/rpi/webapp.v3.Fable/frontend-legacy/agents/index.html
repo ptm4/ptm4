@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Homelab agents</title>
+<link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+<!--
+  Agents config page — status and Force Sync for the per-host architecture agents
+  (hl-arch-agent.py, running on opti/rpi/noblenumbat). Talks to backend/routes/agents.js,
+  which proxies each host's agent directly (not through the opti dispatcher — that's a
+  different control plane for the runners, see the Reports tab).
+
+  Design rules (deliberate, not defaults):
+    - Force Sync is never a silent fire-and-forget. Each button shows a spinner while
+      the request is in flight and then a real result — success, or the actual error —
+      because the backend blocks on the agent's own /sync until it finishes.
+    - An unreachable or never-synced host is stated as exactly that, not shown as a
+      healthy row with blanks. Silence reads as "fine" to a skimming eye; say it.
+    - Status is never color alone — every state pairs a glyph with a text label, same
+      rule the architecture page follows (tokens are shared with it below).
+-->
+<style>
+/* Canonical palette lives in /tokens.css (linked AFTER this block, so it wins).
+   Below: minimal dark fallback + page-local radii only. Do not re-declare
+   shared palette values here — that's how this page drifted historically. */
+:root {
+  /* fallback only — canonical values live in /tokens.css */
+  --bg:      #0d1117;
+  --surface: #161b22;
+  --border:  #30363d;
+  --ink:     #e6edf3;
+  --ink-2:   #8b949e;
+  --ink-3:   #6e7681;
+  --accent:  #58a6ff;
+
+  --radius: 6px;
+  --radius-sm: 6px;
+}
+</style>
+<link rel="stylesheet" href="/tokens.css?v=20260811" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.5 var(--sans); min-height: 100vh; -webkit-font-smoothing: antialiased; }
+a { color: var(--accent); }
+
+.top { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--border); }
+.top-row { display: flex; align-items: center; gap: 14px; padding: 12px 18px; flex-wrap: wrap; }
+.brand h1 { font-size: 16px; font-weight: 650; letter-spacing: -.2px; }
+.brand .sub { font-size: 12px; color: var(--ink-3); }
+.back { font-size: 12px; color: var(--ink-3); text-decoration: none; padding: 5px 9px; border: 1px solid var(--border); border-radius: var(--radius-sm); white-space: nowrap; }
+.back:hover { color: var(--ink); border-color: var(--border-2); }
+.spacer { flex: 1 1 auto; }
+
+.btn {
+  font: inherit; font-size: 12.5px; color: var(--ink-2);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 7px 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+}
+.btn:hover { color: var(--ink); border-color: var(--border-2); background: var(--surface-3); }
+.btn:disabled { opacity: .55; cursor: default; }
+/* Filled controls use the EMPHASIS token, not --accent: white on #58a6ff is ~2.2:1
+   and fails contrast; #1f6feb is what GitHub itself fills primary buttons with. */
+.btn.primary { color: #fff; background: var(--accent-emphasis, #1f6feb); border-color: var(--accent-emphasis, #1f6feb); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid currentColor; border-top-color: transparent;
+  animation: spin .7s linear infinite; display: inline-block; flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: currentColor; } }
+
+.wrap { max-width: 1040px; margin: 0 auto; padding: 20px 18px 60px; }
+.lede { font-size: 12.5px; color: var(--ink-2); line-height: 1.55; margin-bottom: 16px; max-width: 70ch; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.card + .card { margin-top: 16px; }
+.card-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.card-head h2 { font-size: 14px; font-weight: 650; }
+.card-head .muted { font-size: 12px; color: var(--ink-3); }
+
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+thead th {
+  background: var(--surface-3); color: var(--ink-2);
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  text-align: left; padding: 9px 14px; white-space: nowrap;
+  border-bottom: 1px solid var(--border-2);
+}
+tbody td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover { background: var(--surface-2); }
+.mono { font-family: var(--mono); font-size: 11.5px; }
+.muted { color: var(--ink-3); }
+
+.status { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.status.ok    { color: var(--ok); }   .status.ok .dot    { background: var(--ok); }
+.status.warn  { color: var(--warn); } .status.warn .dot  { background: var(--warn); }
+.status.crit  { color: var(--crit); } .status.crit .dot  { background: var(--crit); }
+
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 99px;
+  border: 1px solid var(--border-2); color: var(--ink-2); background: var(--surface-2);
+}
+.badge.warn { color: var(--warn); border-color: var(--warn); }
+.badge.zero { color: var(--ink-3); }
+
+.host-name { font-weight: 650; }
+.result-msg { font-size: 11.5px; margin-top: 4px; }
+.result-msg.ok   { color: var(--ok); }
+.result-msg.crit { color: var(--crit); }
+
+.empty { padding: 40px 20px; text-align: center; color: var(--ink-3); font-size: 13px; }
+.foot-note { margin-top: 16px; font-size: 11.5px; color: var(--ink-3); }
+
+@media (max-width: 640px) {
+  table, thead, tbody, tr, th, td { display: block; }
+  thead { display: none; }
+  tbody tr { border-bottom: 1px solid var(--border); padding: 10px 14px; }
+  tbody td { border: 0; padding: 3px 0; }
+  tbody td::before { content: attr(data-label); display: block; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-bottom: 2px; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="top-row">
+    <a class="back" href="/" title="Back to the dashboard">← rpi.lan</a>
+    <div class="brand">
+      <h1>Homelab agents</h1>
+      <span class="sub">Per-host architecture collectors — status and Force Sync</span>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">◐</button>
+    <button class="btn primary" id="syncAllBtn">⟳ Force Sync all</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <p class="lede">
+    Each host below runs <code class="mono">hl-arch-agent.py</code>, syncing nightly at 00:00
+    and reporting into the <a href="../architecture/#notes">architecture map's drift</a>.
+    Force Sync waits for the agent to actually finish and shows you what happened —
+    it never just queues silently.
+  </p>
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Hosts</h2>
+      <span class="muted" id="checkedAt"></span>
+    </div>
+    <div id="tableWrap"></div>
+  </div>
+
+  <p class="foot-note" id="footNote"></p>
+</div>
+
+<script>
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+let hosts = [];
+// Force Sync results by host id, kept across table re-renders. render() rebuilds every
+// row's HTML from `hosts` (which has no notion of "the sync I just ran"), so without
+// this the result message would be wiped by the very refresh that follows a sync —
+// visible for less than a frame, which is indistinguishable from not showing it at all.
+const lastSyncResult = {};
+
+init();
+
+function init() {
+  initTheme();
+  $('#themeBtn').onclick = toggleTheme;
+  $('#syncAllBtn').onclick = syncAll;
+  load();
+}
+
+function initTheme() {
+  let t = null;
+  try { t = localStorage.getItem('arch-theme'); } catch (_) {}
+  if (!t) t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+}
+function toggleTheme() {
+  const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('arch-theme', t); } catch (_) {}
+}
+
+function rel(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const m = Math.round((Date.now() - d.getTime()) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  return h < 48 ? `${h}h ago` : `${Math.round(h / 24)}d ago`;
+}
+
+async function load() {
+  $('#tableWrap').innerHTML = `<div class="empty">Loading…</div>`;
+  let data;
+  try {
+    const res = await fetch('/api/agents', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (err) {
+    $('#tableWrap').innerHTML = `<div class="empty">Couldn't reach /api/agents — ${esc(err.message)}</div>`;
+    return;
+  }
+  hosts = data.hosts || [];
+  $('#checkedAt').textContent = data.checked_at ? `checked ${new Date(data.checked_at).toLocaleTimeString()}` : '';
+  render();
+}
+
+function statusFor(h) {
+  if (!h.reachable) return { cls: 'crit', glyph: '✕', label: 'Unreachable' };
+  if (!h.last_run) return { cls: 'warn', glyph: '?', label: 'Never synced' };
+  if (!h.last_run.ok) return { cls: 'crit', glyph: '✕', label: 'Last sync failed' };
+  return { cls: 'ok', glyph: '✓', label: 'Synced' };
+}
+
+function render() {
+  if (!hosts.length) {
+    $('#tableWrap').innerHTML = `<div class="empty">No agent hosts configured.</div>`;
+    return;
+  }
+  $('#tableWrap').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Host</th><th>Status</th><th>Last sync</th><th>Next scheduled</th>
+        <th>Drift</th><th>Agent</th><th></th>
+      </tr></thead>
+      <tbody>${hosts.map(rowHtml).join('')}</tbody>
+    </table>`;
+  hosts.forEach(h => {
+    const btn = $(`#sync-${h.id}`);
+    if (btn) btn.onclick = () => syncOne(h.id);
+  });
+}
+
+function rowHtml(h) {
+  const s = statusFor(h);
+  const lastRunRel = h.last_run ? rel(h.last_run.ran_at) : null;
+  const nextRel = h.next_scheduled ? new Date(h.next_scheduled).toLocaleString() : '—';
+  const driftBadge = h.drift_count > 0
+    ? `<span class="badge warn">${h.drift_count}</span>`
+    : `<span class="badge zero">0</span>`;
+
+  return `<tr data-host="${esc(h.id)}">
+    <td data-label="Host"><span class="host-name">${esc(h.label)}</span></td>
+    <td data-label="Status">
+      <span class="status ${s.cls}"><span class="dot" aria-hidden="true"></span>${esc(s.glyph)} ${esc(s.label)}</span>
+      ${!h.reachable && h.error ? `<div class="muted" style="font-size:11px;margin-top:3px">${esc(h.error)}</div>` : ''}
+    </td>
+    <td data-label="Last sync">${lastRunRel
+        ? `${esc(lastRunRel)}${h.last_run.containers != null ? ` · ${h.last_run.containers} containers` : ''}`
+        : '<span class="muted">—</span>'}
+    </td>
+    <td data-label="Next scheduled" class="mono muted">${esc(nextRel)}</td>
+    <td data-label="Drift">${driftBadge}</td>
+    <td data-label="Agent" class="mono muted">${esc(h.agent_version || '—')}</td>
+    <td data-label="">
+      <button class="btn" id="sync-${esc(h.id)}">⟳ Force Sync</button>
+      <div class="result-msg${lastSyncResult[h.id] ? ' ' + lastSyncResult[h.id].cls : ''}" id="result-${esc(h.id)}">${
+        lastSyncResult[h.id] ? esc(lastSyncResult[h.id].text) : ''}</div>
+    </td>
+  </tr>`;
+}
+
+// Force Sync is deliberately synchronous from the caller's point of view: the button
+// disables, shows a spinner, and does not re-enable until the real result is known —
+// success with a container count, or the actual failure reason. Never a silent queue.
+async function syncOne(id) {
+  const btn = $(`#sync-${id}`);
+  const result = $(`#result-${id}`);
+  if (!btn) return;
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> Syncing…`;
+  result.textContent = '';
+  result.className = 'result-msg';
+
+  let data, ok;
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(id)}/sync`, { method: 'POST' });
+    data = await res.json();
+    ok = res.ok && data.ok;
+  } catch (e) {
+    data = { error: e.message };
+    ok = false;
+  }
+
+  // Recorded here — not just written to the DOM — because the load() call below
+  // rebuilds every row from scratch and would otherwise erase this on the very
+  // refresh meant to show its consequences (fresh drift/last-sync numbers).
+  lastSyncResult[id] = {
+    cls: ok ? 'ok' : 'crit',
+    text: ok
+      ? `✓ Synced${data.containers != null ? ` · ${data.containers} containers` : ''}`
+      : `✕ ${data.error || data.detail || `HTTP ${data.http_status || '?'}`}`,
+  };
+
+  await load();   // refresh status/drift for this host (and any it affects) from the source of truth
+}
+
+async function syncAll() {
+  const btn = $('#syncAllBtn');
+  const orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span> Syncing all…`;
+  $('#footNote').textContent = '';
+
+  let data;
+  try {
+    const res = await fetch('/api/agents/sync-all', { method: 'POST' });
+    data = await res.json();
+  } catch (e) {
+    $('#footNote').innerHTML = `<span style="color:var(--crit)">Sync-all failed to reach the backend: ${esc(e.message)}</span>`;
+    btn.disabled = false;
+    btn.innerHTML = orig;
+    return;
+  }
+
+  const okCount = (data.results || []).filter(r => r.ok).length;
+  const total = (data.results || []).length;
+  const failed = (data.results || []).filter(r => !r.ok);
+  $('#footNote').innerHTML = failed.length
+    ? `<span style="color:var(--warn)">${okCount}/${total} synced. Failed: ${
+        failed.map(f => `${esc(f.host)} (${esc(f.error || f.detail || 'error')})`).join(', ')}</span>`
+    : `<span style="color:var(--ok)">✓ All ${total} hosts synced.</span>`;
+
+  btn.disabled = false;
+  btn.innerHTML = orig;
+  await load();
+}
+</script>
+</body>
+</html>

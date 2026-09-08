@@ -196,7 +196,7 @@ loads only when those files are touched:
 ```markdown
 ---
 paths:
-  - "homelab/hosts/rpi/webapp/**"
+  - "homelab/hosts/rpi/webapp.v2.legacy/**"
 ---
 ```
 

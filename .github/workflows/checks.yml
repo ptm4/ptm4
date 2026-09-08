@@ -51,21 +51,21 @@ jobs:
         # find-based so plugins/ lib/ test/ are swept too — a glob here silently
         # narrowed when the backend grew subdirectories (2026-08-10 Fastify port)
         run: |
-          find homelab/hosts/rpi/webapp/backend \
+          find homelab/hosts/rpi/webapp.v2.legacy/backend \
             \( -name node_modules -prune \) -o -name '*.js' -print0 \
             | xargs -0 -n1 node --check
-          node --check homelab/hosts/rpi/webapp/scripts/smoke-api.mjs
+          node --check homelab/hosts/rpi/webapp.v2.legacy/scripts/smoke-api.mjs
           echo "backend syntax OK"
 
       - name: Webapp backend tests
         # fastify.inject parity tests against fixtures — no LAN needed
-        working-directory: homelab/hosts/rpi/webapp/backend
+        working-directory: homelab/hosts/rpi/webapp.v2.legacy/backend
         run: |
           npm ci --no-audit --no-fund
           npm test
 
       - name: Webapp frontend typecheck + build
-        working-directory: homelab/hosts/rpi/webapp/frontend
+        working-directory: homelab/hosts/rpi/webapp.v2.legacy/frontend
         run: |
           npm ci --no-audit --no-fund
           npm run build

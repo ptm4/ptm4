@@ -25,6 +25,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
+from weather_context import feels_emoji
 
 try:
     import witty_messages
@@ -89,6 +90,7 @@ def log(msg):
 
 # ── config store ──────────────────────────────────────────────────────────────
 _lock = threading.Lock()
+_post_lock = threading.Lock()  # serialize manual and scheduled build/post/commit
 _wake = threading.Event()   # poked on config change so the scheduler recomputes
 _status = {"last_post_at": None, "last_status": None, "next_post_at": None}
 _witty = witty_messages.WittyPool(WITTY_STATE_PATH) if witty_messages else None
@@ -164,6 +166,11 @@ def validate_config(cfg):
             return "each location needs name, lat, lon"
         if not (-90 <= l["lat"] <= 90 and -180 <= l["lon"] <= 180):
             return f"out-of-range coordinates for {l.get('name')}"
+        subject = l.get("witty_subject", "")
+        if (not isinstance(subject, str)
+                or (subject and (not re.fullmatch(r"[A-Za-z0-9 .'_\-]{1,40}", subject)
+                                 or subject.strip().lower() in ("everyone", "here")))):
+            return "witty_subject must be a plain name, max 40 characters"
     url = cfg.get("webhook_url", "")
     if url and not url.startswith("https://discord.com/api/webhooks/"):
         return "webhook_url must start with https://discord.com/api/webhooks/"
@@ -206,6 +213,7 @@ def fetch_forecast(loc, tz):
     daily = d["daily"]
     code = daily["weather_code"][0]
     return {
+        "code": code,
         "hi": daily["temperature_2m_max"][0],
         "lo": daily["temperature_2m_min"][0],
         "cond": WMO_TEXT.get(code, f"Code {code}"),
@@ -218,15 +226,6 @@ def fetch_forecast(loc, tz):
         "wind": daily["wind_speed_10m_max"][0],
         "humidity": daytime_humidity(d.get("hourly", {})),
     }
-
-
-def feels_emoji(f):
-    """Emoji for the feels-like temperature (°F)."""
-    for threshold, emoji in ((100, "🔥"), (90, "🥵"), (75, "😎"), (60, "🙂"),
-                             (40, "🧥"), (20, "🥶")):
-        if f >= threshold:
-            return emoji
-    return "🧊"
 
 
 def clock_str(iso):
@@ -267,11 +266,12 @@ def location_field(loc, fc):
 
 def build_payload(cfg):
     """Fetch all locations and build the webhook payload.
-    Returns (payload, failed_names, witty_entry). witty_entry is the pool entry
-    behind today's one-liner (or None) — the caller commits it only after the
-    webhook accepts the post, so previews/dry-runs/failed posts never consume."""
+    Returns (payload, failed_names, receipt). The receipt contains the selected
+    joke (if any) and weather snapshot; commit only after webhook acceptance."""
     tz = cfg["timezone"]
+    now = datetime.now(ZoneInfo(tz))
     fields, failed = [], []
+    observations = []
     first_fc = None  # sun times shown once in the header, from the first town that resolves
     for loc in cfg["locations"]:
         try:
@@ -279,10 +279,12 @@ def build_payload(cfg):
             if first_fc is None:
                 first_fc = fc
             fields.append(location_field(loc, fc))
+            observations.append((loc, fc))
         except Exception as e:
             log(f"forecast failed for {loc['name']}: {e}")
             fields.append(location_field(loc, None))
             failed.append(loc["name"])
+            observations.append((loc, None))
 
     # Desktop packs up to 3 inline fields per row and sizes columns by that
     # row's count — pad EVERY row to exactly 3 slots with invisible spacers so
@@ -294,7 +296,6 @@ def build_payload(cfg):
         spaced.extend(pair)
         spaced.extend(dict(SPACER_FIELD) for _ in range(3 - len(pair)))
 
-    now = datetime.now(ZoneInfo(tz))
     date_str = now.strftime("%A, %B %d, %Y").replace(" 0", " ")
     desc = f"**{date_str}**"
     if first_fc:
@@ -314,9 +315,13 @@ def build_payload(cfg):
         }],
     }
     witty_entry = None
-    if _witty and cfg.get("witty_enabled") and cfg.get("witty_names"):
+    context = None
+    if _witty:
         try:
-            witty_entry = _witty.peek(cfg["witty_names"], first_fc, now)
+            context = _witty.weather(observations, now)
+            if cfg.get("witty_enabled"):
+                witty_entry = _witty.peek(cfg.get("witty_names") or [], first_fc, now,
+                                          event=context["event"])
         except Exception as e:
             log(f"witty selection failed: {e}")
     content = cfg.get("message", "")
@@ -328,6 +333,8 @@ def build_payload(cfg):
             witty_entry = None  # too long — drop the joke, keep the report
     if content:
         payload["content"] = content
+    if context:
+        witty_entry = dict(witty_entry or {}, weather_snapshot=context["snapshot"])
     return payload, failed, witty_entry
 
 
@@ -339,6 +346,11 @@ def post_webhook(url, payload):
 
 def post_report(cfg):
     """Build and post the report. Returns (ok, detail)."""
+    with _post_lock:
+        return _post_report(cfg)
+
+
+def _post_report(cfg):
     payload, failed, witty_entry = build_payload(cfg)
     url = cfg.get("webhook_url")
     if not url:
@@ -544,15 +556,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200 if ok else 502, {"ok": ok, "detail": detail})
         elif path == "/witty/reroll":
             cfg = load_config()
-            if _witty is None or not cfg.get("witty_names"):
+            if _witty is None:
                 return self._send(400, {"error": "witty messages not configured"})
-            fc = None
-            try:  # with the forecast, the reroll rotates the line that would actually post
-                fc = fetch_forecast(cfg["locations"][0], cfg["timezone"])
-            except Exception as e:
-                log(f"reroll: forecast unavailable, rotating weather-blind: {e}")
             try:
-                out = _witty.reroll(cfg["witty_names"], fc)
+                # Use exactly the same all-location context as preview/send.
+                _, _, receipt = build_payload(cfg)
+                event = None
+                if receipt and receipt.get("event"):
+                    event = json.loads(receipt["signature"])
+                out = _witty.reroll(cfg.get("witty_names") or [],
+                                   now=datetime.now(ZoneInfo(cfg["timezone"])), event=event)
             except Exception as e:
                 return self._send(502, {"error": str(e)})
             self._send(200 if out.get("ok") else 400, out)

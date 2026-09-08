@@ -1,0 +1,4 @@
+node_modules/
+.dev-data/
+frontend/dist/
+frontend/.svelte-kit/

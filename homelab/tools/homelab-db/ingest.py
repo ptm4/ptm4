@@ -957,7 +957,7 @@ def ingest_monitors(conn):
 # lose work silently — the next deploy reverts it — so the drift is worth a finding.
 DEPLOY_TARGETS = [
     {"host": "rpi", "remote": "/srv/docker/compose/webapp/backend",
-     "repo": "homelab/hosts/rpi/webapp/backend", "label": "webapp backend"},
+     "repo": "homelab/hosts/rpi/webapp.v2.legacy/backend", "label": "webapp backend"},
 ]
 
 

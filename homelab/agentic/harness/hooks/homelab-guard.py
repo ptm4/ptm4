@@ -129,7 +129,7 @@ RULES = [
     (
         "webapp-deploy-dir", "deny", _webapp_deploy_dir,
         "/srv/docker/compose/webapp on the rpi is a deploy target, not source — the next CI "
-        "run overwrites it. Edit homelab/hosts/rpi/webapp/ in the repo instead, then rsync it "
+        "run overwrites it. Edit homelab/hosts/rpi/webapp.v2.legacy/ in the repo instead, then rsync it "
         "over (copying into this dir is fine; editing in place is the trap).",
     ),
     (

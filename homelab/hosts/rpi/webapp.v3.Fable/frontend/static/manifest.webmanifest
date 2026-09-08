@@ -1,0 +1,13 @@
+{
+  "name": "Pert's Pocket",
+  "short_name": "Pocket",
+  "description": "Homelab mission control",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1d2021",
+  "theme_color": "#1d2021",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

@@ -1,0 +1,334 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Sysop '98</title>
+<!-- v3 mockup D: "sysop '98" — dense-&-calm's LAYOUT (top tabs, three text-first
+     columns, hairline rhythm) wearing retro-sysadmin VISUALS: a Win98 window
+     frame around a black admin terminal, RHEL-boot [  OK  ] status brackets,
+     beveled chrome, sunken status bar. Old net, but functional.
+     Single-theme by design: the terminal is black, the chrome is #c0c0c0. -->
+<style>
+  :root {
+    --desktop:  #008080;             /* the teal */
+    --chrome:   #c0c0c0;
+    --bev-hi:   #ffffff;
+    --bev-lo:   #808080;
+    --bev-dk:   #404040;
+    --title-a:  #000080;
+    --title-b:  #1084d0;
+
+    --term:     #0a0c0a;             /* terminal ground */
+    --ink:      #c7cfc7;             /* soft phosphor white */
+    --ink-2:    #7f8b7f;
+    --ink-3:    #566056;
+    --green:    #33e065;
+    --amber:    #ffc94d;
+    --red:      #ff5c47;
+    --cyan:     #5fd7d7;
+
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --chromefont: Tahoma, "MS Sans Serif", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--desktop);
+    /* the classic desktop dither, done cheap */
+    background-image: radial-gradient(rgba(255,255,255,.04) 1px, transparent 1px);
+    background-size: 3px 3px;
+    font: 400 13px/1.5 var(--mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    padding: 18px 14px 26px;
+  }
+  a { color: var(--green); text-decoration: underline; }
+  a:hover { background: var(--green); color: var(--term); text-decoration: none; }
+
+  /* ── the window ─────────────────────────────────────────────────────── */
+  .window {
+    max-width: 1240px; margin: 0 auto;
+    background: var(--chrome);
+    padding: 3px;
+    box-shadow: inset -1px -1px var(--bev-dk), inset 1px 1px var(--bev-hi),
+                inset -2px -2px var(--bev-lo), inset 2px 2px #dfdfdf,
+                4px 4px 0 rgba(0,0,0,.35);
+    color: #000;
+    font-family: var(--chromefont);
+    font-size: 11.5px;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(90deg, var(--title-a), var(--title-b));
+    color: #fff; font-weight: 700; padding: 3px 4px 3px 8px;
+  }
+  .titlebar .ico { width: 13px; height: 13px; background: var(--green); box-shadow: inset -2px -2px #063; flex: none; }
+  .titlebar .t { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .wbtns { display: flex; gap: 2px; }
+  .wbtn {
+    width: 18px; height: 16px; background: var(--chrome); border: 0; padding: 0;
+    font: 700 10px var(--chromefont); color: #000; cursor: pointer;
+    box-shadow: inset -1px -1px var(--bev-dk), inset 1px 1px var(--bev-hi), inset -2px -2px var(--bev-lo);
+  }
+  .wbtn:active { box-shadow: inset 1px 1px var(--bev-dk); }
+
+  .menubar { display: flex; gap: 2px; padding: 3px 4px 2px; }
+  .menubar span { padding: 2px 7px; }
+  .menubar span:hover { background: var(--title-a); color: #fff; }
+  .menubar .vers { margin-left: auto; color: #444; }
+  .menubar .vers b { font-weight: 700; color: #000; }
+
+  /* tab strip — dense-calm's top tabs, in beveled clothes */
+  .tabstrip { display: flex; gap: 0; padding: 6px 8px 0; position: relative; flex-wrap: wrap; }
+  .tab {
+    padding: 4px 14px 5px; background: var(--chrome); position: relative; top: 2px;
+    box-shadow: inset -1px 0 var(--bev-lo), inset 1px 1px var(--bev-hi);
+    color: #333; cursor: pointer;
+  }
+  .tab.on { top: 0; padding-bottom: 7px; font-weight: 700; color: #000;
+    box-shadow: inset -1px 0 var(--bev-dk), inset 1px 1px var(--bev-hi); z-index: 2; }
+
+  /* ── the terminal ───────────────────────────────────────────────────── */
+  .terminal {
+    margin: 0 8px 8px;
+    background: var(--term);
+    box-shadow: inset 1px 1px var(--bev-dk), inset -1px -1px var(--bev-hi), inset 2px 2px var(--bev-lo);
+    padding: 16px 18px 22px;
+    font-family: var(--mono);
+    color: var(--ink);
+  }
+  .motd { color: var(--ink-3); padding-bottom: 12px; font-size: 12px; }
+  .motd b { color: var(--green); font-weight: 400; }
+  .cursor { display: inline-block; width: 7px; height: 13px; background: var(--green); vertical-align: text-bottom; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+
+  /* dense-calm's three columns, verbatim skeleton */
+  .cols { display: grid; grid-template-columns: 240px minmax(0,1fr) 280px; gap: 34px; }
+  @media (max-width: 1000px) { .cols { grid-template-columns: 1fr 1fr; } .colC { grid-column: span 2; } }
+  @media (max-width: 660px)  { .cols { grid-template-columns: 1fr; } .colC { grid-column: span 1; } }
+  .col { display: flex; flex-direction: column; gap: 26px; min-width: 0; }
+
+  section h2 {
+    font-size: 12px; font-weight: 400; color: var(--amber);
+    padding-bottom: 5px; margin-bottom: 8px; border-bottom: 1px dashed #2a332a;
+    display: flex; align-items: baseline; letter-spacing: .04em;
+  }
+  section h2::before { content: "## "; color: var(--ink-3); }
+  section h2 .meta { margin-left: auto; color: var(--ink-3); font-size: 11px; }
+
+  .li { display: flex; align-items: baseline; gap: 8px; padding: 2.5px 0; }
+  .li .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dim { color: var(--ink-2); }
+  .faint { color: var(--ink-3); font-size: 12px; }
+
+  /* RHEL boot brackets */
+  .ok, .warn, .fail { white-space: pre; font-weight: 400; }
+  .ok    { color: var(--green); }
+  .warn  { color: var(--amber); }
+  .fail  { color: var(--red); }
+
+  /* block meters */
+  .meterline { display: flex; align-items: baseline; gap: 8px; padding: 2px 0; }
+  .meterline .lab { width: 58px; color: var(--ink-2); flex: none; }
+  .blocks { flex: 1; overflow: hidden; white-space: nowrap; color: var(--green); letter-spacing: 1px; }
+  .blocks .off { color: #1d241d; }
+  .blocks.warn { color: var(--amber); }
+  .meterline .pct { width: 38px; text-align: right; color: var(--ink-2); flex: none; }
+
+  /* clock hero */
+  .clock .time { font-size: 40px; line-height: 1; color: var(--green); text-shadow: 0 0 8px rgba(51,224,101,.35); }
+  .clock .date { color: var(--ink-2); margin-top: 3px; }
+  .wx { display: flex; gap: 10px; align-items: baseline; margin-top: 4px; }
+  .wx .t { font-size: 22px; color: var(--ink); }
+
+  /* hosts — dense-calm's stacked rows, boot-log dressed */
+  .host { padding: 8px 0; border-top: 1px solid #161c16; }
+  .host:first-of-type { border-top: 0; padding-top: 2px; }
+  .hostrow { display: flex; align-items: baseline; gap: 10px; }
+  .hostrow .name { color: var(--cyan); font-size: 14px; }
+  .hostrow .role { color: var(--ink-3); font-size: 12px; }
+  .hostrow .st { margin-left: auto; }
+  .hoststats { display: flex; gap: 18px; margin-top: 3px; flex-wrap: wrap; color: var(--ink-2); font-size: 12.5px; }
+  .hoststats b { color: var(--ink); font-weight: 400; }
+  .sparkrow { display: flex; gap: 10px; margin-top: 3px; align-items: baseline; }
+  .sparkrow .spark { color: var(--green); opacity: .8; }
+  .sparkrow .acts { margin-left: auto; font-size: 12px; }
+
+  /* activity as a log */
+  .act .t { width: 46px; flex: none; color: var(--ink-3); font-size: 12px; }
+  .act .who { color: var(--cyan); }
+
+  /* matches */
+  .when { width: 46px; flex: none; color: var(--ink-3); font-size: 12px; }
+  .when.live { color: var(--red); }
+  .score { margin-left: auto; }
+
+  /* detail table */
+  .divider { color: var(--ink-3); font-size: 12px; margin: 26px 0 10px; }
+  .divider b { color: var(--amber); font-weight: 400; }
+  .tablewrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--ink-3); font-weight: 400; padding: 2px 16px 4px 0; border-bottom: 1px solid #2a332a; }
+  td { padding: 3px 16px 3px 0; color: var(--ink-2); border-bottom: 1px solid #10150f; }
+  td:first-child { color: var(--ink); }
+  tr:hover td { background: #101710; }
+
+  /* sunken status bar */
+  .statusbar { display: flex; gap: 3px; padding: 0 8px 8px; font-family: var(--chromefont); font-size: 11px; color: #222; flex-wrap: wrap; }
+  .cell {
+    box-shadow: inset 1px 1px var(--bev-lo), inset -1px -1px var(--bev-hi);
+    padding: 3px 10px; background: var(--chrome);
+  }
+  .cell.grow { flex: 1; min-width: 120px; }
+
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+</style>
+
+<div class="window">
+  <div class="titlebar">
+    <span class="ico"></span>
+    <span class="t">Pert's Pocket v3 — C:\HOMELAB\POCKET.EXE</span>
+    <span class="wbtns"><button class="wbtn">_</button><button class="wbtn">&#9633;</button><button class="wbtn">&#10005;</button></span>
+  </div>
+  <div class="menubar">
+    <span><u>B</u>oards</span><span><u>O</u>perations</span><span><u>S</u>ervices</span><span><u>T</u>ools</span><span><u>H</u>elp</span>
+    <span class="vers">ui: v1 · v2 · <b>v3</b></span>
+  </div>
+  <div class="tabstrip">
+    <span class="tab on">Home</span><span class="tab">Operations</span><span class="tab">Media</span><span class="tab">CS2</span><span class="tab">Agentic</span>
+  </div>
+
+  <div class="terminal">
+    <div class="motd">Last login: Mon Aug 24 21:31:04 2026 from tux.lan — <b>pocket v3.0</b> · all systems nominal<span class="cursor"></span></div>
+
+    <div class="cols">
+      <!-- left: ambient -->
+      <div class="col">
+        <section class="clock">
+          <div class="time">21:47</div>
+          <div class="date">Mon, Aug 24 · week 35</div>
+          <div class="wx"><span class="t">78&deg;F</span><span class="faint">partly cloudy · feels 81&deg;<br>rain 20% · 7AM post sent</span></div>
+        </section>
+
+        <section>
+          <h2>pihole <span class="meta">rpi · live</span></h2>
+          <div class="meterline"><span class="lab">blocked</span><span class="blocks">█████▏<span class="off">████████████████</span></span><span class="pct">22.4%</span></div>
+          <div class="li"><span class="grow dim">queries today</span><span>31,842</span></div>
+          <div class="li"><span class="grow dim">denied</span><span>7,134</span></div>
+          <div class="li"><span class="grow dim">gravity</span><span>1.19M</span></div>
+          <div class="li"><span class="grow faint">service pihole-FTL</span><span class="ok">[  OK  ]</span></div>
+        </section>
+
+        <section>
+          <h2>storage</h2>
+          <div class="meterline"><span class="lab">red·zfs</span><span class="blocks">████▍<span class="off">██████████████████</span></span><span class="pct">19%</span></div>
+          <div class="meterline"><span class="lab">opti os</span><span class="blocks warn">█████████████████▊<span class="off">█████</span></span><span class="pct">77%</span></div>
+          <div class="meterline"><span class="lab">rpi sd</span><span class="blocks">██████▋<span class="off">████████████████</span></span><span class="pct">29%</span></div>
+          <div class="meterline"><span class="lab">nn os</span><span class="blocks">████▏<span class="off">███████████████████</span></span><span class="pct">18%</span></div>
+          <div class="li"><span class="grow faint">0.7 / 3.7 TB used on the pool</span></div>
+        </section>
+
+        <section>
+          <h2>llm</h2>
+          <div class="li"><span class="grow">LFM2.5-2.6B</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow faint">android:8080 · slot warm · 11 tok/s</span></div>
+        </section>
+      </div>
+
+      <!-- center: the fleet -->
+      <div class="col">
+        <section>
+          <h2>fleet <span class="meta">doctor 24m ago</span></h2>
+          <div class="li"><span class="grow">Checking hosts&hellip; <span class="dim">4 of 4 reachable</span></span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">Checking containers&hellip; <span class="dim">31 of 31 up</span></span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">Checking updates&hellip; <span class="dim">4 images pending</span></span><span class="warn">[ WARN ]</span></div>
+          <div class="li"><span class="grow">Checking findings&hellip; <span class="dim">none open</span></span><span class="ok">[  OK  ]</span></div>
+
+          <div class="host">
+            <div class="hostrow"><span class="name">opti</span><span class="role">storage · control plane · up 29d</span><span class="st ok">[  OK  ]</span></div>
+            <div class="hoststats"><span>load <b>0.16</b></span><span>mem <b>48%</b>/5.7G</span><span><b>30&deg;C</b></span><span>net <b>&darr;63K &uarr;170K</b></span></div>
+            <div class="sparkrow"><span class="faint">cpu 3h</span><span class="spark">▂▂▁▃▂▅▃▄▂▄▃▃▂▄▃▂</span><span class="acts"><a href="#">term</a> <a href="#">upd</a> <a href="#">boot</a></span></div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name">rpi</span><span class="role">DNS · DHCP · web · up 20d</span><span class="st ok">[  OK  ]</span></div>
+            <div class="hoststats"><span>load <b>0.55</b></span><span>mem <b>58%</b>/3.7G</span><span><b>40&deg;C</b></span><span>docker <b>16/16</b></span></div>
+            <div class="sparkrow"><span class="faint">cpu 3h</span><span class="spark">▃▄▂▅▃▆▄▇▄▅▃▄▅▃▄▄</span><span class="acts"><a href="#">term</a> <a href="#">upd</a> <a href="#">boot</a></span></div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name">noblenumbat</span><span class="role">media stack · up 1d 8h</span><span class="st ok">[  OK  ]</span></div>
+            <div class="hoststats"><span>load <b>0.00</b></span><span>mem <b>20%</b>/15.4G</span><span><b>46&deg;C</b></span><span>vpn <b style="color:var(--green)">ok</b> · <b>15/15</b></span></div>
+            <div class="sparkrow"><span class="faint">cpu 3h</span><span class="spark">▁▁▂▁▁▂▁▁▁▂▁▁▁▁▂▁</span><span class="acts"><a href="#">term</a> <a href="#">upd</a> <a href="#">boot</a></span></div>
+          </div>
+          <div class="host">
+            <div class="hostrow"><span class="name">android</span><span class="role">llama.cpp · S10 · intermittent by design</span><span class="st ok">[  OK  ]</span></div>
+          </div>
+        </section>
+
+        <section class="act">
+          <h2>activity <span class="meta">tail -f reports</span></h2>
+          <div class="li"><span class="t">07:00</span><span class="grow dim"><span class="who">discord-weather</span> posted the daily report</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="t">06:32</span><span class="grow dim"><span class="who">vpn-stack-heal</span> renewed NAT-PMP lease · port 52644</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="t">04:15</span><span class="grow dim"><span class="who">homelab-doctor</span> 4/4 services · 4/4 hosts</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="t">02:00</span><span class="grow dim"><span class="who">attic-sync</span> weekly cold copy · 41 GiB in 12m</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="t">-1d</span><span class="grow dim"><span class="who">arch-agent</span> bitwarden 1.33.1 &rarr; 1.34.0 on rpi</span><span class="warn">[ WARN ]</span></div>
+          <div class="li"><span class="t">-1d</span><span class="grow dim"><span class="who">hl-db</span> nightly ingest · 14/14 feeds · 61d indexed</span><span class="ok">[  OK  ]</span></div>
+        </section>
+      </div>
+
+      <!-- right: feeds -->
+      <div class="col colC">
+        <section>
+          <h2>cs2 today <span class="meta">hltv · vrs</span></h2>
+          <div class="li"><span class="when live">LIVE</span><span class="grow">Vitality — Spirit <span class="faint">mirage · map 2</span></span><span class="score" style="color:var(--red)">9–7</span></div>
+          <div class="li"><span class="when">19:00</span><span class="grow">FaZe — MOUZ <span class="faint">EPL playoffs</span></span><span class="score faint">bo3</span></div>
+          <div class="li"><span class="when">21:30</span><span class="grow">NAVI — G2 <span class="faint">EPL playoffs</span></span><span class="score faint">bo3</span></div>
+          <div class="li"><span class="when">final</span><span class="grow">Falcons — Liquid <span class="faint">13–10 · 9–13 · 13–6</span></span><span class="score">2–1</span></div>
+        </section>
+
+        <section>
+          <h2>bots <span class="meta">crontab -l</span></h2>
+          <div class="li"><span class="grow">weather</span><span class="faint">07:00</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">healthdigest</span><span class="faint">08:00</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">hltv</span><span class="faint">09:00</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">sports</span><span class="faint">10:00</span><span class="ok">[  OK  ]</span></div>
+          <div class="li"><span class="grow">jellyfin</span><span class="faint">18:00</span><span class="ok">[  OK  ]</span></div>
+        </section>
+
+        <section>
+          <h2>updates <span class="meta">4 pending</span></h2>
+          <div class="li"><span class="grow">bitwarden <span class="faint">rpi</span></span><span class="warn">1.34.0</span></div>
+          <div class="li"><span class="grow">jellyfin <span class="faint">nn</span></span><span class="warn">10.10.4</span></div>
+          <div class="li"><span class="grow">prowlarr <span class="faint">nn</span></span><span class="warn">1.31</span></div>
+          <div class="li"><span class="grow">gluetun <span class="faint">nn</span></span><span class="warn">3.40</span></div>
+        </section>
+
+        <section>
+          <h2>streams</h2>
+          <div class="li"><span class="grow faint">no active slots — <a href="#">open station</a></span></div>
+        </section>
+      </div>
+    </div>
+
+    <div class="divider">$ docker ps --all-hosts | head <b># detail page preview — containers</b></div>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>NAME</th><th>HOST</th><th>UP</th><th>IMAGE</th><th>STATE</th><th>NOTES</th></tr></thead>
+      <tbody>
+        <tr><td>gluetun</td><td>noblenumbat</td><td>20h</td><td>qmcgaw/gluetun</td><td class="ok">[  OK  ]</td><td>vpn namespace</td></tr>
+        <tr><td>jellyfin</td><td>noblenumbat</td><td>32h</td><td>jellyfin/jellyfin</td><td class="ok">[  OK  ]</td><td></td></tr>
+        <tr><td>bitwarden</td><td>rpi</td><td>10h</td><td>vaultwarden/server</td><td class="warn">[ WARN ]</td><td>update 1.34.0</td></tr>
+        <tr><td>pihole</td><td>rpi</td><td>2w</td><td>pihole/pihole</td><td class="ok">[  OK  ]</td><td>dns · dhcp</td></tr>
+        <tr><td>qbittorrent</td><td>noblenumbat</td><td>20h</td><td>linuxserver/qbittorrent</td><td class="ok">[  OK  ]</td><td>via gluetun</td></tr>
+        <tr><td>webapp</td><td>rpi</td><td>10h</td><td>node:lts-alpine</td><td class="ok">[  OK  ]</td><td>this app</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="statusbar">
+    <span class="cell grow">Ready.</span>
+    <span class="cell">4/4 hosts</span>
+    <span class="cell">31/31 up</span>
+    <span class="cell">4 updates</span>
+    <span class="cell">doctor 24m</span>
+    <span class="cell">21:47</span>
+  </div>
+</div>

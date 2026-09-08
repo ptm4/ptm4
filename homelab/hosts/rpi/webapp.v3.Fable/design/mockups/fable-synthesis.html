@@ -1,0 +1,595 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Fable Synthesis</title>
+<!-- v3 mockup R: "fable synthesis" — THE CHOSEN DIRECTION (2026-09-06).
+     Structure from A (precision dark: near-black flat surfaces, hairline borders,
+     one hot accent, tabular-nums), the LAN map hero from M (topology), the
+     everything-stream from N (ops feed) — all re-paletted to GRUVBOX.
+     Yellow is the accent, so "warn" moved to orange. Purple is identity only.
+     The :root block below is the reference implementation of
+     frontend/src/lib/theme/tokens.css; the real app reads that file.
+     Dual-theme: dark is designed-for, light (gruvbox light) is the demoted twin.
+     Switchers bottom-right are mockup-only affordances. -->
+<style>
+  /* ── tokens (gruvbox, hard contrast) ─────────────────────────────────── */
+  :root {
+    --bg: #1d2021; --bg-inset: #161819;
+    --surface: #282828; --surface-2: #32302f; --surface-3: #3c3836;
+    --border: rgba(235,219,178,.08); --border-2: rgba(235,219,178,.16);
+    --ink: #ebdbb2; --ink-2: #a89984; --ink-3: #7c6f64;
+
+    --accent: #fabd2f; --accent-bright: #fbcb47; --accent-emphasis: #d79921;
+    --accent-dim: rgba(250,189,47,.13); --accent-muted: rgba(250,189,47,.4);
+    --brand: #d3869b; --brand-dim: rgba(211,134,155,.14);
+
+    --ok: #b8bb26;   --ok-dim: rgba(184,187,38,.13);
+    --warn: #fe8019; --warn-dim: rgba(254,128,25,.13);
+    --severe: #d65d0e;
+    --crit: #fb4934; --crit-dim: rgba(251,73,52,.13);
+
+    --c-network: #83a598; --c-storage: #b8bb26; --c-media: #fe8019; --c-apps: #d3869b; --c-aqua: #8ec07c;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --r-sm: 6px; --r: 8px; --r-lg: 12px;
+  }
+  :root[data-accent="orange"] { --accent: #fe8019; --accent-bright: #ff9a3c; --accent-emphasis: #d65d0e; --accent-dim: rgba(254,128,25,.13); --accent-muted: rgba(254,128,25,.4); --warn: #fabd2f; --warn-dim: rgba(250,189,47,.13); }
+  :root[data-accent="aqua"]   { --accent: #8ec07c; --accent-bright: #a8d69a; --accent-emphasis: #689d6a; --accent-dim: rgba(142,192,124,.13); --accent-muted: rgba(142,192,124,.4); }
+  :root[data-theme="light"] {
+    --bg: #fbf1c7; --bg-inset: #f2e5bc; --surface: #f9f5d7; --surface-2: #f2e5bc; --surface-3: #ebdbb2;
+    --border: rgba(60,56,54,.12); --border-2: rgba(60,56,54,.24);
+    --ink: #3c3836; --ink-2: #665c54; --ink-3: #7c6f64;
+    --accent: #b57614; --accent-bright: #d79921; --accent-emphasis: #b57614; --accent-dim: rgba(181,118,20,.12); --accent-muted: rgba(181,118,20,.4);
+    --brand: #8f3f71; --brand-dim: rgba(143,63,113,.1);
+    --ok: #79740e; --ok-dim: rgba(121,116,14,.12); --warn: #af3a03; --warn-dim: rgba(175,58,3,.1); --severe: #af3a03; --crit: #9d0006; --crit-dim: rgba(157,0,6,.1);
+    --c-network: #076678; --c-storage: #79740e; --c-media: #af3a03; --c-apps: #8f3f71; --c-aqua: #427b58;
+  }
+
+  /* ── base ────────────────────────────────────────────────────────────── */
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--ink); font: 400 13.5px/1.45 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: var(--accent); text-decoration: none; }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .dim { color: var(--ink-2); } .faint { color: var(--ink-3); }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .crit { color: var(--crit); } .acc { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* ── shell ───────────────────────────────────────────────────────────── */
+  .shell { display: grid; grid-template-columns: 212px minmax(0,1fr); min-height: 100vh; }
+  .side { border-right: 1px solid var(--border); padding: 14px 10px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; background: var(--bg); }
+  .brand { display: flex; align-items: center; gap: 8px; padding: 2px 8px 8px; font-weight: 600; font-size: 14px; letter-spacing: -.01em; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); box-shadow: 0 0 10px var(--accent-muted); }
+  .brand .ver { margin-left: auto; font: 500 10px var(--mono); color: var(--brand); border: 1px solid var(--border-2); border-radius: 99px; padding: 1px 7px; }
+  .ngroup h3 { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 0 8px 5px; }
+  .nlink { display: flex; align-items: center; gap: 9px; padding: 5px 8px; border-radius: var(--r-sm); color: var(--ink-2); font-size: 13px; }
+  .nlink svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.6; opacity: .75; flex: none; }
+  .nlink:hover { color: var(--ink); background: var(--surface-2); }
+  .nlink.on { color: var(--ink); background: var(--accent-dim); }
+  .nlink.on svg { color: var(--accent); opacity: 1; }
+  .nlink .k { margin-left: auto; font: 500 10px var(--mono); color: var(--ink-3); }
+  .nlink .cnt { margin-left: auto; font: 600 10px var(--mono); color: var(--warn); background: var(--warn-dim); border-radius: 99px; padding: 1px 6px; }
+  .nlink .pip { margin-left: auto; width: 6px; height: 6px; border-radius: 99px; background: var(--ok); }
+  .nlink .pip.off { background: var(--ink-3); }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .top { display: flex; align-items: center; gap: 10px; padding: 9px 20px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); z-index: 5; }
+  .crumb { font-size: 13px; color: var(--ink-2); }
+  .crumb b { color: var(--ink); font-weight: 550; }
+  .live { display: flex; align-items: center; gap: 6px; font: 500 10.5px var(--mono); color: var(--ok); letter-spacing: .06em; text-transform: uppercase; }
+  .live i { width: 6px; height: 6px; border-radius: 99px; background: var(--ok); box-shadow: 0 0 6px var(--ok); animation: beat 2.4s ease infinite; }
+  @keyframes beat { 50% { opacity: .35; } }
+  .search { margin-left: auto; display: flex; align-items: center; gap: 8px; border: 1px solid var(--border-2); border-radius: var(--r-sm); padding: 4px 10px; color: var(--ink-3); font-size: 12.5px; width: 250px; }
+  .search .k { margin-left: auto; font: 500 10px var(--mono); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+  .tbtn { border: 1px solid var(--border-2); background: none; color: var(--ink-2); border-radius: var(--r-sm); padding: 4px 10px; font-size: 12px; cursor: pointer; font-family: inherit; }
+  .tbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+  .tbtn .bell { display: inline-block; min-width: 15px; font: 600 10px var(--mono); color: var(--bg); background: var(--warn); border-radius: 99px; padding: 1px 5px; margin-left: 4px; }
+
+  .content { padding: 18px 20px 40px; display: flex; flex-direction: column; gap: 18px; max-width: 1280px; }
+
+  /* fleet strip */
+  .fleet { display: flex; align-items: center; gap: 10px 24px; flex-wrap: wrap; border: 1px solid var(--border); border-radius: var(--r); padding: 9px 16px; background: var(--surface); }
+  .fitem { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink-2); }
+  .fitem .num { color: var(--ink); font-size: 13px; }
+  .pip { width: 7px; height: 7px; border-radius: 99px; flex: none; }
+  .pip.ok { background: var(--ok); box-shadow: 0 0 6px var(--ok-dim), 0 0 2px var(--ok); }
+  .pip.warn { background: var(--warn); } .pip.crit { background: var(--crit); } .pip.off { background: var(--ink-3); }
+  .fleet .age { margin-left: auto; font: 400 11px var(--mono); color: var(--ink-3); }
+
+  /* section heads */
+  .shead { display: flex; align-items: baseline; gap: 10px; }
+  .shead h2 { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .shead .meta { font-size: 11px; color: var(--ink-3); }
+  .shead .more { margin-left: auto; font-size: 11.5px; color: var(--accent); }
+
+  /* ── topology hero ───────────────────────────────────────────────────── */
+  .stage { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 12px; }
+  .map { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); position: relative; overflow: hidden; }
+  .map::before { content: ""; position: absolute; inset: 0; background: linear-gradient(var(--accent-dim) 1px, transparent 1px), linear-gradient(90deg, var(--accent-dim) 1px, transparent 1px); background-size: 32px 32px; opacity: .35; }
+  .map svg { display: block; width: 100%; height: auto; position: relative; }
+  .map .legend { position: absolute; left: 12px; bottom: 9px; display: flex; gap: 14px; font-size: 10.5px; color: var(--ink-3); flex-wrap: wrap; }
+  .lg { display: flex; gap: 5px; align-items: center; }
+  .lg i { width: 14px; height: 2px; background: var(--c-network); opacity: .6; }
+  .lg i.dep { background: none; height: 0; border-top: 2px dashed var(--warn); opacity: .8; }
+  .edge { stroke: var(--c-network); stroke-opacity: .35; stroke-width: 1.5; }
+  .edge.faded { stroke-opacity: .15; }
+  .dep { stroke: var(--warn); stroke-width: 1.2; stroke-dasharray: 4 4; opacity: .6; fill: none; }
+  .node circle.halo { fill: none; stroke-width: 6; opacity: .22; }
+  .node circle.core { stroke-width: 1.5; fill: var(--bg-inset); }
+  .node.ok circle.core { stroke: var(--ok); } .node.ok circle.halo { stroke: var(--ok); }
+  .node.gw circle.core { stroke: var(--c-network); } .node.gw circle.halo { stroke: var(--c-network); }
+  .node.off circle.core { stroke: var(--ink-3); stroke-dasharray: 2 2; } .node.off circle.halo { stroke: var(--ink-3); opacity: .12; }
+  .node.sel circle.sel { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  .nlabel { fill: var(--ink); font: 600 13px var(--sans); text-anchor: middle; }
+  .nsub { fill: var(--ink-3); font: 400 10px var(--sans); text-anchor: middle; }
+  .nstat { fill: var(--ink-2); font: 400 10.5px var(--mono); text-anchor: middle; }
+  .spof { fill: var(--warn); font: 700 9px var(--sans); text-anchor: middle; letter-spacing: .08em; }
+  .cloudt { fill: var(--ink-2); font: 600 11px var(--sans); text-anchor: middle; }
+  .cdot { fill: var(--ok); opacity: .55; } .cdot.warn { fill: var(--warn); opacity: .9; }
+
+  .insp { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .insp .head { display: flex; gap: 8px; align-items: baseline; }
+  .insp .head .name { font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
+  .insp .head .role { color: var(--ink-3); font-size: 11.5px; }
+  .insp .head .up { margin-left: auto; color: var(--ok); font: 400 11px var(--mono); }
+  .vitals { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .vit .l { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+  .vit .v { font-size: 15px; font-weight: 500; }
+  .vit .v small { font-size: 10.5px; color: var(--ink-3); font-weight: 400; margin-left: 4px; }
+  .spark { width: 100%; height: 30px; }
+  .spark polyline { fill: none; stroke: var(--accent); stroke-width: 1.5; }
+  .spark path { fill: var(--accent-dim); }
+  .spark circle { fill: var(--accent); }
+  .meterline { display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: var(--ink-2); }
+  .meterline .lab { width: 56px; flex: none; }
+  .bar { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .bar.warn i { background: var(--warn); } .bar.ok i { background: var(--ok); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; border-radius: 4px; padding: 2px 7px; }
+  .chip.ok { color: var(--ok); background: var(--ok-dim); } .chip.warn { color: var(--warn); background: var(--warn-dim); }
+  .chip.crit { color: var(--crit); background: var(--crit-dim); } .chip.info { color: var(--accent); background: var(--accent-dim); }
+  .chip.act { color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; }
+  .chip.act:hover { color: var(--accent); border-color: var(--accent-muted); }
+  .insp .deps { border-top: 1px solid var(--border); padding-top: 8px; font-size: 11.5px; color: var(--ink-2); line-height: 1.5; }
+  .insp .deps b { color: var(--ink); }
+  .hostlink { margin-top: auto; display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--accent); border-top: 1px solid var(--border); padding-top: 8px; }
+
+  /* ── feed + now rail ─────────────────────────────────────────────────── */
+  .split { display: grid; grid-template-columns: minmax(0,1fr) 300px; gap: 12px; align-items: start; }
+  .feed { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  .fbar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .f { border: 1px solid var(--border); border-radius: 99px; padding: 2px 10px; font-size: 11.5px; color: var(--ink-2); cursor: pointer; }
+  .f.on { color: var(--accent); border-color: var(--accent-muted); background: var(--accent-dim); }
+  .f .c { color: var(--ink-3); margin-left: 4px; font-family: var(--mono); font-size: 10.5px; }
+  .f .c.hot { color: var(--warn); }
+  .divider { display: flex; align-items: center; gap: 10px; color: var(--ink-3); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; padding: 4px 0 0; }
+  .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 9px 12px; display: flex; gap: 11px; min-width: 0; transition: border-color .15s; }
+  .item:hover { border-color: var(--border-2); }
+  .item.unread { border-left: 3px solid var(--accent); }
+  .item.incident { border-color: var(--crit-dim); box-shadow: inset 0 0 0 1px var(--crit-dim); }
+  .av { width: 28px; height: 28px; border-radius: var(--r-sm); flex: none; display: grid; place-items: center; font: 700 11.5px var(--sans); color: var(--bg); }
+  .av.doc { background: var(--c-network); } .av.heal { background: var(--c-aqua); } .av.bot { background: var(--ok); }
+  .av.upd { background: var(--warn); } .av.sec { background: var(--crit); } .av.db { background: var(--c-apps); } .av.sync { background: var(--ink-2); }
+  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .ihead { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .ihead .who { font-weight: 600; }
+  .ihead .what { color: var(--ink-2); }
+  .ihead .t { margin-left: auto; font: 400 11px var(--mono); color: var(--ink-3); }
+  .excerpt { color: var(--ink-2); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; }
+  .ichips { display: flex; gap: 6px; margin-top: 3px; flex-wrap: wrap; align-items: center; }
+
+  .now { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 56px; min-width: 0; }
+  .ncard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 13px; }
+  .ncard h3 { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: flex; font-weight: 600; }
+  .ncard h3 .meta { margin-left: auto; font-weight: 400; letter-spacing: 0; text-transform: none; font-family: var(--mono); }
+  .nrow { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 12.5px; }
+  .nrow .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .nrow .grow b { color: var(--ink); font-weight: 550; }
+  .nrow .num { font-size: 11.5px; }
+  .inc { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 12.5px; border-top: 1px solid var(--border); }
+  .inc:first-of-type { border-top: 0; }
+  .inc .sev { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .inc .sev.crit { background: var(--crit); } .inc .sev.warn { background: var(--warn); } .inc .sev.mute { background: var(--ink-3); }
+  .inc .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── board grid ──────────────────────────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+  .card { grid-column: span 4; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 13px 15px; display: flex; flex-direction: column; gap: 10px; min-width: 0; transition: border-color .15s; }
+  .card:hover { border-color: var(--border-2); }
+  .c3 { grid-column: span 3; } .c6 { grid-column: span 6; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+  .chead { display: flex; align-items: baseline; gap: 8px; }
+  .chead h2 { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+  .chead .meta { margin-left: auto; font-size: 11px; color: var(--ink-3); }
+  .hostline { display: flex; align-items: baseline; gap: 10px; }
+  .hostline .name { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+  .hostline .role { font-size: 11px; color: var(--ink-3); }
+  .hostline .up { margin-left: auto; font: 400 11px var(--mono); color: var(--ok); }
+  .stat { display: flex; flex-direction: column; gap: 2px; justify-content: center; }
+  .stat .v { font-size: 26px; font-weight: 600; letter-spacing: -.02em; }
+  .stat .v small { font-size: 12px; color: var(--ink-3); font-weight: 400; }
+  .stat .l { font-size: 11px; color: var(--ink-3); }
+  .rows { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--border); font-size: 12.5px; }
+  .rows .row:first-child { border-top: 0; }
+  .row .t { font: 400 11px var(--mono); color: var(--ink-3); min-width: 44px; }
+  .row .t.live { color: var(--crit); font-weight: 600; }
+  .row .who { color: var(--ink); min-width: 110px; font-weight: 500; }
+  .row .what { color: var(--ink-2); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hact { display: flex; gap: 6px; max-height: 0; overflow: hidden; opacity: 0; transition: max-height .18s, opacity .18s, margin .18s; margin-top: -6px; }
+  .card:hover .hact, .card:focus-within .hact { max-height: 34px; opacity: 1; margin-top: 0; }
+
+  @media (max-width: 1080px) { .stage, .split { grid-template-columns: 1fr; } .now { position: static; } .card, .c3, .c6, .c8 { grid-column: span 6; } }
+  @media (max-width: 700px)  { .shell { grid-template-columns: 1fr; } .side { display: none; } .card, .c3, .c6, .c8, .c12 { grid-column: span 12; } .search { display: none; } }
+
+  /* switchers (mockup-only) */
+  .switch { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 8px; background: var(--surface); border: 1px solid var(--border-2); border-radius: 99px; padding: 7px 12px; z-index: 20; align-items: center; box-shadow: 0 8px 24px rgba(0,0,0,.35); }
+  .switch span { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin-right: 2px; }
+  .switch button.sw { width: 18px; height: 18px; border-radius: 99px; border: 2px solid transparent; cursor: pointer; padding: 0; }
+  .switch button.sw.on { border-color: var(--ink); }
+  .sw-yellow { background: #fabd2f; } .sw-orange { background: #fe8019; } .sw-aqua { background: #8ec07c; }
+  .switch .sep { width: 1px; height: 16px; background: var(--border-2); margin: 0 4px; }
+</style>
+
+<div class="shell">
+  <nav class="side">
+    <div class="brand"><span class="dot"></span> Pert&rsquo;s Pocket <span class="ver">v3</span></div>
+    <div class="ngroup">
+      <h3>Boards</h3>
+      <a class="nlink on" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg> Home <span class="k">1</span></a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18M12 3v18"/></svg> Dashboard <span class="k">2</span></a>
+    </div>
+    <div class="ngroup">
+      <h3>Live</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v5M12 12l-6 5M12 12l6 5"/></svg> Topology</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h13"/></svg> Feed</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg> Incidents <span class="cnt">1</span></a>
+    </div>
+    <div class="ngroup">
+      <h3>Operations</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg> Cockpit</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M6 7V4h12v3"/></svg> Containers</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg> Pi-hole</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg> Trends</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> Reports</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg> Data &amp; Query</a>
+    </div>
+    <div class="ngroup">
+      <h3>Services</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 4h8"/><circle cx="9" cy="13" r="1"/><circle cx="15" cy="13" r="1"/></svg> Discord bots</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg> CS2 / Leetify</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M12 3a5 5 0 0 1 5 5c0 2-1 3-2 4l-1 1v2h-4v-2l-1-1c-1-1-2-2-2-4a5 5 0 0 1 5-5z"/><path d="M10 19h4M11 22h2"/></svg> Local LLM</a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.6 0l3-3a4 4 0 0 0-5.6-5.6l-1 1"/><path d="M14 10a4 4 0 0 0-5.6 0l-3 3a4 4 0 0 0 5.6 5.6l1-1"/></svg> Quick links</a>
+    </div>
+    <div class="ngroup">
+      <h3>Hosts</h3>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg> opti <span class="pip"></span></a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg> rpi <span class="pip"></span></a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg> noblenumbat <span class="pip"></span></a>
+      <a class="nlink" href="#"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg> android <span class="pip off"></span></a>
+    </div>
+  </nav>
+
+  <div class="main">
+    <div class="top">
+      <span class="crumb"><b>Home</b> · fable synthesis</span>
+      <span class="live"><i></i> live · sse</span>
+      <div class="search">Go to, open, run — or ask&hellip; <span class="k">&#8984;K</span></div>
+      <button class="tbtn">Incidents <span class="bell">1</span></button>
+      <button class="tbtn">Edit board</button>
+    </div>
+
+    <div class="content">
+      <div class="fleet">
+        <span class="fitem"><span class="pip ok"></span><span class="num">4/4</span> hosts</span>
+        <span class="fitem"><span class="pip ok"></span><span class="num">31/31</span> containers</span>
+        <span class="fitem"><span class="pip warn"></span><span class="num">4</span> image updates</span>
+        <span class="fitem"><span class="pip crit"></span><span class="num">1</span> open incident</span>
+        <span class="fitem"><span class="pip off"></span><span class="num">android</span> offline · by design</span>
+        <span class="age">doctor 24m · vitals 30s ago</span>
+      </div>
+
+      <!-- ── topology hero ──────────────────────────────────────────────── -->
+      <div class="shead"><h2>Topology</h2><span class="meta">live LAN · 192.168.1.0/24</span><a class="more" href="#">Open the map &rarr;</a></div>
+      <div class="stage">
+        <div class="map">
+          <svg viewBox="0 0 820 320" role="img" aria-label="LAN topology map">
+            <line class="edge faded" x1="410" y1="46" x2="410" y2="100"/>
+            <line class="edge" x1="410" y1="130" x2="110" y2="226"/>
+            <line class="edge" x1="410" y1="130" x2="300" y2="226"/>
+            <line class="edge" x1="410" y1="130" x2="520" y2="226"/>
+            <line class="edge" x1="410" y1="130" x2="720" y2="226"/>
+            <line class="edge faded" x1="410" y1="130" x2="650" y2="76"/>
+            <!-- dependency arcs: noblenumbat + rpi read opti over CIFS; everyone resolves via rpi -->
+            <path class="dep" d="M 700 236 C 560 300 420 296 326 242"/>
+            <path class="dep" d="M 130 238 C 250 296 400 292 496 244"/>
+            <!-- container clusters (rpi 16, noblenumbat 15) -->
+            <g class="cluster">
+              <circle class="cdot" cx="486" cy="200" r="2.2"/><circle class="cdot" cx="494" cy="192" r="2.2"/><circle class="cdot" cx="504" cy="187" r="2.2"/><circle class="cdot warn" cx="515" cy="185" r="2.2"/><circle class="cdot" cx="526" cy="185" r="2.2"/><circle class="cdot" cx="537" cy="188" r="2.2"/><circle class="cdot" cx="547" cy="193" r="2.2"/><circle class="cdot" cx="554" cy="201" r="2.2"/>
+              <circle class="cdot" cx="686" cy="200" r="2.2"/><circle class="cdot" cx="694" cy="192" r="2.2"/><circle class="cdot" cx="704" cy="187" r="2.2"/><circle class="cdot warn" cx="715" cy="185" r="2.2"/><circle class="cdot warn" cx="726" cy="185" r="2.2"/><circle class="cdot warn" cx="737" cy="188" r="2.2"/><circle class="cdot" cx="747" cy="193" r="2.2"/><circle class="cdot" cx="754" cy="201" r="2.2"/>
+            </g>
+            <g class="node gw"><circle class="core" cx="410" cy="32" r="12"/><text class="cloudt" x="410" y="16">internet</text></g>
+            <g class="node gw">
+              <circle class="halo" cx="410" cy="116" r="19"/><circle class="core" cx="410" cy="116" r="14"/>
+              <text class="nlabel" x="410" y="150">archer</text>
+              <text class="nsub" x="410" y="163">gateway · .1 · dhcp off</text>
+            </g>
+            <g class="node off">
+              <circle class="halo" cx="650" cy="76" r="14"/><circle class="core" cx="650" cy="76" r="10"/>
+              <text class="nlabel" x="650" y="103" style="font-size:11px; fill: var(--ink-2)">android</text>
+              <text class="nsub" x="650" y="115">llm · .54 · offline (intermittent)</text>
+            </g>
+            <g class="node ok">
+              <circle class="halo" cx="110" cy="242" r="18"/><circle class="core" cx="110" cy="242" r="13"/>
+              <text class="nlabel" x="110" y="277">tux</text>
+              <text class="nsub" x="110" y="290">workstation · .3</text>
+            </g>
+            <g class="node ok sel">
+              <circle class="sel" cx="300" cy="242" r="23"/>
+              <circle class="halo" cx="300" cy="242" r="18"/><circle class="core" cx="300" cy="242" r="13"/>
+              <text class="nlabel" x="300" y="277">opti</text>
+              <text class="nsub" x="300" y="290">storage · control · .11</text>
+              <text class="nstat" x="300" y="304">0.16 · 30&deg;C · zfs 19%</text>
+              <text class="spof" x="300" y="212">STORAGE SPOF</text>
+            </g>
+            <g class="node ok">
+              <circle class="halo" cx="520" cy="242" r="18"/><circle class="core" cx="520" cy="242" r="13"/>
+              <text class="nlabel" x="520" y="277">rpi</text>
+              <text class="nsub" x="520" y="290">dns · dhcp · web · .10</text>
+              <text class="nstat" x="520" y="304">16/16 up · 40&deg;C · 1 upd</text>
+              <text class="spof" x="520" y="172">DNS SPOF</text>
+            </g>
+            <g class="node ok">
+              <circle class="halo" cx="720" cy="242" r="18"/><circle class="core" cx="720" cy="242" r="13"/>
+              <text class="nlabel" x="720" y="277">noblenumbat</text>
+              <text class="nsub" x="720" y="290">media · vpn · .6</text>
+              <text class="nstat" x="720" y="304">15/15 up · 46&deg;C · 3 upd</text>
+            </g>
+          </svg>
+          <div class="legend">
+            <span class="lg"><i></i> LAN link</span>
+            <span class="lg"><i class="dep"></i> depends on</span>
+            <span class="lg"><span class="ok">&#9679;</span> healthy</span>
+            <span class="lg"><span class="warn">&#9679;</span> update pending</span>
+            <span class="lg faint">click a node · dots are containers</span>
+          </div>
+        </div>
+
+        <div class="insp">
+          <div class="head"><span class="name">opti</span><span class="role">storage · control plane · .11</span><span class="up">up 29d</span></div>
+          <div class="vitals">
+            <div class="vit"><div class="l">CPU load</div><div class="v num">0.16</div></div>
+            <div class="vit"><div class="l">Memory</div><div class="v num">48%<small>of 5.7 GiB</small></div></div>
+            <div class="vit"><div class="l">Temp</div><div class="v num">30&deg;C</div></div>
+            <div class="vit"><div class="l">Net</div><div class="v num" style="font-size:12.5px">&darr;63 &uarr;170<small>KB/s</small></div></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="opti CPU, last 3h">
+            <path d="M0,22 L20,20 40,23 60,18 80,21 100,14 120,19 140,16 160,20 180,17 200,19 L200,30 0,30 Z"/>
+            <polyline points="0,22 20,20 40,23 60,18 80,21 100,14 120,19 140,16 160,20 180,17 200,19"/>
+            <circle cx="200" cy="19" r="2.5"/>
+          </svg>
+          <div class="meterline"><span class="lab">red · zfs</span><span class="bar"><i style="width:19%"></i></span><span class="num">19%</span></div>
+          <div class="meterline"><span class="lab">os disk</span><span class="bar warn"><i style="width:77%"></i></span><span class="num warn">77%</span></div>
+          <div class="chips"><span class="chip act">Terminal</span><span class="chip act">Autoupdate</span><span class="chip act">Reboot&hellip;</span><span class="chip act">homelab-db</span></div>
+          <div class="deps">
+            <b>3 hosts depend on this node.</b><br>
+            noblenumbat mounts the pool over CIFS · rpi reads reports &amp; agent logs · tux's working copy lives here.
+          </div>
+          <a class="hostlink" href="#">Open host page <span>&rarr;</span></a>
+        </div>
+      </div>
+
+      <!-- ── ops feed + now rail ─────────────────────────────────────────── -->
+      <div class="shead"><h2>Feed</h2><span class="meta">everything, newest first</span><a class="more" href="#">Full stream &rarr;</a></div>
+      <div class="split">
+        <div class="feed">
+          <div class="fbar">
+            <span class="f on">Everything <span class="c">12</span></span>
+            <span class="f">Needs action <span class="c hot">2</span></span>
+            <span class="f">Health</span><span class="f">Bots</span><span class="f">Security</span><span class="f">Changes</span><span class="f">CS2</span>
+            <span class="f faint" style="margin-left:auto">opti · rpi · nn</span>
+          </div>
+
+          <div class="divider">Now</div>
+          <div class="item incident unread">
+            <span class="av sec">!</span>
+            <div class="body">
+              <div class="ihead"><span class="who">Incident #241</span><span class="what">opti os disk 77% and climbing — 3 findings correlated</span><span class="t">21:31</span></div>
+              <div class="excerpt">homelab-doctor: warn (opti /) · hardware: SMART ok · hl-db: 2 GB/week growth trend · first seen 3d ago</div>
+              <div class="ichips"><span class="chip crit">open</span><span class="chip act">Ack</span><span class="chip act">Mute 7d</span><span class="chip act">Open opti</span><span class="chip act">Query growth</span></div>
+            </div>
+          </div>
+
+          <div class="divider">Today</div>
+          <div class="item">
+            <span class="av bot">W</span>
+            <div class="body">
+              <div class="ihead"><span class="who">discord-weather</span><span class="what">posted the daily report</span><span class="t">07:00</span></div>
+              <div class="excerpt">"78° and partly cloudy, feels 81. Rain 20%." · witty pool: 41 lines left</div>
+              <div class="ichips"><span class="chip ok">sent</span><span class="chip act">Open #weather</span></div>
+            </div>
+          </div>
+          <div class="item">
+            <span class="av heal">V</span>
+            <div class="body">
+              <div class="ihead"><span class="who">vpn-stack-heal</span><span class="what">renewed the NAT-PMP lease</span><span class="t">06:32</span></div>
+              <div class="excerpt">forwarded port unchanged (52644) · gluetun healthy · qBittorrent reachable through the namespace</div>
+              <div class="ichips"><span class="chip ok">auto-healed</span></div>
+            </div>
+          </div>
+          <div class="item">
+            <span class="av doc">D</span>
+            <div class="body">
+              <div class="ihead"><span class="who">homelab-doctor</span><span class="what">4/4 hosts · 31/31 containers · 1 warn (opti /)</span><span class="t">04:15</span></div>
+              <div class="ichips"><span class="chip warn">1 warn</span><span class="chip act">Full report</span></div>
+            </div>
+          </div>
+          <div class="item unread">
+            <span class="av upd">U</span>
+            <div class="body">
+              <div class="ihead"><span class="who">arch-agent</span><span class="what">4 image updates available</span><span class="t">02:10</span></div>
+              <div class="excerpt">vaultwarden 1.33.1 → 1.34.0 (rpi) · jellyfin 10.10.4, prowlarr 1.31, gluetun 3.40 (noblenumbat)</div>
+              <div class="ichips"><span class="chip warn">needs action</span><span class="chip act">Apply from Cockpit</span><span class="chip act">Ack</span><span class="chip act">Snooze 7d</span></div>
+            </div>
+          </div>
+          <div class="divider">Yesterday</div>
+          <div class="item">
+            <span class="av db">H</span>
+            <div class="body">
+              <div class="ihead"><span class="who">homelab-db</span><span class="what">container change: <span class="num">hltv-api</span> appeared on rpi</span><span class="t">-1d</span></div>
+              <div class="ichips"><span class="chip info">change</span><span class="chip act">hl_changes</span></div>
+            </div>
+          </div>
+          <div class="item">
+            <span class="av sync">A</span>
+            <div class="body">
+              <div class="ihead"><span class="who">attic-sync</span><span class="what">weekly cold copy finished</span><span class="t">-1d</span></div>
+              <div class="excerpt">41 GiB in 12m to /srv/attic · next run Sunday 02:00</div>
+              <div class="ichips"><span class="chip ok">done</span></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="now">
+          <div class="ncard">
+            <h3>Now <span class="meta">21:47 · Sun Sep 6</span></h3>
+            <div class="nrow"><span class="grow"><b>opti</b> · up 29d</span><span class="num">0.16 · 48% · 30&deg;</span></div>
+            <div class="nrow"><span class="grow"><b>rpi</b> · up 20d</span><span class="num">0.55 · 58% · 40&deg;</span></div>
+            <div class="nrow"><span class="grow"><b>noblenumbat</b> · up 1d8h</span><span class="num">0.00 · 20% · 46&deg;</span></div>
+            <div class="nrow"><span class="grow"><b>android</b> · llm</span><span class="num faint">offline</span></div>
+          </div>
+          <div class="ncard">
+            <h3>Incidents <span class="meta warn">1 open · 2 muted</span></h3>
+            <div class="inc"><span class="sev crit"></span><span class="grow">#241 opti os disk 77%</span><span class="num faint">3d</span></div>
+            <div class="inc"><span class="sev mute"></span><span class="grow dim">#238 android unreachable</span><span class="num faint">muted</span></div>
+            <div class="inc"><span class="sev mute"></span><span class="grow dim">#233 vaultwarden update</span><span class="num faint">7d</span></div>
+          </div>
+          <div class="ncard">
+            <h3>Storage</h3>
+            <div class="meterline"><span class="lab">red · zfs</span><span class="bar ok"><i style="width:19%"></i></span><span class="num">19%</span></div>
+            <div class="meterline"><span class="lab">opti os</span><span class="bar warn"><i style="width:77%"></i></span><span class="num warn">77%</span></div>
+            <div class="meterline"><span class="lab">rpi sd</span><span class="bar ok"><i style="width:29%"></i></span><span class="num">29%</span></div>
+            <div class="meterline"><span class="lab">nn os</span><span class="bar ok"><i style="width:18%"></i></span><span class="num">18%</span></div>
+          </div>
+          <div class="ncard">
+            <h3>Pi-hole <span class="meta ok">live</span></h3>
+            <div class="nrow"><span class="grow">22.4% blocked</span><span class="num faint">7,134 / 31,842</span></div>
+            <div class="nrow"><span class="grow faint">gravity 1.19M · <a href="#">pause 5m</a></span></div>
+          </div>
+          <div class="ncard">
+            <h3>Bots <span class="meta ok">5/5 on</span></h3>
+            <div class="nrow"><span class="grow faint">next: weather 07:00 · digest 08:00 · hltv 09:00</span></div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ── board ──────────────────────────────────────────────────────── -->
+      <div class="shead"><h2>Board · Home</h2><span class="meta">8 widgets · drag to rearrange in edit mode</span><a class="more" href="#">All boards &rarr;</a></div>
+      <div class="grid">
+        <section class="card">
+          <div class="hostline"><span class="name">rpi</span><span class="role">DNS · DHCP · web</span><span class="up">up 20d</span></div>
+          <div class="vitals">
+            <div class="vit"><div class="l">CPU load</div><div class="v num">0.55</div></div>
+            <div class="vit"><div class="l">Memory</div><div class="v num">58%<small>of 3.7 GiB</small></div></div>
+            <div class="vit"><div class="l">Temp</div><div class="v num">40&deg;C</div></div>
+            <div class="vit"><div class="l">Containers</div><div class="v num">16/16</div></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="rpi CPU, last 3h">
+            <path d="M0,20 L20,18 40,22 60,16 80,19 100,13 120,17 140,10 160,16 180,14 200,15 L200,30 0,30 Z"/>
+            <polyline points="0,20 20,18 40,22 60,16 80,19 100,13 120,17 140,10 160,16 180,14 200,15"/>
+            <circle cx="200" cy="15" r="2.5"/>
+          </svg>
+          <div class="meterline"><span class="lab">sd card</span><span class="bar ok"><i style="width:29%"></i></span><span class="num">29%</span></div>
+          <div class="hact"><span class="chip act">Terminal</span><span class="chip act">Autoupdate</span><span class="chip act">Reboot&hellip;</span></div>
+        </section>
+        <section class="card">
+          <div class="hostline"><span class="name">noblenumbat</span><span class="role">media stack</span><span class="up">up 1d 8h</span></div>
+          <div class="vitals">
+            <div class="vit"><div class="l">CPU load</div><div class="v num">0.00</div></div>
+            <div class="vit"><div class="l">Memory</div><div class="v num">20%<small>of 15.4 GiB</small></div></div>
+            <div class="vit"><div class="l">Temp</div><div class="v num">46&deg;C</div></div>
+            <div class="vit"><div class="l">VPN</div><div class="v ok" style="font-size:13px">ok · port fwd</div></div>
+          </div>
+          <svg class="spark" viewBox="0 0 200 30" preserveAspectRatio="none" aria-label="noblenumbat CPU, last 3h">
+            <path d="M0,26 L20,25 40,26 60,24 80,26 100,22 120,25 140,24 160,26 180,25 200,25 L200,30 0,30 Z"/>
+            <polyline points="0,26 20,25 40,26 60,24 80,26 100,22 120,25 140,24 160,26 180,25 200,25"/>
+            <circle cx="200" cy="25" r="2.5"/>
+          </svg>
+          <div class="meterline"><span class="lab">15/15 up</span><span class="bar ok"><i style="width:100%"></i></span><span class="num ok">ok</span></div>
+          <div class="hact"><span class="chip act">Terminal</span><span class="chip act">Autoupdate</span><span class="chip act">Reboot&hellip;</span></div>
+        </section>
+        <section class="card">
+          <div class="chead"><h2>Pi-hole</h2><span class="meta">rpi · live</span></div>
+          <div class="stat"><span class="v num">22.4<small>% blocked</small></span><span class="l num">7,134 of 31,842 queries today</span></div>
+          <div class="bar"><i style="width:22.4%"></i></div>
+          <div class="meterline"><span class="lab">gravity</span><span class="num dim" style="flex:1; text-align:right">1.19M domains</span></div>
+          <div class="hact"><span class="chip act">Pause 5 min</span><span class="chip act">Open Pi-hole</span></div>
+        </section>
+
+        <section class="card c8">
+          <div class="chead"><h2>Activity</h2><span class="meta">latest reports</span></div>
+          <div class="rows">
+            <div class="row"><span class="t live">LIVE</span><span class="who">Vitality — Spirit</span><span class="what">Mirage · map 2 · EPL playoffs</span><span class="num crit">9–7</span></div>
+            <div class="row"><span class="t">07:00</span><span class="who">discord-weather</span><span class="what">Posted the daily 7AM report</span><span class="chip ok">sent</span></div>
+            <div class="row"><span class="t">06:32</span><span class="who">vpn-stack-heal</span><span class="what">NAT-PMP lease renewed; forwarded port unchanged (52644)</span><span class="chip ok">healed</span></div>
+            <div class="row"><span class="t">04:15</span><span class="who">homelab-doctor</span><span class="what">4/4 hosts, 31/31 containers — opti / at 77%</span><span class="chip warn">warn</span></div>
+            <div class="row"><span class="t">02:10</span><span class="who">arch-agent</span><span class="what">vaultwarden 1.33.1 → 1.34.0 available on rpi</span><span class="chip warn">update</span></div>
+          </div>
+        </section>
+        <section class="card" style="grid-column: span 4">
+          <div class="chead"><h2>Storage</h2><span class="meta">pools &amp; disks</span></div>
+          <div class="stat"><span class="v num">0.7<small>/ 3.7 TB</small></span><span class="l">red · ZFS · opti</span></div>
+          <div class="bar ok"><i style="width:19%"></i></div>
+          <div class="rows" style="margin-top:4px">
+            <div class="row"><span class="who" style="min-width:80px">opti os</span><span class="bar warn"><i style="width:77%"></i></span><span class="num warn">77%</span></div>
+            <div class="row"><span class="who" style="min-width:80px">rpi sd</span><span class="bar ok"><i style="width:29%"></i></span><span class="num">29%</span></div>
+            <div class="row"><span class="who" style="min-width:80px">nn os</span><span class="bar ok"><i style="width:18%"></i></span><span class="num">18%</span></div>
+          </div>
+        </section>
+
+        <section class="card c3">
+          <div class="chead"><h2>Incidents</h2></div>
+          <div class="stat"><span class="v num crit">1<small>open</small></span><span class="l">2 muted · 14 resolved this month</span></div>
+          <span class="chip crit" style="align-self:flex-start">#241 opti disk</span>
+        </section>
+        <section class="card c3">
+          <div class="chead"><h2>Homelab DB</h2></div>
+          <div class="stat"><span class="v num">14<small>/ 14 feeds</small></span><span class="l num">91 days indexed · 65k vitals</span></div>
+          <span class="chip ok" style="align-self:flex-start">all feeding</span>
+        </section>
+        <section class="card c3">
+          <div class="chead"><h2>Local LLM</h2></div>
+          <div class="stat"><span class="v" style="font-size:16px">Qwen2.5-3B</span><span class="l">android:8080 · phone asleep</span></div>
+          <span class="chip act" style="align-self:flex-start">offline · by design</span>
+        </section>
+        <section class="card c3">
+          <div class="chead"><h2>Weather</h2><span class="meta">7AM sent</span></div>
+          <div class="stat"><span class="v num">78&deg;<small>feels 81&deg;</small></span><span class="l">partly cloudy · rain 20%</span></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="switch" role="group" aria-label="Mockup switchers">
+  <span>Accent</span>
+  <button class="sw sw-yellow on" aria-label="Yellow" onclick="setAcc('yellow',this)"></button>
+  <button class="sw sw-orange" aria-label="Orange" onclick="setAcc('orange',this)"></button>
+  <button class="sw sw-aqua" aria-label="Aqua" onclick="setAcc('aqua',this)"></button>
+  <span class="sep"></span>
+  <button class="tbtn" onclick="toggleTheme()" id="tt">Light</button>
+</div>
+<script>
+  function setAcc(name, btn) {
+    document.documentElement.dataset.accent = name;
+    document.querySelectorAll('.switch .sw').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+  }
+  function toggleTheme() {
+    var d = document.documentElement;
+    var light = d.dataset.theme === 'light';
+    d.dataset.theme = light ? 'dark' : 'light';
+    document.getElementById('tt').textContent = light ? 'Light' : 'Dark';
+  }
+</script>

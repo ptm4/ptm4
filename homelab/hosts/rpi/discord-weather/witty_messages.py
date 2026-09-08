@@ -1,32 +1,12 @@
 #!/usr/bin/env python3
-"""witty_messages — locally generated one-liners for the daily weather post.
+"""Mr. Murf's morning lines: short bits, friendly callouts and reply hooks.
 
-No API calls, no LLM, no network: the humour is a fixed set of madlibs
-TEMPLATES plus WORD_BANKS, expanded combinatorially against the configured
-list of names. ~100 templates x 10 names x bank fills is a six-figure space,
-so the bot can run forever on what is baked into this file.
+Weather events take priority over the ordinary shuffled catalogue. Recipe history
+suppresses repeat premises even when names change. All content is authored locally;
+no model, network calls, or access to the chat. Public preview/commit/reroll methods
+keep state on the existing /data volume; only accepted posts advance history.
 
-Selection guarantees, in one paragraph: a *cycle* is up to CYCLE_SIZE distinct
-(template, name) pairs, pre-shuffled and persisted. Each morning the bot peeks
-at the pool, posts the line, and only then commits — so a failed post retries
-with the identical line, and previews never consume one. Nothing repeats until
-the cycle empties; then a fresh cycle is generated that excludes the most
-recent HISTORY_SIZE posted pairs, which is what stops "no repeats until
-exhausted" from producing a jarring repeat across the seam.
-
-Templates can be tagged for weather (hot/cold/rain/snow/nice) and/or pinned to
-weekdays; those only fire when they fit, with generic lines as the fallback
-(and as the safety net when the forecast fetch fails entirely).
-
-Voice: the poster is "Mr. Murf" — the troop's 55-year-old scoutmaster. Former
-70s hippie (Woodstock, a VW bus, a commune phase he half-denies), now runs a
-tight ship: full uniform for ceremonies, everything by the Handbook, strict
-outdoor rules, and he WILL kick your fire down if it isn't a proper build
-(teepee, log cabin, lean-to). Every line is him addressing the troop.
-
-Standalone use, for taste-testing the content:
-    python3 witty_messages.py 30      # 30 random rendered samples
-    python3 witty_messages.py --all   # every template rendered once
+Taste-test: python witty_messages.py --all
 """
 import itertools
 import json
@@ -37,23 +17,18 @@ import threading
 import time
 from datetime import datetime
 
-VERSION = 4          # bump when TEMPLATES change incompatibly -> forces a fresh pool
-                     # v2 (2026-08-21): full content refresh — Mr. Murf voice
-                     # v3 (2026-08-21): +76 templates (brotherhood warmth, pure
-                     # bits, Murf self-deprecation); harshest lines re-turned and
-                     # the adj/praise banks stripped of worth-attacks
-                     # v4 (2026-08-21): selection fairness — ranking now scores a
-                     # window rather than the whole queue, and nameless bits get
-                     # a per-cycle quota. Without both, 26 weekday-pinned lines
-                     # monopolised their days and the 16 bits drew once a quarter.
-CYCLE_SIZE = 90      # ~3 months of daily draws before a reshuffle
+import weather_context
+
+VERSION = 5          # content refresh; retire all v4 recipes on upgrade
+TEMPLATE_COOLDOWN = 45  # posted jokes, regardless of which name was filled in
+CYCLE_SIZE = 90      # upper bound; cooldown and catalogue determine actual size
 HISTORY_SIZE = 180   # recent (template, name) pairs barred from the next cycle (~6 months)
 HISTORY_MAX = 400    # how much history we keep on disk
 ANY_PER_TAGGED = 2   # cycle composition: 2 generic lines per weather/day line
-PER_TEMPLATE_CAP = 2  # max times one template appears per cycle (two-name templates
+PER_TEMPLATE_CAP = 1  # max times one template appears per cycle (two-name templates
                       # have hundreds of name permutations and would swamp the shuffle)
 SELECT_WINDOW = 12   # how far into the shuffled queue ranking looks; see _select
-BIT_EVERY = 9        # cycle slots per nameless "pure bit" (CYCLE_SIZE // this)
+BIT_EVERY = 3        # cycle slots per nameless "pure bit" (CYCLE_SIZE // this)
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TAGS = ("any", "hot", "cold", "rain", "snow", "nice")
@@ -62,358 +37,345 @@ WEATHER_SLOTS = {"hi", "lo", "feels", "rain", "wind", "uv", "humidity",
                  "cond", "cond_lower", "emoji"}
 
 
-# ── word banks ────────────────────────────────────────────────────────────────
-# Every adjective, artifact, snack and gear item is consonant-initial on
-# purpose: templates say "a {adj} man" / "a broken {artifact}" and "an" would
-# be wrong. place / praise / hippie items carry their own articles.
-WORD_BANKS = {
-    # PEOPLE only (a15, a27, a32, h07). Two rules learned the hard way:
-    # worth-words ("tragic", "disgraceful", "delusional") are cut because these
-    # templates aim {adj} at a named friend; and anything that reads as praise
-    # ("world-class", "certified") is cut because a15 needs a negative to work
-    # — "has been world-class since 2003" inverts the joke into a compliment.
-    "adj": [
-        "greasy", "feral", "sweaty", "crusty", "damp", "questionable",
-        "menacing", "borderline-criminal", "half-asleep", "suspicious",
-        "low-budget", "discount", "structurally-unsound", "deeply-confused",
-        "sticky", "slippery", "sluggish", "clammy", "reckless", "stubborn",
-        "gently-unhinged", "barely-vertical", "knot-illiterate",
-        "compass-optional", "chronically-late", "moderately-prepared",
-    ],
-    # THINGS only (b03 shirt, p03 chainsaw, r07 drowned possum). Separate bank
-    # because "a half-asleep shirt" and "a moth-eaten man" are both nonsense —
-    # one list cannot serve both slots.
-    "adj_thing": [
-        "greasy", "crusty", "damp", "questionable", "low-budget", "discount",
-        "structurally-unsound", "sticky", "wobbly", "slippery", "dented",
-        "dusty", "rusty", "secondhand", "grubby", "battered", "moth-eaten",
-        "sun-bleached", "waterlogged", "misshapen",
-    ],
-    "exercise": [
-        "push-ups", "burpees", "sit-ups", "lunges", "jumping jacks",
-        "flutter kicks", "bear crawls", "squats", "wall sits",
-        "mountain climbers", "log carries", "morning calisthenics",
-        "tent-pitching drills", "orienteering drills",
-    ],
-    "noun_plural": [
-        "excuses", "demerits", "regrets", "bad decisions",
-        "uniform infractions", "safety violations", "unearned badges",
-        "questionable life choices", "false promises", "empty threats",
-        "mystery bruises", "red flags", "unforced errors", "broken promises",
-        "curfew violations", "knot failures", "unfinished projects",
-        "wild claims", "unpaid debts", "bad opinions", "group chat crimes",
-        "conspiracy theories", "unreturned tupperware",
-        "fire-code violations", "littering citations",
-    ],
-    "verb_past": [
-        "sprinted", "moonwalked", "power-walked", "sleepwalked", "hydroplaned",
-        "cartwheeled", "limped", "somersaulted", "crab-walked", "vaulted",
-        "wandered", "stumbled", "dead-sprinted", "speed-walked", "backflipped",
-        "waddled", "skipped", "galloped", "tiptoed", "marched", "shuffled",
-        "jogged", "barreled", "hobbled", "strutted",
-    ],
-    "artifact": [
-        "Tamagotchi", "Blockbuster card", "Sega Genesis", "GameCube",
-        "Razr flip phone", "Discman", "dial-up modem", "Trapper Keeper",
-        "Beanie Baby", "Nextel two-way", "Motorola pager", "Spaldeen",
-        "Pokemon binder", "Livestrong bracelet", "Zip drive", "Sidekick",
-        "yo-yo", "Guitar Hero controller", "Jansport", "slap bracelet",
-        "Silly Bandz collection", "Walkman", "Nintendo 64", "Furby",
-        "Game Boy Color", "VHS tape of Rocky IV", "Yankees fitted",
-        "burned Napster CD", "Tech Deck", "Koosh ball", "Super Soaker",
-        "Bop It", "Nerf gun", "milk crate", "pogo stick",
-        "Pinewood Derby car",
-    ],
-    # Deliberately no overlap with the literal openers some templates use
-    # ("Reveille", "Morning, troop", …) — a bank entry duplicating a literal
-    # opener makes identical back-to-back mornings likely.
-    "exclaim": [
-        "Rise and shine, troop", "Fall in", "Off your bunks",
-        "Attention on deck", "Wakey wakey, ladies", "Sound off", "Look alive",
-        "On your feet", "Let's move, people", "Daylight's burning",
-        "Chins up, chests out", "Ten-hut", "Boots on", "Bugle's blown",
-        "Out of the racks",
-    ],
-    "place": [
-        "the handball courts", "the 7-Eleven", "the deli",
-        "the LIRR platform", "Jones Beach", "the church parking lot",
-        "the schoolyard", "the bagel place", "the corner store", "the bus stop",
-        "the food court at Roosevelt Field", "the CYO gym", "the boardwalk",
-        "the pizzeria", "the batting cages", "the mess hall",
-        "the archery range", "the canoe launch", "the trading post",
-        "the latrine trail", "the parade ground",
-    ],
-    "snack": [
-        "bacon egg and cheese", "Slurpee", "Pop-Tart", "buttered roll",
-        "Gatorade", "chocolate milk", "cold slice", "hero from the deli",
-        "Snapple", "bagel with a schmear", "Devil Dog",
-        "sausage egg and cheese", "toasted everything bagel",
-        "black-and-white cookie", "cannoli", "meatball hero",
-        "chicken cutlet hero", "knish", "Mister Softee cone",
-        "bag of trail mix", "granola bar", "bottle of Gatorade",
-        # No mess-hall food here: {snack} fills "bring a {snack}" at a 3 AM
-        # roadside (b09) and "cleared out the 7-Eleven" (s04), and a bowl of
-        # camp stew is not a thing a grown man has in his car. Bug juice and
-        # mystery stew live in the j-series bits instead.
-    ],
-    # Mock-praise. Aimed at BEHAVIOR, never at the man's worth — "a monument to
-    # wasted potential" got cut for that reason. A few are secretly compliments,
-    # which is what keeps the whole bank reading as affection.
-    "praise": [
-        "a walking safety violation", "a two-demerit situation",
-        "a cautionary tale", "the reason we count heads twice",
-        "a campfire story I tell as a warning", "a certified menace",
-        "the reason the buddy system exists", "a public safety concern",
-        "a legend in his own mind", "my problem specifically",
-        "a menace I would take on any campout", "the troop's loudest asset",
-        "the first man to help you carry something",
-        "a disaster I'd trust with my kids", "the best worst example we have",
-    ],
-    "gear": [
-        "canteen", "compass", "mess kit", "pocketknife", "tent stake",
-        "sleeping bag", "ground tarp", "trail map", "poncho", "whistle",
-        "flint and steel", "bear bag",
-    ],
-    "fire": [
-        "teepee", "log cabin", "lean-to", "star", "council", "pyramid",
-    ],
-    "knot": [
-        "bowline", "clove hitch", "taut-line hitch", "square knot",
-        "sheet bend", "timber hitch", "figure-eight", "sheepshank",
-    ],
-    # REAL discontinued merit badges, and only discontinued ones — a14 says
-    # "there WAS a badge for this", so a current badge (First Aid) both makes
-    # the sentence false and kills the joke, which depends on the subject being
-    # absurd. "Nut Culture" is deliberately absent: j01 owns that one outright,
-    # and two lines telling the same fact is worse than one.
-    "badge": [
-        "Taxidermy", "Rabbit Raising", "Bee Keeping", "Signaling",
-        "Pulp and Paper", "Hog Production", "Basketry", "Stalking",
-        "Wood Carving", "Sheep Farming", "Corn Farming", "Blacksmithing",
-    ],
-}
-
-
-# ── templates ─────────────────────────────────────────────────────────────────
-# tag: one of TAGS. "any" fires whenever; a weather tag fires only on a matching
-# morning. days: comma-separated DAYS, and the line is pinned to those weekdays.
-# Voice: Mr. Murf, scoutmaster. First person, addressing the troop.
+# Fresh, authored lines: changing a name is not a new joke.
+WORD_BANKS = {}
 TEMPLATES = [
-    # ---- generic, no weather needed (also the forecast-failure fallbacks) ----
-    {"id": "a01", "text": "{exclaim} — I was up at 0500. Flag's up, coffee's black, {exercise} done. {name} is still horizontal. Demerits."},
-    {"id": "a02", "text": "{exclaim}. Handbook, page 12: BE PREPARED. {name} once showed up to a campout with a {artifact} and a bad attitude. Zero for two."},
-    {"id": "a03", "text": "Reveille. I kicked a fire down this morning purely on principle. {name}, consider that a warning shot."},
-    {"id": "a04", "text": "{exclaim}! {name} calls himself an outdoorsman. I have watched that man lose a fight with a {gear}."},
-    {"id": "a05", "text": "Up and at 'em. Somewhere out there {name} is being {praise}, and it reflects on this whole troop."},
-    {"id": "a06", "text": "{exclaim}. Today's forecast for {name}: 100% chance of {noun_plural}, zero merit badges on the horizon."},
-    {"id": "a07", "text": "Morning, troop. {name} says he's changed. And yet the man {verb_past} out of a Wendy's parking lot at 2 AM last night. I have the incident report."},
-    {"id": "a08", "text": "{exclaim} — buddy check. All present except {name}, who is exactly where you'd expect, doing exactly what you'd expect, and will deny both."},
-    {"id": "a09", "text": "Good morning. In '78 I lived out of a bus with nine strangers and a dog. We had a chore wheel, a consensus process, and a goat. {name} has a calendar app and uses it worse than we used the goat."},
-    {"id": "a10", "text": "{exclaim}. Surprise uniform inspection at some point today. {name}, that's specifically for you. Tuck it in. All of it."},
-    {"id": "a11", "text": "Morning, troop. {name} couldn't tie a {knot} with written instructions and a full week of daylight. This is why we drill."},
-    {"id": "a12", "text": "{exclaim}! {name} built what he called a {fire} fire once. I kicked it down before it could embarrass the troop. I'd kick it down again."},
-    {"id": "a13", "text": "Reveille, ladies. Touch your toes, drink some water, and marvel at {name}, who manages to be {praise} before most men have had coffee."},
-    {"id": "a14", "text": "{exclaim}. There was once a real merit badge for {badge}. They discontinued it. {name} would have earned that one, and I think about that more than I should."},
-    {"id": "a15", "text": "Morning. {name} has been {adj} since roughly 2003. I filed the paperwork. It came back approved."},
-    {"id": "a16", "text": "{exclaim} — today {name} squares his life away. That's an order, not a prediction. My predictions are far less generous."},
-    {"id": "a17", "text": "Up and at 'em. I have led men through lightning, flash floods, and one bear. None of it prepared me for supervising {name}."},
-    {"id": "a18", "text": "{exclaim}. Grab a {snack}, police your area, and keep {name} away from anything with a blade, a flame, or an engine."},
-    {"id": "a19", "text": "Good morning. Legend says {name} still has the {artifact} boxed up in his mother's basement, labeled, in a climate-controlled corner. The Handbook calls that preparedness. I'm calling it that too, today."},
-    {"id": "a20", "text": "{exclaim}! Lights-out was 2200. {name}'s last message to this chat was 0347. That's a curfew violation, son, and I don't forget those."},
-    {"id": "a21", "text": "Morning, troop. {name} was at {place} last night explaining {noun_plural} to a total stranger. The stranger walked. Smart stranger."},
-    {"id": "a22", "text": "{exclaim} — {name} is out there being {praise} this morning, and frankly the troop's insurance can't take much more of him."},
-    {"id": "a23", "text": "Reveille. However today goes, remember: you are not the man who {verb_past} out of {place} in front of the whole troop. {name} is."},
-    {"id": "a24", "text": "Good morning. {name} says he's 'not a morning person.' Son, I've seen you at noon, at four, and at a barbecue. You're a 7-to-9-PM person and we've all built our lives around it."},
-    {"id": "a25", "text": "{exclaim}. {name} is down to one clean shirt and it is not the uniform one. Inspection is coming. Sweat accordingly."},
-    {"id": "a26", "text": "Morning. Do one thing today your 12-year-old self would salute. {name}'s 12-year-old self is easy — that kid just wanted a {snack} and a day off, and honestly he got his wish."},
-    {"id": "a27", "text": "{exclaim}! {name} will say something {adj} before 0900 and the whole troop will pay for it. Brace."},
-    {"id": "a28", "text": "Good morning. I once watched {name} lose a compass. Not misread — lose. It was on a lanyard. Around his neck."},
-    {"id": "a29", "text": "{exclaim} — {name} still owes somebody a {snack} from a bet he lost at {place}. A scout's word is his bond. Draw your own conclusions about {name}."},
-    {"id": "a30", "text": "Morning, troop. {name} says he's locked in. Sure — the way he got locked in the latrine at summer camp. We had to fetch the key."},
-    {"id": "a31", "text": "{exclaim}. {name} once {verb_past} across {place} for no reason a sober adult could explain. The Handbook calls that a pattern."},
-    {"id": "a32", "text": "Good morning. Somebody has to be the {adj} one today. {name} has seniority, a title, and no intention of stepping down."},
-    {"id": "a33", "text": "{exclaim}! Hydrate, stretch, check your buddy. {name}'s buddy has filed a reassignment request every year since '04 and withdrawn it every year since '04."},
-    {"id": "a34", "text": "Morning. {name} has a plan for today. So did the man who lashed the tower that fell on my truck. Plans are cheap. Discipline isn't."},
-    {"id": "a35", "text": "{exclaim} — {name} is already at {place} doing {exercise} in jeans. No form, no shame, and no badge for any of it."},
-    {"id": "a36", "text": "Good morning. In {name}'s defense, he was probably asleep when it happened. That defense has never once worked, but points for consistency."},
-
-    # ---- Murf lore ----
-    {"id": "m01", "text": "I am 55 years old and I was at Woodstock. Do not do the math, and do not test me — both roads end badly for you, {name}."},
-    {"id": "m02", "text": "I once drove a bus with no brakes and a glovebox full of granola from Vermont to the coast. Still only the second most reckless thing I've seen. The first is {name} with an axe."},
-    {"id": "m03", "text": "People ask why I run a tight ship. Because I have seen what happens when nobody's in charge. It was the seventies, and it looked like {name}."},
-    {"id": "m04", "text": "Yes, there is tie-dye under my uniform shirt. It's regulation because I say it's regulation. Your cargo shorts, {name}, are not, and never will be."},
-    {"id": "m05", "text": "I gave up the beads, the bus, and the beard. I kept the whistle. {name}, the whistle is for you, and you know exactly why."},
-    {"id": "m06", "text": "They called me Moonbeam in 1979. The first man to call me that today does KP with {name} — a punishment for both of you."},
-    {"id": "m07", "text": "I've mellowed. The old me would have kicked down {name}'s fire AND his tent. The new me kicks the fire and merely describes what he'd do to the tent."},
-    {"id": "m08", "text": "Forecast says {cond_lower}. I knew before I checked — my knees have been forecasting since Nixon. They are also calling for {name} to say one smart thing today. Low confidence, but non-zero."},
-    {"id": "m09", "text": "Fifty-five years on this earth and I have never once been late to reveille. {name} was late to his own surprise party. Twice."},
-    {"id": "m10", "text": "Confession, troop: I own three compasses, two GPS units and a laminated map. I still ask {name} which way we parked."},
-    {"id": "m11", "text": "I have told the bus story four hundred times. {name} has heard it four hundred times and laughed at it six."},
-    {"id": "m12", "text": "Straight talk: I once sat through a five-hour meeting about whether the commune should buy one truck. We did not buy the truck. So when I say {name}'s plan is bad, know that I have standards and no record."},
-    {"id": "m13", "text": "I have a knee that predicts rain and a hip that predicts nothing and complains anyway. {name} is my hip."},
-    {"id": "m14", "text": "Full disclosure: I sold my VW bus in '84 for seven hundred dollars. It is worth six figures today. {name}, that is the entire reason I am the way I am."},
-    {"id": "m15", "text": "{name} tells me these briefings run long. I have taken that feedback, considered it fully, and buried it in a cat hole per Leave No Trace."},
-    {"id": "m16", "text": "Fifty-five years old and I cannot work the thermostat my own kids installed. {name} offered to help me. {name}. That is how far this has gone."},
-    {"id": "m17", "text": "Somebody asked why I still do this at my age. Because every one of you would show up if I asked. Late. Complaining. But you'd show up."},
-
-    # ---- two-name ----
-    {"id": "p01", "text": "{name} and {name2} are still arguing about who won that argument from 2004. Gentlemen, I ruled on this in 2004. You both lost. The ruling stands."},
-    {"id": "p02", "text": "Morning. {name} still hasn't paid {name2} back for the {artifact}. It's been years. A scout is trustworthy. Neither of you qualifies."},
-    {"id": "p03", "text": "{exclaim}! {name} says {name2} snores like a {adj_thing} chainsaw. I've shared a campsite with both of you. It's a chainsaw duet."},
-    {"id": "p04", "text": "Today's challenge: {name} versus {name2}, first man to {place} by 0900. I've supervised you both for years. Nobody is making it."},
-    {"id": "p05", "text": "{name} and {name2} shared a two-man tent at winter camp once. Neither has spoken of it since. The Handbook respects that silence and so do I."},
-    {"id": "p06", "text": "Buddy system check: {name} and {name2} are paired today. God help me, that is genuinely the best I could do with this roster."},
-    {"id": "p07", "text": "{name2} says {name} peaked in high school. {name} says {name2} peaked earlier than that. Twenty-some years of this, gentlemen, and neither of you has ever once eaten lunch alone."},
-    {"id": "p08", "text": "{name} and {name2} still argue over who broke the {artifact}. I was there. It was both of you, and the flagpole never recovered either."},
-    {"id": "p09", "text": "{exclaim} — {name} and {name2} once tried to co-build a {fire} fire. I kicked it down out of mercy. Some partnerships the wilderness rejects."},
-    {"id": "p10", "text": "{name} and {name2} once got lost on a marked trail. Marked. Blazes every forty feet. They took a vote and went the other way."},
-    {"id": "p11", "text": "{exclaim} — {name} tells the story and {name2} corrects one detail every time. Neither version is true. I've stopped needing them to be."},
-    {"id": "p12", "text": "{name} and {name2} have a nineteen-year argument about a call in a driveway game nobody filmed. Both are certain. Both are lying. Neither is wrong enough to quit."},
-
-    # ---- brotherhood: the jab lands, the affection lands last ----
-    # These exist because a daily roast with no warmth in it stops being a bit
-    # and becomes a grind. The turn goes at the end — punch word last.
-    {"id": "b01", "text": "Morning. {name} and {name2} have been arguing about that {artifact} for twenty-odd years. No winner, no ceasefire, and no interest in one."},
-    {"id": "b02", "text": "{exclaim}. Eleven years I've run this troop. {name} has never once been on time, and I have never once started without him."},
-    {"id": "b03", "text": "Morning, troop. {name} would give you the shirt off his back. It is a {adj_thing} shirt. He would still give it to you."},
-    {"id": "b04", "text": "{exclaim}! {name} will help you move all day — no questions, no complaints. He is also the reason that couch has a corner missing."},
-    {"id": "b05", "text": "{name} and {name2} text every single day and have never once said a kind word to each other. Gentlemen, that's a marriage."},
-    {"id": "b06", "text": "Morning. Ten men in this troop and {name} is the only one who answers his phone. He answers it wrong. He answers it."},
-    {"id": "b07", "text": "{exclaim} — {name} has never finished a project, a diet, or a thought. He has finished every 5 AM airport run any of you have ever asked him for."},
-    {"id": "b08", "text": "{name2} says {name} is the worst driver he has ever ridden with. {name2} has been in that passenger seat every weekend for nineteen years."},
-    {"id": "b09", "text": "Morning, troop. Stuck in a ditch at 3 AM, {name} picks up. He'll be forty minutes late and bring a {snack} instead of a jack. He picks up."},
-    {"id": "b10", "text": "{exclaim}. {name} owes {name2} money. {name2} owes {name} money. Neither remembers which way it runs and neither one is checking."},
-    {"id": "b11", "text": "Nobody in this outfit has been more confidently wrong, more often, than {name}. And every single one of you still asks him first."},
-    {"id": "b12", "text": "Morning. {name} has one story. You have all heard the story. You will hear it again tonight, and one of you will say 'wait — tell him the part about the boat.'"},
-    {"id": "b13", "text": "{exclaim}! {name} and {name2} spent a whole campout not speaking over a folding chair. Both came back the next year. Both brought the other man a chair."},
-    {"id": "b14", "text": "Morning, troop. {name} is the first man to bust your chops and the first man at the hospital. Same fella. Usually the same hour."},
-    {"id": "b15", "text": "{exclaim} — a scout is loyal. {name} is loyal to a fault, to a football team, and to one specific deli. In that order, and the order is wrong."},
-    {"id": "b16", "text": "{name} will argue with you for a full hour about something he already agrees with you about. That's not stubbornness, son. That's how he says he missed you."},
-    {"id": "b17", "text": "Morning. Most of you have been friends since you were nine. {name} is the one who keeps it running. Badly done, never missed."},
-    {"id": "b18", "text": "{exclaim}. {name2} once drove three hours to sit in a hospital parking lot because {name} told him not to come. Nobody brings it up. I'm bringing it up."},
-    {"id": "b19", "text": "Morning, troop. {name} cannot be trusted with a schedule, a secret, or the last slice. Twenty years, and not one of you has ever called anybody else first."},
-    {"id": "b20", "text": "{exclaim}! Every outfit has one man holding it together. It is never the organized one. It's {name}, which ought to worry all of you, and doesn't."},
-
-    # ---- pure bits: no name, one draw per cycle each ----
-    # Nameless templates cost exactly one (template, "") pair, so they season the
-    # rotation without crowding out the roasts.
-    {"id": "j01", "text": "There is a real merit badge for Nut Culture. It ran for twenty-six years. Somewhere out there is a grandfather with a walnut credential nobody has ever asked to see."},
-    {"id": "j02", "text": "The Invention merit badge required an actual federal patent. Ten children in history ever earned it. That was not a badge. That was a background check."},
-    {"id": "j03", "text": "Master-at-Arms was a merit badge for exactly one year. The requirements included singlestick and jujitsu. Somebody in 1910 looked at a room of eleven-year-olds and thought: stick fight."},
-    {"id": "j04", "text": "We once spent four hours lashing a monkey bridge across a creek. There is a bridge. There has been a bridge since 1962. We built ours upstream of it, out of pride."},
-    {"id": "j05", "text": "Bug juice got its name in a military mess hall, and the leading theory is that the sugar drew actual insects. They named it after the problem and kept right on serving it. Most honest thing the military has ever done."},
-    {"id": "j06", "text": "A Dutch oven cobbler takes ninety minutes, twenty-two briquettes, and one man who will not stop narrating it. The cobbler is optional. He is not."},
-    {"id": "j07", "text": "Foil packet dinners come out carbonized on the outside and raw in the middle. Same fire, same fifteen minutes. Physics was asked to comment and declined."},
-    {"id": "j08", "text": "Every troop has a guitar guy. One capo, one moral mission, ninety seconds of tuning between songs. And you cannot leave, because it's a circle. There's no back of the room."},
-    {"id": "j09", "text": "The snipe hunt is a real hazing ritual dating to the 1840s. Hand a new kid a bag and a stick and point at the woods. Same joke, nine generations deep. Tradition is just a prank with tenure."},
-    {"id": "j10", "text": "I carry a pocketknife with a marlinspike on it. I have never spiked a marl. I do not know what a marl is. Thirty-one years."},
-    {"id": "j11", "text": "A sleeping bag rated to twenty degrees is rated for survival, not comfort. Somewhere a man in a lab decided those were different products, and he was right, and I've never forgiven him."},
-    {"id": "j12", "text": "The Scout Law is twelve adjectives long. Eleven of them are practical. Then it just ends on 'Reverent' and walks off. No follow-up. No department."},
-    {"id": "j13", "text": "A forty percent chance of rain. Forty percent of what — the sky, the county, my afternoon? They have never once clarified, and they have never once been asked."},
-    {"id": "j14", "text": "'Feels like' temperature is the most honest number in all of science. That's the weather admitting the first number was a lie."},
-    {"id": "j15", "text": "There is a merit badge for Weather. It requires you to keep a daily log and predict the next day's conditions. Every eleven-year-old who has ever earned it outperformed my knee."},
-    {"id": "j16", "text": "They make sunscreen in SPF 100 and they make it in SPF 4. Four. Who is that for? That is not protection, that is a formality."},
-
-    # ---- hot ----
-    {"id": "h01", "tag": "hot", "text": "{hi}° today. Two canteens minimum and a real hat. {name}, a backwards cap is not sun protection, it's a cry for help."},
-    {"id": "h02", "tag": "hot", "text": "Feels like {feels}°. {name} says he's 'built for the heat.' I watched that man tap out of a July car ride with the windows down."},
-    {"id": "h03", "tag": "hot", "text": "{exclaim} — {hi}° and climbing. Hydrate before you feel it. {name}, that means water. The blue Gatorade is not water. We have been over this."},
-    {"id": "h04", "tag": "hot", "text": "{hi}° today. Total burn ban — no fires. Which for once means {name}'s garbage fire-building can't hurt anybody."},
-    {"id": "h05", "tag": "hot", "text": "{feels}° feels-like. Shade, water, sunscreen. {name} will do none of the three, then file a complaint with a man who does not accept complaints."},
-    {"id": "h06", "tag": "hot", "text": "{hi}° {emoji}. I did a twenty-miler in worse with a forty-pound pack. {name} gets winded reaching for the thermostat."},
-    {"id": "h07", "tag": "hot", "text": "Heat advisory, {hi}°. Check on your elders. I AM the elders and I'm fine — check on {name}, who is {adj} in any temperature."},
-    {"id": "h08", "tag": "hot", "text": "{hi}° and humid. In '77 I danced through hotter than this at a Dead show in a poncho. {name} can't cross a parking lot without whining."},
-    {"id": "h09", "tag": "hot", "text": "{exclaim}. {feels}° out. Sunscreen up, unless you want to end up like {name} at summer camp — the lobster year. There are photos."},
-    {"id": "h10", "tag": "hot", "text": "{hi}° today. Somewhere {name} is standing in direct sun explaining that he doesn't believe in sunscreen. He believes in aloe. He has met aloe many times."},
-    {"id": "h11", "tag": "hot", "text": "{hi}° today. Hydration briefing: water, and then more water. {name} considers iced coffee a fluid. It is a fluid. It is not the fluid."},
-    {"id": "h12", "tag": "hot", "text": "{feels}° feels-like. In '69 I stood in a field for three days with no shade, no food and no working toilets and called it the best weekend of my life. So I don't want to hear it from {name} about a parking lot."},
-
-    # ---- cold ----
-    {"id": "c01", "tag": "cold", "text": "{lo}° this morning. Layers, troop. {name} will wear shorts, because {name} has never once been prepared for anything, including this sentence."},
-    {"id": "c02", "tag": "cold", "text": "Feels like {feels}°. Cotton kills, wool works — Handbook basics. {name} is out there in a hoodie he has owned since the {artifact} era."},
-    {"id": "c03", "tag": "cold", "text": "{exclaim} — {lo}° low. Cold-weather rules in effect. {name}, 'I run hot' is not a jacket."},
-    {"id": "c04", "tag": "cold", "text": "It's {feels}° out. They say cold builds character. {name} has been standing in it since 2003 in a hoodie, so either the science is wrong or that man is the most patient experiment I've ever run."},
-    {"id": "c05", "tag": "cold", "text": "{lo}° {emoji}. Layer up. {name} is in a uniform polo acting like it's a personality. It's hypothermia with extra steps."},
-    {"id": "c06", "tag": "cold", "text": "{feels}° feels-like. Nobody leaves without gloves except {name}, who claims he's 'part husky.' Son, the husky part is the shedding."},
-    {"id": "c07", "tag": "cold", "text": "{lo}° low. Scrape your whole windshield. {name} scrapes a porthole and drives off like a submarine captain. Demerits. So many demerits."},
-    {"id": "c08", "tag": "cold", "text": "{lo}° today. Good morning to everyone except whoever let {name} plan the winter campout that ended with the frozen {artifact}. Never again."},
-    {"id": "c09", "tag": "cold", "text": "{lo}° this morning. I drank from garden hoses, rode in the way-back with no seatbelt, and I turned out fine. So did everybody I'm still able to ask. Coat, {name}."},
-    {"id": "c10", "tag": "cold", "text": "{feels}° out. The Ten Essentials list has ten items on it. {name} left the house with a phone at nine percent and a good attitude."},
-    {"id": "c11", "tag": "cold", "text": "{lo}° low. {name} has been informed that it is {lo} degrees. {name} has elected to wear the hoodie. The hoodie has been briefed and accepts the risk."},
-
-    # ---- rain ----
-    {"id": "r01", "tag": "rain", "text": "{rain}% chance of rain. Ponchos on. {name} will bring nothing, get soaked, and blame the sky like it's the sky's first day."},
-    {"id": "r02", "tag": "rain", "text": "{rain}% rain today. A prepared man packed his rain gear last night. {name} is not a prepared man. {name} is barely a punctual one."},
-    {"id": "r03", "tag": "rain", "text": "{exclaim} — {rain}% rain. In the mud at Woodstock I kept a fire going for three days. {name} loses a fire indoors. With matches."},
-    {"id": "r04", "tag": "rain", "text": "Rain incoming, {rain}%. {name} once hydroplaned into {place} and blamed the road, the tires, and Mercury retrograde. Take the bus, son."},
-    {"id": "r05", "tag": "rain", "text": "Rain odds {rain}%. Fine day to stay in, square your gear away, and reflect. {name}, you reflect harder than the rest."},
-    {"id": "r06", "tag": "rain", "text": "{rain}% rain today. {name}'s umbrella broke in 2011. A scout repairs his equipment. {name} held a funeral for it and moved on."},
-    {"id": "r07", "tag": "rain", "text": "It's coming down. {name} will jog to {place} for a {snack}, come back looking like a {adj_thing} drowned possum, and call it cardio."},
-    {"id": "r08", "tag": "rain", "text": "{cond} today, {rain}%. Tarp skills separate the men from the boys. {name} thinks a taut-line hitch is a wrestling move."},
-    {"id": "r09", "tag": "rain", "text": "{exclaim}! {rain}% rain, which means {name} will text 'is it raining by you' from three blocks away instead of looking up. Situational awareness: zero."},
-    {"id": "r10", "tag": "rain", "text": "Wet one, {rain}%. Drive slow, headlights on. {name}, that is aimed at you — I've read the incident reports, all {noun_plural}."},
-    {"id": "r11", "tag": "rain", "text": "{rain}% rain. My emergency poncho has sat in its original 1998 packaging for twenty-eight years, which makes it the most prepared and least useful item I own. {name} has neither."},
-    {"id": "r12", "tag": "rain", "text": "{rain}% chance today. A tarp gets pitched by committee: four men, one tarp, ninety minutes, and a conversation about consensus I have sat through before."},
-
-    # ---- snow ----
-    {"id": "s01", "tag": "snow", "text": "Snow today. {name} will post one photo of a half-shoveled driveway and expect the Polar Bear badge for it. Denied."},
-    {"id": "s02", "tag": "snow", "text": "{cond}. {name} will shovel four feet of sidewalk and need a medic. I shoveled the whole parade ground at his age. Uphill. Angry."},
-    {"id": "s03", "tag": "snow", "text": "{exclaim} — snow's here, {lo}° low. {name} still hasn't returned the troop shovel from 2019. A scout is trustworthy. I keep a list, son."},
-    {"id": "s04", "tag": "snow", "text": "Snow day. {name} cleared out the 7-Eleven last night — six gallons of milk and a {snack} for one man. That isn't preparedness, that's panic with a cart."},
-    {"id": "s05", "tag": "snow", "text": "{cond} out there. Salt your steps. {name} went down hard last winter and told everyone he was 'testing the ice.' The ice passed. He didn't."},
-    {"id": "s06", "tag": "snow", "text": "{cond} out there. Snow protocol: salt the steps, check on your elders, and keep {name} away from a sled. We have a file and it has photographs."},
-    {"id": "s07", "tag": "snow", "text": "Snow today, {lo}° low. In '78 we got buried and my father handed me a shovel and a thermos and wished me luck. {name} would have negotiated."},
-    {"id": "s08", "tag": "snow", "text": "{cond}. Every man in this troop owns a snow brush. {name} owns a CD case and a plan."},
-    {"id": "s09", "tag": "snow", "text": "Snow's here. Somebody check whether {name} still owns a shovel, because last winter he cleared his steps with a dustpan and told people it was a technique."},
-
-    # ---- nice ----
-    {"id": "n01", "tag": "nice", "text": "{hi}° and gorgeous {emoji}. Zero excuses today. Even {name} can't ruin this one, though God knows the man will try."},
-    {"id": "n02", "tag": "nice", "text": "Perfect day — {hi}° and {cond_lower}. Get outside. {name} is already at {place} accomplishing nothing at a truly professional level."},
-    {"id": "n03", "tag": "nice", "text": "{exclaim}! {feels}° and beautiful. Proper fire weather — teepee or log cabin. If I catch another one of {name}'s leaning garbage piles I am kicking it into the lake."},
-    {"id": "n04", "tag": "nice", "text": "{hi}° {emoji}. Trail weather. {name} says he's still got it. Whatever 'it' was, he left it at {place} around 2009."},
-    {"id": "n05", "tag": "nice", "text": "Beautiful out, {hi}°. Take a real hike, boots on. {name}'s idea of a hike is parking far from the door at Roosevelt Field."},
-    {"id": "n06", "tag": "nice", "text": "{cond} and {hi}°. A day like this almost makes me forget {name} still owes the troop for the {artifact} incident. Almost. The ledger remembers."},
-    {"id": "n07", "tag": "nice", "text": "{feels}° and perfect. Haven't seen a sky like this since the bus broke down outside Boulder in '79. Even {name} deserves this one. Barely."},
-    {"id": "n08", "tag": "nice", "text": "{hi}° today and the day is wide open. {name} will still find something to complain about by 0900. Set your watch by it."},
-    {"id": "n09", "tag": "nice", "text": "{hi}° and perfect {emoji}. Get outside — and I mean outside. {name}, the garage is not outside. We have been through this."},
-    {"id": "n10", "tag": "nice", "text": "{feels}° and gorgeous. A day like this is why I finally left a geodesic dome that leaked. Go enjoy it. {name}, you too, and I mean that."},
-    {"id": "n11", "tag": "nice", "text": "{hi}° and clear. The only correct response to a day like this is to go do something you'll exaggerate later. {name} has a head start and no notes."},
-
-    # ---- weekday-pinned ----
-    {"id": "d01", "days": "mon", "text": "{exclaim} — Monday. {name} has already threatened to quit his job. He threatens this weekly. The job has never once been notified."},
-    {"id": "d02", "days": "mon", "text": "Monday. {name} said the diet starts today. He is currently in his car outside {place} finishing a {snack}. The Handbook covers honesty on page one."},
-    {"id": "d03", "days": "mon", "text": "Monday morning. Nobody in this troop likes a Monday except {name}, who greets it like a dog greets a mailman — loudly, and every single week."},
-    {"id": "d04", "days": "tue", "text": "Tuesday — the most useless day of the week. {name} has been carrying it single-handedly for years and it still hasn't thanked him."},
-    {"id": "d05", "days": "tue", "text": "Tuesday. {name} is still 'recovering from the weekend.' I recovered from the seventies faster."},
-    {"id": "d06", "days": "wed", "text": "Hump day. Halfway there, troop. {name} has been coasting since Monday — same way he's been coasting since the {artifact} era."},
-    {"id": "d07", "days": "wed", "text": "Wednesday. Two down, two to go. {name} peaked the day he got that {artifact}, and the man has had the decency not to shut up about it since."},
-    {"id": "d08", "days": "thu", "text": "Friday Junior, troop. Get the morning constitutional in, square away your bunk, and finish the week's business. {name}, that's an order, not a suggestion."},
-    {"id": "d09", "days": "thu", "text": "Friday Junior. {name} is planning a big weekend he will cancel by Saturday 0900. I have seen tighter plans in a drum circle."},
-    {"id": "d10", "days": "thu", "text": "It's Friday Junior — second-best day of the week, right behind whatever day {name} finally learns to tie a {knot}."},
-    {"id": "d11", "days": "fri", "text": "FRIDAY. {exclaim}! We made it. {name} has been dead weight since Wednesday, but a scout leaves no man behind. Regrettably."},
-    {"id": "d12", "days": "fri", "text": "It's Friday. {name} will announce big plans tonight and be asleep by 2130. Taps plays early for that man. It always has."},
-    {"id": "d13", "days": "fri", "text": "Friday, troop. Full uniform for weekend colors — and {name}, a ceremony means the neckerchief too. Yes, it's mandatory. It has always been mandatory."},
-    {"id": "d14", "days": "sat,sun", "text": "Weekend edition. {name} is still in his bunk and will claim he was 'up early.' The flag went up at 0700. I saw who was there. He was not."},
-    {"id": "d15", "days": "sat,sun", "text": "{exclaim} — weekend. No uniform today, and {name} dressed like it. Freedom was a mistake for some men."},
-    {"id": "d16", "days": "sat", "text": "Saturday. {name} has a list of {noun_plural} to handle and will finish none of it. On the commune we called that a Tuesday, and we called it living."},
-    {"id": "d17", "days": "sun", "text": "Sunday. Rest, reflect, call your mother. {name}, yours calls ME asking about you, and I am running out of nice things to invent."},
-    {"id": "d18", "days": "tue", "text": "Tuesday. Nothing has ever happened on a Tuesday. In '71 I drove to Vermont on a Tuesday to join a commune and was home by Thursday, which proves my point."},
-    {"id": "d19", "days": "tue", "text": "Tuesday, troop. Barely halfway to halfway, and {name} has already asked what everybody's doing this weekend. It's Tuesday morning, son. Sit down."},
-    {"id": "d20", "days": "wed", "text": "Wednesday. I am told nobody says 'hump day' anymore. I was told this by {name}. I will be saying it forever."},
-    {"id": "d21", "days": "wed", "text": "Wednesday, troop. Two days behind you, two ahead, and no honorable way out of either. That's not a hump. That's a ridge."},
-    {"id": "d22", "days": "mon", "text": "Monday. Clean slate, fresh start, new man. {name} receives a fresh start every Monday and has never once opened one."},
-    {"id": "d23", "days": "sat", "text": "Saturday. No uniform, no inspection, no duty roster. That is not a day off, that is a test of character, and most of you fail it happily."},
-    {"id": "d24", "days": "sun", "text": "Sunday. Rest, reflect, call somebody you've been meaning to call. {name} — he has been meaning to call you too. That is the whole problem with the pair of you."},
-    {"id": "d25", "days": "thu", "text": "Friday Junior. {name} has already begun the weekend in his heart and will be contributing nothing further this week."},
-    {"id": "d26", "days": "fri", "text": "Friday, troop. Whatever this week took out of you, {name} took slightly more, and the man would do it again."},
-
-    # ---- boomer-dad observational ----
-    {"id": "a37", "text": "{exclaim}. New leadership approach I'm trying: fewer demerits, more encouragement. {name}, you are doing great. That took everything I have."},
-    {"id": "a38", "text": "Morning. A scout is thrifty. {name} drove eleven miles to save four cents a gallon and calls that a win. It is a loss. It is mathematically a loss."},
-    {"id": "a39", "text": "{exclaim}! {name} gives directions by landmarks that no longer exist. 'Turn where the Ford dealership was.' It came down in 2004 and he has never once been unclear."},
-    {"id": "a40", "text": "Morning, troop. {name} has a pegboard in his garage with the outline of every tool drawn on it in marker. The outlines are the only tools still in that garage."},
-    {"id": "a41", "text": "{exclaim}. {name} says he is 'not sleeping, just resting his eyes.' He said it at two in the afternoon. He said it while snoring."},
-    {"id": "a42", "text": "Morning. Somebody asked what I did before this. I ran a commune, a bus, and nine people's feelings. This troop is easier, and {name} is the reason it's close."},
+    {
+        "id": "v5_chat_01",
+        "text": "Morning, troop. What's today's smallest achievable victory? Getting the fitted sheet to fold is not small. Pick again."
+    },
+    {
+        "id": "v5_chat_02",
+        "text": "{name}, you're in charge of today's completely unnecessary debate: best potato format. Defend your answer."
+    },
+    {
+        "id": "v5_chat_03",
+        "text": "Everybody gets one minor complaint before breakfast. {name}, one. We have discussed this."
+    },
+    {
+        "id": "v5_chat_04",
+        "text": "{name}, what purchase under twenty bucks improved your life? If it's a second charging cable, I understand."
+    },
+    {
+        "id": "v5_chat_05",
+        "text": "Morning check-in: what's one thing you're looking forward to? It can be lunch. Lunch has earned that."
+    },
+    {
+        "id": "v5_chat_06",
+        "text": "{name}, pick the troop's road-trip snack. {name2} gets one veto and must use it responsibly."
+    },
+    {
+        "id": "v5_chat_07",
+        "text": "What game could this group cooperate in for twenty minutes without appointing a defendant?"
+    },
+    {
+        "id": "v5_chat_08",
+        "text": "{name}, you have the floor: what's a film you'd happily watch again tonight? No twenty-minute plot summary."
+    },
+    {
+        "id": "v5_chat_09",
+        "text": "Which one of you is best in an actual emergency, and which one is best when the restaurant loses our reservation? Different skills."
+    },
+    {
+        "id": "v5_chat_10",
+        "text": "{name}, breakfast for dinner: correct decision or cry for help? State your case."
+    },
+    {
+        "id": "v5_chat_11",
+        "text": "Troop poll: early departure or one more coffee? Anyone answering 'both' is the reason we never leave."
+    },
+    {
+        "id": "v5_chat_12",
+        "text": "{name}, what song gets exactly one play before the rest of the car confiscates your phone?"
+    },
+    {
+        "id": "v5_chat_13",
+        "text": "What's the most ridiculous hill you're willing to die on today? Keep it small. Sandwich geometry, for example."
+    },
+    {
+        "id": "v5_chat_14",
+        "text": "{name}, name an activity you still enjoy being terrible at. {name2}, let him finish."
+    },
+    {
+        "id": "v5_chat_15",
+        "text": "One free afternoon, no chores allowed. What are we actually doing? 'Deciding what to do' is disqualified."
+    },
+    {
+        "id": "v5_chat_16",
+        "text": "{name}, what's the last thing that made you laugh harder than it deserved? Troop morale budget is zero; we're crowdsourcing."
+    },
+    {
+        "id": "v5_chat_17",
+        "text": "Everybody nominate one food that's much better the next day. Leftover fries, you may leave the room."
+    },
+    {
+        "id": "v5_chat_18",
+        "text": "{name}, choose today's luxury: perfect parking spot, empty checkout, or nobody saying 'quick question.'"
+    },
+    {
+        "id": "v5_chat_19",
+        "text": "Which childhood snack deserves a comeback? I will hear testimony. I will not hear nutritional information."
+    },
+    {
+        "id": "v5_chat_20",
+        "text": "{name}, what's your most defensible shortcut? We're looking for efficiency, not a confession."
+    },
+    {
+        "id": "v5_chat_21",
+        "text": "Describe your morning using a game difficulty setting. {name}, 'tutorial but losing' is available."
+    },
+    {
+        "id": "v5_chat_22",
+        "text": "What's one thing this group could unanimously agree on? I'll give you until the next weather report."
+    },
+    {
+        "id": "v5_chat_23",
+        "text": "{name}, nominate a genuinely good bad movie. {name2}, your job is to bring the snacks, not fix his taste."
+    },
+    {
+        "id": "v5_chat_24",
+        "text": "Today's assignment: share something good. A sandwich qualifies. A particularly good parking job qualifies twice."
+    },
+    {
+        "id": "v5_banter_01",
+        "text": "{name}, you're troop navigator today. {name2} is in charge of noticing when we've passed the same gas station twice."
+    },
+    {
+        "id": "v5_banter_02",
+        "text": "If {name} says 'hear me out' before 9 AM, finish your coffee first. You'll want witnesses."
+    },
+    {
+        "id": "v5_banter_03",
+        "text": "{name} and {name2}, plan a simple lunch. The rest of us will reconvene after the appeals process."
+    },
+    {
+        "id": "v5_banter_04",
+        "text": "{name}, I am promoting you to assistant coffee person. There is no salary. There is considerable scrutiny."
+    },
+    {
+        "id": "v5_banter_05",
+        "text": "I need a volunteer to supervise {name}'s 'quick stop.' Pack enough food for {name2} as well."
+    },
+    {
+        "id": "v5_banter_06",
+        "text": "{name}, today's challenge is finishing one task before opening three more. I am also taking this challenge."
+    },
+    {
+        "id": "v5_banter_07",
+        "text": "If the group gets stranded, {name} handles supplies and {name2} handles explaining whose fault it was."
+    },
+    {
+        "id": "v5_banter_08",
+        "text": "{name}, you may choose the music today. This is a position of trust, not an opportunity to educate us."
+    },
+    {
+        "id": "v5_banter_09",
+        "text": "{name} and {name2} are today's planning committee. A plan is due before the activity becomes a memory."
+    },
+    {
+        "id": "v5_banter_10",
+        "text": "{name}, the troop needs a lunch recommendation. You can say the place you always say. We both know you're going to."
+    },
+    {
+        "id": "v5_banter_11",
+        "text": "I have appointed {name} chief of keeping things simple. {name2}, stop suggesting additional features."
+    },
+    {
+        "id": "v5_banter_12",
+        "text": "{name}, we're packing light today. Whatever you're about to justify bringing: no."
+    },
+    {
+        "id": "v5_banter_13",
+        "text": "If {name} starts a sentence with 'technically,' {name2} has permission to ask what actually happened."
+    },
+    {
+        "id": "v5_banter_14",
+        "text": "{name}, you get one perfectly timed nap today. Use it wisely. Staff meetings count as a high-risk deployment."
+    },
+    {
+        "id": "v5_banter_15",
+        "text": "Today {name} and {name2} must settle one disagreement without sending a link. I have cleared the schedule."
+    },
+    {
+        "id": "v5_banter_16",
+        "text": "{name}, report one completed chore. I need proof that someone in this troop is winning against the house."
+    },
+    {
+        "id": "v5_banter_17",
+        "text": "{name} gets the comfy chair today. {name2}, you can contest the decision, but you have to stand while doing it."
+    },
+    {
+        "id": "v5_banter_18",
+        "text": "{name}, you're choosing the takeaway. 'Anything' is not a restaurant, and {name2} has already tried it."
+    },
+    {
+        "id": "v5_banter_19",
+        "text": "{name}, buddy check. If your buddy is still asleep, that's a successful location confirmation."
+    },
+    {
+        "id": "v5_banter_20",
+        "text": "{name} and {name2}, you get one shopping cart and no list. I'm mostly interested in how many cheeses come back."
+    },
+    {
+        "id": "v5_banter_21",
+        "text": "{name}, the floor is yours. Preferably for a good story, but I will accept an unusually specific complaint."
+    },
+    {
+        "id": "v5_banter_22",
+        "text": "I nominate {name} to test whether this could have been a text. {name2}, time the explanation."
+    },
+    {
+        "id": "v5_banter_23",
+        "text": "{name}, today's merit badge is putting something away in the first place you looked for it."
+    },
+    {
+        "id": "v5_banter_24",
+        "text": "{name}, take a proper lunch break. Looking at a different rectangle while chewing does count. Standards have evolved."
+    },
+    {
+        "id": "v5_bit_01",
+        "text": "Morning, troop. I bought a planner to get organized. Finding the planner is tomorrow's task."
+    },
+    {
+        "id": "v5_bit_02",
+        "text": "The troop has reached the age where a cancelled plan and a confirmed delivery are equally exciting."
+    },
+    {
+        "id": "v5_bit_03",
+        "text": "I believe in being prepared. That's why the chair in my bedroom has three different outfits on standby."
+    },
+    {
+        "id": "v5_bit_04",
+        "text": "Today's briefing is short because I reheated my coffee and now have to locate it again."
+    },
+    {
+        "id": "v5_bit_05",
+        "text": "I used to carry a compass. Now I carry reading glasses into a room to look for my reading glasses."
+    },
+    {
+        "id": "v5_bit_06",
+        "text": "Whoever invented the 'easy-open' package owes this troop an explanation and a pair of scissors."
+    },
+    {
+        "id": "v5_bit_07",
+        "text": "Morning. I have a full day planned, and absolutely none of it accounts for standing in the kitchen."
+    },
+    {
+        "id": "v5_bit_08",
+        "text": "The group chat is a campsite. Some of you tend the fire. Some of you appear when the food is ready. Both are traditional roles."
+    },
+    {
+        "id": "v5_bit_09",
+        "text": "I am leaving five minutes early today. Please enjoy this brief period in which that remains possible."
+    },
+    {
+        "id": "v5_bit_10",
+        "text": "There should be a merit badge for carrying all the grocery bags in one trip. A second badge for admitting you shouldn't have."
+    },
+    {
+        "id": "v5_bit_11",
+        "text": "The forecast is below. Your actual plans will be determined by whether your good trousers are clean."
+    },
+    {
+        "id": "v5_bit_12",
+        "text": "Morning, troop. We are one good breakfast away from overestimating what we can accomplish today."
+    },
+    {
+        "id": "v5_bit_13",
+        "text": "I don't need a new hobby. I need to do one of the hobbies whose equipment I already own."
+    },
+    {
+        "id": "v5_bit_14",
+        "text": "I respect anyone who closes a browser tab and accepts that they will never read it. Courage takes many forms."
+    },
+    {
+        "id": "v5_bit_15",
+        "text": "A fitted sheet is just a tent with no instructions. I've been saying this for years and the linen closet agrees."
+    },
+    {
+        "id": "v5_bit_16",
+        "text": "I have reached the point in life where 'there's parking' is a compelling review of a restaurant."
+    },
+    {
+        "id": "v5_bit_17",
+        "text": "Troop logistics update: the reusable shopping bags remain at home, where they are completely reusable."
+    },
+    {
+        "id": "v5_bit_18",
+        "text": "Every household has a cable drawer. None of us knows what half of them do. We are preserving them for the next civilization."
+    },
+    {
+        "id": "v5_bit_19",
+        "text": "Morning. If you complete one errand today, remember to reward yourself with an entirely separate errand that sells snacks."
+    },
+    {
+        "id": "v5_bit_20",
+        "text": "I cleaned the desk. Everything is now in a pile somewhere less relevant to the camera."
+    },
+    {
+        "id": "v5_bit_21",
+        "text": "An adult sleepover is just saying 'we should visit' for four years and then discussing mattresses."
+    },
+    {
+        "id": "v5_bit_22",
+        "text": "The first person to say 'we needed the rain' has automatically volunteered to explain it to my shoes."
+    },
+    {
+        "id": "v5_bit_23",
+        "text": "I support spontaneity, provided someone gives me two days' notice and tells me where to park."
+    },
+    {
+        "id": "v5_bit_24",
+        "text": "There is no bad time for breakfast food. There are only people with unnecessary rules about eggs."
+    },
+    {
+        "id": "v5_bit_25",
+        "text": "Troop policy: if you find money in an old jacket, that is field research funding. Buy a sandwich."
+    },
+    {
+        "id": "v5_bit_26",
+        "text": "Morning. The correct number of pillows appears to be a negotiation, and I have arrived unprepared."
+    },
+    {
+        "id": "v5_bit_27",
+        "text": "A walk is exercise. A walk that ends at a bakery is exercise with a clearly defined objective."
+    },
+    {
+        "id": "v5_bit_28",
+        "text": "The hardest part of meal prep is predicting which food next Thursday's version of you won't suddenly resent."
+    },
+    {
+        "id": "v5_bit_29",
+        "text": "I have a system for remembering passwords. The system is requesting a new password."
+    },
+    {
+        "id": "v5_bit_30",
+        "text": "Today's unofficial uniform: whatever was on top of the clean pile. Inspection cancelled due to similar circumstances."
+    },
+    {
+        "id": "v5_bit_31",
+        "text": "The best part of a road trip is the first snack stop, when everyone still believes we're making good time."
+    },
+    {
+        "id": "v5_bit_32",
+        "text": "There's a special silence after someone asks a group of adults which evening they're all free."
+    },
+    {
+        "id": "v5_bit_33",
+        "text": "Morning, troop. If you forgot why you walked into the room, inspect the room. That's leadership now."
+    },
+    {
+        "id": "v5_bit_34",
+        "text": "I do enjoy a quiet morning. Unfortunately, I am also the person operating the coffee grinder."
+    },
+    {
+        "id": "v5_bit_35",
+        "text": "The phrase 'while I'm up' is responsible for half the chores in this house and most of my resentment."
+    },
+    {
+        "id": "v5_bit_36",
+        "text": "Today's survival skill: stopping the microwave before it announces your snack to the entire building."
+    }
 ]
 
 
@@ -554,7 +516,7 @@ def _log(msg):
 
 # ── the pool ──────────────────────────────────────────────────────────────────
 class WittyPool:
-    """Persistent no-repeat draw over (template, name) pairs.
+    """Persistent draw with premise cooldown, event variants and forecast history.
 
     Every public method takes the instance lock for its whole load-mutate-save
     body, so the scheduler thread and the control-API handler threads can't
@@ -587,8 +549,8 @@ class WittyPool:
             with open(tmp, "w") as f:
                 json.dump(state, f)
             os.replace(tmp, self.path)
-        except OSError:
-            pass  # unwritable: stay in memory, the joke is not worth a crash
+        except OSError as exc:
+            _log(f"state persistence failed; using memory only: {exc}")
 
     # -- cycle generation -----------------------------------------------------
     def _new_cycle(self, names, prev):
@@ -597,7 +559,15 @@ class WittyPool:
         pairs = _all_pairs(names)
         window = min(HISTORY_SIZE, len(pairs) // 2)
         recent = {tuple(h) for h in history[-window:]} if window else set()
-        fresh = [p for p in pairs if (p[0]["id"], p[1]) not in recent] or pairs
+        recent_templates = {h[0] for h in history[-TEMPLATE_COOLDOWN:]}
+        # Premise cooldown takes precedence over the older (template, name)
+        # rule; otherwise exhausted name pairs can force a very recent joke.
+        fresh = [p for p in pairs if p[0]["id"] not in recent_templates]
+        if not fresh:  # small nameless-only catalogue: repeat the oldest premise
+            last_used = {h[0]: i for i, h in enumerate(history)}
+            oldest = min(last_used.get(p[0]["id"], -1) for p in pairs)
+            fresh = [p for p in pairs if last_used.get(p[0]["id"], -1) == oldest]
+        fresh = [p for p in fresh if (p[0]["id"], p[1]) not in recent] or fresh
 
         bits = [p for p in fresh if not p[0]["uses_name"]]
         generic = [p for p in fresh if p[0]["uses_name"]
@@ -663,6 +633,9 @@ class WittyPool:
             "pending": pending,
             "history": history[-HISTORY_MAX:],
             "last_posted": prev.get("last_posted"),
+            "weather_days": prev.get("weather_days", []),
+            "pending_event": prev.get("pending_event"),
+            "committed_ids": prev.get("committed_ids", []),
         }
         _log(f"generated cycle {state['cycle_num']} — {len(pending)} lines for {len(names)} name(s)")
         return state
@@ -689,16 +662,17 @@ class WittyPool:
 
     # -- selection ------------------------------------------------------------
     def _select(self, state, bucket, avail, today):
-        """Best-ranked eligible entry from the FRONT of the queue, not the whole
-        queue. Ranking alone is absolute — a weekday-pinned line outranks every
-        generic one — so with 26 day-pinned templates the first fortnight was
-        nothing but "It's Tuesday" lines while 130+ others waited. Scoring only
-        a window of the (already shuffled) pending list makes the pinned line
-        win when it happens to come up rather than every single time, which is
-        the behaviour the ranking was reaching for. Still fully deterministic:
-        same state + same morning = same line, so a retry re-posts identically,
-        and reroll still works by rotating its pick out of the window."""
+        """Prefer premises outside the cooldown, then rank the shuffled front.
+        Generic catalogue entries have equal rank. Eligibility also supports
+        weather/day restrictions for future catalogue additions.
+        """
         pending = state.get("pending") or []
+        recent_templates = {h[0] for h in state.get("history", [])[-TEMPLATE_COOLDOWN:]}
+        fresh = [(i, e) for i, e in enumerate(pending) if e.get("t") not in recent_templates]
+        if fresh:
+            indexed_pending = fresh
+        else:
+            indexed_pending = list(enumerate(pending))
 
         def best_in(indexed):
             best = None
@@ -713,17 +687,17 @@ class WittyPool:
                         break
             return best
 
-        hit = best_in(list(enumerate(pending))[:SELECT_WINDOW])
+        hit = best_in(indexed_pending[:SELECT_WINDOW])
         if hit is None:   # nothing eligible up front — fall back to the full queue
-            hit = best_in(enumerate(pending))
+            hit = best_in(indexed_pending)
         return hit[1:] if hit else None
 
-    def _peek(self, names, fc=None, now=None):
+    def _peek(self, names, fc=None, now=None, event=None):
         """Choose today's line without consuming it. Assumes the lock is held."""
         names = clean_names(names)
-        if not names:
-            return None
         state = self._ensure(names)
+        if event:
+            return self._event_pick(state, event)
         wvals = weather_values(fc)
         avail, bucket, today = set(wvals), bucket_for(fc), day_key(now)
         for _ in range(3):
@@ -747,12 +721,38 @@ class WittyPool:
         return None
 
     # -- public ---------------------------------------------------------------
-    def peek(self, names, fc=None, now=None):
+    def weather(self, observations, now):
+        with self._lock:
+            state = self._load() or {}
+            return weather_context.describe(state.get("weather_days", []), observations, now)
+
+    def _event_pick(self, state, event, skip=None):
+        signature = json.dumps(event, sort_keys=True)
+        cached = state.get("pending_event")
+        if cached and cached.get("signature") == signature and skip is None:
+            return dict(cached)
+        lines = weather_context.EVENT_LINES[event["kind"]]
+        candidates = [(f"event_{event['kind']}_{i}", line) for i, line in enumerate(lines)]
+        history = [h[0] for h in state.get("history", [])]
+        # Exhaust the event's premises before repeating, even across towns.
+        last_used = {tid: i for i, tid in enumerate(history)}
+        candidates = [(tid, line) for tid, line in candidates if tid != skip]
+        oldest = min(last_used.get(tid, -1) for tid, _ in candidates)
+        tid, line = random.choice([(tid, line) for tid, line in candidates
+                                   if last_used.get(tid, -1) == oldest])
+        entry = {"id": state["next_id"], "t": tid, "name": "", "event": True,
+                 "signature": signature, "rendered": line.format(**event["facts"])}
+        state["next_id"] += 1
+        state["pending_event"] = entry
+        self._save(state)
+        return dict(entry)
+
+    def peek(self, names, fc=None, now=None, event=None):
         """Today's line as an entry dict with a 'rendered' key, or None.
         Deterministic: same state + same morning gives the same line, which is
         what makes the 15-minute retry re-post identical text."""
         with self._lock:
-            return self._peek(names, fc, now)
+            return self._peek(names, fc, now, event)
 
     def commit(self, entry):
         """Consume a line. Only called after the webhook actually accepted it.
@@ -760,34 +760,52 @@ class WittyPool:
         if not entry:
             return False
         with self._lock:
-            state = self._load()
-            if not isinstance(state, dict):
+            state = self._load() or {}
+            if "t" in entry and entry.get("id") in state.get("committed_ids", []):
                 return False
+            snapshot = entry.get("weather_snapshot")
+            if snapshot:
+                days = [d for d in state.get("weather_days", [])
+                        if (d["date"], d["timezone"]) != (snapshot["date"], snapshot["timezone"])]
+                days.append(snapshot)
+                state["weather_days"] = sorted(days, key=lambda d: d["date"])[-400:]
+            if "t" not in entry:
+                self._save(state)
+                return bool(snapshot)
             pending = state.get("pending") or []
             idx = next((i for i, e in enumerate(pending) if e.get("id") == entry.get("id")), None)
-            if idx is None:
-                return False
-            pending.pop(idx)
+            if entry.get("event"):
+                # A preview may have refreshed the pending event during send.
+                if (state.get("pending_event") or {}).get("id") == entry.get("id"):
+                    state["pending_event"] = None
+            else:
+                if idx is None:
+                    self._save(state)
+                    return False
+                pending.pop(idx)
             history = [h for h in (state.get("history") or []) if isinstance(h, list)]
             history.append([entry.get("t"), entry.get("name") or ""])
             state["pending"] = pending
             state["history"] = history[-HISTORY_MAX:]
             state["last_posted"] = {"at": int(time.time()), "text": entry.get("rendered", "")}
+            state["committed_ids"] = (state.get("committed_ids", []) + [entry.get("id")])[-HISTORY_MAX:]
             self._save(state)
             return True
 
-    def reroll(self, names, fc=None, now=None):
+    def reroll(self, names, fc=None, now=None, event=None):
         """Rotate the current pick to the back of the queue and draw the next.
         The skipped line was never posted, so it stays in the cycle."""
         with self._lock:
             names = clean_names(names)
-            if not names:
-                return {"ok": False, "error": "no names configured"}
-            current = self._peek(names, fc, now)
+            current = self._peek(names, fc, now, event)
             if current is None:
                 return {"ok": False, "error": "no line available"}
             state = self._load() or {}
             pending = state.get("pending") or []
+            if event:
+                nxt = self._event_pick(state, event, skip=current["t"])
+                return {"ok": True, "skipped": current["rendered"], "next": nxt["rendered"],
+                        "remaining": len(pending)}
             idx = next((i for i, e in enumerate(pending) if e.get("id") == current.get("id")), None)
             if idx is not None:
                 pending.append(pending.pop(idx))
@@ -806,10 +824,6 @@ class WittyPool:
         the 'next' line shown is the generic-fallback view."""
         with self._lock:
             names = clean_names(names)
-            if not names:
-                return {"remaining": 0, "cycle": 0, "history": 0,
-                        "next_generic": None, "last_posted": None,
-                        "pool_size": len(TEMPLATES)}
             state = self._ensure(names)
             nxt = self._peek(names, None, None)
             return {

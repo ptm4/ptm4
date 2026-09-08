@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - "homelab/hosts/rpi/docker-compose.yml"
-      - "homelab/hosts/rpi/webapp/**"
+      - "homelab/hosts/rpi/webapp.v2.legacy/**"
       - "homelab/hosts/rpi/nginx-wg.conf"
       - "homelab/hosts/rpi/notes-app/**"
       - "homelab/hosts/rpi/discord-weather/**"
@@ -35,10 +35,10 @@ jobs:
         with:
           node-version: 24   # matches node:lts-alpine in the webapp container (v24)
           cache: npm
-          cache-dependency-path: homelab/hosts/rpi/webapp/frontend/package-lock.json
+          cache-dependency-path: homelab/hosts/rpi/webapp.v2.legacy/frontend/package-lock.json
 
       - name: Build (tsc + vite)
-        working-directory: homelab/hosts/rpi/webapp/frontend
+        working-directory: homelab/hosts/rpi/webapp.v2.legacy/frontend
         run: |
           npm ci --no-audit --no-fund
           npm run build
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: webapp-dist
-          path: homelab/hosts/rpi/webapp/frontend/dist
+          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
           retention-days: 3
 
   deploy:
@@ -62,7 +62,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: webapp-dist
-          path: homelab/hosts/rpi/webapp/frontend/dist
+          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
 
       - name: Copy compose file
         run: |
@@ -80,7 +80,7 @@ jobs:
         run: |
           mkdir -p /srv/docker/compose/webapp
           rsync -a --delete --exclude 'node_modules' \
-            "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp/" /srv/docker/compose/webapp/
+            "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp.v2.legacy/" /srv/docker/compose/webapp/
           cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
       - name: Copy notes-app

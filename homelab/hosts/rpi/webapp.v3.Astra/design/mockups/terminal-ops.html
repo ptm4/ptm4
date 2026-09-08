@@ -1,0 +1,262 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pert's Pocket — Terminal Ops</title>
+<!-- v3 mockup C: "terminal ops" — TUI/btop-school. Mono everywhere, panel
+     titles set into the border like ncurses, block-character gauges, ASCII
+     sparklines, keybinding footer. Candidate bonus skin (data-skin="tui").
+     Single-theme by design: a terminal is dark. -->
+<style>
+  :root {
+    --bg:     #0c0f0e;
+    --panel:  #101413;
+    --line:   #263230;
+    --line-2: #3a4a47;
+    --ink:    #c9d4ce;
+    --ink-2:  #7f8d87;
+    --ink-3:  #566159;
+    --amber:  #ffb454;
+    --green:  #62d788;
+    --cyan:   #6ad9e6;
+    --red:    #ff5c57;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 400 13px/1.5 var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding: 10px 12px 44px;
+  }
+  a { color: var(--cyan); text-decoration: none; }
+  a:hover { background: var(--cyan); color: var(--bg); }
+
+  /* ── header bar ─────────────────────────────────────────────────────── */
+  .hdr {
+    display: flex; align-items: center; gap: 0; padding: 4px 10px 10px;
+    color: var(--ink-2); white-space: nowrap; overflow: hidden; font-size: 12.5px;
+  }
+  .hdr b { color: var(--amber); font-weight: 600; }
+  .hdr .sep { flex: 1; overflow: hidden; color: var(--line-2); margin: 0 10px; }
+  .hdr .ok { color: var(--green); }
+  .cursor { display: inline-block; width: 7px; height: 14px; background: var(--amber); margin-left: 6px; vertical-align: text-bottom; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .cursor { animation: none; } }
+
+  /* ── panel: fieldset gives the true ncurses title-in-border ─────────── */
+  .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; }
+  fieldset.panel {
+    grid-column: span 4;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    border-radius: 3px;
+    padding: 8px 12px 10px;
+    min-width: 0;
+    margin: 0;
+  }
+  fieldset.panel:hover { border-color: var(--line-2); }
+  legend {
+    padding: 0 7px; color: var(--amber); font-weight: 600; font-size: 12px;
+    letter-spacing: .06em;
+  }
+  legend .dim { color: var(--ink-3); font-weight: 400; }
+  .p6 { grid-column: span 6 !important; } .p8 { grid-column: span 8 !important; } .p12 { grid-column: span 12 !important; } .p3 { grid-column: span 3 !important; }
+  @media (max-width: 1000px) { fieldset.panel, .p6, .p8, .p3 { grid-column: span 6 !important; } }
+  @media (max-width: 660px)  { fieldset.panel, .p6, .p8, .p3, .p12 { grid-column: span 12 !important; } }
+
+  .kv { display: flex; gap: 8px; padding: 1px 0; }
+  .kv .k { color: var(--ink-3); min-width: 46px; }
+  .kv .v { color: var(--ink); }
+  .kv .fill { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--ink-2); }
+  .r { text-align: right; }
+
+  /* block gauge — btop style */
+  .gauge { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
+  .gauge .k { color: var(--ink-3); min-width: 46px; }
+  .gauge .blocks { flex: 1; letter-spacing: 1px; color: var(--green); overflow: hidden; white-space: nowrap; }
+  .gauge .blocks .off { color: var(--line); }
+  .gauge.warn .blocks { color: var(--amber); }
+  .gauge.hot .blocks { color: var(--red); }
+  .gauge .pct { min-width: 40px; text-align: right; color: var(--ink-2); }
+
+  .sparkline { color: var(--cyan); letter-spacing: 0; }
+  .caption { color: var(--ink-3); font-size: 11.5px; }
+
+  .status-ok { color: var(--green); } .status-warn { color: var(--amber); } .status-crit { color: var(--red); } .status-info { color: var(--cyan); }
+
+  .rows > div { padding: 1.5px 0; }
+  .hr { border: 0; border-top: 1px dashed var(--line); margin: 6px 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { text-align: left; color: var(--ink-3); font-weight: 400; padding: 2px 14px 4px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 3px 14px 3px 0; color: var(--ink-2); }
+  td:first-child { color: var(--ink); }
+  tr:hover td { background: #151a19; }
+  .tablewrap { overflow-x: auto; }
+
+  /* footer keybar */
+  .keybar {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    display: flex; gap: 14px; align-items: center;
+    background: #0a0d0c; border-top: 1px solid var(--line);
+    padding: 7px 14px; font-size: 12px; color: var(--ink-3);
+    overflow-x: auto; white-space: nowrap;
+  }
+  .keybar b { color: var(--bg); background: var(--amber); border-radius: 2px; padding: 0 5px; font-weight: 600; margin-right: 5px; }
+  .keybar .ver { margin-left: auto; color: var(--ink-3); }
+  .keybar .ver b { background: var(--line-2); color: var(--ink); }
+  .keybar .ver b.on { background: var(--amber); color: var(--bg); }
+
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; }
+</style>
+
+<div class="hdr">
+  <span><b>pert&rsquo;s pocket</b> :: v3<span class="cursor"></span></span>
+  <span class="sep">────────────────────────────────────────────────────────────────────────────────────────</span>
+  <span class="ok">4/4 hosts</span>&nbsp;·&nbsp;<span class="ok">31/31 up</span>&nbsp;·&nbsp;<span style="color:var(--amber)">4 updates</span>&nbsp;·&nbsp;<span class="ok">0 findings</span>&nbsp;&nbsp;<span style="color:var(--ink-3)">│ doctor 24m │ 21:47:12</span>
+</div>
+
+<div class="grid">
+  <!-- opti -->
+  <fieldset class="panel">
+    <legend>┤ opti <span class="dim">· storage · up 29d</span> ├</legend>
+    <div class="gauge"><span class="k">cpu</span><span class="blocks">█▏<span class="off">██████████████████████</span></span><span class="pct">0.16</span></div>
+    <div class="gauge"><span class="k">mem</span><span class="blocks">███████████<span class="off">████████████</span></span><span class="pct">48%</span></div>
+    <div class="gauge"><span class="k">zfs·red</span><span class="blocks">████▍<span class="off">███████████████████</span></span><span class="pct">19%</span></div>
+    <div class="gauge warn"><span class="k">os</span><span class="blocks">█████████████████▊<span class="off">██████</span></span><span class="pct">77%</span></div>
+    <hr class="hr">
+    <div class="kv"><span class="k">temp</span><span class="v">30°C</span><span class="k" style="margin-left:12px">net</span><span class="v">↓63K ↑170K</span></div>
+    <div class="kv"><span class="k">cpu 3h</span><span class="v sparkline">▂▂▁▃▂▅▃▄▂▄▃▃▂▄▃▂</span></div>
+    <div class="kv"><span class="k">act</span><span class="fill"><a href="#">[terminal]</a> <a href="#">[update]</a> <a href="#">[reboot]</a></span></div>
+  </fieldset>
+
+  <!-- rpi -->
+  <fieldset class="panel">
+    <legend>┤ rpi <span class="dim">· dns · up 20d</span> ├</legend>
+    <div class="gauge"><span class="k">cpu</span><span class="blocks">███▎<span class="off">████████████████████</span></span><span class="pct">0.55</span></div>
+    <div class="gauge"><span class="k">mem</span><span class="blocks">█████████████▍<span class="off">██████████</span></span><span class="pct">58%</span></div>
+    <div class="gauge"><span class="k">sd</span><span class="blocks">██████▋<span class="off">█████████████████</span></span><span class="pct">29%</span></div>
+    <div class="gauge"><span class="k">dock</span><span class="blocks">███████████████████████</span><span class="pct">16/16</span></div>
+    <hr class="hr">
+    <div class="kv"><span class="k">temp</span><span class="v">40°C</span><span class="k" style="margin-left:12px">net</span><span class="v">↓5.1K ↑0.8K</span></div>
+    <div class="kv"><span class="k">cpu 3h</span><span class="v sparkline">▃▄▂▅▃▆▄▇▄▅▃▄▅▃▄▄</span></div>
+    <div class="kv"><span class="k">act</span><span class="fill"><a href="#">[terminal]</a> <a href="#">[update]</a> <a href="#">[reboot]</a></span></div>
+  </fieldset>
+
+  <!-- noblenumbat -->
+  <fieldset class="panel">
+    <legend>┤ noblenumbat <span class="dim">· media · up 1d8h</span> ├</legend>
+    <div class="gauge"><span class="k">cpu</span><span class="blocks"><span class="off">███████████████████████</span></span><span class="pct">0.00</span></div>
+    <div class="gauge"><span class="k">mem</span><span class="blocks">████▌<span class="off">███████████████████</span></span><span class="pct">20%</span></div>
+    <div class="gauge"><span class="k">os</span><span class="blocks">████▏<span class="off">███████████████████</span></span><span class="pct">18%</span></div>
+    <div class="gauge"><span class="k">dock</span><span class="blocks">███████████████████████</span><span class="pct">15/15</span></div>
+    <hr class="hr">
+    <div class="kv"><span class="k">temp</span><span class="v">46°C</span><span class="k" style="margin-left:12px">vpn</span><span class="v status-ok">ok · pf 52644</span></div>
+    <div class="kv"><span class="k">cpu 3h</span><span class="v sparkline">▁▁▂▁▁▂▁▁▁▂▁▁▁▁▂▁</span></div>
+    <div class="kv"><span class="k">act</span><span class="fill"><a href="#">[terminal]</a> <a href="#">[update]</a> <a href="#">[reboot]</a></span></div>
+  </fieldset>
+
+  <!-- activity log -->
+  <fieldset class="panel p8">
+    <legend>┤ activity ├</legend>
+    <div class="rows">
+      <div class="kv"><span class="k">07:00</span><span class="fill"><span class="status-info">discord-weather</span> posted the daily report</span><span class="status-ok">sent</span></div>
+      <div class="kv"><span class="k">06:32</span><span class="fill"><span class="status-info">vpn-stack-heal</span> renewed NAT-PMP lease — port 52644 unchanged</span><span class="status-ok">healed</span></div>
+      <div class="kv"><span class="k">04:15</span><span class="fill"><span class="status-info">homelab-doctor</span> 4/4 services · 4/4 hosts</span><span class="status-ok">green</span></div>
+      <div class="kv"><span class="k">02:00</span><span class="fill"><span class="status-info">attic-sync</span> weekly cold copy — 41 GiB in 12m</span><span class="status-ok">done</span></div>
+      <div class="kv"><span class="k">-1d</span><span class="fill"><span class="status-info">arch-agent</span> bitwarden 1.33.1 → 1.34.0 available on rpi</span><span class="status-warn">update</span></div>
+      <div class="kv"><span class="k">-1d</span><span class="fill"><span class="status-info">hl-db</span> nightly ingest — 14/14 feeds · 61 days indexed</span><span class="status-ok">fed</span></div>
+    </div>
+  </fieldset>
+
+  <!-- pi-hole -->
+  <fieldset class="panel">
+    <legend>┤ pi-hole ├</legend>
+    <div class="gauge"><span class="k">blocked</span><span class="blocks">█████▏<span class="off">██████████████████</span></span><span class="pct">22.4%</span></div>
+    <div class="kv"><span class="k">queries</span><span class="v">31,842</span><span class="k" style="margin-left:12px">denied</span><span class="v">7,134</span></div>
+    <div class="kv"><span class="k">gravity</span><span class="v">1.19M domains</span></div>
+    <div class="kv"><span class="k">act</span><span class="fill"><a href="#">[pause 5m]</a> <a href="#">[open]</a></span></div>
+  </fieldset>
+
+  <!-- cs2 -->
+  <fieldset class="panel p6">
+    <legend>┤ cs2 · hltv <span class="dim">· vrs</span> ├</legend>
+    <div class="rows">
+      <div class="kv"><span class="k status-crit">LIVE</span><span class="fill">Vitality vs Spirit <span class="caption">· mirage · map 2</span></span><span class="status-crit">9–7</span></div>
+      <div class="kv"><span class="k">19:00</span><span class="fill">FaZe vs MOUZ <span class="caption">· EPL playoffs</span></span><span class="caption">bo3</span></div>
+      <div class="kv"><span class="k">21:30</span><span class="fill">NAVI vs G2 <span class="caption">· EPL playoffs</span></span><span class="caption">bo3</span></div>
+      <div class="kv"><span class="k">final</span><span class="fill">Falcons vs Liquid <span class="caption">· 13–10 · 9–13 · 13–6</span></span><span class="status-ok">2–1</span></div>
+    </div>
+  </fieldset>
+
+  <!-- weather -->
+  <fieldset class="panel p3">
+    <legend>┤ wx ├</legend>
+    <div class="kv"><span class="v" style="font-size:22px">78°</span><span class="fill caption" style="align-self:center">partly cloudy<br>feels 81° · rain 20%</span></div>
+    <div class="kv"><span class="k">07:00</span><span class="fill caption">daily post sent</span><span class="status-ok">✓</span></div>
+  </fieldset>
+
+  <!-- llm -->
+  <fieldset class="panel p3">
+    <legend>┤ llm ├</legend>
+    <div class="kv"><span class="k">model</span><span class="v">LFM2.5-2.6B</span></div>
+    <div class="kv"><span class="k">host</span><span class="v">android:8080</span></div>
+    <div class="kv"><span class="k">state</span><span class="v status-ok">slot warm · 11 tok/s</span></div>
+  </fieldset>
+
+  <!-- bots -->
+  <fieldset class="panel">
+    <legend>┤ bots <span class="dim">· 5 scheduled</span> ├</legend>
+    <div class="kv"><span class="fill">weather</span><span class="caption">next 07:00</span><span class="status-ok">·on</span></div>
+    <div class="kv"><span class="fill">hltv</span><span class="caption">next 09:00</span><span class="status-ok">·on</span></div>
+    <div class="kv"><span class="fill">healthdigest</span><span class="caption">next 08:00</span><span class="status-ok">·on</span></div>
+    <div class="kv"><span class="fill">jellyfin</span><span class="caption">next 18:00</span><span class="status-ok">·on</span></div>
+    <div class="kv"><span class="fill">sports</span><span class="caption">next 10:00</span><span class="status-ok">·on</span></div>
+  </fieldset>
+
+  <!-- updates -->
+  <fieldset class="panel">
+    <legend>┤ updates <span class="dim">· 4 pending</span> ├</legend>
+    <div class="kv"><span class="fill">bitwarden <span class="caption">rpi</span></span><span class="status-warn">1.34.0</span></div>
+    <div class="kv"><span class="fill">jellyfin <span class="caption">nn</span></span><span class="status-warn">10.10.4</span></div>
+    <div class="kv"><span class="fill">prowlarr <span class="caption">nn</span></span><span class="status-warn">1.31</span></div>
+    <div class="kv"><span class="fill">gluetun <span class="caption">nn</span></span><span class="status-warn">3.40</span></div>
+  </fieldset>
+
+  <!-- homelab db -->
+  <fieldset class="panel">
+    <legend>┤ homelab-db ├</legend>
+    <div class="gauge"><span class="k">feeds</span><span class="blocks">███████████████████████</span><span class="pct">14/14</span></div>
+    <div class="kv"><span class="k">index</span><span class="v">61 days · 2.1 GB</span></div>
+    <div class="kv"><span class="k">note</span><span class="fill caption">sda on opti degrading — watch smart</span><span class="status-warn">!</span></div>
+  </fieldset>
+
+  <!-- containers detail -->
+  <fieldset class="panel p12">
+    <legend>┤ containers <span class="dim">· detail page preview · 31/31</span> ├</legend>
+    <div class="tablewrap">
+    <table>
+      <thead><tr><th>name</th><th>host</th><th>up</th><th>image</th><th>state</th><th>notes</th></tr></thead>
+      <tbody>
+        <tr><td>gluetun</td><td>noblenumbat</td><td>20h</td><td>qmcgaw/gluetun</td><td class="status-ok">healthy</td><td>vpn namespace</td></tr>
+        <tr><td>jellyfin</td><td>noblenumbat</td><td>32h</td><td>jellyfin/jellyfin</td><td class="status-ok">up</td><td></td></tr>
+        <tr><td>bitwarden</td><td>rpi</td><td>10h</td><td>vaultwarden/server</td><td class="status-warn">update 1.34.0</td><td></td></tr>
+        <tr><td>pihole</td><td>rpi</td><td>2w</td><td>pihole/pihole</td><td class="status-ok">healthy</td><td>dns · dhcp</td></tr>
+        <tr><td>qbittorrent</td><td>noblenumbat</td><td>20h</td><td>linuxserver/qbittorrent</td><td class="status-ok">up</td><td>via gluetun</td></tr>
+        <tr><td>webapp</td><td>rpi</td><td>10h</td><td>node:lts-alpine</td><td class="status-ok">up</td><td>this app</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </fieldset>
+</div>
+
+<div class="keybar">
+  <span><b>1</b>home</span>
+  <span><b>2</b>dashboard</span>
+  <span><b>c</b>containers</span>
+  <span><b>o</b>cockpit</span>
+  <span><b>p</b>pihole</span>
+  <span><b>l</b>logs</span>
+  <span><b>/</b>search</span>
+  <span><b>e</b>edit board</span>
+  <span class="ver">ui: <b>v1</b> <b>v2</b> <b class="on">v3</b></span>
+</div>
