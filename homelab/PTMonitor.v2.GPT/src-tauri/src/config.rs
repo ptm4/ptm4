@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub const CONFIG_VERSION: u8 = 2;
+pub const CONFIG_VERSION: u8 = 3;
 pub const APP_DATA_DIR: &str = "PTMonitor-v2";
 pub const RUN_VALUE_NAME: &str = "PTMonitorV2";
 
@@ -87,6 +87,39 @@ pub struct WindowPosition {
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(default, rename_all = "camelCase")]
+pub struct TaskbarConfig {
+    pub enabled: bool,
+    /// Persisted monitor identity. Never an HMONITOR, window handle, index or
+    /// desktop coordinate — those do not survive reconnection.
+    pub monitor_device_path: String,
+    pub width_dip: u32,
+    /// Set once the one-time first-run initialisation has fully succeeded, so
+    /// startup and hidden-dashboard defaults are never re-applied on later runs.
+    pub initialized: bool,
+}
+
+impl Default for TaskbarConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            monitor_device_path: String::new(),
+            width_dip: crate::taskbar::DEFAULT_WIDTH_DIP,
+            initialized: false,
+        }
+    }
+}
+
+impl TaskbarConfig {
+    fn normalise(&mut self) {
+        if !crate::taskbar::SUPPORTED_WIDTHS_DIP.contains(&self.width_dip) {
+            self.width_dip = crate::taskbar::DEFAULT_WIDTH_DIP;
+        }
+        self.monitor_device_path = self.monitor_device_path.trim().to_string();
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Config {
     pub version: u8,
     pub position: Option<WindowPosition>,
@@ -101,6 +134,7 @@ pub struct Config {
     pub toast_alerts: bool,
     pub advanced_sensors: bool,
     pub thresholds: Thresholds,
+    pub taskbar: TaskbarConfig,
 }
 
 impl Default for Config {
@@ -118,6 +152,7 @@ impl Default for Config {
             toast_alerts: false,
             advanced_sensors: false,
             thresholds: Thresholds::default(),
+            taskbar: TaskbarConfig::default(),
         }
     }
 }
@@ -159,6 +194,45 @@ impl Config {
             .filter(|name| !name.trim().is_empty())
             .map(|name| name.trim().to_string());
         self.thresholds.normalise();
+        self.taskbar.normalise();
+    }
+
+    /// One-time initialisation for the taskbar feature (plan Section 4). Runs
+    /// only while `taskbar.initialized` is false, and is marked complete only
+    /// after both the startup registration and the settings save succeed — so
+    /// a failure retries next launch instead of silently half-applying.
+    ///
+    /// Later user changes to startup or dashboard visibility are preserved,
+    /// because this never runs again once the flag is set.
+    pub fn apply_taskbar_first_run(&mut self) -> Result<(), String> {
+        if self.taskbar.initialized {
+            return Ok(());
+        }
+
+        let previous_startup = self.startup;
+        let previous_hidden = self.start_hidden;
+
+        self.taskbar.enabled = true;
+        // The monitor identity itself is resolved and persisted by the host,
+        // which is the side that can enumerate display device paths.
+        self.startup = true;
+        self.start_hidden = true;
+
+        if let Err(error) = set_startup(true) {
+            self.startup = previous_startup;
+            self.start_hidden = previous_hidden;
+            return Err(error);
+        }
+
+        self.taskbar.initialized = true;
+        if let Err(error) = self.save() {
+            self.taskbar.initialized = false;
+            self.startup = previous_startup;
+            self.start_hidden = previous_hidden;
+            let _ = set_startup(previous_startup);
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -269,7 +343,84 @@ mod tests {
     fn defaults_keep_monitor_quiet_and_v1_isolated() {
         let cfg: Config = serde_json::from_str("{}").unwrap();
         assert!(!cfg.startup && !cfg.toast_alerts && !cfg.advanced_sensors);
-        assert_eq!(cfg.version, 2);
+        assert_eq!(cfg.version, CONFIG_VERSION);
         assert!(Config::path().ends_with("PTMonitor-v2/settings.json"));
+    }
+
+    #[test]
+    fn v2_settings_migrate_to_v3_without_losing_user_choices() {
+        // A realistic v2 file: no taskbar section at all.
+        let raw = r#"{
+            "version": 2,
+            "opacity": 0.8,
+            "startup": false,
+            "startHidden": false,
+            "selectedAdapter": "Ethernet",
+            "toastAlerts": true
+        }"#;
+        let mut cfg: Config = serde_json::from_str(raw).unwrap();
+        cfg.normalise();
+
+        // Existing preferences survive untouched.
+        assert_eq!(cfg.version, 3);
+        assert_eq!(cfg.selected_adapter.as_deref(), Some("Ethernet"));
+        assert!(cfg.toast_alerts);
+        assert!((cfg.opacity - 0.8).abs() < f64::EPSILON);
+
+        // The taskbar section materialises with defaults, not yet initialised.
+        assert!(cfg.taskbar.enabled);
+        assert!(!cfg.taskbar.initialized);
+        assert_eq!(cfg.taskbar.width_dip, crate::taskbar::DEFAULT_WIDTH_DIP);
+        assert!(cfg.taskbar.monitor_device_path.is_empty());
+    }
+
+    #[test]
+    fn first_run_never_reapplies_over_later_user_choices() {
+        // Once initialisation has completed, a user who later turns startup and
+        // hidden-dashboard back off must keep those choices.
+        let mut cfg = Config {
+            startup: false,
+            start_hidden: false,
+            taskbar: TaskbarConfig {
+                enabled: false,
+                initialized: true,
+                ..TaskbarConfig::default()
+            },
+            ..Config::default()
+        };
+
+        let before = cfg.clone();
+        cfg.apply_taskbar_first_run()
+            .expect("no-op when initialised");
+
+        assert_eq!(cfg, before, "first-run must not run twice");
+        assert!(!cfg.startup);
+        assert!(!cfg.start_hidden);
+        assert!(!cfg.taskbar.enabled);
+    }
+
+    #[test]
+    fn taskbar_width_falls_back_to_a_supported_value() {
+        let mut cfg = Config {
+            taskbar: TaskbarConfig {
+                width_dip: 999,
+                ..TaskbarConfig::default()
+            },
+            ..Config::default()
+        };
+        cfg.normalise();
+        assert_eq!(cfg.taskbar.width_dip, crate::taskbar::DEFAULT_WIDTH_DIP);
+
+        for width in crate::taskbar::SUPPORTED_WIDTHS_DIP {
+            let mut cfg = Config {
+                taskbar: TaskbarConfig {
+                    width_dip: width,
+                    ..TaskbarConfig::default()
+                },
+                ..Config::default()
+            };
+            cfg.normalise();
+            assert_eq!(cfg.taskbar.width_dip, width);
+        }
     }
 }

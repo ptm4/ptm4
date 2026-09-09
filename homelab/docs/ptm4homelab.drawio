@@ -76,7 +76,7 @@
         <mxCell id="nn-container" parent="1" style="swimlane;startSize=30;fillColor=#FDECEA;strokeColor=#A32D2D;strokeWidth=2;dashed=1;dashPattern=8 4;fontStyle=1;fontSize=13;fontColor=#A32D2D;" value="noblenumbat" vertex="1">
           <mxGeometry height="330" width="260" x="520" y="560" as="geometry" />
         </mxCell>
-        <mxCell id="nn-specs" parent="nn-container" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDEDE8;strokeColor=#9a9890;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;Dell Latitude 7400&lt;/b&gt;&lt;br&gt;CPU:&amp;nbsp;&amp;nbsp; i7-8665U  4c/8t  4.8 GHz  VT-x&lt;br&gt;RAM:&amp;nbsp;&amp;nbsp; 16 GB DDR4 2667 MT/s&lt;br&gt;DISK: 512 GB NVMe  SK Hynix PC611&lt;br&gt;NTWK: Intel Wireless-AC  192.168.1.6&lt;br&gt;OS:&amp;nbsp;&amp;nbsp;&amp;nbsp; Ubuntu 24.04" vertex="1">
+        <mxCell id="nn-specs" parent="nn-container" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDEDE8;strokeColor=#9a9890;align=left;spacingLeft=10;fontSize=11;" value="&lt;b&gt;Dell Latitude 7400&lt;/b&gt;&lt;br&gt;CPU:&amp;nbsp;&amp;nbsp; i7-8665U  4c/8t  4.8 GHz  VT-x&lt;br&gt;RAM:&amp;nbsp;&amp;nbsp; 16 GB DDR4 2667 MT/s&lt;br&gt;DISK: 512 GB NVMe  SK Hynix PC611&lt;br&gt;NTWK: ASIX AX88179 USB3 GbE (wired)  192.168.1.6&lt;br&gt;OS:&amp;nbsp;&amp;nbsp;&amp;nbsp; Ubuntu 24.04" vertex="1">
           <mxGeometry height="130" width="220" x="20" y="48" as="geometry" />
         </mxCell>
         <mxCell id="nn-nfs" parent="nn-container" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EAF3DE;strokeColor=#3B6D11;fontSize=11;" value="&lt;b&gt;NFS server&lt;/b&gt;&lt;br&gt;/srv/fs-ext  •  397 GB free" vertex="1">

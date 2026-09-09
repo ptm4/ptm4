@@ -1,0 +1,48 @@
+{
+  "host": "ptm",
+  "generated_at": "2026-09-08T23:44:45Z",
+  "generated_by": "homelab/agentic/probe.py",
+  "workspace": {
+    "repo_root": "E:\\REPO\\ptm4",
+    "repo_root_realpath": "E:\\REPO\\ptm4",
+    "basename_ok": true,
+    "git_remote": "https://github.com/ptm4/ptm4.git",
+    "git_remote_ok": true,
+    "agentic_dir_present": true
+  },
+  "tools": [
+    {
+      "key": "claude",
+      "name": "Claude Code",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": true,
+      "wiring": [],
+      "wired": null
+    },
+    {
+      "key": "codex",
+      "name": "Codex",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    },
+    {
+      "key": "cursor",
+      "name": "Cursor",
+      "installed": false,
+      "version": null,
+      "path": null,
+      "extra": {},
+      "wireable": false,
+      "wiring": [],
+      "wired": null
+    }
+  ]
+}

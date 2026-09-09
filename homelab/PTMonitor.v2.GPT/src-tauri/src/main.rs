@@ -7,6 +7,7 @@ mod placement;
 mod platform;
 mod sensor;
 mod stats;
+mod taskbar;
 mod tray;
 
 use config::{Config, Thresholds};
@@ -27,6 +28,8 @@ struct TrayControls {
     start_hidden: CheckMenuItem<tauri::Wry>,
     click_through: CheckMenuItem<tauri::Wry>,
     toast_alerts: CheckMenuItem<tauri::Wry>,
+    taskbar_readings: CheckMenuItem<tauri::Wry>,
+    taskbar_width: MenuItem<tauri::Wry>,
 }
 
 // serde's ordinary nested Option collapses explicit null and missing fields.
@@ -54,7 +57,14 @@ struct SettingsPatch {
 
 fn main() {
     platform::wait_for_handoff();
-    let initial_config = Config::load();
+    let mut initial_config = Config::load();
+    // First run of the taskbar feature enables it, starts at login and keeps
+    // the dashboard hidden. Marked complete only on success, so a failure
+    // retries next launch rather than half-applying.
+    if let Err(error) = initial_config.apply_taskbar_first_run() {
+        eprintln!("taskbar first-run initialisation deferred: {error}");
+    }
+    let initial_config = initial_config;
     let app_state = stats::AppState::new();
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -88,6 +98,11 @@ fn main() {
             if !initial_config.start_hidden {
                 window.show()?;
             }
+            taskbar::init(
+                initial_config.taskbar.enabled,
+                initial_config.taskbar.monitor_device_path.clone(),
+                initial_config.taskbar.width_dip,
+            );
             stats::start_collector(app.handle().clone(), app_state.clone());
             Ok(())
         })
@@ -123,6 +138,9 @@ fn main() {
         if let tauri::RunEvent::Exit = event {
             placement::flush(app);
             app.state::<stats::AppState>().stop();
+            // Closing the host's stdin makes it remove the panel and restore
+            // the taskbar's original layout.
+            taskbar::shutdown();
         }
     });
 }
@@ -185,6 +203,21 @@ fn build_tray(app: &tauri::App, config: &Config) -> tauri::Result<TrayControls> 
         config.toast_alerts,
         None::<&str>,
     )?;
+    let taskbar_readings = CheckMenuItem::with_id(
+        app,
+        "taskbar_readings",
+        "Show live taskbar readings",
+        true,
+        config.taskbar.enabled,
+        None::<&str>,
+    )?;
+    let taskbar_width = MenuItem::with_id(
+        app,
+        "taskbar_width",
+        taskbar_width_label(config.taskbar.width_dip),
+        true,
+        None::<&str>,
+    )?;
     let separator_two = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit PTMonitor v2", true, None::<&str>)?;
     let menu = Menu::with_items(
@@ -201,6 +234,8 @@ fn build_tray(app: &tauri::App, config: &Config) -> tauri::Result<TrayControls> 
             &start_hidden,
             &click_through,
             &toast_alerts,
+            &taskbar_readings,
+            &taskbar_width,
             &separator_two,
             &quit,
         ],
@@ -217,7 +252,13 @@ fn build_tray(app: &tauri::App, config: &Config) -> tauri::Result<TrayControls> 
         start_hidden,
         click_through,
         toast_alerts,
+        taskbar_readings,
+        taskbar_width,
     })
+}
+
+fn taskbar_width_label(width_dip: u32) -> String {
+    format!("Taskbar panel width: {width_dip} DIP (click to change)")
 }
 
 fn handle_menu(app: &tauri::AppHandle, id: &str) {
@@ -255,6 +296,19 @@ fn handle_menu(app: &tauri::AppHandle, id: &str) {
         "start_hidden" => mutate_config(app, |c| c.start_hidden = !c.start_hidden).map(|_| ()),
         "click_through" => mutate_config(app, |c| c.click_through = !c.click_through).map(|_| ()),
         "toast_alerts" => mutate_config(app, |c| c.toast_alerts = !c.toast_alerts).map(|_| ()),
+        "taskbar_readings" => {
+            mutate_config(app, |c| c.taskbar.enabled = !c.taskbar.enabled).map(|_| ())
+        }
+        // Cycles through the three supported body widths (plan Section 4).
+        "taskbar_width" => mutate_config(app, |c| {
+            let widths = taskbar::SUPPORTED_WIDTHS_DIP;
+            let index = widths
+                .iter()
+                .position(|w| *w == c.taskbar.width_dip)
+                .unwrap_or(0);
+            c.taskbar.width_dip = widths[(index + 1) % widths.len()];
+        })
+        .map(|_| ()),
         _ => Ok(()),
     };
     if let Err(error) = result {
@@ -308,6 +362,13 @@ fn mutate_config(
     }
     *config = next.clone();
     drop(config);
+    if next.taskbar != old.taskbar {
+        taskbar::reconfigure(
+            next.taskbar.enabled,
+            &next.taskbar.monitor_device_path,
+            next.taskbar.width_dip,
+        );
+    }
     sync_tray(app, &next);
     let _ = app.emit("ptmonitor://settings", &next);
     Ok(next)
@@ -319,6 +380,12 @@ fn sync_tray(app: &tauri::AppHandle, config: &Config) {
         let _ = controls.start_hidden.set_checked(config.start_hidden);
         let _ = controls.click_through.set_checked(config.click_through);
         let _ = controls.toast_alerts.set_checked(config.toast_alerts);
+        let _ = controls
+            .taskbar_readings
+            .set_checked(config.taskbar.enabled);
+        let _ = controls
+            .taskbar_width
+            .set_text(taskbar_width_label(config.taskbar.width_dip));
     }
 }
 

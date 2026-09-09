@@ -429,6 +429,9 @@ pub fn start_collector(app: AppHandle, state: AppState) {
                     }
                 }
                 state.publish(snapshot.clone());
+                // Project into the taskbar panel independently of dashboard
+                // visibility; this only drops a formatted payload in a mailbox.
+                crate::taskbar::publish_snapshot(&snapshot);
                 if !state.shared.stop.load(AtomicOrdering::Acquire) {
                     if app
                         .get_webview_window("main")
