@@ -363,6 +363,16 @@ void SurfaceTapImpl::AttachPanel(const Candidate& c) {
     return;
   }
 
+  // Route panel interactions through shared memory; the host turns them into
+  // allowlisted `action` messages for PTMonitor.
+  panel_.SetActionHandler([this](PanelAction action) {
+    if (!channelOpen_ || !channel_.TryLock(50)) return;
+    SharedState* s = channel_.state();
+    s->actionCode = static_cast<uint32_t>(action);
+    s->actionSequence++;
+    channel_.Unlock();
+  });
+
   if (!panel_.Attach(grid, frame, tray, repeater, bodyWidthDip_)) {
     LogGateEvidence(L"  ABORT: Panel::Attach failed (unsupported layout)");
     return;

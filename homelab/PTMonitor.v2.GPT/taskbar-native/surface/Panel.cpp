@@ -254,4 +254,4 @@ void Panel::SetTooltip(std::wstring const& tooltip) {
   }
 }
 
-} // namespa
+} // namespace ptmonitor::taskbar
