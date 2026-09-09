@@ -8,12 +8,22 @@
 
 #include "../shared/Protocol.h"
 
+// windows.h defines GetCurrentTime (and GetCurrentDirectory) as macros, which
+// collide with identically named methods in the XAML projections.
+#pragma push_macro("GetCurrentTime")
+#undef GetCurrentTime
+
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.UI.Xaml.h>
 #include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Documents.h>
+#include <winrt/Windows.UI.Input.h>
+#include <winrt/Windows.UI.Xaml.Input.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
+
+#pragma pop_macro("GetCurrentTime")
 
 #include <functional>
 #include <string>

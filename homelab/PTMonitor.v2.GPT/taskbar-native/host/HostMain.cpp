@@ -10,6 +10,8 @@
 #include "../shared/Protocol.h"
 #include "../shared/SharedMemory.h"
 
+#include <shlobj.h>
+
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Data.Json.h>
@@ -85,21 +87,164 @@ std::wstring ResolveTargetDevicePath(const std::vector<DisplayInfo>& displays) {
   return initial;
 }
 
-std::wstring SurfaceDllPath() {
+std::wstring InstalledSurfaceDllPath() {
   wchar_t path[MAX_PATH];
   GetModuleFileNameW(nullptr, path, MAX_PATH);
-  std::wstring s(path);
-  const auto pos = s.find_last_of(L"\\/");
-  s = (pos == std::wstring::npos) ? L"." : s.substr(0, pos);
-  return s + L"\\PTMonitor.TaskbarSurface.dll";
+  std::wstring dir(path);
+  const auto pos = dir.find_last_of(L"\\/");
+  dir = (pos == std::wstring::npos) ? L"." : dir.substr(0, pos);
+
+  // Beside the host in a portable layout; under `resources\` once bundled by
+  // Tauri, which installs resources into that subdirectory.
+  const std::wstring candidates[] = {
+      dir + L"\\PTMonitor.TaskbarSurface.dll",
+      dir + L"\\resources\\PTMonitor.TaskbarSurface.dll",
+  };
+  for (const auto& candidate : candidates) {
+    if (GetFileAttributesW(candidate.c_str()) != INVALID_FILE_ATTRIBUTES) return candidate;
+  }
+  return {};
+}
+
+// 64-bit FNV-1a over the file contents. Only used to name a directory, so a
+// non-cryptographic hash is sufficient.
+bool HashFile(const std::wstring& path, uint64_t* out) {
+  HANDLE file = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+  if (file == INVALID_HANDLE_VALUE) return false;
+
+  uint64_t hash = 1469598103934665603ULL;
+  std::vector<BYTE> buffer(64 * 1024);
+  DWORD read = 0;
+  while (ReadFile(file, buffer.data(), static_cast<DWORD>(buffer.size()), &read, nullptr) && read > 0) {
+    for (DWORD i = 0; i < read; ++i) {
+      hash ^= buffer[i];
+      hash *= 1099511628211ULL;
+    }
+  }
+  CloseHandle(file);
+  *out = hash;
+  return true;
+}
+
+// Explorer keeps the surface DLL loaded for as long as it lives, so the
+// shipped copy must never be the one it loads — otherwise an upgrade (or a
+// rebuild) cannot replace the file. Stage each build into a content-hashed
+// directory under PTMonitor's local data (plan Section 5) and load from there;
+// older directories are removed once nothing is using them.
+std::wstring SurfaceDllPath() {
+  const std::wstring installed = InstalledSurfaceDllPath();
+  if (installed.empty()) {
+    LogHost(L"surface DLL not found beside the host or under resources\\");
+    return {};
+  }
+
+  wchar_t localAppData[MAX_PATH];
+  if (FAILED(SHGetFolderPathW(nullptr, CSIDL_LOCAL_APPDATA, nullptr, 0, localAppData))) {
+    return installed;
+  }
+  const std::wstring runtimeRoot =
+      std::wstring(localAppData) + L"\\PTMonitor-v2\\taskbar-runtime";
+
+  uint64_t hash = 0;
+  if (!HashFile(installed, &hash)) return installed;
+
+  wchar_t hashText[32];
+  swprintf_s(hashText, L"%016llx", static_cast<unsigned long long>(hash));
+  const std::wstring stageDir = runtimeRoot + L"\\" + hashText;
+  const std::wstring staged = stageDir + L"\\PTMonitor.TaskbarSurface.dll";
+
+  CreateDirectoryW((std::wstring(localAppData) + L"\\PTMonitor-v2").c_str(), nullptr);
+  CreateDirectoryW(runtimeRoot.c_str(), nullptr);
+  CreateDirectoryW(stageDir.c_str(), nullptr);
+
+  if (GetFileAttributesW(staged.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    if (!CopyFileW(installed.c_str(), staged.c_str(), FALSE)) {
+      LogHost(L"could not stage the surface DLL (gle=%lu); loading in place", GetLastError());
+      return installed;
+    }
+    LogHost(L"staged surface DLL at %s", staged.c_str());
+  }
+
+  // Retire previous builds. A directory whose DLL is still loaded by an
+  // Explorer that has not restarted stays locked, and is simply skipped.
+  WIN32_FIND_DATAW found{};
+  HANDLE search = FindFirstFileW((runtimeRoot + L"\\*").c_str(), &found);
+  if (search != INVALID_HANDLE_VALUE) {
+    do {
+      if (!(found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) continue;
+      if (wcscmp(found.cFileName, L".") == 0 || wcscmp(found.cFileName, L"..") == 0) continue;
+      if (wcscmp(found.cFileName, hashText) == 0) continue;
+      const std::wstring old = runtimeRoot + L"\\" + found.cFileName;
+      if (DeleteFileW((old + L"\\PTMonitor.TaskbarSurface.dll").c_str())) {
+        RemoveDirectoryW(old.c_str());
+      }
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+  }
+
+  return staged;
+}
+
+// Emits one newline-delimited JSON message to PTMonitor on stdout.
+void EmitToParent(const std::wstring& json) {
+  const int need =
+      WideCharToMultiByte(CP_UTF8, 0, json.c_str(), static_cast<int>(json.size()), nullptr, 0,
+                           nullptr, nullptr);
+  std::string utf8(static_cast<size_t>(need), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, json.c_str(), static_cast<int>(json.size()), utf8.data(), need,
+                       nullptr, nullptr);
+  fwrite(utf8.data(), 1, utf8.size(), stdout);
+  fputc('\n', stdout);
+  fflush(stdout);
+}
+
+// Only these three actions may ever be relayed (plan Section 4).
+const wchar_t* ActionName(uint32_t code) {
+  switch (static_cast<PanelAction>(code)) {
+    case PanelAction::ShowDashboard: return L"showDashboard";
+    case PanelAction::OpenSettings: return L"openSettings";
+    case PanelAction::DisableTaskbar: return L"disableTaskbar";
+    default: return nullptr;
+  }
+}
+
+// Forwards any pending panel interaction, then clears it.
+void DrainPanelActions(uint32_t& lastSequence) {
+  if (!g_channel.valid() || !g_channel.TryLock(50)) return;
+  SharedState* s = g_channel.state();
+  const uint32_t sequence = s->actionSequence;
+  const uint32_t code = s->actionCode;
+  g_channel.Unlock();
+
+  if (sequence == lastSequence) return;
+  lastSequence = sequence;
+
+  const wchar_t* name = ActionName(code);
+  if (!name) return; // unknown codes are dropped, never forwarded
+
+  if (static_cast<PanelAction>(code) == PanelAction::DisableTaskbar) {
+    g_enabled.store(false);
+  }
+  LogHost(L"panel action: %s", name);
+  EmitToParent(std::wstring(L"{\"protocolVersion\":1,\"type\":\"action\",\"action\":\"") + name +
+                L"\"}");
 }
 
 void SupervisorLoop() {
   AttachmentTracker tracker;
   const std::wstring dll = SurfaceDllPath();
+  uint32_t lastActionSequence = 0;
+
+  // Announce readiness so PTMonitor can send configuration immediately.
+  EmitToParent(L"{\"protocolVersion\":1,\"type\":\"ready\"}");
 
   while (g_running.load()) {
-    std::this_thread::sleep_for(std::chrono::seconds(2)); // topology fallback check
+    // Poll interactions far more often than topology, so clicks feel instant.
+    for (int i = 0; i < 8 && g_running.load(); ++i) {
+      DrainPanelActions(lastActionSequence);
+      std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    }
     if (!g_running.load()) break;
 
     if (!g_enabled.load()) {

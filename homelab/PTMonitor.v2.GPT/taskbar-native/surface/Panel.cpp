@@ -91,7 +91,15 @@ void Panel::BuildVisuals(double bodyWidthDip) {
 void Panel::WireInteractions() {
   if (!root_) return;
 
-  root_.Tapped([this](auto&&, auto&& args) {
+  // PointerPressed rather than Tapped: the tap gesture can be swallowed by the
+  // taskbar's own manipulation handling, whereas a pointer press reaches the
+  // element directly.
+  root_.PointerPressed([this](auto&&, auto&& args) {
+    try {
+      auto point = args.GetCurrentPoint(root_);
+      if (point && point.Properties().IsRightButtonPressed()) return; // handled by RightTapped
+    } catch (...) {
+    }
     args.Handled(true);
     if (onAction_) onAction_(PanelAction::ShowDashboard);
   });

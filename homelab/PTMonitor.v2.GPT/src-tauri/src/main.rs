@@ -53,6 +53,21 @@ struct SettingsPatch {
     toast_alerts: Option<bool>,
     advanced_sensors: Option<bool>,
     thresholds: Option<Thresholds>,
+    taskbar: Option<TaskbarPatch>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TaskbarPatch {
+    enabled: Option<bool>,
+    monitor_device_path: Option<String>,
+    width_dip: Option<u32>,
+    /// Accepted so the UI can echo the whole section back (the struct denies
+    /// unknown fields), but deliberately never applied — only a completed
+    /// first run may set it.
+    #[serde(default)]
+    #[allow(dead_code)]
+    initialized: Option<bool>,
 }
 
 fn main() {
@@ -98,10 +113,32 @@ fn main() {
             if !initial_config.start_hidden {
                 window.show()?;
             }
+            let action_app = app.handle().clone();
             taskbar::init(
                 initial_config.taskbar.enabled,
                 initial_config.taskbar.monitor_device_path.clone(),
                 initial_config.taskbar.width_dip,
+                move |action| {
+                    let app = action_app.clone();
+                    match action {
+                        // Show, never toggle closed: clicking the panel must not
+                        // hide a dashboard the user just asked to see.
+                        taskbar::PanelAction::ShowDashboard => show_dashboard(app),
+                        taskbar::PanelAction::OpenSettings => {
+                            // Reuses the existing interaction-recovery path.
+                            if let Err(error) = mutate_config(&app, |c| c.click_through = false) {
+                                report_error(&app, error);
+                            }
+                            show_dashboard(app.clone());
+                            let _ = app.emit("ptmonitor://open-settings", ());
+                        }
+                        taskbar::PanelAction::DisableTaskbar => {
+                            if let Err(error) = mutate_config(&app, |c| c.taskbar.enabled = false) {
+                                report_error(&app, error);
+                            }
+                        }
+                    }
+                },
             );
             stats::start_collector(app.handle().clone(), app_state.clone());
             Ok(())
@@ -450,6 +487,18 @@ fn update_settings(patch: SettingsPatch, app: tauri::AppHandle) -> Result<Config
         }
         if let Some(v) = patch.thresholds {
             config.thresholds = v;
+        }
+        if let Some(v) = patch.taskbar {
+            if let Some(enabled) = v.enabled {
+                config.taskbar.enabled = enabled;
+            }
+            if let Some(path) = v.monitor_device_path {
+                config.taskbar.monitor_device_path = path;
+            }
+            if let Some(width) = v.width_dip {
+                config.taskbar.width_dip = width;
+            }
+            // `initialized` is deliberately not applied from the front end.
         }
     })
 }

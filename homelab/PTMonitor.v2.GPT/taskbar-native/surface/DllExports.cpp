@@ -55,7 +55,7 @@ class ClassFactory final : public IClassFactory {
 
 } // namespace ptmonitor::taskbar
 
-extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
+extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD, LPVOID) {
   // Kept minimal per plan Section 3: "Keep DllMain minimal. Schedule actual
   // initialization after loading." All real work happens in SetSite, called
   // by Explorer's diagnostics runtime well after load completes.

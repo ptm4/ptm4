@@ -202,6 +202,24 @@ function syncAdapters(adapters) {
   }
   if (document.activeElement !== select) select.value = settings?.selectedAdapter || '';
 }
+function syncTaskbar(taskbar) {
+  if (!taskbar) return;
+  $('set-taskbar-enabled').checked = Boolean(taskbar.enabled);
+  const width = $('set-taskbar-width');
+  if (document.activeElement !== width) width.value = String(taskbar.widthDip ?? 220);
+  const display = $('set-taskbar-display');
+  // The saved display is a monitor device path; keep it selectable even while
+  // that monitor is disconnected so the choice is never silently lost.
+  const saved = taskbar.monitorDevicePath || '';
+  const signature = JSON.stringify([saved]);
+  if (display.dataset.signature !== signature) {
+    display.dataset.signature = signature;
+    display.replaceChildren(el('option', '', 'Auto · second monitor')); display.firstChild.value = '';
+    if (saved) { const option = el('option', '', `Saved display · ${saved.slice(0, 42)}…`); option.value = saved; display.append(option); }
+  }
+  if (document.activeElement !== display) display.value = saved;
+  text('taskbar-status', taskbar.enabled ? 'Enabled · readings appear beside that taskbar’s clock' : 'Disabled');
+}
 function syncThresholds() {
   const thresholds = settings?.thresholds || {};
   for (const [label, warn, critical, max] of THRESHOLDS) {
@@ -230,7 +248,7 @@ function applySettings(next) {
   text('btn-expand', next.expanded ? '↙' : '↗'); $('btn-expand').setAttribute('aria-label', next.expanded ? 'Collapse to compact monitor' : 'Expand workstation details'); $('btn-expand').title = next.expanded ? 'Compact monitor' : 'Workstation details'; text('footer-detail', next.expanded ? 'Compact monitor ↙' : 'Workstation details ↗');
   for (const [id, key] of [['set-startup', 'startup'], ['set-start-hidden', 'startHidden'], ['set-click-through', 'clickThrough'], ['set-toasts', 'toastAlerts'], ['set-advanced', 'advancedSensors']]) $(id).checked = Boolean(next[key]);
   for (const [id, key] of [['opacity', 'opacity'], ['background-opacity', 'backgroundOpacity']]) { if (document.activeElement !== $(`set-${id}`)) $(`set-${id}`).value = String(Math.round((next[key] ?? .9) * 100)); text(`${id}-value`, `${Math.round((next[key] ?? .9) * 100)}%`); }
-  syncThresholds(); syncAdapters(latest?.network?.availableAdapters || []);
+  syncThresholds(); syncAdapters(latest?.network?.availableAdapters || []); syncTaskbar(next.taskbar);
   requestAnimationFrame(() => { if (latest) { if (!next.expanded) renderCompact(latest); else renderActive(); } });
 }
 function persist(patch) {
@@ -259,6 +277,9 @@ for (const button of document.querySelectorAll('[data-tab]')) button.addEventLis
 $('sensor-search').addEventListener('input', () => latest && renderSensors(latest));
 for (const [id, key] of [['set-startup', 'startup'], ['set-start-hidden', 'startHidden'], ['set-click-through', 'clickThrough'], ['set-toasts', 'toastAlerts'], ['set-advanced', 'advancedSensors']]) $(id).addEventListener('change', action((event) => persist({ [key]: event.target.checked })));
 $('set-adapter').addEventListener('change', action((event) => persist({ selectedAdapter: event.target.value || null })));
+$('set-taskbar-enabled').addEventListener('change', action((event) => persist({ taskbar: { ...(settings?.taskbar || {}), enabled: event.target.checked } })));
+$('set-taskbar-width').addEventListener('change', action((event) => persist({ taskbar: { ...(settings?.taskbar || {}), widthDip: Number(event.target.value) } })));
+$('set-taskbar-display').addEventListener('change', action((event) => persist({ taskbar: { ...(settings?.taskbar || {}), monitorDevicePath: event.target.value } })));
 for (const [id, key, css] of [['opacity', 'opacity', '--widget-opacity'], ['background-opacity', 'backgroundOpacity', '--background-opacity']]) {
   $(`set-${id}`).addEventListener('input', (event) => { text(`${id}-value`, `${event.target.value}%`); document.documentElement.style.setProperty(css, Number(event.target.value) / 100); });
   $(`set-${id}`).addEventListener('change', action((event) => persist({ [key]: Number(event.target.value) / 100 })));

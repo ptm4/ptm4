@@ -26,6 +26,8 @@ int wmain() {
               s->surfaceExplorerPid);
       wprintf(L"     cells: [%s] [%s] [%s] [%s] [%s] [%s]\n", s->cells[0], s->cells[1], s->cells[2],
               s->cells[3], s->cells[4], s->cells[5]);
+      wprintf(L"     actionSeq=%u actionCode=%u surfaceStatus=%u\n", s->actionSequence,
+              s->actionCode, s->surfaceStatus);
       channel.Unlock();
     } else {
       wprintf(L"[%d] mutex busy\n", i);

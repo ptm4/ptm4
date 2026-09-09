@@ -6,7 +6,7 @@
 //! to the host so pipe I/O, process waits and Explorer calls never happen on
 //! the sampling thread.
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
@@ -16,9 +16,16 @@ use crate::stats::Snapshot;
 
 static SUPERVISOR: OnceLock<Option<TaskbarSupervisor>> = OnceLock::new();
 
-/// Starts the taskbar integration once, at application startup.
-pub fn init(enabled: bool, monitor_device_path: String, width_dip: u32) {
-    let _ = SUPERVISOR.get_or_init(|| start(enabled, monitor_device_path, width_dip));
+/// Starts the taskbar integration once, at application startup. `on_action`
+/// receives the panel's allowlisted interactions.
+pub fn init(
+    enabled: bool,
+    monitor_device_path: String,
+    width_dip: u32,
+    on_action: impl Fn(PanelAction) + Send + Sync + 'static,
+) {
+    let _ = SUPERVISOR
+        .get_or_init(|| start(enabled, monitor_device_path, width_dip, Arc::new(on_action)));
 }
 
 /// Called from the collector immediately after a snapshot is published, so the
@@ -225,6 +232,35 @@ pub fn configure_frame(enabled: bool, monitor_device_path: &str, width_dip: u32)
     )
 }
 
+/// Actions the panel may request. Anything else arriving on the host's stdout
+/// is ignored — this is an allowlist, not a command channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelAction {
+    ShowDashboard,
+    OpenSettings,
+    DisableTaskbar,
+}
+
+/// Parses one host->parent line. Returns `None` for anything unrecognised,
+/// malformed, oversized, or of an unsupported protocol version.
+pub fn parse_action_line(line: &str) -> Option<PanelAction> {
+    if line.len() > 16 * 1024 {
+        return None;
+    }
+    if !line.contains("\"protocolVersion\":1") || !line.contains("\"type\":\"action\"") {
+        return None;
+    }
+    if line.contains("\"action\":\"showDashboard\"") {
+        Some(PanelAction::ShowDashboard)
+    } else if line.contains("\"action\":\"openSettings\"") {
+        Some(PanelAction::OpenSettings)
+    } else if line.contains("\"action\":\"disableTaskbar\"") {
+        Some(PanelAction::DisableTaskbar)
+    } else {
+        None
+    }
+}
+
 /// Latest-value mailbox: the sampler overwrites the pending payload and
 /// returns immediately. A slow writer may miss intermediate samples but never
 /// the newest one.
@@ -345,6 +381,7 @@ pub fn start(
     enabled: bool,
     monitor_device_path: String,
     width_dip: u32,
+    on_action: Arc<dyn Fn(PanelAction) + Send + Sync>,
 ) -> Option<TaskbarSupervisor> {
     host_executable_path()?;
 
@@ -387,6 +424,25 @@ pub fn start(
                 if needs_start {
                     child = spawn_host();
                     if let Some(c) = child.as_mut() {
+                        // Relay the host's allowlisted actions back into the app.
+                        if let Some(stdout) = c.stdout.take() {
+                            let actions = Arc::clone(&on_action);
+                            let reader_stop = Arc::clone(&writer_stop);
+                            let _ = thread::Builder::new()
+                                .name("ptmonitor-taskbar-actions".into())
+                                .spawn(move || {
+                                    for line in BufReader::new(stdout).lines() {
+                                        if reader_stop.load(Ordering::Acquire) {
+                                            break;
+                                        }
+                                        let Ok(line) = line else { break };
+                                        if let Some(action) = parse_action_line(&line) {
+                                            actions(action);
+                                        }
+                                    }
+                                });
+                        }
+
                         let cfg = current_config(&writer_config);
                         if let Some(stdin) = c.stdin.as_mut() {
                             let _ = writeln!(

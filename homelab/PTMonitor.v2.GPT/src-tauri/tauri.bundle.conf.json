@@ -1,9 +1,15 @@
 {
   "bundle": {
-    "externalBin": ["binaries/PTMonitor.SensorHost"],
+    "externalBin": [
+      "binaries/PTMonitor.SensorHost",
+      "binaries/PTMonitor.TaskbarHost"
+    ],
     "resources": {
       "../sensor-host/licenses/": "licenses/",
-      "../sensor-host/THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+      "../sensor-host/THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "resources/PTMonitor.TaskbarSurface.dll": "PTMonitor.TaskbarSurface.dll",
+      "../taskbar-native/THIRD-PARTY-NOTICES.md": "TASKBAR-THIRD-PARTY-NOTICES.md",
+      "../taskbar-native/LICENSE": "TASKBAR-LICENSE"
     }
   }
 }

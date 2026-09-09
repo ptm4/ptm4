@@ -49,6 +49,12 @@
         <label class="setting-block" for="set-background-opacity"><span>Background opacity <output id="background-opacity-value">90%</output></span><input id="set-background-opacity" type="range" min="25" max="100" step="5"></label><p class="settings-note">Adjust the background while keeping text and charts crisp.</p>
         <label class="setting-block" for="set-opacity"><span>Overall opacity <output id="opacity-value">100%</output></span><input id="set-opacity" type="range" min="25" max="100" step="5"></label>
         <button id="btn-snap" class="secondary-button">Snap to current monitor corner</button>
+        <h2 class="settings-heading">TASKBAR READINGS</h2>
+        <label class="setting"><span>Show live taskbar readings</span><input id="set-taskbar-enabled" type="checkbox"></label>
+        <label class="setting-block"><span>Taskbar display</span><select id="set-taskbar-display"><option value="">Auto · second monitor</option></select></label>
+        <label class="setting-block"><span>Panel width</span><select id="set-taskbar-width"><option value="220">220 DIP · compact</option><option value="280">280 DIP · roomier</option><option value="340">340 DIP · widest</option></select></label>
+        <p class="settings-note">Status: <span id="taskbar-status">checking…</span></p>
+        <p class="settings-note">Readings sit next to that taskbar's clock and follow its auto-hide and fullscreen behaviour.</p>
         <h2 class="settings-heading">TELEMETRY</h2>
         <label class="setting-block"><span>Network adapter</span><select id="set-adapter"><option value="">Auto · most active adapter</option></select></label><label class="setting"><span>Motherboard sensor discovery</span><input id="set-advanced" type="checkbox"></label>
         <p class="settings-note" id="advanced-note">Some temperatures and fans require administrator access. Restarting with advanced access shows a Windows approval prompt and elevates PTMonitor for this session.</p><button id="btn-elevate" class="secondary-button">Restart as administrator…</button><div id="elevate-confirm" class="tray-tip" hidden><strong>Restart PTMonitor with elevated access?</strong><p>Windows will request your approval. This can expose additional hardware sensors; unsupported sensors still remain unavailable.</p><button id="btn-elevate-confirm" class="secondary-button">Restart and request access</button><button id="btn-elevate-cancel" class="text-button">Cancel</button></div>

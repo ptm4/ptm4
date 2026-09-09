@@ -366,7 +366,11 @@ void SurfaceTapImpl::AttachPanel(const Candidate& c) {
   // Route panel interactions through shared memory; the host turns them into
   // allowlisted `action` messages for PTMonitor.
   panel_.SetActionHandler([this](PanelAction action) {
-    if (!channelOpen_ || !channel_.TryLock(50)) return;
+    LogGateEvidence(L"  panel interaction: action=%u", static_cast<uint32_t>(action));
+    if (!channelOpen_ || !channel_.TryLock(50)) {
+      LogGateEvidence(L"  action dropped: channel unavailable");
+      return;
+    }
     SharedState* s = channel_.state();
     s->actionCode = static_cast<uint32_t>(action);
     s->actionSequence++;
