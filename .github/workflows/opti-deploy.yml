@@ -5,22 +5,25 @@ name: Deploy opti Units
 # the repo copies — ZFS guards existed live but not in git; this workflow makes the
 # repo authoritative in both directions).
 #
+# As of 2026-09-08 Peter's ptm4 working copy is E:\REPO\ptm4 on his Windows
+# workstation — opti no longer has (and must not get) its own git checkout. Instead
+# this workflow rsyncs the homelab/ tree from the runner's ephemeral checkout to a
+# fixed, non-git snapshot directory (/srv/red/fs/ptm/repo/ptm4/homelab/) that the
+# dispatcher, homelab-db, and the rpi webapp's read-only /workspace mount all still
+# expect at that path. Nobody edits that directory and it has no .git — it's
+# overwritten wholesale on every relevant push, same idiom as the cp steps below.
+#
 # Deliberately NOT deployed here:
 #   - /etc/homelab/samba-red.conf — the webapp's samba editor drives the dispatcher's
 #     validate→backup→write→reload→verify pipeline (hosts/opti/samba_config.py); a
 #     blind cp + reload on every push would bypass those interlocks.
 #   - /etc/hl-agents.env — secrets, never in the repo.
-#   - The dispatcher runs FROM the working copy on the pool (not from this checkout),
-#     so a push that changes agent-dispatcher.py needs the restart below to take
-#     effect — that's this workflow's real job.
 
 on:
   push:
     branches: [main]
     paths:
-      - "homelab/hosts/opti/**"
-      - "homelab/tools/automation/**"
-      - "homelab/tools/homelab-db/**"
+      - "homelab/**"
   workflow_dispatch:
 
 jobs:
@@ -31,6 +34,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Sync the homelab/ snapshot the dispatcher, homelab-db, and webapp read (plain directory, not a git repo)
+        run: |
+          sudo mkdir -p /srv/red/fs/ptm/repo/ptm4
+          sudo chown ptm:users /srv/red/fs/ptm/repo/ptm4
+          rsync -a --delete "$GITHUB_WORKSPACE/homelab/" /srv/red/fs/ptm/repo/ptm4/homelab/
 
       - name: Install cross-host automation scripts
         run: |
@@ -49,13 +58,13 @@ jobs:
                   /etc/systemd/system/
           sudo systemctl daemon-reload
 
-      - name: Restart the dispatcher (it runs from the pool working copy)
+      - name: Restart the dispatcher (it runs from the synced snapshot)
         run: |
           sudo systemctl restart hl-agent-dispatcher
           sleep 2
           systemctl is-active hl-agent-dispatcher
 
-      - name: Restart homelab-db services (they also run from the pool working copy)
+      - name: Restart homelab-db services (they also run from the synced snapshot)
         run: |
           sudo systemctl restart homelab-db homelab-db-vitals
           sleep 2

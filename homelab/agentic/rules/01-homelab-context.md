@@ -39,8 +39,24 @@ privileged commands need adb over localhost.
 
 ## Where the repo lives
 
-`/home/ptm/opti/ptm/repo/ptm4` on tux **is a CIFS mount of opti's pool**. Saving a file here
-writes straight to opti's disk — there is no separate copy to sync.
+As of 2026-09-08 the working copy is **`E:\REPO\ptm4` on the Windows side of this
+workstation** (local NTFS disk, not a network share). Edit there.
+
+The old `/home/ptm/opti/ptm/repo/ptm4` CIFS mount described in earlier revisions of this file
+is stale: it was backed by opti's pool checkout, which Peter moved to
+`/srv/red/fs/ptm/old repo location/ptm4` on opti (main @ f4175b2, **98 uncommitted modified
+files — never `rm -rf` or reset it**, Peter reconciles it by hand). Sessions that treated the
+pool copy as the working copy, or the tux CIFS mount as an edit path, were both wrong — treat
+any clone reachable from `tux` or opti as a deploy/runtime copy only.
+
+opti's own services (`hl-agent-dispatcher`, `homelab-db`, the webapp `/workspace` mount) still
+hardcode the old `/srv/red/fs/ptm/repo/ptm4` path and are broken until it's restored (dispatcher
+crash-looping, homelab-db will fail on next restart). Fix is **not** a repoint to `E:\REPO\ptm4`
+(opti/Linux can't reach that as a local path) and deliberately **not** a second git checkout on
+opti either — `.github/workflows/opti-deploy.yml` now `rsync -a --delete`s its own ephemeral
+runner checkout into `/srv/red/fs/ptm/repo/ptm4/homelab/` on every push, a plain `.git`-less
+snapshot nobody edits. See `homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md`
+§0.1 / Phase 2.3 — that step still needs one push (or `workflow_dispatch`) to actually run.
 
 The old `noblenumbat:~/code/ptm4` clone **no longer exists** (reverted 2026-07-22). Do not send
 edits there.
