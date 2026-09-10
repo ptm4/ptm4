@@ -38,7 +38,7 @@ EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
 PER_HOST_EXPECTED_PORTS = {
     "opti": {139, 3389, 3350, 5355, 5357,    # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
              9090,                            # Cockpit admin UI (2026-08-02 control-hub work)
-             3001, 9999,                      # Uptime Kuma, Dozzle hub — moved here 2026-09-09
+             9999,                            # Dozzle hub — moved here 2026-09-09 (Kuma went on to nn 09-10)
              9100},                           # homelab-db (queryable index + MCP)
     "rpi": {111, 9090,                        # idle rpcbind, Cockpit admin UI
             7007},                            # Dozzle AGENT (rpi's only container besides
@@ -46,6 +46,7 @@ PER_HOST_EXPECTED_PORTS = {
     "noblenumbat": {
         111, 631,                             # rpcbind (nfs-common, client support), cupsd (loopback)
         3389, 3390,                           # gnome-remote-desktop
+        3001,                                 # Uptime Kuma (host network) — moved from opti 2026-09-10
         5000, 6767, 7878, 8003, 8081, 8090, 8096,
         8191, 8388, 8686, 8888, 8989, 9000, 9696,
         # kavita, bazarr, radarr, gluetun-admin, qbittorrent, mylar3, jellyfin,

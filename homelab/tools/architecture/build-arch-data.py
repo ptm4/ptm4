@@ -381,12 +381,13 @@ NODES = [
     N("rpi-sshd", "sshd :22", "rpi", "infra", "platform", kind="service"),
     N("rpi-timers", "systemd timers", "rpi", "infra", "platform",
       sublabel="autoreboot 03:00 · autoupdate", kind="timer"),
-    N("uptime-kuma", "Uptime Kuma", "rpi", "infra", "platform",
+    N("uptime-kuma", "Uptime Kuma", "noblenumbat", "infra", "platform",
       sublabel="Synthetic monitors :3001", container="uptime-kuma",
-      image="louislam/uptime-kuma:1", ports=["192.168.1.10:3001"],
-      url="http://rpi.lan:3001/", kind="container",
+      image="louislam/uptime-kuma:1", ports=["192.168.1.6:3001"],
+      url="http://noblenumbat.lan:3001/", kind="container",
       notes="Part of the 2026-08-02 control-hub work: probes every service on its own "
-            "schedule, independent of the collector cadence."),
+            "schedule, independent of the collector cadence. On noblenumbat (host "
+            "network) since 2026-09-10, so it watches opti from outside."),
     N("dozzle", "Dozzle", "rpi", "infra", "platform",
       sublabel="Live container logs :9999", container="dozzle",
       image="amir20/dozzle:latest", ports=["192.168.1.10:9999"],

@@ -57,6 +57,24 @@ DO NOT: <one thing generations of this creature tend to get wrong>
 | `giant_spider` (Large, use TEMPLATE_L) | Wide flat, 8 legs read as spikes; neutral_1/2 + danger_red (eyes only); no gear. DO NOT symmetric-mirror legs in the E facing. |
 | `ogre` (Large, use TEMPLATE_L) | Massive pear, tiny head; skin_1 + earth_wood; greatclub, loincloth; face: underbite. DO NOT armor. |
 
+## 3b. Second batch: more SRD monsters for levels 1-3 (all SRD 5.2)
+
+| id | Identity block essentials |
+|---|---|
+| `kobold` (Small) | Tiny lizard-dog, big head, tail as part of silhouette; earth_wood_3 (rust-red scales via `emissive_orange_0`/`earth_wood_2`) + neutral; spear taller than itself, sling pouch; face: snout, no ears. DO NOT make it a dragon. |
+| `hobgoblin` | Upright military goblinoid, square shoulders; `goblin_olive_1` skin + metal (chain shirt), danger_red_1 cloth trim only; longsword, shield with a device; face: flat nose, stern. DO NOT hunch it. |
+| `orc` | Broad, forward-leaning, heavy arms; `foliage_1` grey-green skin + earth_wood hide; greataxe over shoulder; face: tusks, brow ridge. DO NOT armor it beyond hide. |
+| `bugbear` | Tall shaggy goblinoid, long arms, fur silhouette; earth_wood_2 fur + earth_wood_1 hide; morningstar, javelins on back; face: bear-like muzzle. DO NOT make it cute or slim. |
+| `thug` | Human, thick neck, sleeveless; skin_2 + earth_wood_1 (leather); mace, small shield; face: broken nose, scowl. DO NOT hood it (that is the bandit). |
+| `guard` | Human town guard, upright; metal_1 chain shirt + sand_warmstone tabard; spear, kite shield; face: open helm with nose guard. DO NOT give a cape. |
+| `acolyte` | Human robed cleric-in-training, slender; sand_warmstone_2 robe + neutral_1 sash; mace, holy symbol; face: shaved head. DO NOT glow the symbol. |
+| `wererat` | Hybrid rat-human, hunched, long tail; neutral_4 fur + earth_wood_1 rags; shortsword; face: rat muzzle, whiskers. DO NOT confuse with giant_rat: this one stands. |
+| `black_bear` (quadruped) | Low heavy body, small ears; neutral_1 fur with neutral_2 highlights; no gear; face: short muzzle. DO NOT make it brown. |
+| `owlbear` (Large, TEMPLATE_L) | Bear body, owl head and feathered shoulders, upright pose; earth_wood_2 fur + sand_warmstone_1 feathers; no gear; face: beak, round eyes. DO NOT give it wings. |
+
+Quadrupeds (wolf, giant_rat, black_bear): S = head toward the viewer, N = tail toward the
+viewer, E = full side profile facing right. Walk is a four-beat gait; attack is a lunge/bite.
+
 ## 4. The three requests per creature (in this order)
 
 **A. Turnaround (approve before anything else)**

@@ -9,7 +9,7 @@ requires a judgment call; where a choice existed it has already been made and is
 | Host | Hardware | OS | Role after this runbook |
 |---|---|---|---|
 | `rpi` 192.168.1.10, MAC `e4:5f:01:89:b6:4d` | Raspberry Pi 4, 4 GB | Ubuntu 24.04 (new) | **DNS + vault only**: Pi-hole, MariaDB, Vaultwarden, nginx-bitwarden |
-| `opti` 192.168.1.11 | Dell OptiPlex 7010 MT, i5-3570 4c/4t, 6 GB DDR3 → **32 GB**, ZFS pool `red` (3.6 TB), root on `sda` ST500DM002 (**264 reallocated sectors, 40 078 h — dying**) | Debian 12, ZFS 2.3.2, kernel 6.12, cgroup v2 | **Storage + control plane + app tier**: webapp, 5 Discord bots, hltv-api, notes, Uptime Kuma, Dozzle, second Pi-hole |
+| `opti` 192.168.1.11 | Dell OptiPlex 7010 MT, i5-3570 4c/4t, 6 GB DDR3 → **32 GB**, ZFS pool `red` (3.6 TB), root on `sda` ST500DM002 (**264 reallocated sectors, 40 078 h — dying**) | Debian 12, ZFS 2.3.2, kernel 6.12, cgroup v2 | **Storage + control plane + app tier**: webapp, 5 Discord bots, hltv-api, notes, Dozzle, second Pi-hole. (Uptime Kuma landed here too, then moved on to noblenumbat 2026-09-10: opti's ufw dropped its bridge→host probes, and a monitor on opti can't report opti down.) |
 | `noblenumbat` 192.168.1.6 | Latitude 7400, i7-8665U 4c/8t, 16 GB DDR4 (1 free SODIMM, max 32), NVMe 512 GB, **wired** via ASIX AX88179 USB3 GbE `enx207bd2626533` | Ubuntu 24.04 | unchanged (media). Holds the rescue copy. |
 
 - The network is entirely wired Ethernet. DHCP is served by the TP-Link Archer at 192.168.1.1

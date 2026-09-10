@@ -92,6 +92,14 @@ need "whole silhouette centered, limbs curled", horizontal attack extensions cro
 (ask for a downward cut with a bent elbow). Next: `wizard_elf`, `rogue_halfling` (Small),
 `cleric_dwarf`, then monsters.
 
+### wizard_elf + rogue_halfling (2026-09-10): complete, 4/14
+Both OK at stature (72 / 52), no drift, no clipping, installed in the POC. Codex also
+distilled its process into a skill, `generate-unity-creature-sprites`, copied into the repo
+at `.agents/skills/` (D33). **Bulk mode from here:** `BATCH-RUN.md` gives Codex the
+remaining 10 plus a second batch of 10 (PROMPT-PACK §3b) with turnaround approval delegated
+against the identity blocks; it logs progress to `inbox/BATCH-LOG.md` and resumes after
+usage limits. Claude verifies each batch on request ("verify the batch").
+
 Inbox/out contract (also enforced by the tool): frames `<FACING>_<anim>_<i>.png` at any
 integer scale of 64x96 (256x384 recommended), or `sheet.png` at an integer scale of
 1280x288; `portrait.png` any square. Output `out/<id>.png` 1280x288 RGBA, alpha 0 or 255,

@@ -106,3 +106,19 @@ services:
     networks:
       default:
         ipv4_address: 172.60.0.23
+
+  # Uptime Kuma: synthetic monitors for the whole fleet (moved here from opti 2026-09-10).
+  # It lives off opti so it watches opti — storage, dashboard, vault, bots — from outside;
+  # on opti, an opti outage took Kuma down with it and the Discord alert never fired.
+  # Host network on purpose: this host's ufw is default-deny, which drops a bridged
+  # container's traffic to the host's own IP — the exact failure that had six opti
+  # monitors timing out. From the host netns every probe takes the path a LAN client
+  # takes, and ufw's "Anywhere from 192.168.1.0/24" already admits the UI on :3001.
+  # No `dns:` (not allowed with host networking) — the host resolves via Pi-hole.
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    network_mode: host
+    volumes:
+      - ${INSTALL_DIRECTORY}/config/uptime-kuma:/app/data
+    restart: unless-stopped

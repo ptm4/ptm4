@@ -526,3 +526,52 @@ each, fully audited. Then all 11 outdated noblenumbat images updated as 11 audit
 State: svelte-check 0/0, build clean, backend 66/66. **Everything above needs Peter's commit
 + push to persist** — the collector fixes are currently only in opti's rsync snapshot, and
 the /logs route + refresh endpoint are not deployed until CI runs.
+
+
+---
+
+## Fable: 2026-09-10 — DONE — answering "does this site read live?"
+
+Peter, directly: *"Does this site read live & if it does why do we need the sync? It
+feels unreliable at times."* I had been dancing around it. The honest answer, and the
+fix for the part of it that was genuinely our fault:
+
+**It is half live, half snapshot.**
+
+- *Live, measured when you look:* vitals (30s poll per host, pushed over SSE), Pi-hole,
+  Uptime Kuma, Jellyfin, bots, streams, LLM, service up/down probes, per-host apt unit
+  status. All proxied on request.
+- *Scheduled snapshot:* package counts, disks/SMART, listening ports, container
+  inventory, and everything derived from them (incidents, host tiles, Updates tab).
+  These need an SSH fan-out over four hosts running apt/smartctl/ss — one to two minutes
+  of real work. They cannot be per-page-load, and pretending otherwise would be worse.
+
+**The actual defect was presentational, not architectural.** A number measured ten
+seconds ago and one measured five days ago rendered identically. Nothing on screen
+distinguished them. The data was never lying; the page was, by omission — and that is
+precisely what "feels unreliable" meant. Peter was right to keep pushing on it.
+
+Fixed:
+- `/api/containers` and `/api/hosts` now carry **`collected_at`** (when the numbers came
+  off the hosts) alongside `generated_at` (when the JSON was assembled — always "now",
+  and misleading on its own). `/api/updates` already had it.
+- New `lib/components/Measured.svelte`: renders the age of a figure next to the figure.
+  Fresh is deliberately near-invisible; it goes amber past 45 min and red past a day.
+  Hovering says what collected it and that Refresh re-measures. Wired into the host
+  tile's package chip and the Updates tab.
+
+Also this round: `POST /api/refresh` + a topbar button (the missing verb — re-run the
+collectors and wait for the reports to actually advance, rather than "Force Sync" which
+only pushes a host's arch fragments), and `homelab-db-ingest` allowlisted in the
+dispatcher so the refresh can finish the loop instead of stopping one step short.
+
+**Note for whoever reads this next:** Peter's commit `59a7cd1` was still local when he
+said he had pushed — the branch was ahead by one, which is why `/api/refresh` 404'd on
+the live site while both files were correctly committed. Worth checking `git status -sb`
+before concluding a deploy is broken.
+
+State: svelte-check 0/0 across 4776 files, build clean, backend 66/66.
+
+## Codex: 2026-09-10 — Dungine sprite bulk run started
+
+Peter authorized BATCH-RUN.md and communication here. Processing its20creatures in order, one complete creature at a time, with delegated turnaround approval. Manual changes limited to sprite inbox/logs plus this note; existing slicer/build write normal outputs. Scripts/palette remain owner-managed; no Unity work. BATCH-LOG.md under homelab/DND.vbeta/assets-src/sprites/inbox is the progress handoff. I will flag actionable implementation issues here with evidence. Current tools: sprite_clean0.4.0. Actual imagegen dimensions vary; square portrait canvases avoid the direct-resize distortion noted in the skill.

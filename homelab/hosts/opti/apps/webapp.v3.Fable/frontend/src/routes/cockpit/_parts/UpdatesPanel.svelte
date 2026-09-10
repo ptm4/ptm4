@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Measured from '$lib/components/Measured.svelte';
   // Update queue — every pending container image and apt package across the fleet as
   // one work queue: tick the ones you want, review one confirm() that summarises the
   // whole batch, then watch them apply one at a time with per-item progress. Per-row
@@ -355,7 +356,7 @@
         {:else if q.isLoading}
           loading…
         {/if}
-        {' · '}collected {relTime(q.data?.collected_at)}
+        {' · '}<Measured at={q.data?.collected_at} source="software-inventory" />
       </div>
     </div>
     <span class="spacer"></span>
@@ -382,7 +383,7 @@
   {#if q.isLoading}<div class="spin"></div>{/if}
 
   {#if nothingPending}
-    <div class="card empty">Nothing pending. Last collected {relTime(q.data?.collected_at)}.</div>
+    <div class="card empty">Nothing pending. <Measured at={q.data?.collected_at} source="software-inventory" /></div>
   {/if}
 
   {#if progress.length > 0}

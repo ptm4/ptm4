@@ -63,6 +63,20 @@ module.exports = async function hostRoutes(app) {
       };
     });
 
-    return { hosts, depends: DEPENDS, gateway: { ip: '192.168.1.1', label: 'archer', model: 'TP-Link Archer BE3600' }, generated_at: new Date().toISOString() };
+    // See the note in dashboard.js: `generated_at` says when this JSON was built and
+    // is therefore always now. The honest freshness figure is when the fragments this
+    // is joined from were last collected off the hosts.
+    const collectedAt = Object.values(fragments)
+      .map((f) => f?.collected_at)
+      .filter(Boolean)
+      .sort()
+      .pop() || null;
+    return {
+      hosts,
+      depends: DEPENDS,
+      gateway: { ip: '192.168.1.1', label: 'archer', model: 'TP-Link Archer BE3600' },
+      collected_at: collectedAt,
+      generated_at: new Date().toISOString(),
+    };
   });
 };

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Generate Unity Creature Sprites"
+  short_description: "Approved designs to consistent Unity sprite sheets"
+  default_prompt: "Use $generate-unity-creature-sprites to continue the approved creature through its documented sprite pipeline."

@@ -38,6 +38,7 @@
     pool?: { used_pct?: number; pool_name?: string; size_gb?: number } | null;
     // pending updates
     pkgUpdates?: UpdatePackages;
+    updatesMeasuredAt?: string | null;
     imageUpdates: UpdateImage[];
     // containers — whatever the report lists for this host, no assumptions
     containers: ContainerRow[];
@@ -56,6 +57,7 @@
 </script>
 
 <script lang="ts">
+  import Measured from '$lib/components/Measured.svelte';
   // One fleet host, control-center density: live vitals sparklines, disk/pool
   // meters, containers, allowlisted services, timers,
   // the apt log tail, and the full action row. Clicking the header toggles this
@@ -130,6 +132,10 @@
           <span class="chip">
             {vm.pkgUpdates.pending} pkg{#if vm.pkgUpdates.security}<b class="t-crit"> · {vm.pkgUpdates.security} sec</b>{/if}
           </span>
+          <!-- Package counts come from a scheduled collector, not from the host on
+               demand. Saying when they were measured is what stops this chip from
+               quietly lying after you have upgraded something by hand. -->
+          <Measured at={vm.updatesMeasuredAt} source="software-inventory" bare />
         </div>
       {/if}
 

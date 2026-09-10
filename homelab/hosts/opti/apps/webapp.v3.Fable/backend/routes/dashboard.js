@@ -94,7 +94,7 @@ const PROBE_ORIGINS = [
   { key: 'http://192.168.1.6:8098' },                                     // stream-station
   { key: 'http://noblenumbat.lan:8003' },                                 // Gluetun control
   { key: 'http://noblenumbat.lan:8191' },                                 // FlareSolverr
-  { key: 'http://opti.lan:3001', target: 'http://uptime-kuma:3001' },     // Uptime Kuma — moved to opti 2026-09-10; dialed over compose_internal
+  { key: 'http://noblenumbat.lan:3001' },                                 // Uptime Kuma — on noblenumbat since 2026-09-10 (off opti, so it watches opti from outside)
   { key: 'http://192.168.1.11:9100' },                                    // homelab-db
   { key: 'http://192.168.1.54:8080' },                                    // llama.cpp (android)
   { key: 'http://192.168.1.54:8081' },                                    // llama-ctl
@@ -190,7 +190,17 @@ module.exports = async function dashboardRoutes(app) {
       });
     }
 
-    return { hosts, generated_at: new Date().toISOString() };
+    // `generated_at` is when this response was assembled — always "now", and on its
+    // own it is actively misleading: it makes a five-day-old measurement look as fresh
+    // as a five-second-old one. `collected_at` is when the numbers were actually taken
+    // off the hosts, which is the only figure a reader can act on. Both are sent; the
+    // UI shows the second.
+    return {
+      hosts,
+      collected_at: doctor?.run_at || null,
+      source: 'homelab-doctor',
+      generated_at: new Date().toISOString(),
+    };
   });
 
   // ── GET /api/timers ────────────────────────────────────────────────────────

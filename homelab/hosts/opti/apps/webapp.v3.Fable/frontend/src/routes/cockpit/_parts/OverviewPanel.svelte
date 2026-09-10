@@ -362,6 +362,10 @@
       diskUsedPct: live?.disk_used_pct ?? null,
       pool: live?.pool ?? null,
       pkgUpdates: pkg,
+      // When those package numbers were actually taken off the host — NOT when this
+      // response was built. The tile shows it so a stale count cannot masquerade as a
+      // current one, which is exactly how the dashboard lost trust.
+      updatesMeasuredAt: updatesQ.data?.collected_at ?? null,
       imageUpdates: images,
       containers,
       containerBusy,
