@@ -101,7 +101,7 @@ Save as `inbox/<id>/portrait.png`.
 The cleanup tool expects single frames named `<FACING>_<anim>_<n>.png`. Slice each strip:
 ```
 python tools/slice_strips.py <id>
-python tools/sprite_clean.py build <id>          # add --size L for giant_spider / ogre
+python tools/sprite_clean.py build <id> --stature M   # S for goblin/giant_rat; L (+ --size L) for giant_spider/ogre
 ```
 `build` writes `out/<id>.png`, `out/<id>_portrait.png`, updates `manifest.json`, and prints
 `OK` or `NEEDS REGEN` with the reason. Regenerate the failing strip; do not hand-edit.
@@ -121,3 +121,9 @@ python tools/sprite_clean.py build <id>          # add --size L for giant_spider
   had gradients: ask for "flat shading, 3 tones per material".
 - A turnaround alone already yields a Unity-usable placeholder sheet (`build` with no strips
   fills every frame from the pose). Animation strips upgrade it later.
+- From the fighter run: **hit** poses tend to come back larger (ask for "10 % smaller than
+  the idle reference"); **death** strips need "whole silhouette centered in each slot, limbs
+  curled inward"; **attack** extensions cross slot cuts unless you ask for "a downward cut
+  with a bent elbow, blade inside the slot".
+- Stature: `rogue_halfling`, `goblin`, `giant_rat` build with `--stature S`; `giant_spider`
+  and `ogre` with `--size L --stature L`; everything else `--stature M`.

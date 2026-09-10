@@ -49,7 +49,9 @@ C. After my OK: generate the 15 animation strips (PROMPT-PACK §4B): facings S, 
 D. Generate the portrait (PROMPT-PACK §4C) as assets-src/sprites/inbox/goblin/portrait.png.
 E. Run, from the repo folder:
      python tools/slice_strips.py goblin
-     python tools/sprite_clean.py build goblin
+     python tools/sprite_clean.py build goblin --stature S
+   (--stature is the creature's size: S for goblin and giant_rat, M for every other Medium
+   creature, L plus --size L for giant_spider and ogre.)
    "OK" means done. "NEEDS REGEN" lists frames/strips to regenerate: regenerate exactly
    those, re-run both scripts, repeat until OK. Never edit pixels by hand, never edit the
    scripts, never rename the scripts' outputs. If you believe a script is wrong, say so in

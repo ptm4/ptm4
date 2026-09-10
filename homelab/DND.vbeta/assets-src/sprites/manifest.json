@@ -74,7 +74,7 @@
   "goblin": {
     "date": "2026-09-10",
     "placeholder": false,
-    "sha256": "d85363c864c740339dbeabf6cdb13b329ba6b091a63dde14be7f2f7aa7cc46ab",
+    "sha256": "56c085d9411d131199b2ebfa6dacd3b8ae2bf4c413ffe391154f00650e7635f7",
     "sheet": "assets-src/sprites/out/goblin.png",
     "size": "M",
     "sources": [
@@ -140,6 +140,7 @@
       "E_death_3.png",
       "portrait.png"
     ],
-    "tool": "sprite_clean 0.3.0"
+    "stature": "S",
+    "tool": "sprite_clean 0.4.0"
   }
 }

@@ -82,6 +82,16 @@ shrunken goblin instead of a stagger (regenerate that strip when convenient). **
 creature of 14 done; the pipeline is proven end to end.** Next creatures: run
 `CODEX-PROMPT.md` per creature, `fighter_human` first so the party has a real sprite.
 
+### fighter_human (2026-09-10): complete, 2/14
+Codex: 15 strips, 60 frames, portrait, no drift, three walk frames 1-3 px over the top at the
+old box-fill scale. That exposed the scale rule bug fixed in **0.4.0 (D32)**: scale to a
+stature height (M 72 / S 52), not the body box. Rebuilt fighter at 72 px and goblin at 52 px;
+both OK, both installed in the POC, zero runtime errors. Codex's own notes worth keeping for
+the prompt pack: hit poses tend to grow (ask for a percentage size reduction), death poses
+need "whole silhouette centered, limbs curled", horizontal attack extensions cross slot cuts
+(ask for a downward cut with a bent elbow). Next: `wizard_elf`, `rogue_halfling` (Small),
+`cleric_dwarf`, then monsters.
+
 Inbox/out contract (also enforced by the tool): frames `<FACING>_<anim>_<i>.png` at any
 integer scale of 64x96 (256x384 recommended), or `sheet.png` at an integer scale of
 1280x288; `portrait.png` any square. Output `out/<id>.png` 1280x288 RGBA, alpha 0 or 255,
