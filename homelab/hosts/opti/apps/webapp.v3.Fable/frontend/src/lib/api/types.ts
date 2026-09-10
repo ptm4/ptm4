@@ -31,6 +31,30 @@ export interface VitalsSeries {
   latest: VitalsSample | null;
 }
 
+export interface MonitorProcess {
+  pid: number; identity: string; program: string; command: string; user: string; state: string;
+  ppid: number; threads: number; start_ticks: number; memory_bytes: number; cpu_pct: number | null;
+  read_bps: number | null; write_bps: number | null;
+}
+
+export interface MonitorSample {
+  measured_at: string; boot_id: string; uptime_s?: number | null; cpu: { total_pct: number | null; core_pct: Record<string, number | null>; load: (number | null)[] };
+  memory: { total_bytes: number | null; available_bytes: number | null; used_bytes: number | null; swap_total_bytes: number | null; swap_free_bytes: number | null };
+  network: Record<string, { rx_bps: number | null; tx_bps: number | null; rx_errors: number; tx_errors: number; rx_drops: number; tx_drops: number }>;
+  disks: Record<string, { read_bps: number | null; write_bps: number | null; read_iops: number | null; write_iops: number | null; busy_pct: number | null }>;
+  mounts: { mount: string; source: string; fs_type: string; total_bytes: number; available_bytes: number }[];
+  temperatures: { label: string; celsius: number }[];
+  power: { name: string; watts: number | null }[];
+  battery: { name: string; status: string | null; capacity_pct: number | null; power_uw: number | null }[];
+  gpu: { id: string; driver: string; clock_current_mhz: number | null; clock_active_mhz: number | null; busy_pct: number | null; utilization_status: string; memory_kind: string | null }[];
+  processes: MonitorProcess[];
+}
+
+export interface MonitorRollup {
+  interval_s: number; generated_at: string;
+  hosts: Record<string, { latest: MonitorSample | null; count: number; error: string | null; measured_at: string | null; capabilities: unknown }>;
+}
+
 export interface ContainerRow {
   name: string;
   status: string | null;

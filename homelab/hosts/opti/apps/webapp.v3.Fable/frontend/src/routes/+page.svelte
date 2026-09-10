@@ -129,7 +129,7 @@
 
   <!-- The one honest pointer out. Home does not try to be the Monitor. -->
   <footer>
-    <a href="/dashboard"><Gauge size={13} aria-hidden="true" /> Watch it live on the Monitor</a>
+    <a href="/monitor"><Gauge size={13} aria-hidden="true" /> Watch it live on the Monitor</a>
     {#if lastSeen}<span class="ts">fleet seen {relTime(lastSeen)}</span>{/if}
   </footer>
 </div>

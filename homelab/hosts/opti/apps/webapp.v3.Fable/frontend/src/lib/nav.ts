@@ -33,7 +33,7 @@ export interface NavGroup { title: string; items: NavItem[] }
 export const NAV: NavGroup[] = [
   { title: 'Now', items: [
     { path: '/', label: 'Home', icon: LayoutDashboard, key: '1' },
-    { path: '/dashboard', label: 'Monitor', icon: Gauge, key: '2' },
+    { path: '/monitor', label: 'Monitor', icon: Gauge, key: '2' },
     { path: '/streams', label: 'Streams', icon: Radio, key: '3' },
     { path: '/launchpad', label: 'Launchpad', icon: Rocket, key: '4' },
   ]},

@@ -47,6 +47,7 @@ async function buildApp(opts = {}) {
   // v3: the event bus must exist before the pollers that emit on it.
   await app.register(require('./plugins/event-bus'));
   await app.register(require('./plugins/vitals-poller'));
+  await app.register(require('./plugins/monitor-sampler'));
   await app.register(require('./plugins/feed-poller'));
   await app.register(require('./plugins/jobs'));
 
@@ -86,12 +87,22 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/pricewatch'),    { prefix: '/api/pricewatch' });
   // new in v3 — push + fleet model; no legacy client
   await app.register(require('./routes/events'),        { prefix: '/api/events' });
+  await app.register(require('./routes/monitor'),       { prefix: '/api/monitor' });
   await app.register(require('./routes/hosts'),         { prefix: '/api/hosts' });
   await app.register(require('./routes/incidents'),     { prefix: '/api/incidents' });
   await app.register(require('./routes/services'),      { prefix: '/api/services' });
   await app.register(require('./routes/rules'),         { prefix: '/api/rules' });
   // dashboard read-model sits at bare /api (containers, timers, activity, trends, linkcheck)
   await app.register(require('./routes/dashboard'),    { prefix: '/api' });
+
+  // The old Monitor URL remains a durable bookmark; its data read-model has a
+  // separate name, so only the browser route is migrated.
+  const redirectLegacyDashboard = (req, reply) => {
+    const query = req.raw.url.includes('?') ? req.raw.url.slice(req.raw.url.indexOf('?')) : '';
+    reply.redirect(`/monitor${query}`, 308);
+  };
+  app.get('/dashboard', redirectLegacyDashboard);
+  app.get('/dashboard/', redirectLegacyDashboard);
 
   await app.register(require('./plugins/static'));
 

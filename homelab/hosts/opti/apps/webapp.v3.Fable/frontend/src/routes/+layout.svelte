@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { page } from '$app/state';
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
   import '$lib/theme/tokens.css';
   import '$lib/theme/app.css';
@@ -57,7 +58,7 @@
     <Rail />
     <div class="main">
       <Topbar />
-      <div class="content">
+      <div class:wide={page.url.pathname === '/monitor'} class="content">
         {@render children()}
       </div>
     </div>

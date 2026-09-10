@@ -53,6 +53,19 @@ test('GET /api/events/status describes the bus', async () => {
   assert.ok('last' in b);
 });
 
+test('Monitor API keeps a separate two-second contract and redirects the legacy URL', async () => {
+  const status = await app.inject({ method: 'GET', url: '/api/monitor/status' });
+  assert.equal(status.statusCode, 200);
+  assert.equal(status.json().interval_s, 2);
+  const badHost = await app.inject({ method: 'GET', url: '/api/monitor/snapshot?hosts=nope&interval=2' });
+  assert.equal(badHost.statusCode, 400);
+  const badInterval = await app.inject({ method: 'GET', url: '/api/monitor/opti/history?interval=30' });
+  assert.equal(badInterval.statusCode, 400);
+  const legacy = await app.inject({ method: 'GET', url: '/dashboard?host=opti' });
+  assert.equal(legacy.statusCode, 308);
+  assert.equal(legacy.headers.location, '/monitor?host=opti');
+});
+
 test('event bus records the last emit per event', async () => {
   const before = app.events.seq();
   app.events.emit('vitals', app.vitals.rollup());

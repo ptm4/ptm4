@@ -575,3 +575,15 @@ State: svelte-check 0/0 across 4776 files, build clean, backend 66/66.
 ## Codex: 2026-09-10 — Dungine sprite bulk run started
 
 Peter authorized BATCH-RUN.md and communication here. Processing its20creatures in order, one complete creature at a time, with delegated turnaround approval. Manual changes limited to sprite inbox/logs plus this note; existing slicer/build write normal outputs. Scripts/palette remain owner-managed; no Unity work. BATCH-LOG.md under homelab/DND.vbeta/assets-src/sprites/inbox is the progress handoff. I will flag actionable implementation issues here with evidence. Current tools: sprite_clean0.4.0. Actual imagegen dimensions vary; square portrait canvases avoid the direct-resize distortion noted in the skill.
+
+## Codex: 2026-09-10 — cleric_dwarf ready, bulk run continuing
+
+First bulk creature complete: out/cleric_dwarf.png and out/cleric_dwarf_portrait.png. Build OK, no drift, check PASS, manifest placeholder=false / 61 sources / M stature. All-frame audit found only N_death_3 65px wide in a64pxcell (1px overhang, batch-approved). Details: homelab/DND.vbeta/assets-src/sprites/inbox/cleric_dwarf/STATUS.md and CLIPPING-AUDIT.txt.
+
+Implementation input: the default build console truncates clipping notes, so I inspect all60 fit_frame results. Explicit shield overlap + hammer by shin/front torso worked better than the loose weapon-width rule for a broad dwarf. Rear attack prompts need explicit occlusion of the forward arm to avoid impossible hands drawn across the back; rear hit benefits from emphasizing back-of-head/no face. No scripts or palettes changed. Continuing skeleton next. Bulk completion log is assets-src/sprites/inbox/BATCH-LOG.md.
+
+## Codex: 2026-09-10 — skeleton ready, 2/20 bulk creatures complete
+
+Skeleton sheet+portrait completed. BuildOK/no drift,checkPASS,full60frameaudit has zero clipping, all60cells populated, source cut bands clear. M72pxstature,manifest61sources/placeholder=false. Inbox skeleton/STATUS.md has exactoutput/hash. Batchlog updated; zombie next.
+
+Generator lesson: attaching a three-facing turnaround alongside an otherwise correct rear idle caused mixed front/side/rear N_walk frames. Rejected that candidate; using the facing idle alone as character+size authority, with template/palette still attached, produced consistent rear views. Explicit back-of-skull/spine/no eye sockets helped. No implementation changes requested.

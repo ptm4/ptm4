@@ -2,6 +2,7 @@
 # Homelab architecture agent — per-host collector + local Force Sync endpoint.
 # Install on opti, rpi, and noblenumbat (each with its own HL_ARCH_AGENT_HOST):
 #   sudo cp hl-arch-agent.py /usr/local/bin/hl-arch-agent.py
+#   sudo cp monitor.py /usr/local/bin/monitor.py
 #   sudo chmod +x /usr/local/bin/hl-arch-agent.py
 #   sudo cp hl-arch-agent.service /etc/systemd/system/
 #   sudo cp hl-arch-agent.env.example /etc/hl-arch-agent.env   # then edit it
@@ -13,7 +14,8 @@
 # script is a single long-running daemon that both self-schedules the nightly
 # collection and serves GET /status /vitals /apt-status + the token-gated POSTs
 # /sync /restart /update /reboot /apt-upgrade /service-restart /wake (the Cockpit
-# tab's host controls, v0.4.0). See hl-arch-agent.py's docstring.
+# tab's host controls, v0.4.0), plus Monitor's local /monitor/* data and process
+# endpoints. See hl-arch-agent.py's docstring.
 Description=Homelab architecture agent (per-host collector + Force Sync endpoint)
 After=network-online.target docker.service
 Wants=network-online.target

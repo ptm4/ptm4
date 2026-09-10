@@ -103,7 +103,9 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-AGENT_VERSION = "0.4.0"
+import monitor
+
+AGENT_VERSION = "0.5.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -951,6 +953,29 @@ class Handler(BaseHTTPRequestHandler):
             # the same package facts to the dashboard.
             self._json(*apt_status())
             return
+        if path == "/monitor/capabilities":
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            self._json(200, monitor.capabilities())
+            return
+        if path == "/monitor/snapshot":
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            self._json(200, monitor.snapshot(include_processes=True))
+            return
+        if path.startswith("/monitor/process/"):
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            try:
+                pid = int(path.rsplit("/", 1)[-1])
+            except ValueError:
+                self._json(400, {"error": "PID must be an integer"})
+                return
+            self._json(*monitor.process_detail(pid))
+            return
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
@@ -973,6 +998,25 @@ class Handler(BaseHTTPRequestHandler):
             "/service-restart": service_restart,
             "/wake": wake_target,
         }
+        if path.startswith("/monitor/process/") and path.endswith("/signal"):
+            if not TOKEN:
+                self._json(403, {"error": "process signals require HL_ARCH_AGENT_TOKEN"})
+                return
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            try:
+                pid = int(path.split("/")[-2])
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or "{}")
+            except (ValueError, OSError) as exc:
+                self._json(400, {"error": f"bad request: {exc}"})
+                return
+            if not isinstance(body, dict):
+                self._json(400, {"error": "body must be a JSON object"})
+                return
+            self._json(*monitor.send_signal(pid, body))
+            return
         if path in mutators:
             if not TOKEN:
                 self._json(403, {"error": f"{path.lstrip('/')} requires "
