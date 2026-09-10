@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DND.Engine", "DND.Engine\DND.Engine.csproj", "{CDB676C0-10B7-4776-9547-FA9153C4E244}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DND.Engine.Tests", "DND.Engine.Tests\DND.Engine.Tests.csproj", "{77A230EE-AAA2-4396-A1A2-836228AC9AF7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CDB676C0-10B7-4776-9547-FA9153C4E244}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CDB676C0-10B7-4776-9547-FA9153C4E244}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CDB676C0-10B7-4776-9547-FA9153C4E244}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CDB676C0-10B7-4776-9547-FA9153C4E244}.Release|Any CPU.Build.0 = Release|Any CPU
+		{77A230EE-AAA2-4396-A1A2-836228AC9AF7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77A230EE-AAA2-4396-A1A2-836228AC9AF7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77A230EE-AAA2-4396-A1A2-836228AC9AF7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77A230EE-AAA2-4396-A1A2-836228AC9AF7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

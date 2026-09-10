@@ -957,3 +957,32 @@ upgraded in place.**
 | Doctor | latest `agent-logs/homelab-doctor-latest.json` `hosts[].status` | no `crit` |
 | Dispatcher | `ssh opti 'systemctl is-active hl-agent-dispatcher'` | active |
 | Backup (Phase 5+) | `tail -1 /srv/red/fs/ptm/backups/rpi/backup.log` on opti | today's date |
+
+## Post-mortem addendum (2026-09-09, Phase 1 execution)
+
+Phase 1 completed, but two issues cost the evening and are now baked into the preseed/runbook:
+
+1. **systemd-resolved's stub listener breaks Pi-hole on :53 — the big one.** The fresh
+   Ubuntu 24.04 image runs systemd-resolved with its stub on 127.0.0.53:53. Linux forbids a
+   TCP wildcard LISTEN on a port where any specific-address LISTEN exists, so FTL's embedded
+   dnsmasq fails `0.0.0.0:53` TCP with `Address in use`, aborts its whole listener setup, and
+   the already-bound UDP socket sits unread (ss showed Recv-Q ~215 KB of queued, unanswered
+   queries). Symptoms that mislead: `ss` shows FTL "holding" UDP :53, `pihole status` claims
+   IPv4 OK, no third-party process appears to conflict, and the failure is version-independent
+   (reproduced on FTL v6.6.2 and v6.7 — do NOT chase image pinning; a downgrade also hits a
+   gravity-DB schema wall, v22 vs v21). The old rpi never hit this because it ran
+   **systemd-resolved disabled outright** with a hand-managed `/etc/resolv.conf` pointing at
+   127.0.0.1 — a fact visible in the rescue copy but not carried by the preseed. Fix applied
+   and now in `preseed/user-data.tmpl` runcmd: disable resolved, write the hand-managed
+   resolv.conf (127.0.0.1, then 192.168.1.1, search lan).
+2. **Pi-hole's webserver held 443 away from Vaultwarden.** pihole.toml ships
+   `webserver.port = "80o,443os,..."`; on the old box nginx-bitwarden won the 443 race by
+   startup order, on the rebuild FTL won it. Made deterministic by dropping 443 from the
+   FTL webserver (`webserver.port = "80o,[::]:80o"` — edit pihole.toml on disk with the
+   container stopped; the `pihole-FTL --config` CLI does not reliably persist across
+   restarts). Admin UI is HTTP :80 as before.
+3. **nginx-bitwarden hardened.** Its config now uses `resolver 127.0.0.11 valid=10s;` plus a
+   variable-based `proxy_pass` (lazy runtime resolution) instead of static upstream
+   resolution at config parse — immune to start-order and container-recreation races. Live
+   at `/srv/docker/compose/nginx.conf` on rpi (not CI-deployed; backup `.bak-preresolver`
+   alongside).

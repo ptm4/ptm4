@@ -1,0 +1,9 @@
+{
+  "name": "com.ptm.dnd.engine",
+  "version": "0.1.0",
+  "displayName": "DND Engine (rules, storybook, monster AI)",
+  "description": "Pure C# D&D 5e rules engine for Dungine. No UnityEngine dependency; also built headless via DND.Engine.csproj and tested with dotnet test.",
+  "unity": "6000.0",
+  "author": { "name": "Peter Minerva" },
+  "license": "UNLICENSED"
+}

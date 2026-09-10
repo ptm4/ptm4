@@ -1,0 +1,13 @@
+{
+  "goblin": {
+    "date": "2026-09-09",
+    "placeholder": true,
+    "sha256": "3885e40dbbb3176f1448217a2b43280fd377c20eaa904c335d953d8240659614",
+    "sheet": "assets-src/sprites/out/goblin.png",
+    "size": "M",
+    "sources": [
+      "turnaround.png (placeholder: all frames from one pose)"
+    ],
+    "tool": "sprite_clean 0.2.0"
+  }
+}

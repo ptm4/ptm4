@@ -9,6 +9,13 @@ x-logging: &default-logging
 
 services:
   pihole:
+    # 2026-09-09 rebuild post-mortem: FTL "failed to create listening socket for
+    # port 53: Address in use" was systemd-resolved's TCP stub on 127.0.0.53:53
+    # blocking the wildcard TCP LISTEN (kernel rule; version-independent — do not
+    # chase image pins, a downgrade also hits the gravity-DB schema wall). This
+    # host must run with systemd-resolved DISABLED and a hand-managed
+    # /etc/resolv.conf — enforced by the rebuild preseed. Details:
+    # homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md (addendum).
     image: pihole/pihole:latest
     container_name: pihole
     restart: unless-stopped
