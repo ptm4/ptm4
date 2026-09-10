@@ -8,10 +8,22 @@ depends_on: [01]
 inputs: [SOURCES.md rows confirmed, DECISIONS D3 D10 D12 D14 D15, engine/ solution from 01]
 outputs: [engine/DND.Engine domain model + rules pipeline, xUnit suite as the executable spec, docs/engine-architecture.md]
 done_when: [dotnet test green for a level 1-5 party across 03a-03e, deterministic replay of a recorded combat yields identical state, no UnityEngine reference anywhere in engine/]
-status: stub
+status: in-progress
 ---
 
 # 03: Rules engine (headless)
+
+**Status 2026-09-09: skeleton in place.** Architecture in
+[`docs/engine-architecture.md`](../docs/engine-architecture.md). Code in
+`engine/DND.Engine/Runtime/{Core,Model,Rules,Events,Intents,Combat}`: xorshift `SeededRng`,
+`DiceRoll` parser/roller, ability math + proficiency table, `GridPos` with 5-5-5 diagonals,
+`Creature`/`CreatureTemplate`, `D20Test` (advantage, nat 20/1), the `GameEvent` hierarchy +
+`EventLog` with fingerprint, `Intent`/`RuleResult`, and `Encounter` (initiative with Dex
+tie-break, movement budget, melee attack with crit doubling, temp HP, death skipping, end
+detection, dead-current auto-yield). xUnit suite: core math, initiative order, out-of-turn
+rejection, movement budget, reach/action economy, death, temp HP, and a **replay test**
+proving same seed + same intents = identical event log. Next: 03a ingest (sources confirmed),
+then 03b (checks/saves everywhere, cover, LoS, opportunity attacks, death saves).
 
 ## Goal
 The long pole of the project. A pure C# 5e engine that adjudicates everything a DM would,

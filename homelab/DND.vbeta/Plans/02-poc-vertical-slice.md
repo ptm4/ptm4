@@ -17,7 +17,9 @@ status: in-progress
 `Dungine.EditorTools.PocSceneBuilder` (menu **Dungine > POC > Build Scene**; rebuild it, never
 hand-edit the scene). Scripts in `Assets/Dungine/POC/`: `GridMap`, `Unit`, `Billboard`,
 `CameraRig`, `TorchFlicker`, `TurnManager` (initiative, move, melee, goblin AI, hotseat,
-seeded RNG), `PocHud` (IMGUI). Placeholder sheets from `tools/make_placeholder_sprites.py`
+seeded RNG), `PocHud` (IMGUI), `SpriteAnimator` (plays the bible sheet: idle/walk/attack/
+hit/death by material offset, facing from movement direction, W = E mirrored; verified
+cycling in play mode). Placeholder sheets from `tools/make_placeholder_sprites.py`
 in `Assets/Dungine/Sprites/POC/`; the goblin is the first real Codex-generated sheet
 (turnaround-only placeholder, see Plan 05). Plays with zero console errors; screenshots in
 `Dungine/Assets/Captures/` (gitignored). **Remaining:** Peter plays a fight to the death and

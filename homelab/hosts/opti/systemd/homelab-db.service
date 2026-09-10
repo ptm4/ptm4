@@ -33,7 +33,16 @@ NoNewPrivileges=true
 ReadWritePaths=/srv/red/opsdb
 MemoryMax=384M
 # LAN plus the WireGuard tunnel — nothing here should ever answer from the internet.
-IPAddressAllow=192.168.1.0/24 10.213.87.0/24 127.0.0.0/8
+# 172.16.0.0/12 added 2026-09-09: the app tier moved from rpi to this host, so the
+# webapp now reaches :9100 from a Docker bridge instead of across the LAN. This is a
+# systemd eBPF filter, NOT iptables — traffic from a non-allowed source is dropped
+# before it reaches the socket, so it is invisible in `iptables -L` (the ufw ACCEPT
+# counter increments and no SYN_RECV ever appears) and presents as a bare connect
+# timeout. Cost an hour on migration day; see runbook 10.
+# The range is Docker's whole default address pool rather than just compose_internal's
+# current 172.18.0.0/16, because recreating the network can renumber it and the
+# failure mode is silent.
+IPAddressAllow=192.168.1.0/24 10.213.87.0/24 127.0.0.0/8 172.16.0.0/12
 IPAddressDeny=any
 
 [Install]

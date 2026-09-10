@@ -1,18 +1,18 @@
 # Rules & asset sources
 
-Nothing enters `content/` or a build until its row says `confirmed: yes`. Peter confirms
-each row. Licenses below are as understood on 2026-09-09 and must be re-checked at ingest
+Nothing enters `content/` or a build until its row says `confirmed: yes`. Peter confirmed
+the rules-data rows on 2026-09-09; asset fallbacks stay pending until first used. Licenses below are as understood on 2026-09-09 and must be re-checked at ingest
 (Plan 03a records the exact license text and version it pulled).
 
 ## Rules data
 
 | Source | What | License (verify at ingest) | Ships in build? | Confirmed |
 |---|---|---|---|---|
-| SRD 5.2 (Wizards of the Coast, 2025) | 2024-rules System Reference Document: species, backgrounds, classes, spells, monsters, items | CC-BY-4.0 (attribution text required in-game) | Yes | pending |
-| SRD 5.1 (Wizards of the Coast, 2023 CC re-release) | 2014-rules SRD; fallback where 5.2 lacks data or the 2024 spec can't be met | CC-BY-4.0 | Yes | pending |
-| Open5e API (open5e.com) | SRD content as JSON via REST. Also carries third-party OGL/ORC documents; **ingest the SRD documents only** | Per document; SRD parts CC-BY-4.0 | Yes (SRD documents only) | pending |
-| 5e-database (github.com/5e-bits/5e-database) | SRD 5.1 as JSON dumps, well-structured for monsters/spells/classes | MIT (code) + SRD terms (data); verify | Yes | pending |
-| Homebrew (Peter) | Own classes, monsters, items in the engine's homebrew format | Peter's | Yes | pending |
+| SRD 5.2 (Wizards of the Coast, 2025) | 2024-rules System Reference Document: species, backgrounds, classes, spells, monsters, items | CC-BY-4.0 (attribution text required in-game) | Yes | yes (Peter, 2026-09-09) |
+| SRD 5.1 (Wizards of the Coast, 2023 CC re-release) | 2014-rules SRD; fallback where 5.2 lacks data or the 2024 spec can't be met | CC-BY-4.0 | Yes | yes (Peter, 2026-09-09) |
+| Open5e API (open5e.com) | SRD content as JSON via REST. Also carries third-party OGL/ORC documents; **ingest the SRD documents only** | Per document; SRD parts CC-BY-4.0 | Yes (SRD documents only) | yes (Peter, 2026-09-09) |
+| 5e-database (github.com/5e-bits/5e-database) | SRD 5.1 as JSON dumps, well-structured for monsters/spells/classes | MIT (code) + SRD terms (data); verify | Yes | yes (Peter, 2026-09-09) |
+| Homebrew (Peter) | Own classes, monsters, items in the engine's homebrew format | Peter's | Yes | yes (Peter, 2026-09-09) |
 
 ## Explicitly excluded
 

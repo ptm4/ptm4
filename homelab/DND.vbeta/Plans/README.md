@@ -8,8 +8,8 @@ Keep `status` here in sync with each file's frontmatter.
 | [00](00-MASTER.md) | Master plan | 0 | fable | decide | | done (awaiting Peter's review) |
 | [01](01-environment-setup.md) | Environment setup (Unity project, plugin, MCP, engine solution) | 1 | sonnet | execute | 00 | in-progress (all agent steps done; Peter: fresh-session MCP check + UGS Relay/Lobby) |
 | [02](02-poc-vertical-slice.md) | POC vertical slice (throwaway) | 1 | fable | decide | 01 | in-progress (scene built, plays clean; Peter's look review pending) |
-| [03](03-rules-engine.md) | Rules engine (headless) | 2 | fable | decide | 01 | stub |
-| [03a](Rules/03a-data-ingest.md) | SRD / Open5e data ingest | 2 | sonnet | execute | 03 | stub |
+| [03](03-rules-engine.md) | Rules engine (headless) | 2 | fable | decide | 01 | in-progress (skeleton + 31 tests; architecture doc written) |
+| [03a](Rules/03a-data-ingest.md) | SRD / Open5e data ingest | 2 | sonnet | execute | 03 | stub (sources confirmed 2026-09-09; ready to run) |
 | [03b](Rules/03b-core-mechanics.md) | Core mechanics | 2 | sonnet | execute | 03, 03a | stub |
 | [03c](Rules/03c-spells-and-effects.md) | Spells and effects | 2 | fable | decide | 03b | stub |
 | [03d](Rules/03d-conditions-and-status.md) | Conditions and status | 2 | sonnet | execute | 03b | stub |
