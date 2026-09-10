@@ -19,7 +19,7 @@ Read-only: never tunes, flashes, or power-cycles hardware. SMART is queried with
 import re
 
 from _report import write_report, now_iso
-from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
+from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError, INTERMITTENT_HOSTS
 
 DISK_WARN_PCT = 90
 TEMP_WARN_C = 85.0
@@ -294,6 +294,22 @@ def collect_host(host):
 def _host_log(host_dict):
     """Per-host section of the markdown log."""
     m = host_dict["metrics"]
+    # An unreachable host reaches here with metrics == {} (see the probe loop in
+    # main(): it appends status "unknown" and an empty metrics dict, deliberately, so
+    # the host still appears in the report rather than vanishing from it).
+    #
+    # Every field access below then assumed a populated dict, so ONE offline host
+    # killed the entire collector — and the host that is offline most is android, a
+    # phone that is documented as intermittent. Between 2026-09-05 and 2026-09-10 that
+    # is exactly what happened: this agent crashed on every scheduled run, no report
+    # was written, and the dashboard showed a five-day-old file with nothing anywhere
+    # saying why. A collector whose job is to report health must not be the thing that
+    # silently stops reporting.
+    if not m:
+        return [f"## {host_dict['host']}", "",
+                f"- {host_dict.get('summary') or 'unreachable'}",
+                "- No metrics collected — the rest of this report is unaffected.",
+                ""]
     L = [f"## {host_dict['host']}", "",
          f"- CPU: {m['cpu'].get('Model name', '?')} (governor={m.get('governor') or 'n/a'})",
          f"- Load 1/5/15: {' / '.join(m.get('load') or ['?'])}",
@@ -366,8 +382,10 @@ def main():
     for host in all_hosts:
         ok, detail = probe(host)
         if not ok:
-            findings.append({"severity": "warn",
-                             "message": f"[{host.name}] unreachable over SSH — {detail}"})
+            # Expected-absent hosts report, but do not accuse. See INTERMITTENT_HOSTS.
+            if host.name not in INTERMITTENT_HOSTS:
+                findings.append({"severity": "warn",
+                                 "message": f"[{host.name}] unreachable over SSH — {detail}"})
             host_dicts.append({"host": host.name, "status": "unknown",
                                "summary": f"unreachable ({detail})", "metrics": {}})
             continue

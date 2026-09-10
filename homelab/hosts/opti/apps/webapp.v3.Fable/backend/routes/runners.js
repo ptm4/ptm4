@@ -18,7 +18,12 @@ const CATALOG = {
   'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true, manual: true },
   // Weekly cold-copy refresh of the ZFS pool onto the retired sda+sdb mergerfs pool.
   // cadence_h 168 => the stale badge appears after two missed weeks.
-  'coldcopy-latest':       { label: 'Cold Copy Backup', agent: 'coldcopy',           cadence_h: 168, order: 4 },
+  // Disabled 2026-09-10 — the attic disk is ~97% full and there is no room for the
+  // weekly copy. `manual: true` is what actually suppresses the overdue check (see
+  // the `stale` expression below); cadence_h must NOT simply be nulled, because
+  // `ageH > null * 2` is `ageH > 0`, which marks it stale the instant it is written —
+  // the exact opposite of the intent. The entry stays so past reports stay readable.
+  'coldcopy-latest':       { label: 'Cold Copy Backup (disabled)', agent: 'coldcopy',   cadence_h: 168, manual: true, order: 4 },
   // Written by the discord-hltv bot, not a dispatcher agent — no run-now button and no
   // stale badge (manual).
   'hltv-watchlist':        { label: 'HLTV Watchlist',   agent: null,                 cadence_h: 168, manual: true, order: 5 },

@@ -60,6 +60,7 @@ async function buildApp(opts = {}) {
   }));
 
   await app.register(require('./routes/jobs'),         { prefix: '/api/jobs' });
+  await app.register(require('./routes/refresh'),      { prefix: '/api/refresh' });
   await app.register(require('./routes/reports'),      { prefix: '/api/reports' });
   await app.register(require('./routes/runners'),      { prefix: '/api/runners' });
   await app.register(require('./routes/weather'),      { prefix: '/api/weather' });

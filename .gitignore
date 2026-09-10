@@ -59,7 +59,15 @@ vaultwarden-data/
 
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
-logs/
+# Bare `logs/` matched ANY directory called "logs" at any depth, which on
+# 2026-09-10 silently swallowed a SvelteKit route source directory
+# (webapp.v3.Fable/frontend/src/routes/logs/). Git ignored the file, `git add -A`
+# skipped it without comment, CI built an app without that page, and the deployed
+# site 404'd on /logs while every local check passed — the failure only existed in
+# the gap between the two. Anchored to the repo root so it means runtime log
+# directories, which is all it was ever for; source is never ignored by accident.
+/logs/
+/**/node_modules/logs/
 
 # ── DLSS 5 injector skill (789 MB of mod binaries — keep out of git history) ──
 homelab/agentic/skills/dlss5-injector/

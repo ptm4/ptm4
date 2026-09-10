@@ -987,6 +987,56 @@ Phase 1 completed, but two issues cost the evening and are now baked into the pr
    at `/srv/docker/compose/nginx.conf` on rpi (not CI-deployed; backup `.bak-preresolver`
    alongside).
 
+## Post-mortem addendum (2026-09-10): the first opti-apps-deploy run
+
+`Deploy opti App Tier` was created during the migration but had **never actually run**
+until the v3.Fable go-live push. It failed twice, both times on host state the migration
+left behind rather than on anything in the workflow. Recording them because both present
+as "the deploy is broken" and neither is.
+
+**1. `open /srv/docker/compose/.env: permission denied`** at the `docker compose config`
+step. The file was `root:root 0600`, and the runner executes as `ptm`. Fixed with:
+
+```bash
+sudo chmod 640 /srv/docker/compose/.env
+```
+
+`getent group root` on opti is exactly `root:x:0:ptm`, so group-read grants access to
+`ptm` and nobody else — and `ptm` already has passwordless sudo, so this widens nothing
+in practice. Do **not** "fix" this by teaching the workflow to `sudo docker compose`;
+that runs the whole stack as root and changes who owns everything it creates.
+
+**2. `permission denied while trying to connect to the docker API at unix:///var/run/docker.sock`**
+at the next step. This one is the trap: `ssh opti 'docker ps'` works fine, so the
+daemon and the group look correct. They are. The **runner process** was started before
+`usermod -aG docker ptm` ran during the migration, and supplementary groups are fixed at
+process start — a long-running systemd service never picks up a group added afterwards.
+
+Diagnose by comparing the process's groups to a fresh login's, rather than trusting
+`id`:
+
+```bash
+sudo grep ^Groups /proc/$(pgrep -f Runner.Listener | head -1)/status
+getent group docker      # the gid to look for
+```
+
+Fixed by restarting the service so it re-reads its groups:
+
+```bash
+sudo systemctl restart actions.runner.ptm4-ptm4.opti.service
+```
+
+Check no job is in flight first — a restart kills a running one. This is one-time; the
+group membership itself is already persistent in `/etc/group`.
+
+**Third-order consequence worth knowing.** The deploy rsyncs the webapp *before* it
+validates compose, so both failures left the host in a **mixed state**: v3's files on
+disk under `/srv/docker/compose/webapp/`, and the old backend process still running from
+before (`/api/health` still answering `webapp.rpi.lan`, every v3 route 404, but the v3
+SPA being served). The site looked broken in a way neither version explains. If a deploy
+fails after the rsync step, the fix is always to finish the deploy (re-run it), never to
+hand-edit the deploy target.
+
 ## What belongs on rpi (and what does not)
 
 rpi is a **network virtual appliance** as of 2026-09-09. It runs Pi-hole and a Dozzle

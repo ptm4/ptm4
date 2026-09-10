@@ -409,3 +409,120 @@ Outstanding for Peter: ufw on opti blocks bridge->host :80/:3001 (OMV shows as
 "unknown", by design, not "down"); /srv/dev-disk-…C2D1DB at 97%; opti root 85%;
 Uptime Kuma's own second monitor (in its runtime DB, not the repo) still points at the
 old target and needs one edit in Kuma's UI.
+
+
+---
+
+## Fable: 2026-09-10 — DONE — go-live landed, live on opti
+
+Peter pushed; `Deploy opti App Tier` now green. **webapp.v3.Fable is the live dashboard**
+at webapp.lan:8443. Repo Checks green too.
+
+It took three attempts, and both failures were migration leftovers on the host, not the
+workflow — this was that workflow's first ever run, so nothing regressed:
+
+1. `.env` was `root:root 0600`; the runner is `ptm`. `chmod 640` (group root == just ptm,
+   who already has passwordless sudo, so no real widening).
+2. Docker socket denied *even though* `ssh opti 'docker ps'` works — the runner service
+   was started before `usermod -aG docker ptm`, and supplementary groups are fixed at
+   process start. Verified against `/proc/<pid>/status` Groups (991 absent), fixed with a
+   service restart. Both written up in runbook 10 with the diagnosis path.
+
+Worth flagging for anyone who hits a failed deploy here: the rsync runs BEFORE compose
+validation, so a mid-deploy failure leaves v3 files on disk with the old process still
+running — v3 SPA served against a v2 backend, every new route 404. Looks like neither
+version. The fix is always to finish the deploy, never to touch the deploy target.
+
+Verified live: `/api/health` reports `webapp.lan`, all v3 routes 200, hosts show
+`opti = storage · control plane · apps / spof=storage+apps` and `rpi = DNS appliance`,
+containers read opti 14 / rpi 2 / nn 15, Docs serves 32 documents out of homelab-db, and
+the in-container smoke gate passed **77/77** against the fully deployed stack.
+
+Astra: v2.legacy is no longer built or deployed by CI — it stays in the repo as the
+rollback target (ROLLBACK.md in v3.Fable: revert the flip commit, push, done). Your
+`webapp.v3.Astra/` is untouched apart from the paths.js hop-count fix noted in my
+previous entry.
+
+
+---
+
+## Fable: 2026-09-10 — DONE — post-go-live incident sweep and freshness audit
+
+Peter: "opti is red alert apparently? But webapp is responding so something isnt right."
+He was right, and it was one root cause with a wide blast radius.
+
+**opti had no vitals because of its own firewall.** The webapp container reached rpi's
+and noblenumbat's agents on :8787 fine but timed out on opti's — the app tier now runs
+ON opti, and ufw's `deny (incoming)` default drops docker-bridge traffic to the host.
+The 2026-09-09 migration opened 9099/9100 for exactly this reason and missed 8787, which
+is the port serving /vitals AND every host action, so opti's reboot/apt/restart buttons
+were all dead too. Peter applied the rule; opti vitals are live.
+
+**Incidents went 8 open -> 0**, each traced rather than dismissed:
+
+- *Unexpected ports 7007 (rpi) / 8098 (nn)* — the allowlist was inverted by the migration:
+  it still expected Kuma+Dozzle on rpi (now opti) and did not expect the dozzle-agent that
+  replaced them. Re-derived every entry from live `ss -ltn` rather than from where a
+  service used to live. Added 3001/9999/9100 to opti, 8098 to nn.
+- *hardware + software reports 127h stale* — **real crash**. An unreachable host is stored
+  with `metrics: {}` on purpose, but `_host_log()` subscripted it unguarded, so ONE offline
+  host killed the whole collector. The host that is offline most is android, documented as
+  intermittent. `network-report` survived only because it happened to use `.get()`. Guarded
+  both; they now render the host honestly as unreachable.
+- *"autoupdate log has no parseable last run" on rpi* — **false alarm, real bug**. The
+  parser tailed 400 lines hunting the run's START marker, but a run block contains raw apt
+  output and is unbounded; rpi's morning run overflowed the window. The line count had
+  already been raised once (50 -> 400) for the same reason. Replaced position-based tailing
+  with a content grep, so there is no window left to fall out of.
+- *android x3* — Peter: "ignore it, its unreliable and a project for another day." Added
+  `INTERMITTENT_HOSTS` in `_hosts.py`, honoured by all four collectors. The host is still
+  probed and still appears in every report; only the FINDING is suppressed.
+- *coldcopy refusing (1415 deletions, 8%)* — the interlock was working correctly; the
+  deletions were the repo restructure. Peter: "we want to stop the opti backup as we dont
+  have the space for it" (attic disk ~97%). Timer disabled AND exempted from staleness in
+  both the doctor and runners.js — otherwise disabling it just trades one permanent false
+  alarm for another. Note runners.js: `cadence_h: null` computes `ageH > 0` = always stale;
+  `manual: true` is the flag that actually suppresses it.
+- *security x60* — the persistence baseline was from **2026-06-07**, three months before
+  the migration, the Docker install and the ZFS pool, so it was diffing against a machine
+  that no longer exists. Classified all 58: 34 our own agents/timers, 15 zfs, 3 docker,
+  1 cockpit, 2 changed (dispatcher + a disabled podman filebrowser unit), 3 removed. Nothing
+  unaccounted for. Re-baselined on Peter's instruction; now 0 findings.
+- *sdb 264 reallocated sectors* — checked the counters the runbook says matter:
+  Current_Pending 0, Offline_Uncorrectable 0, SMART PASSED, 40,123 hours. Acknowledged as
+  known-and-monitored, per Peter.
+- *rpi 14 pending security updates* — Peter applied them himself mid-session.
+
+**Freshness audit (his ask: "stuff w/o a process to update or renew is null data")**
+
+- TLS certs expire 2028-11-04 with no ACME/renewal automation. They ARE monitored, but the
+  warning fired at 14 days — fine for something that renews itself, far too tight for a
+  process that is a person remembering. Widened to 45.
+- **Pi-hole gravity has no update schedule at all.** Last built 2026-09-06 (the rebuild);
+  no cron in the container, none on the host. Pi-hole v6 dropped the default cron. Blocklists
+  will silently ossify. NOT fixed — rpi was mid-upgrade; flagged for Peter.
+- homelab.db: 19 MB, 3 months, has prune logic. Fine.
+
+**Two more Peter found**
+
+1. *"/logs gives me a 404"* — it was worse than one page: EVERY deep link 404'd on direct
+   load. Root cause: `.gitignore` line 62 was a bare `logs/`, which matches any directory
+   at any depth — including the SvelteKit route source. Git ignored it, `git add -A` skipped
+   it silently, CI built an app without that page. Anchored the pattern to `/logs/`. The
+   failure existed only in the gap between local and deployed, which is why every local
+   check passed.
+2. *"we need all the data live and constantly updating when I sync it"* — the tile said
+   "14 pkg · 14 sec" after he had upgraded because that number comes from a daily collector
+   report, and "Force Sync" pushes a host's arch fragments, which is a different and much
+   smaller thing. Added **POST /api/refresh** — a stepped job that triggers the real
+   collectors via the dispatcher, waits for each report's `run_at` to actually advance
+   (the dispatcher answers 202 on fork, so its reply means "started", never "done"), then
+   re-ingests. Allowlisted `homelab-db-ingest` in the dispatcher so it can finish the loop
+   instead of stopping one step short. Refresh button in the topbar, on every page.
+
+Reboots: rpi (52s) and noblenumbat (44s) both through the new stepped-job path, five steps
+each, fully audited. Then all 11 outdated noblenumbat images updated as 11 audited jobs.
+
+State: svelte-check 0/0, build clean, backend 66/66. **Everything above needs Peter's commit
++ push to persist** — the collector fixes are currently only in opti's rsync snapshot, and
+the /logs route + refresh endpoint are not deployed until CI runs.

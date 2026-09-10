@@ -27,7 +27,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 from _report import write_report, now_iso
-from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
+from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError, INTERMITTENT_HOSTS
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENT_LOGS_DIR = os.environ.get(
@@ -59,12 +59,20 @@ STALE_HOURS = 36
 # Reports on a slower-than-daily cadence get their own threshold; the flat 36h
 # default falsely flags the weekly cold copy for 5 of every 7 days. Keep these
 # aligned with the webapp's runners.js CATALOG (cadence_h * 2).
-STALE_HOURS_OVERRIDES = {"coldcopy-latest.json": 336}
+STALE_HOURS_OVERRIDES = {}
 
-# Reports from manual-only agents (paid/on-demand, not on the schedule — see
-# homelab-techdoc.md "Homelab Agent Platform") are exempt from staleness checks;
+# Reports from agents that are not on a schedule are exempt from staleness checks —
 # "last run 3 weeks ago" is expected for these, not a silent failure.
-MANUAL_ONLY_REPORTS = {"leetify-latest.json"}
+#
+#   leetify-latest  — paid/on-demand (see homelab-techdoc.md "Homelab Agent Platform")
+#   coldcopy-latest — the weekly cold copy was DISABLED on 2026-09-10 (Peter: the attic
+#                     disk is ~97% full, there is no room for it). Its last report stays
+#                     on disk as a record of when backups last ran, but it must not be
+#                     checked for freshness: a disabled agent that keeps raising a
+#                     staleness alert just trades one permanent false alarm for another.
+#                     If the cold copy is ever re-enabled, move this back to
+#                     STALE_HOURS_OVERRIDES with 336 (cadence_h 168 x 2).
+MANUAL_ONLY_REPORTS = {"leetify-latest.json", "coldcopy-latest.json"}
 
 # vpn-stack-heal writes this every 2 min on hosts running the gluetun stack; a stale
 # or non-ok file means VPN port forwarding needed healing (or the watchdog itself died)
@@ -237,10 +245,29 @@ def host_pool_disk(host):
 
 def host_autoupdate(host):
     """Last homelab-autoupdate run, parsed from its log on `host`. None where not deployed."""
-    # 400 lines, not 50: a single run block includes raw apt output, which alone
-    # can run past 50 lines on a host with many packages (seen on opti)
-    out, rc = run_on(host, ["tail", "-n", "400", AUTOUPDATE_LOG], timeout=15)
-    if rc != 0:
+    # Pull only the four line kinds this function reads, from the WHOLE log, and let
+    # the caller below pick the last run block out of them.
+    #
+    # This used to be `tail -n 400`, and the count had already been raised once (from
+    # 50) for the reason it failed again on 2026-09-10: a run block contains raw apt
+    # output, so its length is a function of how many packages were upgraded, which is
+    # unbounded. rpi's run that morning was long enough to push the "start" marker out
+    # of the window, and the parser reported "autoupdate log has no parseable last run"
+    # for a run that had completed successfully. A monitor that calls a working thing
+    # broken is worse than one that says nothing.
+    #
+    # Filtering by content rather than by position removes the guess entirely: the
+    # output is a handful of lines per run no matter how noisy the run was, so there is
+    # no window left to fall out of. Passed as a plain argv — no shell, so nothing here
+    # has to survive three layers of quoting.
+    out, rc = run_on(host, [
+        "grep", "-E",
+        "=== homelab-autoupdate (start|done) ===|ERROR:|reboot required|reboot-required present",
+        AUTOUPDATE_LOG,
+    ], timeout=15)
+    # grep exits 1 for "no matches", which for a host that has never run autoupdate is
+    # a fact, not a failure — fall through to the "no run found" branch below.
+    if rc not in (0, 1):
         return None
     lines = out.splitlines()
     start = None
@@ -464,7 +491,14 @@ def main():
             days = cert_days_left_openssl(*cert)
             if days is not None:
                 entry["cert_days_left"] = days
-                if days < 14:
+                # 45 days, not 14. These are self-signed LAN certs with no ACME or
+                # any other renewal automation behind them (checked 2026-09-10: no
+                # cert cron, no renew timer) — replacing one means generating it,
+                # updating nginx and restarting the proxy, by hand. A fortnight's
+                # notice suits a process that renews itself; it is not enough for a
+                # process that is a person remembering. The current pair expire
+                # 2028-11-04, so this costs nothing today and matters in two years.
+                if days < 45:
                     findings.append({"severity": "warn" if days >= 0 else "critical",
                                      "message": f"{name} TLS cert expires in {days} day(s)"})
         services_state.append(entry)
@@ -479,8 +513,10 @@ def main():
         for host in hosts():
             ok, detail = probe(host)
             if not ok:
-                findings.append({"severity": "warn",
-                                 "message": f"[{host.name}] unreachable over SSH — {detail}"})
+                # Expected-absent hosts report, but do not accuse. See INTERMITTENT_HOSTS.
+                if host.name not in INTERMITTENT_HOSTS:
+                    findings.append({"severity": "warn",
+                                     "message": f"[{host.name}] unreachable over SSH — {detail}"})
                 host_dicts.append({"host": host.name, "status": "unknown",
                                    "summary": f"unreachable ({detail})", "metrics": {}})
                 continue

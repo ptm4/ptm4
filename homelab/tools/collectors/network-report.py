@@ -19,7 +19,7 @@ Read-only: never modifies routes, iptables, DHCP leases, or Pi-hole config.
 import re
 
 from _report import write_report, now_iso
-from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError
+from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError, INTERMITTENT_HOSTS
 
 REPORT_BASE = "network-latest"
 
@@ -30,11 +30,19 @@ EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
 
 # additional per-host expected ports — see homelab-techdoc.md "Remote Access"
 # and "Homelab Agent Platform" sections for what each of these is
+# Re-derived 2026-09-10 from what each host is ACTUALLY listening on, after the
+# app-tier migration moved the services and left this list describing the old shape:
+# it still expected Kuma and Dozzle on rpi (they are on opti now) and did not expect
+# the dozzle-agent that replaced them there. Every entry below was confirmed against
+# `ss -ltn` on the host, not inferred from where a service used to live.
 PER_HOST_EXPECTED_PORTS = {
     "opti": {139, 3389, 3350, 5355, 5357,    # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
-             9090},                           # Cockpit admin UI (2026-08-02 control-hub work)
+             9090,                            # Cockpit admin UI (2026-08-02 control-hub work)
+             3001, 9999,                      # Uptime Kuma, Dozzle hub — moved here 2026-09-09
+             9100},                           # homelab-db (queryable index + MCP)
     "rpi": {111, 9090,                        # idle rpcbind, Cockpit admin UI
-            3001, 9999},                      # Uptime Kuma, Dozzle (2026-08-02 control-hub work)
+            7007},                            # Dozzle AGENT (rpi's only container besides
+                                              # Pi-hole). The hub it reports to is on opti.
     "noblenumbat": {
         111, 631,                             # rpcbind (nfs-common, client support), cupsd (loopback)
         3389, 3390,                           # gnome-remote-desktop
@@ -43,6 +51,7 @@ PER_HOST_EXPECTED_PORTS = {
         # kavita, bazarr, radarr, gluetun-admin, qbittorrent, mylar3, jellyfin,
         # flaresolverr, gluetun-shadowsocks/http-proxy, lidarr, portainer, sonarr, prowlarr
         9090, 7007,                           # Cockpit admin UI, Dozzle agent (2026-08-02)
+        8098,                                 # stream-station (streamlink + headless VLC → HLS)
     },
 }
 
@@ -358,8 +367,10 @@ def main():
     for host in all_hosts:
         ok, detail = probe(host)
         if not ok:
-            findings.append({"severity": "warn",
-                             "message": f"[{host.name}] unreachable over SSH — {detail}"})
+            # Expected-absent hosts report, but do not accuse. See INTERMITTENT_HOSTS.
+            if host.name not in INTERMITTENT_HOSTS:
+                findings.append({"severity": "warn",
+                                 "message": f"[{host.name}] unreachable over SSH — {detail}"})
             host_dicts.append({"host": host.name, "status": "unknown",
                                "summary": f"unreachable ({detail})", "metrics": {}})
             continue

@@ -66,6 +66,13 @@ AGENTS = {
 # Same allowlist rule as AGENTS: a fixed dict, never a name from the request.
 UNIT_AGENTS = {
     "coldcopy": "homelab-coldcopy.service",
+    # Added 2026-09-10 so the webapp's Refresh button can finish what it starts.
+    # Re-running the collectors only updates the report FILES; until they are folded
+    # into homelab.db the Database and Docs views still answer from the previous run,
+    # which is precisely the kind of half-refresh that makes a dashboard untrustworthy.
+    # The unit is idempotent and cheap (it diffs by content hash), so an extra run
+    # between scheduled ones costs nothing.
+    "homelab-db-ingest": "homelab-db-ingest.service",
 }
 
 # Tools whose workspace wiring can be (re)materialized from the webapp via

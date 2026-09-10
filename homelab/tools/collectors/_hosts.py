@@ -35,6 +35,20 @@ import subprocess
 # Known homelab boxes — used when HL_HOSTS is unset. opti is the orchestrator; it still
 # goes through SSH to itself so every host takes the same path.
 DEFAULT_HOSTS = "opti=127.0.0.1,rpi=192.168.1.10,noblenumbat=192.168.1.6"
+
+# Hosts whose absence is expected rather than a fault.
+#
+# android is a Termux phone: Doze parks its radio and it drops off the LAN for hours
+# at a time, by design. Treating that as a finding produced three standing incidents
+# that were true, useless, and permanent — and an alert you are trained to scroll past
+# is worse than no alert, because it teaches you to scroll past the ones that matter.
+#
+# The host is still PROBED and still appears in every report with an honest
+# "unreachable" summary. What is suppressed is only the FINDING, i.e. the claim that
+# something is wrong. Peter's call, 2026-09-10: "ignore it, it's unreliable and a
+# project for another day."
+INTERMITTENT_HOSTS = {"android"}
+
 DEFAULT_KEY = os.path.expanduser("~/.ssh/hl_agents")
 
 # Non-interactive SSH: never prompt, fail fast, don't pollute known_hosts on a LAN of
