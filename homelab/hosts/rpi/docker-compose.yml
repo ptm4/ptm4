@@ -1,5 +1,21 @@
-#compose
+#compose — rpi, network appliance
 #
+# 2026-09-09: rpi is now a pure NVA. The whole app tier (dashboard, 5 Discord bots,
+# hltv-api, notes, Uptime Kuma, Dozzle, Vaultwarden + MariaDB) moved to opti — see
+# homelab/hosts/opti/docker-compose.apps.yml and
+# homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md.
+#
+# What stays here, and why: DNS is the service every other host depends on, so it
+# must NOT live on the same box as storage/compute. Keeping it on the Pi means
+# rebooting opti (kernel updates, the eventual boot-disk replacement) never takes
+# LAN name resolution down with it. A Pi 4 also draws ~3-5W against the OptiPlex's
+# ~35-40W, and Pi-hole is a near-zero-load workload — this is the machine matched
+# to the job. Before adding anything else here, read the "what belongs on rpi"
+# section of the runbook: this box earns its reliability by staying boring.
+#
+# Host prerequisite (enforced by the rebuild preseed, do not undo): systemd-resolved
+# is DISABLED with a hand-managed /etc/resolv.conf. Its TCP stub on 127.0.0.53:53
+# blocks FTL's wildcard TCP bind on :53 and silently kills DNS.
 
 x-logging: &default-logging
   driver: json-file
@@ -9,18 +25,11 @@ x-logging: &default-logging
 
 services:
   pihole:
-    # 2026-09-09 rebuild post-mortem: FTL "failed to create listening socket for
-    # port 53: Address in use" was systemd-resolved's TCP stub on 127.0.0.53:53
-    # blocking the wildcard TCP LISTEN (kernel rule; version-independent — do not
-    # chase image pins, a downgrade also hits the gravity-DB schema wall). This
-    # host must run with systemd-resolved DISABLED and a hand-managed
-    # /etc/resolv.conf — enforced by the rebuild preseed. Details:
-    # homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md (addendum).
     image: pihole/pihole:latest
     container_name: pihole
     restart: unless-stopped
     logging: *default-logging
-    network_mode: "host"          # Host mode required for DHCP/DNS
+    network_mode: "host"          # Host mode required for DNS
     environment:
       TZ: "America/New_York"
       FTLCONF_webserver_api_password: ${PIHOLE_WEB_PASSWORD}
@@ -29,352 +38,23 @@ services:
       - pihole_data:/etc/pihole
       - dnsmasq_data:/etc/dnsmasq.d
     cap_add:
-      - NET_ADMIN                  # Needed for DHCP
+      - NET_ADMIN                  # DHCP capability retained; DHCP itself is OFF
+                                   # (the router serves it) — see runbook 02.
       - SYS_NICE                   # Suppress FTL process priority warning
 
-  mariadb:
-    image: mariadb:11
-    container_name: bitwarden-db
-    restart: unless-stopped
-    stop_grace_period: 60s
-    logging: *default-logging
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - ./bitwarden-db/data:/var/lib/mysql
-    networks:
-      - internal
-  bitwarden:
-    image: vaultwarden/server:latest
-    container_name: bitwarden
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      WEBSOCKET_ENABLED: "true"
-      SIGNUPS_ALLOWED: "true"
-      BITWARDEN_SMTP_ENABLED: "false"
-      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@bitwarden-db:3306/${MYSQL_DATABASE}"
-      DOMAIN: ${VAULTWARDEN_DOMAIN}
-      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN}
-    depends_on:
-      - mariadb
-    networks:
-      - internal
-    expose:
-      - "80"   # expose internally to NGINX, not host
-    volumes:
-      - ./vaultwarden-data:/data
-
-  nginx-proxy:
-    image: nginx:stable-alpine
-    container_name: nginx-bitwarden
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - "443:443"   # HTTPS for LAN clients
-    volumes:
-      - ./certs/bitwarden.rpi.lan.pem:/etc/ssl/certs/bitwarden.crt:ro
-      - ./certs/bitwarden.rpi.lan-key.pem:/etc/ssl/private/bitwarden.key:ro
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - bitwarden
-    networks:
-      - internal
-
-  notes-api:
-    build: ./notes-app/api
-    container_name: notes-api
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      DATA_DIR: /data
-      PORT: 3002
-    volumes:
-      - ./notes-app/api/index.js:/app/index.js:ro
-      - ./notes-app/web:/web:ro
-      - notes_data:/data
-    ports:
-      - "${RPI_IP}:3002:3002"   # direct HTTP for mobile (avoids self-signed cert issue)
-    expose:
-      - "3002"                      # internal Docker network access for nginx
-    networks:
-      - internal
-
-  webapp:
-    image: node:lts-alpine
-    container_name: webapp
-    restart: unless-stopped
-    logging: *default-logging
-    working_dir: /app/backend
-    # prefer-offline/no-audit: with node_modules warm on the bind mount this makes the
-    # restart window ~2-3s instead of ~6 — every second here is nginx serving 502s.
-    # npm install, NOT npm ci: ci deletes node_modules unconditionally on every boot,
-    # which would turn each restart into a full reinstall. The committed
-    # backend/package-lock.json keeps install deterministic (2026-08-10 Fastify port).
-    command: sh -c "npm install --omit=dev --no-audit --no-fund --prefer-offline && node server.js"
-    environment:
-      # opti agent dispatcher (enable/disable + run-now); set in .env
-      DISPATCHER_URL: ${DISPATCHER_URL:-}
-      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
-      # android phone local LLM (llama.cpp + llama-ctl management API)
-      LLAMA_URL: ${LLAMA_URL:-http://android.lan:8080}
-      LLAMA_CTL_URL: ${LLAMA_CTL_URL:-http://android.lan:8081}
-      # shared secret the per-host architecture agents present on POST /ingest;
-      # see homelab/tools/arch-agent/hl-arch-agent.env.example on each host
-      HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
-      # live Pi-hole tile + pause/resume (routes/pihole.js). Pi-hole is host-network on
-      # this rpi; the webapp container reaches it via the host's LAN IP. The password
-      # already lives in this same .env for Pi-hole itself.
-      PIHOLE_URL: ${PIHOLE_URL:-http://192.168.1.10}
-      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
-      # Uptime Kuma monitors panel (routes/uptime.js). The uk1_ API key only
-      # unlocks /metrics on Kuma 1.x — read-only, which is all this needs.
-      KUMA_URL: ${KUMA_URL:-http://uptime-kuma:3001}
-      KUMA_API_KEY: ${KUMA_API_KEY:-}
-      # Streams page (routes/streams.js) — stream-station on noblenumbat. The token
-      # must match HL_STREAM_TOKEN in noblenumbat's /opt/yams/.env; it stays server-side
-      # so only this dashboard can start/stop streams. Video does not pass through here:
-      # nginx proxies /hls straight to the same host and port.
-      STREAM_URL: ${STREAM_URL:-http://192.168.1.6:8098}
-      HL_STREAM_TOKEN: ${HL_STREAM_TOKEN:-}
-      # homelab-db on opti (routes/hldb.js) — the queryable index behind the Data page
-      # and the changes/trends/db-health widgets. Read-only upstream; the token must
-      # match HL_DB_TOKEN in opti's /etc/hl-agents.env and stays server-side. Addressed
-      # by IP on purpose: this must still answer when Pi-hole (i.e. DNS) is the problem.
-      HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
-      HL_DB_TOKEN: ${HL_DB_TOKEN:-}
-    volumes:
-      - ./webapp:/app
-      - /mnt/opti-fs/ptm/security-reports:/reports:ro
-      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
-      # ptm4 repo root (read-only) — the agentic manifest, per-host probe status, and the
-      # workspace wiring files (CLAUDE.md, .claude/skills) the /api/agentic route inspects
-      - /mnt/opti-fs/ptm/repo/ptm4:/workspace:ro
-      # WRITABLE — the only one. Architecture-agent fragments landed by POST /ingest
-      # (routes/architecture.js). Everything else webapp reads is deliberately :ro so
-      # a bug in this route can't touch anything but its own data.
-      - arch_data:/arch-data
-    expose:
-      - "3000"
-    networks:
-      - internal
-
-  discord-weather:
-    build: ./discord-weather
-    container_name: discord-weather
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      TZ: "America/New_York"
-      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
-    volumes:
-      - weather_data:/data
-    expose:
-      - "8080"                     # control API — internal network only, used by webapp
-    networks:
-      - internal
-    healthcheck:
-      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-
-  discord-healthdigest:
-    build: ./discord-healthdigest
-    container_name: discord-healthdigest
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      TZ: "America/New_York"
-      DISCORD_WEBHOOK_URL_HEALTHDIGEST: ${DISCORD_WEBHOOK_URL_HEALTHDIGEST:-}
-      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
-      RPI_IP: ${RPI_IP:-}
-      DISPATCHER_URL: ${DISPATCHER_URL:-}
-      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
-    volumes:
-      - healthdigest_data:/data
-      - /mnt/opti-fs/ptm/agent-logs:/agent-logs:ro
-    expose:
-      - "8080"                     # control API — internal network only, used by webapp
-    networks:
-      - internal
-    healthcheck:
-      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-
-  discord-jellyfin:
-    build: ./discord-jellyfin
-    container_name: discord-jellyfin
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      TZ: "America/New_York"
-      DISCORD_WEBHOOK_URL_JELLYFIN: ${DISCORD_WEBHOOK_URL_JELLYFIN:-}
-      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
-    volumes:
-      - jellyfinbot_data:/data
-    expose:
-      - "8080"                     # control API — internal network only, used by webapp
-    networks:
-      - internal
-    healthcheck:
-      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-
-  discord-sports:
-    build: ./discord-sports
-    container_name: discord-sports
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      TZ: "America/New_York"
-      DISCORD_WEBHOOK_URL_SPORTS: ${DISCORD_WEBHOOK_URL_SPORTS:-}
-    volumes:
-      - sportsbot_data:/data
-    expose:
-      - "8080"                     # control API — internal network only, used by webapp
-    networks:
-      - internal
-    healthcheck:
-      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-
-  discord-hltv:
-    build: ./discord-hltv
-    container_name: discord-hltv
-    restart: unless-stopped
-    logging: *default-logging
-    depends_on:
-      - hltv-api
-    environment:
-      TZ: "America/New_York"
-      DISCORD_WEBHOOK_URL_HLTV: ${DISCORD_WEBHOOK_URL_HLTV:-}
-      HLTV_API_URL: "http://hltv-api:8080"
-    volumes:
-      - hltvbot_data:/data
-    expose:
-      - "8080"                     # control API — internal network only, used by webapp
-    networks:
-      - internal
-    healthcheck:
-      # 127.0.0.1, not localhost: busybox wget tries ::1 and won't fall back to v4
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
-      interval: 60s
-      timeout: 5s
-      retries: 3
-
-  # Our own read-only HLTV.org API: HLTV publishes none and blocks plain HTTP
-  # clients, so this drives a real Chromium and parses the rendered DOM.
-  # Chromium bursts to a few hundred MB during a scrape — the caps keep it away
-  # from Pi-hole's headroom, since this Pi is the LAN's only DNS server.
-  hltv-api:
-    build: ./discord-hltv/hltv-api
-    container_name: hltv-api
-    restart: unless-stopped
-    logging: *default-logging
-    environment:
-      TZ: "America/New_York"
-    volumes:
-      - hltvapi_data:/data        # browser profile (keeps the CF clearance) + caches
-    expose:
-      - "8080"
-    networks:
-      - internal
-    mem_limit: 768m
-    cpus: 2
-    shm_size: 256m                # Chromium crashes on the 64MB default
-    healthcheck:
-      test: ["CMD", "python3", "-c",
-             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-
-  nginx-webapp:
-    image: nginx:stable-alpine
-    container_name: nginx-webapp
-    restart: unless-stopped
-    logging: *default-logging
-    ports:
-      - "${RPI_IP}:8443:443"
-    volumes:
-      - /mnt/opti-fs/ptm/certs/webapp.rpi.lan.pem:/etc/ssl/certs/webapp.crt:ro
-      - /mnt/opti-fs/ptm/certs/webapp.rpi.lan-key.pem:/etc/ssl/private/webapp.key:ro
-      - ./nginx-wg.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - webapp
-      - notes-api
-      - dozzle          # proxy_pass http://dozzle — nginx won't start if unresolvable
-    networks:
-      - internal
-
-  # ── Fleet ops add-ons (2026-08-02, alongside the webapp's Cockpit tab) ──────
-  # Uptime Kuma: real-time uptime checks + alerting (Discord notifications fit the
-  # existing bot fleet). Complements — not replaces — the doctor's 30-min sweeps.
-  uptime-kuma:
-    image: louislam/uptime-kuma:1
-    container_name: uptime-kuma
-    restart: unless-stopped
-    logging: *default-logging
-    dns:
-      # Pi-hole, so monitors can use the same .lan names as the quick links.
-      # (Docker's bridge DNS otherwise falls back to public resolvers for
-      # containers on this host, and every *.lan monitor would flap NXDOMAIN.)
-      - 192.168.1.10
-    ports:
-      - "${RPI_IP}:3001:3001"
-    volumes:
-      - kuma_data:/app/data
-    networks:
-      - internal
-
-  # Dozzle: live docker-log viewer. Local socket read-only; noblenumbat's logs come
-  # in via a dozzle agent on nn:7007 (see homelab/hosts/noblenumbat/). opti runs no
-  # docker (verified 2026-08-02), so there is nothing to attach there.
-  dozzle:
+  # Ships this host's container logs to the Dozzle instance on opti, so the
+  # dashboard's #logs tab still shows rpi after the migration.
+  dozzle-agent:
     image: amir20/dozzle:latest
-    container_name: dozzle
+    container_name: dozzle-agent
     restart: unless-stopped
     logging: *default-logging
-    environment:
-      DOZZLE_REMOTE_AGENT: "192.168.1.6:7007"
-      # Base path so nginx-webapp can serve it same-origin at /dozzle for the
-      # dashboard's #logs iframe (direct access moves to rpi.lan:9999/dozzle/).
-      DOZZLE_BASE: /dozzle
+    command: agent
     ports:
-      - "${RPI_IP}:9999:8080"
+      - "${RPI_IP}:7007:7007"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - internal
-
-networks:
-  internal:
-    driver: bridge
 
 volumes:
-  kuma_data:
-  notes_data:
-  weather_data:
-  healthdigest_data:
-  jellyfinbot_data:
-  sportsbot_data:
-  hltvbot_data:
-  hltvapi_data:
   pihole_data:
   dnsmasq_data:
-  db_data:
-  arch_data:

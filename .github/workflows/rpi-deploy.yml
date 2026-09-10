@@ -1,102 +1,38 @@
 #rpi-deploy-yml
 name: Deploy RPI Stack
 
+# 2026-09-09: trimmed to an appliance deploy. rpi runs only Pi-hole + a Dozzle
+# agent now; the app tier and its whole build pipeline moved to
+# .github/workflows/opti-apps-deploy.yml. There is nothing to compile here any
+# more, so the GitHub-hosted frontend build job and every bot/webapp/notes copy
+# step are gone.
+#
+# `--remove-orphans` on the up is what actually retires the migrated containers
+# from this host the first time this runs.
+
 on:
   push:
     branches: [main]
     paths:
       - "homelab/hosts/rpi/docker-compose.yml"
-      - "homelab/hosts/rpi/webapp.v2.legacy/**"
-      - "homelab/hosts/rpi/nginx-wg.conf"
-      - "homelab/hosts/rpi/notes-app/**"
-      - "homelab/hosts/rpi/discord-weather/**"
-      - "homelab/hosts/rpi/discord-healthdigest/**"
-      - "homelab/hosts/rpi/discord-jellyfin/**"
-      - "homelab/hosts/rpi/discord-sports/**"
-      - "homelab/hosts/rpi/discord-hltv/**"
-      # the workflow itself: a deploy-logic fix must deploy (commit fbf6fe0
-      # changed only this file and silently triggered nothing)
       - ".github/workflows/rpi-deploy.yml"
-  workflow_dispatch:   # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
-  # The v2 frontend is built on GitHub-hosted ubuntu (fast, free on a public repo)
-  # and artifact-passed to the Pi — a Vite+React production build on a Pi 4 is
-  # minutes of swap-thrash. Output is plain static files, so where it builds is
-  # irrelevant to what deploys.
-  build-frontend:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24   # matches node:lts-alpine in the webapp container (v24)
-          cache: npm
-          cache-dependency-path: homelab/hosts/rpi/webapp.v2.legacy/frontend/package-lock.json
-
-      - name: Build (tsc + vite)
-        working-directory: homelab/hosts/rpi/webapp.v2.legacy/frontend
-        run: |
-          npm ci --no-audit --no-fund
-          npm run build
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: webapp-dist
-          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
-          retention-days: 3
-
   deploy:
-    needs: build-frontend
-    runs-on: [self-hosted, ARM64]   # pin to the Pi (ARM64); bare 'self-hosted' also matched opti (x86_64)
+    runs-on: [self-hosted, ARM64]   # pin to the Pi; bare 'self-hosted' also matches opti (x86_64)
     timeout-minutes: 10
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Fetch built frontend
-        uses: actions/download-artifact@v4
-        with:
-          name: webapp-dist
-          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
 
       - name: Copy compose file
-        run: |
-          cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/docker-compose.yml" /srv/docker/compose/docker-compose.yml
+        run: cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/docker-compose.yml" /srv/docker/compose/docker-compose.yml
 
-      - name: Sync webapp and nginx config
-        # rsync --delete (was cp -r): removed/renamed files must disappear on the Pi
-        # too — cp left the pre-redesign frontend at the served root forever, and the
-        # v2 app's content-hashed bundles would otherwise accumulate unboundedly.
-        # node_modules (any depth) is excluded: backend/'s so the warm install
-        # survives (the 2-3s restart window the compose command comment relies on),
-        # and because a root-owned stray (container-created, e.g. the orphaned
-        # frontend/node_modules from the v2 dev era) makes --delete fail the whole
-        # step as the ptm runner (deploy #84, 2026-08-21).
-        run: |
-          mkdir -p /srv/docker/compose/webapp
-          rsync -a --delete --exclude 'node_modules' \
-            "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp.v2.legacy/" /srv/docker/compose/webapp/
-          cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
-
-      - name: Copy notes-app
-        run: |
-          mkdir -p /srv/docker/compose/notes-app/api
-          mkdir -p /srv/docker/compose/notes-app/web
-          cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/notes-app/api/." /srv/docker/compose/notes-app/api/
-          cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/notes-app/web/." /srv/docker/compose/notes-app/web/
-
-      - name: Copy discord bots
-        # must run before "Bring stack up" — compose references these build contexts
-        run: |
-          for bot in discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv; do
-            mkdir -p "/srv/docker/compose/$bot"
-            cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/$bot/." "/srv/docker/compose/$bot/"
-          done
+      - name: Validate compose before touching containers
+        working-directory: /srv/docker/compose
+        run: docker compose config --quiet
 
       - name: Pull latest images
         working-directory: /srv/docker/compose
@@ -106,42 +42,12 @@ jobs:
         working-directory: /srv/docker/compose
         run: docker compose up -d --remove-orphans
 
-      - name: Build and restart notes-api
-        working-directory: /srv/docker/compose
+      - name: Verify DNS actually answers
+        # The 2026-09-09 rebuild shipped a Pi-hole whose container was "running" and
+        # self-reported healthy while answering nothing at all. Container state is
+        # not evidence — query it.
         run: |
-          docker compose build notes-api
-          docker compose up -d notes-api
-
-      - name: Build and restart discord bots
-        # hltv-api ships inside discord-hltv/, so the bot-copy step above already
-        # placed its build context. Build it first: discord-hltv depends on it.
-        working-directory: /srv/docker/compose
-        run: |
-          docker compose build hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
-          docker compose up -d hltv-api discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv
-
-      - name: Restart webapp to pick up code changes
-        working-directory: /srv/docker/compose
-        run: docker compose restart webapp
-
-      - name: API smoke against the fully deployed stack
-        # Runs INSIDE the webapp container (the Pi host has no node). Hits Fastify
-        # directly on :3000 and compares against the committed baseline — a missing
-        # route or a response that lost fields marks the deploy red. Rollback stays
-        # manual (see webapp/ROLLBACK.md), per house style.
-        #
-        # This runs AFTER the bots are rebuilt, not before: the baseline describes
-        # what the backend serves once everything is deployed, and most of those
-        # responses are proxied straight from a bot. Smoking first meant any commit
-        # that changed a bot's response shape failed against the still-old bot —
-        # and the failure then skipped the very step that would have fixed it
-        # (deploy of 2026-08-12, discord-hltv's post_time → post_times).
-        working-directory: /srv/docker/compose
-        run: |
-          sleep 8   # let npm install + boot finish inside the container
-          docker compose exec -T webapp node /app/scripts/smoke-api.mjs \
-            --base http://127.0.0.1:3000 --compare /app/scripts/smoke-baseline.json
-
-      - name: Restart nginx to pick up config changes
-        working-directory: /srv/docker/compose
-        run: docker compose restart nginx-webapp
+          sleep 8
+          dig +short +time=3 +tries=2 google.com @127.0.0.1 | grep -qE '^[0-9]+\.' \
+            || { echo "Pi-hole is up but not resolving"; docker logs pihole --tail 30; exit 1; }
+          echo "DNS OK"

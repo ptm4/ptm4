@@ -56,6 +56,22 @@ and to ask for a flat white background. Codex's second turnaround
 is live in the POC scene. **Next Codex run starts at step C** (animation strips) once Peter
 approves the turnaround; otherwise rerun from B with an adjusted identity block.
 
+### Second run outcome (2026-09-09, later)
+Peter approved a revised leather-armored olive goblin (D30). Codex generated all 15 strips,
+60 frames and the portrait, and correctly reported that `sprite_clean` 0.2.0 fitted each
+frame individually, so poses changed size. Fixed in **0.3.0 (D31)**: one scale per facing
+from `<F>_idle_0`, slot-center anchoring, and a drift check. Result on Codex's frames:
+
+| Facing | Good strips | Flagged (regenerate at the idle's scale) |
+|---|---|---|
+| S | idle, walk, attack, death | hit (+45 %) |
+| N | idle, attack, hit?, death | walk (-24 %), hit (+43 %) |
+| E | idle, hit, death | walk (-22 %), attack (-53 %) |
+
+Also: `S_attack_2` and two idle frames overflow the 64 px cell width by up to 12 px (weapon
+extension); sides clipped. Prompt-pack rule added: keep the full extension inside 1.5x the
+body width. The current sheet (frame 0 of every row is correct) is installed in the POC.
+
 Inbox/out contract (also enforced by the tool): frames `<FACING>_<anim>_<i>.png` at any
 integer scale of 64x96 (256x384 recommended), or `sheet.png` at an integer scale of
 1280x288; `portrait.png` any square. Output `out/<id>.png` 1280x288 RGBA, alpha 0 or 255,

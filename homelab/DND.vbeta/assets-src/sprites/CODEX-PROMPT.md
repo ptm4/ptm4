@@ -52,7 +52,13 @@ E. Run, from the repo folder:
      python tools/sprite_clean.py build goblin
    "OK" means done. "NEEDS REGEN" lists frames/strips to regenerate: regenerate exactly
    those, re-run both scripts, repeat until OK. Never edit pixels by hand, never edit the
-   scripts, never rename the scripts' outputs.
+   scripts, never rename the scripts' outputs. If you believe a script is wrong, say so in
+   your report and STOP; the script owner fixes it, not you.
+   A "drift" line means that strip's character is a different size than the idle strip of
+   the same facing: regenerate it with the idle strip attached as the size reference and
+   the instruction "same character height and proportions as the attached idle strip".
+   A "pose ... exceeds cell" line means a weapon or limb extends too far: keep the full
+   extension within 1.5x the body width.
 F. Report: the final script output, the path assets-src/sprites/out/goblin.png, and anything
    you had to regenerate more than twice (that is feedback for the prompt pack).
 

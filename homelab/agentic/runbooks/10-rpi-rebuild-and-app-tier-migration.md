@@ -986,3 +986,101 @@ Phase 1 completed, but two issues cost the evening and are now baked into the pr
    resolution at config parse — immune to start-order and container-recreation races. Live
    at `/srv/docker/compose/nginx.conf` on rpi (not CI-deployed; backup `.bak-preresolver`
    alongside).
+
+## What belongs on rpi (and what does not)
+
+rpi is a **network virtual appliance** as of 2026-09-09. It runs Pi-hole and a Dozzle
+agent. Before adding anything, understand the trade you are making: **every service
+added here is a service that can take LAN-wide DNS down with it.** An OOM, a runaway
+scraper, a bad image pull, or a reboot for an unrelated app is now a DNS outage for
+every device in the house. That is precisely what the app-tier migration bought back.
+Nothing goes on rpi because it is "convenient" — only because it belongs there.
+
+**The four-part test.** Add it only if all four are true:
+
+1. **It serves the network itself**, not humans or data. DNS, DHCP, VPN, NTP, routing,
+   monitoring probes. If a person opens it in a browser to *use* it, it is an app —
+   that goes on opti.
+2. **It is effectively stateless.** Config in git or a small flat file; nothing whose
+   loss would hurt. Anything with a real database belongs on opti's pool, where ZFS
+   snapshots and block checksums protect it.
+3. **It fits in ~500 MB RAM and a fraction of a core, at peak.** The Pi has 3.7 GB
+   total and Pi-hole needs headroom. `hltv-api` was the cautionary tale: one Chromium
+   scraper pinned at its 768 MB cap drove load to 4.5 on 4 cores.
+4. **Losing it for an hour matters less than losing DNS.** If the answer is no, it is
+   too important to sit behind DNS's blast radius.
+
+**Good candidates** (all pass the test):
+
+| Service | Why it fits |
+|---|---|
+| **WireGuard** | Network-layer, near-zero load, stateless (keys in config). A `wg.rpi.lan` cert already exists on the pool from an earlier attempt. Strongest candidate on this list. |
+| **chrony / NTP server** | Pure network service, negligible resources. Currently every host syncs to the internet independently. |
+| **Unbound** | Recursive resolver sitting behind Pi-hole, removing the dependency on upstream resolvers. Classic pairing, small footprint. |
+| **Tailscale subnet router / exit node** | Network-layer by definition, tiny daemon. |
+| **mosquitto (MQTT)** | If home automation ever appears. Lightweight broker, near-stateless. |
+| **rsyslog collector** | Network service; keep retention small and watch disk. |
+| **ADS-B / SDR receiver** | Needs the Pi's GPIO/USB proximity anyway. Genuine Pi workload. |
+| **smokeping / vnstat** | Network measurement, and measuring *from* the network's edge is the point. |
+
+**Explicitly does not belong here:**
+
+- Anything with a database (Vaultwarden, Kuma, anything SQLite-heavy). Write
+  amplification killed the last SD card, and this data wants ZFS.
+- Anything CPU-heavy: scrapers driving headless browsers, transcoding, CI builds,
+  image builds.
+- Anything holding irreplaceable state. That belongs on the pool.
+- Web apps with heavy dependency trees — an `npm install` on boot is not appliance
+  behaviour.
+- "Just one more container" reasoning. That is how this box ended up with 15.
+
+**If it fails the test but you want it anyway:** it goes on opti. opti has 31 GB, 8x
+the RAM, a 3.6 TB pool with snapshots, and is currently idling at 0.02 load. There is
+room for a great deal more there — which was the whole point of the migration.
+
+## Watching opti's boot disk (ST500DM002, `sdb`)
+
+Peter's call 2026-09-09: **run it until it fails, but see it coming.** That is a
+reasonable position, and the numbers support it better than the earlier "dying"
+framing in `proxmox-migration.md` suggested.
+
+**Baseline, 2026-09-09:**
+
+| Attribute | Raw | Normalized / threshold | Read |
+|---|---|---|---|
+| Reallocated_Sector_Ct | 264 | 100 / 36 | Sectors were remapped, but the drive's own health score is untouched and sits far above the failure threshold |
+| **Current_Pending_Sector** | **0** | 100 / 0 | **The one that matters. Zero.** |
+| **Offline_Uncorrectable** | **0** | 100 / 0 | **Also zero.** |
+| Power_On_Hours | 40 106 | 55 | ~4.6 years spinning |
+| Temperature | 38 °C | — | Fine |
+| Overall self-assessment | PASSED | | |
+
+**The important correction:** 264 reallocated sectors sounds alarming and drove the
+earlier "sda is dying" language, but reallocation is the drive *successfully* handling
+bad sectors from its spare pool. The leading indicators of imminent failure are
+`Current_Pending_Sector` and `Offline_Uncorrectable` — sectors the drive has found bad
+and *cannot* fix. Both are zero. Growth has also been slow: 256 → 264 between June and
+September, roughly 8 sectors a quarter.
+
+**Escalate on these, in priority order:**
+
+1. **`Current_Pending_Sector` > 0 — order the replacement that day.** This is the real
+   warning. Pending sectors mean unreadable data waiting on a rewrite.
+2. **`Offline_Uncorrectable` > 0** — same urgency. Data has already been lost.
+3. **`Reallocated_Sector_Ct` jumping >25 in a week** — the spare pool is being consumed
+   fast; failure is weeks out, not months.
+4. **Normalized value on attribute 5 dropping toward 36** — currently 100, so there is
+   enormous headroom. If this moves at all, the drive is genuinely late-stage.
+5. **`dmesg` I/O errors or ext4 remounting read-only** — past prediction, into failure.
+
+Coverage already exists: `homelab/tools/collectors/hardware-report.py` parses both
+`Reallocated_Sector` and `Current_Pending` and the `homelab-hardware` agent runs
+weekly. Note that report was 110 h stale on 2026-09-09 because the Pi was down —
+worth confirming it resumes.
+
+**What failure actually costs, given Docker now lives on the pool:** `red/docker` and
+`red/docker-apps` are ZFS datasets on `sdc`, not on this disk. A boot-disk death means
+reinstall Debian, `zpool import red`, restore `/etc/hl-agents.env` + Samba config +
+SSH keys, re-register the runner, redeploy. That is a few hours of downtime and **no
+data loss** — which is exactly why running it to failure is defensible. It is also why
+DNS stays on rpi: when this disk does go, the LAN keeps resolving names.

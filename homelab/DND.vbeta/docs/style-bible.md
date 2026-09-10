@@ -79,10 +79,12 @@ and `TEMPLATE_L*.png` for Large creatures.
 | Paper-doll | Layers, bottom to top: body, legwear, footwear, torso armor, cloak-back (drawn behind body in S, in front in N), hands/weapon, headgear, cloak-front. Each layer is a full sheet with the same 60 frames, transparent elsewhere. Body is the only layer with skin. |
 
 Generation workflow (Plan 05 packs this into prompts): generate at **4x** (256 x 384 per
-frame) in the reference style, then `sprite_clean.py` downsamples nearest-neighbour, maps
-every pixel to the nearest `Dungine-54` color, drops pixels with alpha < 50 %, re-outlines
-with `neutral_0`, and slices into the sheet. Anything the cleanup cannot make template-exact
-is regenerated, never hand-fixed in bulk.
+frame) in the reference style, then `sprite_clean.py` keys any painted background,
+downsamples nearest-neighbour by **one scale factor per creature** (derived from the S idle
+pose, so poses keep their relative size), maps every pixel to the nearest master-palette
+color, drops pixels with alpha < 50 %, re-outlines with `neutral_0`, anchors feet on the
+ground line and the slot center on the cell center, and slices into the sheet. Anything the
+cleanup cannot make template-exact is regenerated, never hand-fixed in bulk.
 
 ## 4. Voxel world
 

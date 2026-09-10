@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 ROOT = Path(__file__).resolve().parents[1]
 SPRITES = ROOT / "assets-src" / "sprites"
 INBOX, OUT = SPRITES / "inbox", SPRITES / "out"
@@ -51,6 +51,7 @@ GROUND_INSET = 4
 ALPHA_CUTOFF = 128   # < 50 % alpha becomes transparent (bible: no semi-transparent pixels)
 BG_TOLERANCE = 28    # per-channel distance to count as a background color when keying
 EDGE_TOLERANCE = 90  # looser distance for anti-aliased fringe pixels next to keyed background
+DRIFT_TOLERANCE = 0.12  # an animation whose mean height differs from idle by more than this fails
 
 
 def load_palette() -> tuple[np.ndarray, tuple[int, int, int]]:
@@ -145,43 +146,87 @@ def outline(rgba: np.ndarray, ink: tuple[int, int, int]) -> np.ndarray:
     return out
 
 
-def fit_frame(img: Image.Image, cell: tuple[int, int], pal, ink, add_outline: bool) -> tuple[np.ndarray, list[str]]:
-    """Key, scale, quantize, outline a single frame and drop it onto the ground line."""
+def keyed_content(img: Image.Image) -> tuple[np.ndarray, tuple[int, int, int, int] | None, list[str]]:
+    """Key the background and return (rgba, content bbox (x0, y0, x1, y1) or None, notes)."""
     notes: list[str] = []
-    cw, ch = cell
     arr = np.array(img.convert("RGBA"))
     arr, note = key_background(arr)
     if note:
         notes.append(note)
-    # Crop to opaque content first, so slot padding / oversize canvases do not matter.
     a = arr[..., 3] >= ALPHA_CUTOFF
     if not a.any():
-        notes.append("frame is empty after keying/alpha cutoff")
-        return np.zeros((ch, cw, 4), np.uint8), notes
+        return arr, None, notes
     ys, xs = np.where(a)
-    arr = arr[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
-    src = Image.fromarray(arr, "RGBA")
-    # Target: content height fills the body box (cell height minus ground inset minus 2 px headroom
-    # for the outline), preserving aspect; integer downscales are preferred when they fit.
+    return arr, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), notes
+
+
+def reference_scale(img: Image.Image, cell: tuple[int, int]) -> float:
+    """Source-pixels-per-output-pixel so the reference pose fills the body box. ONE value per
+    creature: every frame is scaled by the same factor, so poses keep their relative size
+    (a crouching death frame stays small, an extended weapon stays long)."""
+    cw, ch = cell
+    _, bbox, _ = keyed_content(img)
+    if bbox is None:
+        return 1.0
+    x0, y0, x1, y1 = bbox
     max_h = ch - GROUND_INSET - 2
     max_w = cw - 2
-    scale = max(src.height / max_h, src.width / max_w)
-    if scale < 1:
-        notes.append(f"source {src.width}x{src.height} is smaller than the cell; upscaled")
-    if abs(scale - round(scale)) > 0.05 and scale > 1:
-        notes.append(f"non-integer scale {scale:.2f} ({src.width}x{src.height}); fitted by size")
-    small = src.resize((max(1, int(round(src.width / scale))), max(1, int(round(src.height / scale)))), Image.NEAREST)
-    arr = quantize(np.array(small), pal)
+    return max((y1 - y0) / max_h, (x1 - x0) / max_w, 1e-6)
+
+
+def fit_frame(img: Image.Image, cell: tuple[int, int], pal, ink, add_outline: bool, scale: float | None = None) -> tuple[np.ndarray, list[str]]:
+    """Key, scale (by the creature's shared factor), quantize, outline a single frame, then
+    anchor it: feet on the ground line, horizontally on the source slot's center so poses do
+    not slide when a weapon extends. Falls back to per-frame fitting when `scale` is None."""
+    cw, ch = cell
+    arr, bbox, notes = keyed_content(img)
+    if bbox is None:
+        notes.append("frame is empty after keying/alpha cutoff")
+        return np.zeros((ch, cw, 4), np.uint8), notes
+    src_w, src_h = arr.shape[1], arr.shape[0]
+    x0, y0, x1, y1 = bbox
+    if scale is None:
+        scale = max((y1 - y0) / (ch - GROUND_INSET - 2), (x1 - x0) / (cw - 2))
+        notes.append("no reference; fitted per frame")
+    # Scale the whole slot (not just the crop) so the slot center stays meaningful.
+    sw, sh = max(1, int(round(src_w / scale))), max(1, int(round(src_h / scale)))
+    small = np.array(Image.fromarray(arr, "RGBA").resize((sw, sh), Image.NEAREST))
+    small = quantize(small, pal)
     if add_outline:
-        arr = outline(arr, ink)
-    h, w = arr.shape[:2]
-    if h > ch - GROUND_INSET or w > cw:
-        arr = arr[max(0, h - (ch - GROUND_INSET)):, :cw]
-        h, w = arr.shape[:2]
+        small = outline(small, ink)
+    a = small[..., 3] > 0
+    if not a.any():
+        notes.append("frame vanished after scaling")
+        return np.zeros((ch, cw, 4), np.uint8), notes
+    ys, xs = np.where(a)
+    cy1 = int(ys.max()) + 1                       # feet
+    cx0, cx1 = int(xs.min()), int(xs.max()) + 1   # content x-extent after scaling
+    content_h = cy1 - int(ys.min())
+    # Vertical: feet on the ground line; clip the top if the pose is taller than the cell.
+    dst_bottom = ch - GROUND_INSET
+    src_top = max(0, cy1 - dst_bottom)  # rows of the scaled image to drop from the top
+    if content_h > dst_bottom:
+        notes.append(f"pose {content_h} px tall exceeds cell; top clipped by {content_h - dst_bottom}")
+    # Horizontal: slot center -> cell center, then nudge to keep content inside the cell.
+    slot_cx = sw / 2.0
+    shift = int(round(cw / 2.0 - slot_cx))
+    if cx0 + shift < 0:
+        shift = -cx0
+    if cx1 + shift > cw:
+        shift = cw - cx1
+    if cx1 - cx0 > cw:
+        notes.append(f"pose {cx1 - cx0} px wide exceeds cell {cw}; sides clipped")
+        shift = int(round(cw / 2.0 - (cx0 + cx1) / 2.0))
     canvas = np.zeros((ch, cw, 4), np.uint8)
-    y0 = ch - GROUND_INSET - h
-    x0 = (cw - w) // 2
-    canvas[y0:y0 + h, x0:x0 + w] = arr
+    for sy in range(src_top, cy1):
+        dy = dst_bottom - (cy1 - sy)
+        if dy < 0 or dy >= ch:
+            continue
+        row = small[sy]
+        for sx in range(cx0, cx1):
+            dx = sx + shift
+            if 0 <= dx < cw and row[sx, 3] > 0:
+                canvas[dy, dx] = row[sx]
     return canvas, notes
 
 
@@ -210,13 +255,28 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         sources.append("sheet.png")
         if abs(sx - sy) > 0.02:
             problems.append(f"sheet.png {img.width}x{img.height} is not a uniform scale of {cw * cols}x{ch * len(FACINGS)}")
+        scale = reference_scale(img.crop((0, 0, int(cw * sx), int(ch * sy))), (cw, ch))
+        notes.append(f"shared scale {scale:.3f} from sheet r0c0")
         for r in range(len(FACINGS)):
             for c in range(cols):
                 box = (int(c * cw * sx), int(r * ch * sy), int((c + 1) * cw * sx), int((r + 1) * ch * sy))
-                frame, n_ = fit_frame(img.crop(box), (cw, ch), pal, ink, add_outline)
+                frame, n_ = fit_frame(img.crop(box), (cw, ch), pal, ink, add_outline, scale)
                 notes += [f"r{r}c{c}: {x}" for x in n_ if "keyed" not in x]
                 sheet[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = frame
     elif frames_present and not from_turnaround:
+        # One scale per FACING, from that facing's idle_0 (strips of one facing are generated
+        # together, so this is the consistency the generator can actually deliver). Drift between
+        # animations of the same facing is measured and reported, not hidden.
+        scales: dict[str, float | None] = {}
+        for f in FACINGS:
+            ref = src / f"{f}_idle_0.png"
+            if ref.exists():
+                scales[f] = reference_scale(Image.open(ref), (cw, ch))
+                notes.append(f"{f}: scale {scales[f]:.3f} from {f}_idle_0")
+            else:
+                scales[f] = None
+                problems.append(f"{f}_idle_0.png missing: {f} frames fitted individually")
+        heights: dict[tuple[str, str], list[int]] = {}
         for f, a, i in frame_names():
             p = src / f"{f}_{a}_{i}.png"
             r, c = FACINGS.index(f), col_index(a, i)
@@ -224,17 +284,36 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
                 problems.append(f"missing {p.name}")
                 continue
             sources.append(p.name)
-            frame, n_ = fit_frame(Image.open(p), (cw, ch), pal, ink, add_outline)
-            notes += [f"{p.name}: {x}" for x in n_]
+            frame, n_ = fit_frame(Image.open(p), (cw, ch), pal, ink, add_outline, scales[f])
+            notes += [f"{p.name}: {x}" for x in n_ if "keyed" not in x]
             sheet[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = frame
+            alpha = frame[..., 3] > 0
+            if alpha.any():
+                ys = np.where(alpha)[0]
+                heights.setdefault((f, a), []).append(int(ys.max() - ys.min() + 1))
+        # Drift check: each animation's mean height vs the facing's idle. Death legitimately shrinks.
+        for f in FACINGS:
+            idle = heights.get((f, "idle"))
+            if not idle:
+                continue
+            idle_h = sum(idle) / len(idle)
+            for a, _ in ANIMS:
+                if a in ("idle", "death") or (f, a) not in heights:
+                    continue
+                mean_h = sum(heights[(f, a)]) / len(heights[(f, a)])
+                drift = (mean_h - idle_h) / idle_h
+                if abs(drift) > DRIFT_TOLERANCE:
+                    problems.append(f"drift: {f} {a} averages {mean_h:.0f} px vs idle {idle_h:.0f} px ({drift:+.0%}); regenerate strip_{f}_{a}.png at the idle's scale")
     elif turn.exists():
         # Turnaround-only sheet: every frame of a facing = that facing's slot. Marks the sheet
         # as a placeholder in the manifest; animation strips replace it later.
         img = Image.open(turn).convert("RGBA")
         slot = img.width // 3
         sources.append("turnaround.png (placeholder: all frames from one pose)")
+        scale = reference_scale(img.crop((0, 0, slot, img.height)), (cw, ch))
+        notes.append(f"shared scale {scale:.3f} from turnaround S slot")
         for r, f in enumerate(FACINGS):
-            frame, n_ = fit_frame(img.crop((r * slot, 0, (r + 1) * slot, img.height)), (cw, ch), pal, ink, add_outline)
+            frame, n_ = fit_frame(img.crop((r * slot, 0, (r + 1) * slot, img.height)), (cw, ch), pal, ink, add_outline, scale)
             notes += [f"{f}: {x}" for x in n_]
             for c in range(cols):
                 sheet[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = frame

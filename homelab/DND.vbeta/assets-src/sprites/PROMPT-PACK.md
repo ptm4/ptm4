@@ -81,6 +81,9 @@ Facings and frame counts: idle 4, walk 6, attack 4, hit 2, death 4. Anim notes:
 - idle: breathing/weight shift only; frame 1 = the turnaround pose.
 - walk: full cycle, contact-down-pass-up, no sliding; frame 1 = left foot forward.
 - attack: wind-up, strike (frame 3 is the hit frame, weapon at full extension), recover.
+  Keep the full extension within 1.5x the body width; the cell is only 64 px wide.
+- every strip: the character must be the SAME height as in this facing's idle strip
+  (attach the idle strip as the size reference for walk/attack/hit/death).
 - hit: recoil, then a half-return.
 - death: stagger, fall, on the ground, settled (last frame is held in game).
 Save each strip as `inbox/<id>/strip_<FACING>_<ANIM>.png` (e.g. `strip_S_walk.png`).

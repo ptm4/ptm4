@@ -1,0 +1,338 @@
+#compose — opti app tier
+#
+# Migrated off rpi 2026-09-09. rpi is now a pure network appliance (Pi-hole only);
+# everything that is not DNS lives here. Deploy target: /srv/docker/compose on opti,
+# which is the ZFS dataset red/docker-apps (Docker's own data-root is red/docker).
+#
+# Differences from the old rpi compose, all deliberate:
+#   - every /mnt/opti-fs/... CIFS mount is now a local /srv/red/fs/... pool path
+#   - ${RPI_IP} port bindings became ${OPTI_IP}
+#   - Vaultwarden + MariaDB came along (the pool gives the vault DB ZFS snapshots
+#     and block checksums — the reason it moved rather than staying on rpi)
+#   - hltv-api mem_limit 768m -> 1536m: it was pinned at its cap on the Pi and
+#     driving load to 4.5; opti has 31 GB
+#   - nginx upstreams use `resolver 127.0.0.11` + variable proxy_pass (lazy runtime
+#     resolution) so a container recreate can't wedge nginx at config-parse time
+#   - Pi-hole is NOT here. It stays on rpi. A secondary instance on opti is a
+#     separate compose project (/srv/docker/pihole) so OMV's :80 stays untouched.
+#
+# Hostnames keep their *.rpi.lan names on purpose: the mkcert certs are issued for
+# those names, so nothing has to be re-issued. Pi-hole's local records point them here.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  # ── Vault ────────────────────────────────────────────────────────────────────
+  mariadb:
+    image: mariadb:11
+    container_name: bitwarden-db
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging: *default-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./bitwarden-db/data:/var/lib/mysql
+    networks:
+      - internal
+
+  bitwarden:
+    image: vaultwarden/server:latest
+    container_name: bitwarden
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      WEBSOCKET_ENABLED: "true"
+      SIGNUPS_ALLOWED: "true"
+      BITWARDEN_SMTP_ENABLED: "false"
+      DATABASE_URL: "mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@bitwarden-db:3306/${MYSQL_DATABASE}"
+      DOMAIN: ${VAULTWARDEN_DOMAIN}
+      ADMIN_TOKEN: ${VAULTWARDEN_ADMIN_TOKEN}
+    depends_on:
+      - mariadb
+    networks:
+      - internal
+    expose:
+      - "80"
+    volumes:
+      - ./vaultwarden-data:/data
+
+  nginx-proxy:
+    image: nginx:stable-alpine
+    container_name: nginx-bitwarden
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${OPTI_IP}:443:443"
+    volumes:
+      - /srv/red/fs/ptm/certs/bitwarden.rpi.lan.pem:/etc/ssl/certs/bitwarden.crt:ro
+      - /srv/red/fs/ptm/certs/bitwarden.rpi.lan-key.pem:/etc/ssl/private/bitwarden.key:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - bitwarden
+    networks:
+      - internal
+
+  # ── Dashboard + web tier ─────────────────────────────────────────────────────
+  notes-api:
+    build: ./notes-app/api
+    container_name: notes-api
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      DATA_DIR: /data
+      PORT: 3002
+    volumes:
+      - ./notes-app/api/index.js:/app/index.js:ro
+      - ./notes-app/web:/web:ro
+      - notes_data:/data
+    ports:
+      - "${OPTI_IP}:3002:3002"
+    expose:
+      - "3002"
+    networks:
+      - internal
+
+  webapp:
+    image: node:lts-alpine
+    container_name: webapp
+    restart: unless-stopped
+    logging: *default-logging
+    working_dir: /app/backend
+    command: sh -c "npm install --omit=dev --no-audit --no-fund --prefer-offline && node server.js"
+    environment:
+      DISPATCHER_URL: ${DISPATCHER_URL:-http://192.168.1.11:9099}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+      LLAMA_URL: ${LLAMA_URL:-http://android.lan:8080}
+      LLAMA_CTL_URL: ${LLAMA_CTL_URL:-http://android.lan:8081}
+      HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
+      # Pi-hole still lives on rpi — address it there, by IP so this keeps working
+      # even when DNS is the thing that is broken.
+      PIHOLE_URL: ${PIHOLE_URL:-http://192.168.1.10}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+      KUMA_URL: ${KUMA_URL:-http://uptime-kuma:3001}
+      KUMA_API_KEY: ${KUMA_API_KEY:-}
+      STREAM_URL: ${STREAM_URL:-http://192.168.1.6:8098}
+      HL_STREAM_TOKEN: ${HL_STREAM_TOKEN:-}
+      # homelab-db and the dispatcher are on this same host now — localhost hop.
+      HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
+      HL_DB_TOKEN: ${HL_DB_TOKEN:-}
+    volumes:
+      - ./webapp:/app
+      # local pool paths — these were CIFS mounts of this very machine on rpi
+      - /srv/red/fs/ptm/security-reports:/reports:ro
+      - /srv/red/fs/ptm/agent-logs:/agent-logs:ro
+      - /srv/red/fs/ptm/repo/ptm4:/workspace:ro
+      - arch_data:/arch-data
+    expose:
+      - "3000"
+    networks:
+      - internal
+
+  nginx-webapp:
+    image: nginx:stable-alpine
+    container_name: nginx-webapp
+    restart: unless-stopped
+    logging: *default-logging
+    ports:
+      - "${OPTI_IP}:8443:443"
+    volumes:
+      - /srv/red/fs/ptm/certs/webapp.rpi.lan.pem:/etc/ssl/certs/webapp.crt:ro
+      - /srv/red/fs/ptm/certs/webapp.rpi.lan-key.pem:/etc/ssl/private/webapp.key:ro
+      - ./nginx-wg.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - webapp
+      - notes-api
+      - dozzle
+    networks:
+      - internal
+
+  # ── Discord bot fleet ────────────────────────────────────────────────────────
+  discord-weather:
+    build: ./discord-weather
+    container_name: discord-weather
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    volumes:
+      - weather_data:/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-healthdigest:
+    build: ./discord-healthdigest
+    container_name: discord-healthdigest
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HEALTHDIGEST: ${DISCORD_WEBHOOK_URL_HEALTHDIGEST:-}
+      PIHOLE_WEB_PASSWORD: ${PIHOLE_WEB_PASSWORD:-}
+      RPI_IP: ${RPI_IP:-192.168.1.10}
+      DISPATCHER_URL: ${DISPATCHER_URL:-http://192.168.1.11:9099}
+      HL_DISPATCH_TOKEN: ${HL_DISPATCH_TOKEN:-}
+    volumes:
+      - healthdigest_data:/data
+      - /srv/red/fs/ptm/agent-logs:/agent-logs:ro
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-jellyfin:
+    build: ./discord-jellyfin
+    container_name: discord-jellyfin
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_JELLYFIN: ${DISCORD_WEBHOOK_URL_JELLYFIN:-}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+    volumes:
+      - jellyfinbot_data:/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-sports:
+    build: ./discord-sports
+    container_name: discord-sports
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_SPORTS: ${DISCORD_WEBHOOK_URL_SPORTS:-}
+    volumes:
+      - sportsbot_data:/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  discord-hltv:
+    build: ./discord-hltv
+    container_name: discord-hltv
+    restart: unless-stopped
+    logging: *default-logging
+    depends_on:
+      - hltv-api
+    environment:
+      TZ: "America/New_York"
+      DISCORD_WEBHOOK_URL_HLTV: ${DISCORD_WEBHOOK_URL_HLTV:-}
+      HLTV_API_URL: "http://hltv-api:8080"
+    volumes:
+      - hltvbot_data:/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
+  # Drives a real Chromium to scrape HLTV. On the Pi this sat pinned at its 768m
+  # cap burning ~1.5 cores; raised here because opti has the headroom.
+  hltv-api:
+    build: ./discord-hltv/hltv-api
+    container_name: hltv-api
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+    volumes:
+      - hltvapi_data:/data
+    expose:
+      - "8080"
+    networks:
+      - internal
+    mem_limit: 1536m
+    cpus: 2
+    shm_size: 256m
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  # ── Fleet ops ────────────────────────────────────────────────────────────────
+  uptime-kuma:
+    image: louislam/uptime-kuma:1
+    container_name: uptime-kuma
+    restart: unless-stopped
+    logging: *default-logging
+    dns:
+      # Pi-hole on rpi, so *.lan monitors resolve.
+      - 192.168.1.10
+      - 192.168.1.1
+    ports:
+      - "${OPTI_IP}:3001:3001"
+    volumes:
+      - kuma_data:/app/data
+    networks:
+      - internal
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      # noblenumbat's agent, plus rpi's (added when rpi was trimmed to an appliance)
+      DOZZLE_REMOTE_AGENT: "192.168.1.6:7007,192.168.1.10:7007"
+      DOZZLE_BASE: /dozzle
+    ports:
+      - "${OPTI_IP}:9999:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  kuma_data:
+  notes_data:
+  weather_data:
+  healthdigest_data:
+  jellyfinbot_data:
+  sportsbot_data:
+  hltvbot_data:
+  hltvapi_data:
+  arch_data:
