@@ -29,7 +29,7 @@ src-tauri/target/
 *.db
 *.db-shm
 *.db-wal
-
+.claude\worktrees
 # ── Secrets / environment ─────────────────────────────────────────────────────
 .env
 .env.local
