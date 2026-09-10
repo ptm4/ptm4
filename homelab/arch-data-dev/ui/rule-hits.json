@@ -1,0 +1,27 @@
+{
+  "hits": [
+    {
+      "key": "disk-warn|opti|",
+      "rule_id": "disk-warn",
+      "rule": "Root disk above 80%",
+      "kind": "disk",
+      "severity": "warn",
+      "host": "opti",
+      "value": 85,
+      "message": "opti: root disk at 85% (> 80%)",
+      "since": "2026-09-10T08:03:08.609Z"
+    },
+    {
+      "key": "reboot|noblenumbat|",
+      "rule_id": "reboot",
+      "rule": "Reboot required",
+      "kind": "reboot_required",
+      "severity": "warn",
+      "host": "noblenumbat",
+      "value": null,
+      "message": "noblenumbat: reboot required",
+      "since": "2026-09-10T08:03:08.609Z"
+    }
+  ],
+  "evaluated_at": "2026-09-10T19:45:44.393Z"
+}

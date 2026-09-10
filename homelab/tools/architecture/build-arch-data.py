@@ -42,7 +42,7 @@ from pathlib import Path
 PROBED_AT = "2026-08-08T03:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_OUT = REPO_ROOT / "homelab/hosts/rpi/webapp.v2.legacy/frontend-legacy/architecture/data.json"
+DEFAULT_OUT = REPO_ROOT / "homelab/hosts/opti/apps/webapp.v2.legacy/frontend-legacy/architecture/data.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -775,7 +775,7 @@ FLOWS = [
             ("e-ws-repo", "Edit the repo on tux, over CIFS",
              "The working copy at ~/opti/ptm/repo/ptm4 is a CIFS mount of opti's pool, so saving a file writes straight to opti's disk."),
             ("e-ws-github", "git push to main",
-             "Pushing paths under homelab/hosts/rpi/** is what triggers the deploy workflow."),
+             "Pushing paths under homelab/hosts/opti/apps/** is what triggers the deploy workflow."),
             ("e-github-rpirunner", "The rpi's runner picks up the job",
              "The runner polls GitHub outbound over HTTPS. Nothing is exposed inbound — this is the only way external code enters the LAN. Pinned to [self-hosted, ARM64] so it can't land on opti."),
             ("e-rpirunner-webapp", "Files are copied into the bind mount",

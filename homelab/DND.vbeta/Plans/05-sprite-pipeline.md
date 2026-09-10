@@ -70,7 +70,17 @@ from `<F>_idle_0`, slot-center anchoring, and a drift check. Result on Codex's f
 
 Also: `S_attack_2` and two idle frames overflow the 64 px cell width by up to 12 px (weapon
 extension); sides clipped. Prompt-pack rule added: keep the full extension inside 1.5x the
-body width. The current sheet (frame 0 of every row is correct) is installed in the POC.
+body width.
+
+### Third run (2026-09-10): goblin complete
+Codex regenerated the five flagged strips with the idle strips as size references. Build:
+**OK, no drift**, 60 frames + portrait, `manifest.json` marks it non-placeholder
+(`sprite_clean 0.3.0`, sha256 `d85363c8...`). Installed in the POC and animating in play
+mode (idle/walk/attack/hit/death via `SpriteAnimator`). Remaining cosmetic notes, not
+blockers: three frames clip 1-12 px of weapon at the cell edge; `E_death_0/1` read as a
+shrunken goblin instead of a stagger (regenerate that strip when convenient). **First
+creature of 14 done; the pipeline is proven end to end.** Next creatures: run
+`CODEX-PROMPT.md` per creature, `fighter_human` first so the party has a real sprite.
 
 Inbox/out contract (also enforced by the tool): frames `<FACING>_<anim>_<i>.png` at any
 integer scale of 64x96 (256x384 recommended), or `sheet.png` at an integer scale of

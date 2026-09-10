@@ -11,7 +11,7 @@ old vanilla-JS app still served alongside it at `/legacy/`.
 | | |
 |---|---|
 | **URL** | `https://webapp.lan:8443/` (self-signed cert — expect a browser warning) |
-| **Repo source** | `homelab/hosts/rpi/webapp.v2.legacy/` — edit here, this is authoritative |
+| **Repo source** | `homelab/hosts/opti/apps/webapp.v2.legacy/` — edit here, this is authoritative |
 | **Deployed to** | `/srv/docker/compose/webapp/` on rpi, **bind-mounted** into the container at `/app` |
 | **Container** | `webapp` (`node:lts-alpine`, runs `npm install --omit=dev && node server.js`) |
 | **Reverse proxy** | container `nginx-webapp` terminates TLS on `192.168.1.10:8443` |
@@ -173,10 +173,10 @@ Peter commits his own work, so don't commit or push. To make a change live now:
 
 ```bash
 # legacy static frontend only — served immediately, no restart
-rsync -av homelab/hosts/rpi/webapp.v2.legacy/frontend-legacy/ rpi:/srv/docker/compose/webapp/frontend-legacy/
+rsync -av homelab/hosts/opti/apps/webapp.v2.legacy/frontend-legacy/ rpi:/srv/docker/compose/webapp/frontend-legacy/
 
 # backend route changes also need the Node process re-exec'd
-rsync -av homelab/hosts/rpi/webapp.v2.legacy/backend/ rpi:/srv/docker/compose/webapp/backend/
+rsync -av homelab/hosts/opti/apps/webapp.v2.legacy/backend/ rpi:/srv/docker/compose/webapp/backend/
 ssh rpi 'cd /srv/docker/compose && docker compose restart webapp'
 ```
 
@@ -187,7 +187,7 @@ this catches a TypeScript error or a broken route before CI does:
 
 ```bash
 rsync -a --exclude node_modules --exclude dist \
-  homelab/hosts/rpi/webapp.v2.legacy/{backend,frontend,frontend-legacy,scripts} noblenumbat:/tmp/hlbuild/
+  homelab/hosts/opti/apps/webapp.v2.legacy/{backend,frontend,frontend-legacy,scripts} noblenumbat:/tmp/hlbuild/
 ssh noblenumbat 'cd /tmp/hlbuild/frontend && npm ci && npm run build'   # tsc --noEmit + vite build
 ssh noblenumbat 'cd /tmp/hlbuild/backend  && npm ci && npm test'        # 49 fastify.inject parity tests
 ```
@@ -200,12 +200,12 @@ port, use `fastify.inject()` the way `backend/test/parity.test.js` does.
 
 `/srv/docker/compose/webapp/` is **not** the repo — it is a copy. A `git push` to `main`
 is what makes the change durable, via `.github/workflows/rpi-deploy.yml`: the rpi's
-self-hosted runner copies `homelab/hosts/rpi/webapp.v2.legacy/.` over and restarts the container.
+self-hosted runner copies `homelab/hosts/opti/apps/webapp.v2.legacy/.` over and restarts the container.
 
 So always tell the user to commit and push, or the next deploy overwrites the change
 back to the committed state. Two gotchas:
 
-- The workflow has a **`paths:` filter**. Files under `homelab/hosts/rpi/webapp.v2.legacy/**` are
+- The workflow has a **`paths:` filter**. Files under `homelab/hosts/opti/apps/webapp.v2.legacy/**` are
   covered; a new directory elsewhere (e.g. a generator under `homelab/tools/`) will
   *not* trigger a deploy on its own.
 - The job is pinned to `[self-hosted, ARM64]`. A bare `self-hosted` label also matches
@@ -238,6 +238,6 @@ live-data path gets exercised rather than silently falling into its error branch
   handle fetch failures gracefully rather than rendering a blank page.
 - **nginx timeouts.** The default 60s proxy read timeout is raised only for
   `/api/llama/` (cold LLM prompts). A new slow route needs its own `location` block in
-  `homelab/hosts/rpi/nginx-wg.conf`.
+  `homelab/hosts/opti/apps/nginx-wg.conf`.
 - The techdoc for the wider stack is `homelab/docs/homelab-techdoc.md`; host access is
   covered by the `homelab-ssh` skill.

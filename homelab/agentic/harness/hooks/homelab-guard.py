@@ -124,12 +124,12 @@ RULES = [
         "discord-files-on-rpi", "deny", _discord_on_rpi,
         "The Discord bots are managed through the webapp, not by editing files on the rpi. "
         "Their control APIs are only reachable from the webapp container. Edit "
-        "homelab/hosts/rpi/discord-*/ in the repo, or use the webapp's bot tab.",
+        "homelab/hosts/opti/apps/discord-*/ in the repo, or use the webapp's bot tab.",
     ),
     (
         "webapp-deploy-dir", "deny", _webapp_deploy_dir,
         "/srv/docker/compose/webapp on the rpi is a deploy target, not source — the next CI "
-        "run overwrites it. Edit homelab/hosts/rpi/webapp.v2.legacy/ in the repo instead, then rsync it "
+        "run overwrites it. Edit homelab/hosts/opti/apps/webapp.v2.legacy/ in the repo instead, then rsync it "
         "over (copying into this dir is fine; editing in place is the trap).",
     ),
     (

@@ -1,5 +1,28 @@
 # Homelab Technical Reference
 
+> [!WARNING]
+> **This document is superseded and is not maintained. Read it as history, not as fact.**
+>
+> Checked on 2026-09-10: it describes the homelab as it was *before* the app tier moved
+> from rpi to opti, and before DHCP moved to the router. It still presents rpi as the box
+> that runs the dashboard, Vaultwarden, the bots and Uptime Kuma. None of that is true —
+> rpi runs two containers and does DNS; opti runs fourteen and serves `webapp.lan:8443`.
+> Nothing in this file has been updated for that, so any host attribution in it is suspect.
+>
+> **Where the current answer lives.** Documentation is consolidated into homelab-db on
+> opti, which indexes every rule, runbook, skill and generated report and is what an agent
+> session queries. Read it in the dashboard under **Docs**, or with `hl_search_docs`. The
+> writable source is `homelab/agentic/` in this repo; homelab-db re-indexes on each deploy,
+> so correcting a runbook there corrects it everywhere.
+>
+> This file has NOT been deleted, because it is the only record of several decommissioned
+> subsystems (WireGuard, the peer manager, the mergerfs pair) and of how things were built
+> originally. Deleting it is Peter's call, not an agent's. If it is kept, the parts still
+> worth having should move into `homelab/agentic/runbooks/` where they will be indexed and
+> maintained; what is left after that can go.
+
+---
+
 ---
 
 ## Table of Contents

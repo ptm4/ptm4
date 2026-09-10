@@ -47,27 +47,32 @@ jobs:
         # next :12 timer run. No LAN or filesystem access needed.
         run: python3 homelab/tools/homelab-db/ingest.py --check
 
+      # The checked webapp is v3.Fable — the deployed one since the 2026-09-10 go-live.
+      # v2.legacy stays in the repo as the rollback target but is no longer built here:
+      # a frozen app that CI keeps rebuilding is minutes of every run spent proving a
+      # thing nobody ships. If it is ever redeployed, revert this with the deploy flip.
       - name: Webapp backend syntax
         # find-based so plugins/ lib/ test/ are swept too — a glob here silently
         # narrowed when the backend grew subdirectories (2026-08-10 Fastify port)
         run: |
-          find homelab/hosts/rpi/webapp.v2.legacy/backend \
+          find homelab/hosts/opti/apps/webapp.v3.Fable/backend \
             \( -name node_modules -prune \) -o -name '*.js' -print0 \
             | xargs -0 -n1 node --check
-          node --check homelab/hosts/rpi/webapp.v2.legacy/scripts/smoke-api.mjs
+          node --check homelab/hosts/opti/apps/webapp.v3.Fable/scripts/smoke-api.mjs
           echo "backend syntax OK"
 
       - name: Webapp backend tests
         # fastify.inject parity tests against fixtures — no LAN needed
-        working-directory: homelab/hosts/rpi/webapp.v2.legacy/backend
+        working-directory: homelab/hosts/opti/apps/webapp.v3.Fable/backend
         run: |
           npm ci --no-audit --no-fund
           npm test
 
       - name: Webapp frontend typecheck + build
-        working-directory: homelab/hosts/rpi/webapp.v2.legacy/frontend
+        working-directory: homelab/hosts/opti/apps/webapp.v3.Fable/frontend
         run: |
           npm ci --no-audit --no-fund
+          npx svelte-check --threshold warning
           npm run build
 
       - name: Workflows reference no pre-restructure paths

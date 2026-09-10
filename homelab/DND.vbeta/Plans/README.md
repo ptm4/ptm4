@@ -15,7 +15,7 @@ Keep `status` here in sync with each file's frontmatter.
 | [03d](Rules/03d-conditions-and-status.md) | Conditions and status | 2 | sonnet | execute | 03b | stub |
 | [03e](Rules/03e-character-model-2024.md) | 2024 character model | 2 | fable | decide | 03a, 03b | stub |
 | [04](04-art-style-bible.md) | Art style bible | 1 | fable | decide | 00 | drafted (v0.1; Peter review + POC check pending) |
-| [05](05-sprite-pipeline.md) | Sprite pipeline | 1 | codex-image + sonnet | execute | 04 | drafted (tools + prompt pack ready; Peter runs Codex, first creature = goblin) |
+| [05](05-sprite-pipeline.md) | Sprite pipeline | 1 | codex-image + sonnet | execute | 04 | in-progress (pipeline proven; goblin 1/14 complete; next: fighter_human) |
 | [06](06-voxel-world-kit.md) | Voxel world kit | 1 | sonnet + codex-image | execute | 04 | stub |
 | [07](07-campaign-format-storybook.md) | Campaign format (storybook schema) | 2 | fable | decide | 03 | stub |
 | [08](08-auto-dm-engine.md) | Auto-DM engine | 2 | fable | decide | 03, 07 | stub |

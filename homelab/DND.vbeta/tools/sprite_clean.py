@@ -1,7 +1,7 @@
 """Sprite pipeline: raw generations -> template-exact, palette-exact sheets (style bible §3).
 
 Usage
-  python tools/sprite_clean.py build  <creature> [--size M|L] [--no-outline] [--from-turnaround]
+  python tools/sprite_clean.py build  <creature> [--size M|L] [--stature T|S|M|L] [--no-outline] [--from-turnaround]
   python tools/sprite_clean.py check  <sheet.png> [--size M|L]
   python tools/sprite_clean.py build-all [--size M|L]
 
@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-TOOL_VERSION = "0.3.0"
+TOOL_VERSION = "0.4.0"
 ROOT = Path(__file__).resolve().parents[1]
 SPRITES = ROOT / "assets-src" / "sprites"
 INBOX, OUT = SPRITES / "inbox", SPRITES / "out"
@@ -47,6 +47,7 @@ PALETTE_JSON = ROOT / "assets-src" / "palettes" / "master.json"
 ANIMS = [("idle", 4), ("walk", 6), ("attack", 4), ("hit", 2), ("death", 4)]
 FACINGS = ["S", "N", "E"]
 SIZES = {"M": (64, 96), "L": (128, 128)}
+STATURE_HEIGHT = {"T": 36, "S": 52, "M": 72, "L": 104}  # target sprite height in px (bible §3)
 GROUND_INSET = 4
 ALPHA_CUTOFF = 128   # < 50 % alpha becomes transparent (bible: no semi-transparent pixels)
 BG_TOLERANCE = 28    # per-channel distance to count as a background color when keying
@@ -160,18 +161,17 @@ def keyed_content(img: Image.Image) -> tuple[np.ndarray, tuple[int, int, int, in
     return arr, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), notes
 
 
-def reference_scale(img: Image.Image, cell: tuple[int, int]) -> float:
-    """Source-pixels-per-output-pixel so the reference pose fills the body box. ONE value per
-    creature: every frame is scaled by the same factor, so poses keep their relative size
-    (a crouching death frame stays small, an extended weapon stays long)."""
-    cw, ch = cell
+def reference_scale(img: Image.Image, cell: tuple[int, int], target_h: int) -> float:
+    """Source-pixels-per-output-pixel so the reference pose's HEIGHT lands on the stature target
+    (bible §3: Tiny 36, Small 52, Medium 72, Large 104). ONE value per facing: every frame of
+    that facing is scaled by the same factor, so poses keep their relative size (a crouching
+    death frame stays small, an extended weapon stays long). Width is never the driver: a wide
+    stance must not shrink the creature (that made the goblin 62 px and the fighter 92 px)."""
     _, bbox, _ = keyed_content(img)
     if bbox is None:
         return 1.0
     x0, y0, x1, y1 = bbox
-    max_h = ch - GROUND_INSET - 2
-    max_w = cw - 2
-    return max((y1 - y0) / max_h, (x1 - x0) / max_w, 1e-6)
+    return max((y1 - y0) / max(1, target_h - 2), 1e-6)  # -2: outline adds a pixel top and bottom
 
 
 def fit_frame(img: Image.Image, cell: tuple[int, int], pal, ink, add_outline: bool, scale: float | None = None) -> tuple[np.ndarray, list[str]]:
@@ -232,9 +232,11 @@ def fit_frame(img: Image.Image, cell: tuple[int, int], pal, ink, add_outline: bo
 
 # ---- build / check -------------------------------------------------------------------------
 
-def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = False) -> bool:
+def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = False, stature: str | None = None) -> bool:
     pal, ink = load_palette()
     cw, ch = SIZES[size]
+    stature = stature or ("L" if size == "L" else "M")
+    target_h = STATURE_HEIGHT[stature]
     src = INBOX / creature
     if not src.is_dir():
         print(f"no inbox folder: {src}")
@@ -255,8 +257,8 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         sources.append("sheet.png")
         if abs(sx - sy) > 0.02:
             problems.append(f"sheet.png {img.width}x{img.height} is not a uniform scale of {cw * cols}x{ch * len(FACINGS)}")
-        scale = reference_scale(img.crop((0, 0, int(cw * sx), int(ch * sy))), (cw, ch))
-        notes.append(f"shared scale {scale:.3f} from sheet r0c0")
+        scale = reference_scale(img.crop((0, 0, int(cw * sx), int(ch * sy))), (cw, ch), target_h)
+        notes.append(f"shared scale {scale:.3f} from sheet r0c0 (stature {stature}, {target_h} px)")
         for r in range(len(FACINGS)):
             for c in range(cols):
                 box = (int(c * cw * sx), int(r * ch * sy), int((c + 1) * cw * sx), int((r + 1) * ch * sy))
@@ -271,8 +273,8 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         for f in FACINGS:
             ref = src / f"{f}_idle_0.png"
             if ref.exists():
-                scales[f] = reference_scale(Image.open(ref), (cw, ch))
-                notes.append(f"{f}: scale {scales[f]:.3f} from {f}_idle_0")
+                scales[f] = reference_scale(Image.open(ref), (cw, ch), target_h)
+                notes.append(f"{f}: scale {scales[f]:.3f} from {f}_idle_0 (stature {stature}, {target_h} px)")
             else:
                 scales[f] = None
                 problems.append(f"{f}_idle_0.png missing: {f} frames fitted individually")
@@ -310,8 +312,8 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         img = Image.open(turn).convert("RGBA")
         slot = img.width // 3
         sources.append("turnaround.png (placeholder: all frames from one pose)")
-        scale = reference_scale(img.crop((0, 0, slot, img.height)), (cw, ch))
-        notes.append(f"shared scale {scale:.3f} from turnaround S slot")
+        scale = reference_scale(img.crop((0, 0, slot, img.height)), (cw, ch), target_h)
+        notes.append(f"shared scale {scale:.3f} from turnaround S slot (stature {stature}, {target_h} px)")
         for r, f in enumerate(FACINGS):
             frame, n_ = fit_frame(img.crop((r * slot, 0, (r + 1) * slot, img.height)), (cw, ch), pal, ink, add_outline, scale)
             notes += [f"{f}: {x}" for x in n_]
@@ -335,7 +337,7 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         Image.fromarray(parr, "RGBA").save(OUT / f"{creature}_portrait.png")
         sources.append("portrait.png")
 
-    write_manifest(creature, out_path, sources, size, placeholder=("turnaround.png" in " ".join(sources)))
+    write_manifest(creature, out_path, sources, size, placeholder=("turnaround.png" in " ".join(sources)), stature=stature)
     ok = check(out_path, size, quiet=True) and not problems
     print(f"{creature}: {'OK' if ok else 'NEEDS REGEN'} -> {out_path.relative_to(ROOT)}")
     for p in problems:
@@ -382,13 +384,14 @@ def check(sheet_path: Path, size: str, quiet: bool = False) -> bool:
     return not errs
 
 
-def write_manifest(creature: str, out_path: Path, sources: list[str], size: str, placeholder: bool) -> None:
+def write_manifest(creature: str, out_path: Path, sources: list[str], size: str, placeholder: bool, stature: str = "M") -> None:
     mpath = SPRITES / "manifest.json"
     manifest = json.loads(mpath.read_text()) if mpath.exists() else {}
     manifest[creature] = {
         "sheet": str(out_path.relative_to(ROOT)).replace("\\", "/"),
         "sha256": hashlib.sha256(out_path.read_bytes()).hexdigest(),
         "size": size,
+        "stature": stature,
         "sources": sources,
         "placeholder": placeholder,
         "date": date.today().isoformat(),
@@ -402,11 +405,12 @@ def main() -> None:
     sub = ap.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build"); b.add_argument("creature"); b.add_argument("--size", default="M", choices=SIZES)
     b.add_argument("--no-outline", action="store_true"); b.add_argument("--from-turnaround", action="store_true")
+    b.add_argument("--stature", choices=STATURE_HEIGHT, help="T/S/M/L target height (default M, or L for --size L)")
     ba = sub.add_parser("build-all"); ba.add_argument("--size", default="M", choices=SIZES); ba.add_argument("--no-outline", action="store_true")
     c = sub.add_parser("check"); c.add_argument("sheet"); c.add_argument("--size", default="M", choices=SIZES)
     a = ap.parse_args()
     if a.cmd == "build":
-        sys.exit(0 if build(a.creature, a.size, not a.no_outline, a.from_turnaround) else 1)
+        sys.exit(0 if build(a.creature, a.size, not a.no_outline, a.from_turnaround, a.stature) else 1)
     if a.cmd == "build-all":
         ok = all(build(p.name, a.size, not a.no_outline) for p in sorted(INBOX.iterdir()) if p.is_dir())
         sys.exit(0 if ok else 1)

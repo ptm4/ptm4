@@ -11,7 +11,7 @@ full page or a plain API route instead, see [`add-to-rpi-webapp`](../add-to-rpi-
 
 | | |
 |---|---|
-| **Source** | `homelab/hosts/rpi/webapp.v2.legacy/` — edit here, this is authoritative |
+| **Source** | `homelab/hosts/opti/apps/webapp.v2.legacy/` — edit here, this is authoritative |
 | **Deploy** | push to `main`; `.github/workflows/rpi-deploy.yml` builds the frontend and syncs |
 | **Never** | edit `/srv/docker/compose/webapp/` on rpi — the next CI run reverts it |
 | **v3 rewrites** | `webapp.v3.Fable/` and `webapp.v3.Astra/` are side-by-side rewrites, not deployed by CI yet — this skill describes the live v2 app |
@@ -106,7 +106,7 @@ The Pi has no node, and tux may not either. The app is built to run off-box (see
 `backend/lib/paths.js` — every directory has an env override), so verify on noblenumbat:
 
 ```bash
-rsync -a --exclude node_modules --exclude dist homelab/hosts/rpi/webapp.v2.legacy/ noblenumbat:/tmp/wa/
+rsync -a --exclude node_modules --exclude dist homelab/hosts/opti/apps/webapp.v2.legacy/ noblenumbat:/tmp/wa/
 ```
 
 1. **Typecheck + build** (this is what CI does; catching it here saves a red deploy):

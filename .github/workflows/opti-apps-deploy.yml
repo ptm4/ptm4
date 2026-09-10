@@ -5,22 +5,29 @@ name: Deploy opti App Tier
 # This is the old rpi-deploy pipeline repointed: same build-on-GitHub / deploy-on-
 # self-hosted shape, x86 runner instead of ARM64, /srv/docker/compose on opti.
 #
-# Source directories deliberately still live under homelab/hosts/rpi/ — renaming
-# them is a separate, noisy change and would break the git history of the webapp.
+# Source directories moved to homelab/hosts/opti/apps/ on 2026-09-10 (staged as git
+# renames, so history follows). Every path below points at the new home; rpi's own
+# folder keeps only its pihole compose, which rpi-deploy.yml owns.
+#
+# GO-LIVE 2026-09-10: the deployed webapp is now webapp.v3.Fable (Svelte 5), on
+# Peter's call. webapp.v2.legacy remains in the repo, undeployed and untouched —
+# rollback is `git revert` of the commit that flipped these paths, nothing on the
+# host to unpick. The smoke gate compares against v3's own committed baseline
+# (77 routes), which includes every v2-era route shape — the freeze is still held.
 
 on:
   push:
     branches: [main]
     paths:
       - "homelab/hosts/opti/docker-compose.apps.yml"
-      - "homelab/hosts/rpi/webapp.v2.legacy/**"
-      - "homelab/hosts/rpi/nginx-wg.conf"
-      - "homelab/hosts/rpi/notes-app/**"
-      - "homelab/hosts/rpi/discord-weather/**"
-      - "homelab/hosts/rpi/discord-healthdigest/**"
-      - "homelab/hosts/rpi/discord-jellyfin/**"
-      - "homelab/hosts/rpi/discord-sports/**"
-      - "homelab/hosts/rpi/discord-hltv/**"
+      - "homelab/hosts/opti/apps/webapp.v3.Fable/**"
+      - "homelab/hosts/opti/apps/nginx-wg.conf"
+      - "homelab/hosts/opti/apps/notes-app/**"
+      - "homelab/hosts/opti/apps/discord-weather/**"
+      - "homelab/hosts/opti/apps/discord-healthdigest/**"
+      - "homelab/hosts/opti/apps/discord-jellyfin/**"
+      - "homelab/hosts/opti/apps/discord-sports/**"
+      - "homelab/hosts/opti/apps/discord-hltv/**"
       - ".github/workflows/opti-apps-deploy.yml"
   workflow_dispatch:
 
@@ -37,10 +44,10 @@ jobs:
         with:
           node-version: 24   # matches node:lts-alpine in the webapp container
           cache: npm
-          cache-dependency-path: homelab/hosts/rpi/webapp.v2.legacy/frontend/package-lock.json
+          cache-dependency-path: homelab/hosts/opti/apps/webapp.v3.Fable/frontend/package-lock.json
 
-      - name: Build (tsc + vite)
-        working-directory: homelab/hosts/rpi/webapp.v2.legacy/frontend
+      - name: Build (svelte-check gate is checks.yml's job; this is the shippable build)
+        working-directory: homelab/hosts/opti/apps/webapp.v3.Fable/frontend
         run: |
           npm ci --no-audit --no-fund
           npm run build
@@ -48,7 +55,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: webapp-dist
-          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
+          path: homelab/hosts/opti/apps/webapp.v3.Fable/frontend/dist
           retention-days: 3
 
   deploy:
@@ -62,7 +69,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: webapp-dist
-          path: homelab/hosts/rpi/webapp.v2.legacy/frontend/dist
+          path: homelab/hosts/opti/apps/webapp.v3.Fable/frontend/dist
 
       - name: Copy compose file
         run: cp "$GITHUB_WORKSPACE/homelab/hosts/opti/docker-compose.apps.yml" /srv/docker/compose/docker-compose.yml
@@ -73,21 +80,21 @@ jobs:
         run: |
           mkdir -p /srv/docker/compose/webapp
           rsync -a --delete --exclude 'node_modules' \
-            "$GITHUB_WORKSPACE/homelab/hosts/rpi/webapp.v2.legacy/" /srv/docker/compose/webapp/
-          cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
+            "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/webapp.v3.Fable/" /srv/docker/compose/webapp/
+          cp "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
 
       - name: Copy notes-app
         run: |
           mkdir -p /srv/docker/compose/notes-app/api /srv/docker/compose/notes-app/web
-          cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/notes-app/api/." /srv/docker/compose/notes-app/api/
-          cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/notes-app/web/." /srv/docker/compose/notes-app/web/
+          cp -r "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/notes-app/api/." /srv/docker/compose/notes-app/api/
+          cp -r "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/notes-app/web/." /srv/docker/compose/notes-app/web/
 
       - name: Copy discord bots
         # must precede "Bring stack up" — compose references these build contexts
         run: |
           for bot in discord-weather discord-healthdigest discord-jellyfin discord-sports discord-hltv; do
             mkdir -p "/srv/docker/compose/$bot"
-            cp -r "$GITHUB_WORKSPACE/homelab/hosts/rpi/$bot/." "/srv/docker/compose/$bot/"
+            cp -r "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/$bot/." "/srv/docker/compose/$bot/"
           done
 
       - name: Validate compose before touching containers

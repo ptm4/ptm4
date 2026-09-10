@@ -314,3 +314,98 @@ container cannot reach opti's own published ports (`:80` OMV, `:3001` Kuma) by n
 `compose_internal` network instead of touching the firewall. OMV has no such path and now
 reports `up: null` ("cannot see it from here") rather than a false "down". Peter's call
 whether to open ufw.
+
+
+---
+
+## Fable: 2026-09-10 — DONE — architecture truth, palette, jobs+audit, Docs, Home, Logs, repo move, go-live armed
+
+(An earlier attempt to post this entry died in a shell-quoting accident; posting via a
+script this time. Everything below is verified, not inferred.)
+
+### Architecture truth
+- Live scan first: opti serves :8443 and runs 14 containers; rpi serves nothing on :8443
+  and runs 2. Every host/service definition in v3.Fable now says so: roles, SPOF
+  (opti = storage+apps), dependency edges (DHCP dropped — router's since Sept), the
+  blast-radius copy (rebooting opti kills this page now, rebooting rpi does not), and a
+  single SELF_HOST constant replacing three hardcoded 'rpi' self-reference tests.
+- Every `host === 'opti'` "runs no Docker" UI branch deleted. Absence is reported, never
+  explained.
+- homelab-db refreshed: the 0-container figure was a stale pre-migration doctor probe,
+  not a collector bug. Re-ran the doctor + ingest: opti 14, rpi 2, 4/4 services up.
+- REAL BUG FIXED in tools/homelab-db/ingest.py: the idempotence delete cleared findings
+  and host_reports but not service_checks, so every re-ingest duplicated service rows.
+  That was Peter's "two Homelab webapp entries, one up one down". One line + a paragraph
+  of why.
+- tools/collectors/homelab-doctor.py SERVICES corrected (Notes probed at rpi:3002, dead
+  since the move — the standing URLError); webapp health host is now webapp.lan; the
+  stale "opti runs no docker" comments in hl-arch-agent.py / build-arch-data.py rewritten.
+
+### Docs (one central place, readable by both of us)
+- /docs renders homelab-db's docs table live via two new proxy routes (parameterized
+  SELECTs through the guarded /query path). The page stores nothing.
+- Found homelab-db indexing a stale repo snapshot; synced homelab/agentic/ + CLAUDE.md to
+  opti's rsync target and re-indexed — needs Peter's commit+push to persist.
+- homelab/docs/homelab-techdoc.md carries a superseded banner; not deleted (only record
+  of decommissioned subsystems; deletion is Peter's call).
+
+### Palette
+- tokens.css re-anchored to GitHub pastels; green is gone; --ok is DELIBERATELY grey —
+  nothing that is fine gets colour. Monitor gets a separate thirds ramp (loadTone):
+  blue -> purple -> red above 2/3; temperature uses degree-appropriate cuts (60/72).
+  Verified: opti root at 85% renders red.
+
+### Stepped jobs + permanent audit
+- backend/lib/jobs.js: every destructive action declares its full step plan BEFORE
+  running, streams each transition over SSE ('job' event), and appends to
+  arch-data/audit/YYYY-MM.jsonl (append-only, cat-able). Failing step keeps its message;
+  later steps stay 'pending' — "we never got there" renders differently from "failed".
+- Wired: reboot (202 + background watch: gone -> back -> verify), apt-upgrade (202 +
+  watch until systemd settles + reboot-required report), restart/update-container,
+  restart-service. Verification step is the agent's /sync (live container count + fresh
+  dashboard state) — an earlier draft read status fields the agent does not publish, and
+  was replaced rather than shipped as hollow reassurance.
+- Frontend: JobDrawer (bottom-right, live), Audit tab on /feed (permanent history).
+  Tested against the real rpi agent: success path and a real "unauthorized" failure.
+
+### Home + nav
+- Home rebuilt as Peter's "couch/phone view": one-sentence verdict (healthy = quiet,
+  near-empty page), What's On, four big tiles + Launchpad door, Monitor pointer.
+- /logs is back on the rail as a page (Peter's ask; body reuses the Cockpit tab's
+  Dozzle panel — one implementation, two doors). /docs joined the Data group.
+- Standalone pages all reachable three ways: Launchpad "Dashboard" group (architecture,
+  agents, samba, notes, agentic, legacy), Settings, and Ctrl-K. /notes/ + /dozzle/ 404
+  in dev only — they are nginx locations that exist on the live site.
+
+### Repo restructure completed (Peter's mid-flight instruction)
+- git mv homelab/hosts/rpi/webapp.v3.Fable -> homelab/hosts/opti/apps/webapp.v3.Fable —
+  the one folder the other agent's staged move had missed. hosts/rpi/ is now just the
+  pihole compose + setup script, as intended.
+- Path-depth bug this exposes, fixed in ALL THREE webapps' backend/lib/paths.js
+  (Fable, v2.legacy, **and Astra's** — sorry for the cross-boundary touch, Astra: the
+  staged move broke your HOMELAB_ROOT hop count identically, and a silently-empty dev
+  fallback dir seemed worse than the trespass; it is the only file of yours I touched):
+  HOMELAB_ROOT is now four hops up, not three.
+- Workflows repointed (checks.yml, opti-apps-deploy.yml incl. the bot copy loop),
+  guard hook, skills, rule 01, ingest.py repo label, build-arch-data DEFAULT_OUT,
+  launch.json. Re-wired .claude copies via probe.py.
+- Traversal guards in runners.js/reports.js now path.resolve() both sides before
+  comparing — the old string compare 400'd every request whenever the configured dir
+  spelled its separators differently from path.join's output.
+
+### GO-LIVE — armed, fires on Peter's push
+- opti-apps-deploy.yml + checks.yml now build/deploy/check webapp.v3.Fable.
+- nginx-wg.conf gains the /api/events SSE location (belt and braces).
+- Smoke manifest grown to 77 routes (events/hosts/jobs/audit/incidents/services/hldb/
+  docs/streams-guide); baseline recaptured; 77/77 green locally, twice.
+- ROLLBACK.md written before it is needed: revert the flip commit, push, done —
+  nothing on opti is hand-unpicked, audit trail survives both directions.
+- I cannot and will not push. **Peter: your next commit+push of this tree IS the
+  go-live.** Note HL_STREAM_TOKEN / HL_DB_TOKEN etc. must be present in
+  /srv/docker/compose/.env on opti (compose already references them).
+
+Final state: svelte-check 0/0, production build clean, backend 66/66, smoke 77/77.
+Outstanding for Peter: ufw on opti blocks bridge->host :80/:3001 (OMV shows as
+"unknown", by design, not "down"); /srv/dev-disk-…C2D1DB at 97%; opti root 85%;
+Uptime Kuma's own second monitor (in its runtime DB, not the repo) still points at the
+old target and needs one edit in Kuma's UI.
