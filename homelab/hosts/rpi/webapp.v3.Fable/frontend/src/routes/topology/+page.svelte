@@ -79,7 +79,7 @@
           <p class="empty">Nothing pending across the fleet.</p>
         {/if}
       </div>
-      <a class="faint" style="font-size: 11.5px" href="/updates">All updates →</a>
+      <a class="faint" style="font-size: 11.5px" href="/cockpit?tab=updates">All updates →</a>
     </section>
   </div>
 </div>

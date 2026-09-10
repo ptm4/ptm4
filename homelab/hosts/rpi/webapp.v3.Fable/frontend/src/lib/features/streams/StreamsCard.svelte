@@ -9,8 +9,9 @@
   const guide = useGuide();
   const { watch } = useStreamActions();
   let slots = $derived((guide.data?.station.slots ?? []).filter((s) => s.state === 'running' || s.state === 'starting'));
-  let live = $derived((guide.data?.matches ?? []).filter((m) => m.status === 'live' && m.tier !== 'B').slice(0, 4));
-  let next = $derived((guide.data?.matches ?? []).filter((m) => m.status === 'upcoming' && m.tier === 'S').slice(0, 3));
+  // Worth surfacing on Home: a top-20 team, or a premier-series event.
+  let live = $derived((guide.data?.matches ?? []).filter((m) => m.status === 'live' && (m.top20 || m.premier || m.tier === 'S')).slice(0, 4));
+  let next = $derived((guide.data?.matches ?? []).filter((m) => m.status === 'upcoming' && m.top20).slice(0, 3));
   const clock = (u?: number) => (u ? new Date(u * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
   async function go(m: { channel: { platform: string; channel: string; label: string } | null }) {
     if (!m.channel) return;
@@ -34,7 +35,7 @@
     <div class="divider">Live now</div>
     {#each live as m (m.id ?? m.url)}
       <div class="mrow">
-        <span class="chip" data-s={m.tier === 'S' ? 'crit' : 'warn'}>{m.tier}</span>
+        <span class="chip" data-s={m.top20 ? 'warn' : 'info'}>{m.top20 ? 'TOP 20' : 'PREMIER'}</span>
         <span class="teams">{m.team1} <span class="faint">vs</span> {m.team2}</span>
         <span class="faint ev">{m.event}</span>
         {#if m.score1 != null}<span class="mono">{m.score1}–{m.score2}</span>{/if}
@@ -45,13 +46,13 @@
     {/each}
   {/if}
   {#if next.length}
-    <div class="divider">Next S-tier</div>
+    <div class="divider">Next top-20</div>
     {#each next as m (m.id ?? m.url)}
       <div class="mrow"><span class="mono faint">{clock(m.start_unix)}</span><span class="teams">{m.team1} <span class="faint">vs</span> {m.team2}</span><span class="faint ev">{m.event}</span></div>
     {/each}
   {/if}
   {#if guide.data && !slots.length && !live.length && !next.length}
-    <p class="empty">Nothing live. {guide.data.hltv.ok ? 'No S-tier matches scheduled today.' : 'HLTV feed unavailable — the channel directory still works.'}</p>
+    <p class="empty">Nothing live. {guide.data.hltv.ok ? 'No top-20 or premier matches scheduled today.' : 'HLTV feed unavailable — the channel directory still works.'}</p>
   {/if}
   <a class="more" href="/streams">Open Streams <ArrowRight size={12} aria-hidden="true" /></a>
 </section>

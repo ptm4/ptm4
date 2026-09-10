@@ -62,7 +62,7 @@
     <h3>Pi-hole <span class="meta" class:t-ok={pihole.data?.blocking?.enabled}>{pihole.data ? (pihole.data.blocking?.enabled ? 'blocking' : 'paused') : pihole.isError ? 'unreachable' : '…'}</span></h3>
     {#if pihole.data}
       <div class="nrow"><span class="grow">{pihole.data.ads_percentage_today != null ? `${pihole.data.ads_percentage_today.toFixed(1)}% blocked` : '—'}</span><span class="num faint">{fmtNum(pihole.data.ads_blocked_today)} / {fmtNum(pihole.data.dns_queries_today)}</span></div>
-      <div class="nrow"><span class="grow faint">gravity {fmtNum(pihole.data.gravity_domains)} · <a href="/pihole">manage</a></span></div>
+      <div class="nrow"><span class="grow faint">gravity {fmtNum(pihole.data.gravity_domains)} · <a href="/cockpit?tab=pihole">manage</a></span></div>
     {/if}
   </div>
 </aside>

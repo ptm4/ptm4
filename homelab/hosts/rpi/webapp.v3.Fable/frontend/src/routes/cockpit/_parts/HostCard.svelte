@@ -215,7 +215,7 @@
                     <CircleArrowUp size={12} aria-hidden="true" /> Update
                   </button>
                 {/if}
-                <a class="tb-btn sm" href="/logs" title="Logs"><ScrollText size={12} aria-hidden="true" /> Logs</a>
+                <a class="tb-btn sm" href="/cockpit?tab=logs" title="Logs"><ScrollText size={12} aria-hidden="true" /> Logs</a>
               </div>
             {/each}
           </div>

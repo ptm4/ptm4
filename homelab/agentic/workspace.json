@@ -1,9 +1,9 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-08-22T00:30:04Z",
+  "generated_at": "2026-09-10T06:30:40Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
-  "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.rpi.lan and referenceable by agents.",
+  "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.lan and referenceable by agents.",
   "workspace": {
     "repo": "ptm4",
     "git_remote": "https://github.com/ptm4/ptm4.git",
@@ -48,7 +48,7 @@
     {
       "alias": "rpi",
       "ip": "192.168.1.10",
-      "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.rpi.lan), Vaultwarden"
+      "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.lan), Vaultwarden"
     },
     {
       "alias": "noblenumbat",
@@ -65,7 +65,7 @@
     "skills": [
       {
         "name": "add-to-rpi-webapp",
-        "description": "Add a page, tab, or API route to the homelab dashboard at webapp.rpi.lan (dashboards, reports, diagrams, tools). Use when the user asks to add/publish/put something on the rpi web app, or to change what the dashboard shows.",
+        "description": "Add a page, tab, or API route to the homelab dashboard at webapp.lan (dashboards, reports, diagrams, tools). Use when the user asks to add/publish/put something on the rpi web app, or to change what the dashboard shows.",
         "path": "homelab/agentic/skills/add-to-rpi-webapp",
         "files": [
           "SKILL.md"
@@ -73,7 +73,7 @@
       },
       {
         "name": "add-webapp-widget",
-        "description": "Add a widget to the homelab dashboard's board (the card grid at webapp.rpi.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.",
+        "description": "Add a widget to the homelab dashboard's board (the card grid at webapp.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.",
         "path": "homelab/agentic/skills/add-webapp-widget",
         "files": [
           "SKILL.md"
@@ -101,8 +101,7 @@
         "path": "homelab/agentic/skills/radarr-add",
         "files": [
           "SKILL.md",
-          "scripts/__pycache__/add_movies.cpython-314.pyc",
-          "scripts/add_movies.py"
+          "scripts\\add_movies.py"
         ]
       },
       {
@@ -111,8 +110,7 @@
         "path": "homelab/agentic/skills/sonarr-add",
         "files": [
           "SKILL.md",
-          "scripts/__pycache__/add_series.cpython-314.pyc",
-          "scripts/add_series.py"
+          "scripts\\add_series.py"
         ]
       }
     ],
@@ -126,6 +124,11 @@
         "file": "01-homelab-context.md",
         "path": "homelab/agentic/rules/01-homelab-context.md",
         "title": "Homelab context — read nothing else first"
+      },
+      {
+        "file": "Modding.md",
+        "path": "homelab/agentic/rules/Modding.md",
+        "title": "Modding.md — standards for modding anything"
       },
       {
         "file": "homelab-ssh-autotrigger.md",
@@ -178,6 +181,11 @@
         "file": "09-homelab-db.md",
         "path": "homelab/agentic/runbooks/09-homelab-db.md",
         "title": "homelab.db — the queryable homelab"
+      },
+      {
+        "file": "10-rpi-rebuild-and-app-tier-migration.md",
+        "path": "homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md",
+        "title": "rpi rebuild + app-tier migration to opti"
       }
     ],
     "harness": [

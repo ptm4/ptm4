@@ -15,13 +15,22 @@ router"; that hardware doesn't exist, confirmed 2026-07-31). All four hosts are 
 | Alias | IP | OS | Role — what it contains |
 |---|---|---|---|
 | `tux` | .3 | CachyOS | **You are usually here.** Workstation. No services; nothing depends on it. |
-| `opti` | .11 | Debian 12 | **Storage + control plane.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; **homelab-db `:9100`** (queryable index + MCP); x86 CI runner; xrdp `:3389`. |
-| `rpi` | .10 | Ubuntu 22.04 (RPi 4) | **DNS + web.** Pi-hole (DNS *and* DHCP for the whole LAN); dashboard webapp `:8443`; Vaultwarden `:443`; notes `:3002`; 5 `discord-*` bots; ARM64 CI runner. ~12 containers. |
+| `opti` | .11 | Debian 12 | **Storage + control plane + app tier.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; **homelab-db `:9100`** (queryable index + MCP); x86 CI runner; xrdp `:3389`. **Since 2026-09-10 also the whole app tier** (14 containers in `/srv/docker/compose`): dashboard **`webapp.lan:8443`**, Vaultwarden `bitwarden.rpi.lan:443`, notes `:3002`, Uptime Kuma `:3001`, Dozzle `:9999`, 5 `discord-*` bots, hltv-api. 31 GB RAM. |
+| `rpi` | .10 | Ubuntu 24.04 (RPi 4) | **DNS only — a network appliance.** Pi-hole (DNS; **DHCP is the router's** since Sept 2026); Dozzle agent `:7007`; ARM64 CI runner. **2 containers, and it stays that way** — see runbook 10 for the four-part test before adding anything. Boots from a **USB SSD** (the microSD died 2026-09-08). |
 | `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. ~13 containers. YAMS compose at `/opt/yams/`. |
 | `android` | .54 | Termux | Galaxy S10. llama.cpp `:8080` (local LLM). **Intermittent — often offline.** |
 
-Single points of failure worth knowing before you touch anything: **rpi** is the only DNS/DHCP
-server (and boots from an SD card), and **opti** backs every other host's storage over CIFS.
+Single points of failure worth knowing before you touch anything: **rpi** is the only DNS server
+(DHCP now comes from the router), and **opti** now carries storage, the control plane *and* the
+app tier — so an opti outage costs the dashboard, the vault and the bots at once, while the LAN
+keeps resolving names. That split is deliberate: DNS lives on the cheap always-on box precisely
+so rebooting opti is routine. opti's pool is a **single disk with no redundancy**, and its boot
+disk is a 40k-hour drive with 264 reallocated sectors (pending/uncorrectable both still 0 — watch
+those two, not the reallocated count; runbook 10 has the thresholds).
+
+**Canonical hostnames** (2026-09-10): the dashboard is **`webapp.lan`** — `webapp.rpi.lan` still
+resolves as a SAN/alias but is misleading and should not be used in new work. Bare `webapp` does
+not resolve; single-label names need a DNS suffix most clients here don't set.
 
 ## SSH keys — two separate regimes
 

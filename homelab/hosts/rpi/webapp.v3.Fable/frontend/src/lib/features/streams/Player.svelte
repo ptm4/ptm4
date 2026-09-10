@@ -14,6 +14,7 @@
     muted = false,
     active = true,
     label = '',
+    reload = 0,
     onclick,
   }: {
     slot: number;
@@ -23,6 +24,8 @@
     /** the focused player in a multiview grid */
     active?: boolean;
     label?: string;
+    /** bump to force a detach/reattach — the "Reload player" button */
+    reload?: number;
     onclick?: () => void;
   } = $props();
 
@@ -75,6 +78,7 @@
   }
 
   $effect(() => {
+    reload;                       // re-run when the reload counter changes
     const url = hlsUrl(slot);
     if (live) attach(url); else detach();
     return () => detach();

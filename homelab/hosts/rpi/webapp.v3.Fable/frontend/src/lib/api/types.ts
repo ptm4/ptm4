@@ -140,37 +140,9 @@ export interface UpdatesResp {
   [k: string]: unknown;
 }
 
-// ── board engine ────────────────────────────────────────────────────────────
+// ── appearance ──────────────────────────────────────────────────────────────
 
 export interface GlassSettings { opacity: number; blur: number; dim: number }
-
-export interface WidgetInstance {
-  id: string;
-  type: string;
-  options?: Record<string, unknown>;
-}
-
-export interface GridItem { i: string; x: number; y: number; w: number; h: number }
-
-export interface BoardDoc {
-  slug: string;
-  name: string;
-  protected?: boolean;
-  wallpaper: string | null;
-  glass: GlassSettings | null;
-  widgets: WidgetInstance[];
-  layouts: Record<string, GridItem[]>;
-  rev: number;
-  updated_at?: string;
-}
-
-export interface BoardSummary {
-  slug: string;
-  name: string;
-  protected: boolean;
-  widgets: number;
-  updated_at: string | null;
-}
 
 export interface UiSettings {
   wallpaper: string | null;

@@ -1,36 +1,9 @@
-// The widget SDK contract. A registry entry is everything the board engine needs
-// to place, size, configure and render one widget type — so adding a feature to
-// this dashboard means adding an entry to registry.ts, not editing a page.
-//
-//   component  the renderer; a Svelte component receiving { options }
-//   defaults   initial grid size when the widget is added
-//   min        resize bounds enforced by gridstack
-//   options    the configurable fields; drives the settings dialog with no
-//              per-widget form code. `default` is applied when the option is unset.
-import { getContext, type Component } from 'svelte';
-
-export interface OptionDef {
-  key: string;
-  label: string;
-  type: 'select' | 'number' | 'boolean' | 'text';
-  choices?: { value: string; label: string }[];
-  min?: number;
-  max?: number;
-  default?: unknown;
-}
+// The widget prop/context contract shared by the surviving standalone widgets
+// (HostVitals, hldb/Changes, hldb/LongTrends — used by routes/host/[name]).
+import { getContext } from 'svelte';
 
 export interface WidgetProps {
   options?: Record<string, unknown>;
-}
-
-export interface WidgetDef {
-  type: string;
-  label: string;
-  description: string;
-  component: Component<WidgetProps>;
-  defaults: { w: number; h: number };
-  min?: { w: number; h: number };
-  options?: OptionDef[];
 }
 
 // Lets a widget persist its own options from inside its body (e.g. the host

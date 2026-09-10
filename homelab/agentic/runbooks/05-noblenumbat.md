@@ -29,7 +29,7 @@ destroyed the only copy of several gitignored skills and rules.
 
 ## stream-station (:8098) — debugging the dashboard's Streams page
 
-Container `stream-station`, added 2026-08-07. Backs `https://webapp.rpi.lan:8443/streams/`:
+Container `stream-station`, added 2026-08-07. Backs `https://webapp.lan:8443/streams/`:
 streamlink resolves a Twitch/YouTube/Kick channel, headless VLC remuxes it to HLS. Four slots.
 Source in the repo at `homelab/hosts/noblenumbat/stream-station/`; **it is the only service in
 this stack that is built rather than pulled**, so a code change needs a rebuild, not a restart.
@@ -90,7 +90,7 @@ curl -s http://192.168.1.6:8098/status | python3 -c "import json,sys; [print(s['
   equal the one in the rpi webapp's `/srv/docker/compose/.env`. Neither file is in git, and
   the deploy workflows never touch `.env` — so a rebuilt host needs it re-added by hand.
 - **Nothing plays but `/status` says running** → check the video path separately from the
-  control path. `curl -sk https://webapp.rpi.lan:8443/hls/slot1/index.m3u8` must return a
+  control path. `curl -sk https://webapp.lan:8443/hls/slot1/index.m3u8` must return a
   playlist with **no redirect**; if it 301s, someone added a trailing slash to the `/hls`
   location in `nginx-wg.conf` (documented trap — it rewrites to nginx's container-internal
   port 443 and lands on Vaultwarden).

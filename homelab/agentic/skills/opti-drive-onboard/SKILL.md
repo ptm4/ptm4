@@ -24,7 +24,7 @@ Tools live in `/usr/sbin` — call as `sudo <tool>`.
   6.12 backport kernel). ARC capped 1.5 GiB (`/etc/modprobe.d/zfs.conf`).
 - Samba `\\opti\red` = `/srv/red/fs`, defined in `/etc/homelab/samba-red.conf`
   (repo: `homelab/hosts/opti/samba/samba-red.conf`), included from OMV's SMB "Extra
-  options". Editable at `https://webapp.rpi.lan:8443/samba/`.
+  options". Editable at `https://webapp.lan:8443/samba/`.
 - Clients: tux `/home/ptm/opti`, rpi `/mnt/opti-fs`, noblenumbat
   `/mnt/opti-{shows,library,media}` — all on `//192.168.1.11/red`.
 - **Cold copy**: the retired mergerfs union (sda dir `/srv/sda-pool` + sdb NTFS Hitachi,

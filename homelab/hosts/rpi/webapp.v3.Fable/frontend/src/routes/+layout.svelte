@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { QueryClient, QueryClientProvider } from '@tanstack/svelte-query';
-  import 'gridstack/dist/gridstack.min.css';
   import '$lib/theme/tokens.css';
   import '$lib/theme/app.css';
   import '$lib/theme/board.css';

@@ -52,7 +52,7 @@ HOSTS = [
     {"alias": "opti", "ip": "192.168.1.11",
      "role": "Storage/NAS (ZFS pool red -> Samba \\\\opti\\red; OMV UI-only; cold copy on old mergerfs pair), CI runner, control plane / agent dispatcher"},
     {"alias": "rpi", "ip": "192.168.1.10",
-     "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.rpi.lan), Vaultwarden"},
+     "role": "DNS (Pi-hole v6), homelab dashboard webapp (webapp.lan), Vaultwarden"},
     {"alias": "noblenumbat", "ip": "192.168.1.6",
      "role": "Media server (Jellyfin, Radarr/Sonarr). Was a code server 2026-07-20; reverted 2026-07-22"},
     {"alias": "android", "ip": "192.168.1.54",
@@ -200,7 +200,7 @@ def build():
         "purpose": (
             "Portable, tool-agnostic description of this workspace so any coding agent "
             "(Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and "
-            "runbooks. Displayed at webapp.rpi.lan and referenceable by agents."
+            "runbooks. Displayed at webapp.lan and referenceable by agents."
         ),
         "workspace": WORKSPACE,
         "current_agent": CURRENT_AGENT,

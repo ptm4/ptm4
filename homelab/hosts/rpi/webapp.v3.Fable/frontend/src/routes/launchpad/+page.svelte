@@ -104,7 +104,7 @@
     <div class="acts">
       <button class="ic" class:fav={favIds.includes(s.id)} title="Favourite" onclick={() => toggleFav(s.id)}><Star size={13} /></button>
       {#if s.internalPage}<a class="ic" href={s.internalPage} title="Dashboard page"><LayoutGrid size={13} /></a>{/if}
-      {#if s.container}<a class="ic" href="/logs" title="Logs (Dozzle)"><ScrollText size={13} /></a>{/if}
+      {#if s.container}<a class="ic" href="/cockpit?tab=logs" title="Logs (Dozzle)"><ScrollText size={13} /></a>{/if}
       {#if s.container && s.host && s.host !== 'opti'}<button class="ic" title="Restart container" onclick={() => restart(s)}><RotateCcw size={13} /></button>{/if}
       {#if !s.url.startsWith('/')}<a class="ic" href={s.url} target="_blank" rel="noreferrer" title="Open in new tab"><ExternalLink size={13} /></a>{/if}
     </div>

@@ -1,6 +1,6 @@
 ---
 name: add-webapp-widget
-description: Add a widget to the homelab dashboard's board (the card grid at webapp.rpi.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.
+description: Add a widget to the homelab dashboard's board (the card grid at webapp.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.
 ---
 
 # Add a widget to the rpi dashboard board

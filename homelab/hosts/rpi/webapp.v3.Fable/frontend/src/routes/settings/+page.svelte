@@ -1,24 +1,18 @@
 <script lang="ts">
   // Settings — the things v2 left as a stub: appearance (theme, accent, glass
-  // defaults, reduce-glass), the default board, board management (create / delete),
-  // and the escape hatches (legacy UI, API docs).
-  import { createQuery, useQueryClient } from '@tanstack/svelte-query';
-  import { Plus, Trash2, ExternalLink, SunMoon, Palette } from '@lucide/svelte';
+  // defaults, reduce-glass), and the escape hatches (legacy UI, API docs).
+  import { createQuery } from '@tanstack/svelte-query';
+  import { ExternalLink, SunMoon, Palette } from '@lucide/svelte';
   import { get } from '$lib/api/client';
   import { ui, ACCENTS, type Accent } from '$lib/stores/theme.svelte';
-  import { useBoards, useSettings, useSaveSettings, useCreateBoard, useDeleteBoard, DEFAULT_WALLPAPERS, wallpaperUrl } from '$lib/api/boards';
+  import { useSettings, useSaveSettings, DEFAULT_WALLPAPERS, wallpaperUrl } from '$lib/api/boards';
   import { toast } from '$lib/stores/toast.svelte';
-  import { confirm } from '$lib/stores/confirm.svelte';
   import { sse } from '$lib/api/sse.svelte';
   import { relTime } from '$lib/format';
   import RulesEditor from './_parts/RulesEditor.svelte';
 
-  const boards = useBoards();
   const settings = useSettings();
   const saveSettings = useSaveSettings();
-  const createBoard = useCreateBoard();
-  const deleteBoard = useDeleteBoard();
-  const qc = useQueryClient();
   const health = createQuery(() => ({
     queryKey: ['health'],
     queryFn: () => get<{ status: string; host: string; uptime: number }>('/api/health', 5000),
@@ -26,7 +20,6 @@
     retry: 0,
   }));
 
-  let newName = $state('');
   let g = $derived(settings.data?.glass ?? { opacity: 0.62, blur: 14, dim: 0.35 });
 
   async function save(patch: Parameters<typeof saveSettings.mutateAsync>[0]) {
@@ -35,36 +28,6 @@
       toast('Settings saved', 'ok', { ttlMs: 2000 });
     } catch (e) {
       toast(`Could not save settings: ${(e as Error).message}`, 'crit');
-    }
-  }
-
-  async function addBoard(e: Event) {
-    e.preventDefault();
-    const name = newName.trim();
-    if (!name) return;
-    try {
-      const doc = await createBoard.mutateAsync(name);
-      newName = '';
-      toast(`Board “${doc.name}” created`, 'ok');
-    } catch (err) {
-      toast(`Could not create the board: ${(err as Error).message}`, 'crit');
-    }
-  }
-
-  async function removeBoard(slug: string, name: string) {
-    const ok = await confirm({
-      title: `Delete board “${name}”?`,
-      body: 'Its widgets and layout are gone for good. The built-in Home and Dashboard boards cannot be deleted.',
-      tone: 'crit',
-      confirmLabel: 'Delete',
-    });
-    if (!ok) return;
-    try {
-      await deleteBoard.mutateAsync(slug);
-      qc.removeQueries({ queryKey: ['board', slug] });
-      toast(`Board “${name}” deleted`, 'ok');
-    } catch (err) {
-      toast(`Could not delete: ${(err as Error).message}`, 'crit');
     }
   }
 
@@ -97,31 +60,6 @@
         </div>
       </div>
       <p class="faint" style="margin: 0; font-size: 11.5px">Theme is shared with the legacy pages (same <code>arch-theme</code> key). Warn stays orange whichever accent is picked — yellow is interactive, not a warning.</p>
-    </section>
-
-    <section class="card c6">
-      <div class="chead"><h3>Boards</h3><span class="meta">default: {settings.data?.default_board ?? '…'}</span></div>
-      {#if boards.isError}<p class="err">Could not list boards.</p>{/if}
-      <div class="rows">
-        {#each boards.data?.boards ?? [] as b (b.slug)}
-          <div class="row">
-            <a class="who" href="/b/{b.slug}">{b.name}</a>
-            <span class="what faint">{b.widgets} widgets{b.updated_at ? ` · saved ${relTime(b.updated_at)}` : ''}{b.protected ? ' · built-in' : ''}</span>
-            {#if settings.data?.default_board === b.slug}
-              <span class="chip" data-s="info">default</span>
-            {:else}
-              <button class="tbtn sm" onclick={() => save({ default_board: b.slug })}>Make default</button>
-            {/if}
-            {#if !b.protected}
-              <button class="tbtn sm danger icon" title="Delete board" onclick={() => removeBoard(b.slug, b.name)}><Trash2 /></button>
-            {/if}
-          </div>
-        {/each}
-      </div>
-      <form class="add-row" onsubmit={addBoard}>
-        <input class="input" placeholder="New board name" bind:value={newName} maxlength="40" />
-        <button class="tbtn" type="submit" disabled={createBoard.isPending || !newName.trim()}><Plus /> Create</button>
-      </form>
     </section>
 
     <section class="card c6">
@@ -175,8 +113,4 @@
   .swatches { display: flex; gap: 8px; }
   .swatch { width: 22px; height: 22px; border-radius: 999px; border: 2px solid transparent; cursor: pointer; padding: 0; }
   .swatch.on { border-color: var(--ink); box-shadow: 0 0 0 2px var(--surface); }
-  .add-row { display: flex; gap: var(--s2); margin-top: var(--s2); }
-  .add-row .input { flex: 1; }
-  .row .who { min-width: 0; color: var(--ink); }
-  .row .who:hover { color: var(--accent); text-decoration: none; }
 </style>

@@ -174,7 +174,7 @@ test('alert rules: defaults seed, evaluation fires on the fixture, hits reach no
   assert.equal(del.statusCode, 200);
 });
 
-test('GET /api/streams/guide degrades cleanly without the station or HLTV', async () => {
+test('GET /api/streams/guide: reports evidence, never manufactures it', async () => {
   const r = await app.inject({ method: 'GET', url: '/api/streams/guide' });
   assert.equal(r.statusCode, 200);
   const b = r.json();
@@ -183,9 +183,36 @@ test('GET /api/streams/guide degrades cleanly without the station or HLTV', asyn
   assert.ok(Array.isArray(b.station.slots));
   assert.ok(b.channels.length >= 5, 'channel directory (station presets or fallback)');
   assert.ok(b.channels.find((c) => c.channel === 'blastpremier'));
+  // No live inference on directory channels — only what our own station plays.
+  for (const c of b.channels) {
+    assert.ok(!('on_air' in c), 'directory channels carry no live inference');
+    assert.ok('watching_slot' in c && 'listed_matches' in c);
+  }
   assert.deepEqual(b.matches, []);
   assert.equal(b.hltv.ok, false);
-  assert.ok(Array.isArray(b.vrs.top));
+  assert.equal(b.vrs.known, false);
+  assert.equal(b.vrs.system, 'Valve Regional Standings, via HLTV');
+  assert.ok(typeof b.coverage === 'string' && b.coverage.length > 0);
+});
+
+test('guide match model: ranks from VRS, no derived tier, no organizer fallback', async () => {
+  const { FALLBACK_PRESETS, channelFromUrl, isPremier, normTeam } = require('../lib/stream-catalog');
+
+  // A tier is never invented from HLTV's star rating.
+  assert.equal(channelFromUrl('https://twitch.tv/blastpremier').channel, 'blastpremier');
+  assert.equal(channelFromUrl('https://www.twitch.tv/videos/12345'), null, 'reserved twitch path is not a channel');
+  assert.equal(channelFromUrl('http://twitch.tv/blastpremier'), null, 'http is refused');
+  assert.equal(channelFromUrl('https://user:pw@twitch.tv/x'), null, 'credentials are refused');
+  assert.equal(channelFromUrl('https://www.youtube.com/watch?v=abc').type, 'url', 'youtube passes through as a URL');
+  assert.equal(channelFromUrl(undefined), null, 'a match with no stream yields no channel');
+
+  // "Premier series" reads the event name and excludes feeder tiers.
+  assert.equal(isPremier('BLAST Premier Fall Final 2026'), true);
+  assert.equal(isPremier('IEM Fall Open Qualifier'), false);
+  assert.equal(isPremier('CCT Season 12'), false);
+
+  assert.equal(normTeam('Team Spirit'), 'spirit', 'VRS matching ignores the Team prefix');
+  assert.ok(FALLBACK_PRESETS.groups.length >= 2);
 });
 
 test('POST /api/streams/watch validates input', async () => {

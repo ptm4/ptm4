@@ -42,7 +42,7 @@ DNS, DHCP and the web tier. Ubuntu 22.04 on a Raspberry Pi 4, 3.7 GiB RAM, **117
 the most fragile hardware here, carrying the most critical role.
 - **Pi-hole v6** in Docker: DNS *and* DHCP for the whole LAN, ~15 local A records, 6 MAC-pinned
   reservations. Whitelist a domain with `pihole allow <domain>`.
-- **Dashboard webapp** behind nginx TLS on `:8443` (`webapp.rpi.lan`), **Vaultwarden** on `:443`
+- **Dashboard webapp** behind nginx TLS on `:8443` (`webapp.lan`), **Vaultwarden** on `:443`
   (`bitwarden.rpi.lan`), **notes** on `:3002`.
 - **Discord bot fleet** — 5 containers (`discord-weather`, `-healthdigest`, `-jellyfin`,
   `-sports`, `-hltv`). Their control APIs bind `:8080` on the internal Docker network only, so

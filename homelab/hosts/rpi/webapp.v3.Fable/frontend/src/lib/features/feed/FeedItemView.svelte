@@ -44,7 +44,7 @@
         {#if item.category === 'health'}<a class="chip act" href="/reports">Full report</a>{/if}
         {#if item.category === 'security'}<a class="chip act" href="/security">Security</a>{/if}
         {#if item.category === 'changes'}<a class="chip act" href="/query">hl_changes</a>{/if}
-        {#if item.category === 'updates'}<a class="chip act" href="/updates">Updates</a>{/if}
+        {#if item.category === 'updates'}<a class="chip act" href="/cockpit?tab=updates">Updates</a>{/if}
         {#if item.category === 'bots'}<a class="chip act" href="/bots">Bots</a>{/if}
       {/if}
     </div>

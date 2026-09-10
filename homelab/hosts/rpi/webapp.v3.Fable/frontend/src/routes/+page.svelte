@@ -13,18 +13,13 @@
   import { useActivity } from '$lib/api/queries';
   import { useIncidents } from '$lib/api/incidents';
   import { useChanges } from '$lib/api/fleet';
-  import { useBoard, useSettings, applyBoardStyle } from '$lib/api/boards';
-  import BoardGrid from '$lib/board/BoardGrid.svelte';
   import StreamsCard from '$lib/features/streams/StreamsCard.svelte';
   import LaunchDock from '$lib/components/LaunchDock.svelte';
-  import { onDestroy } from 'svelte';
 
   const fv = createFleetView();
   const activity = useActivity(30);
   const incidents = useIncidents();
   const changes = useChanges(() => '', () => 3);
-  const boardQ = useBoard(() => 'home');
-  const settingsQ = useSettings();
 
   let selected = $state<string | null>(null);
   let sel = $derived(fv.views.find((v) => v.host.name === selected) ?? null);
@@ -41,15 +36,6 @@
     }
     return out;
   });
-
-  // The embedded board keeps its own wallpaper/glass intent (a board with none stays flat).
-  $effect(() => {
-    const b = boardQ.data;
-    if (!b) return;
-    applyBoardStyle(b.wallpaper ?? settingsQ.data?.wallpaper ?? null, b.glass ?? settingsQ.data?.glass ?? null, settingsQ.data?.reduce_glass ?? false);
-  });
-  onDestroy(() => { if (typeof document !== 'undefined') applyBoardStyle(null, null, false); });
-  const noop = () => {};
 </script>
 
 <div class="home">
@@ -97,15 +83,6 @@
       <NowRail />
     </div>
   </div>
-
-  <div class="shead"><h2>Board · Home</h2><span class="meta">{boardQ.data ? `${boardQ.data.widgets.length} widgets` : ''}</span><a class="more" href="/b/home">Edit the board <ArrowRight size={12} aria-hidden="true" /></a></div>
-  {#if boardQ.data}
-    <BoardGrid board={boardQ.data} editMode={false} onLayoutChange={noop} onRemove={noop} onConfigure={noop} onOptionsChange={noop} />
-  {:else if boardQ.isError}
-    <div class="card"><p class="err">Could not load the home board.</p></div>
-  {:else}
-    <div class="spin"></div>
-  {/if}
 </div>
 
 <style>

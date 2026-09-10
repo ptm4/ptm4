@@ -62,7 +62,7 @@
     <Pause size={14} aria-hidden="true" /> Pi-hole 5 min
   </button>
   {#if updateCount > 0}
-    <a class="tb-btn" href="/updates">⬆ {updateCount} update{updateCount > 1 ? 's' : ''}</a>
+    <a class="tb-btn" href="/cockpit?tab=updates">⬆ {updateCount} update{updateCount > 1 ? 's' : ''}</a>
   {/if}
 </div>
 

@@ -29,28 +29,45 @@ export interface GuideChannel {
   org?: string | null;
   group: string;
   group_label: string;
+  /** the slot OUR station is playing this channel in — an observation, not a guess */
   watching_slot: number | null;
-  on_air: boolean;
-  scheduled: number;
+  /** how many of today's matches list this channel as their broadcast (not a live check) */
+  listed_matches: number;
 }
+
+/** What stream-station should be asked to start. Built server-side from the URL
+ *  HLTV attached to the match, so the browser never has to parse a broadcast link. */
+export type WatchTarget =
+  | { type: 'channel'; platform: string; channel: string }
+  | { type: 'url'; url: string };
 
 export interface GuideMatch {
   id?: string; url?: string; event?: string; stars?: number; bo?: string;
   team1?: string; team2?: string; start_unix?: number;
-  status?: 'upcoming' | 'live' | 'finished';
+  /** 'unknown' when the feed is too stale to assert a match is live */
+  status?: 'upcoming' | 'live' | 'finished' | 'unknown';
   score1?: number | null; score2?: number | null; winner?: string | null;
   maps?: { name?: string; s1?: number; s2?: number }[];
   stream?: { name?: string; url?: string } | null;
-  tier: 'S' | 'A' | 'B';
-  top20: string[];
-  organizer: string | null;
+  /** Valve Regional Standings position, or null when the team is not in the list */
+  rank1: number | null;
+  rank2: number | null;
+  top20: boolean;
+  /** the EVENT NAME reads as a premier series — not a tier ruling */
+  premier: boolean;
+  /** only ever 'S', and only when the feed said so; never derived from stars */
+  tier: 'S' | null;
+  watch: WatchTarget | null;
   channel: { platform: string; channel: string; label: string } | null;
+  stream_source: string | null;
   watching_slot: number | null;
 }
 
 export interface GuideEvent {
-  event: string; tier: 'S' | 'A' | 'B'; live: number; upcoming: number; finished: number;
-  organizer: string | null; channel: GuideMatch['channel']; top20: string[];
+  event: string; premier: boolean;
+  live: number; unknown: number; upcoming: number; finished: number;
+  top20: number;
+  channel: GuideMatch['channel']; stream_source: string | null;
 }
 
 export interface Guide {
@@ -59,8 +76,9 @@ export interface Guide {
   channels: GuideChannel[];
   matches: GuideMatch[];
   events: GuideEvent[];
-  vrs: { as_of: string | null; top: string[] };
+  vrs: { as_of: string | null; known: boolean; system: string; counted: number; top: string[]; error: string | null };
   hltv: { ok: boolean; stale: boolean; fetched_at: number | null; date: string | null; error: string | null };
+  coverage: string;
   generated_at: string;
 }
 

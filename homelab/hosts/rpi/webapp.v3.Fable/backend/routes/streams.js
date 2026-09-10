@@ -2,25 +2,41 @@
 // adds on top of it:
 //
 //   GET  /guide  — "what's worth watching": HLTV's day feed joined with the Valve
-//                  ranking (top 20) and the channel directory, so every match carries a
-//                  tier, whether a top-20 team plays, and the broadcast channel the
-//                  station can start; plus the station's live slots and the presets.
+//                  Regional Standings and the channel directory, plus the station's
+//                  live slots and the presets.
 //   POST /watch  — one-tap start: given a channel (or a match's stream URL) pick a free
 //                  slot (or reuse one already on that channel) and start it.
+//
+// EPISTEMICS (decided with Peter 2026-09-10, adopting webapp.v3.Astra's posture).
+// The guide reports evidence and refuses to manufacture it:
+//   - Rank comes from the VRS feed as a NUMBER per team, never inferred from stars.
+//     HLTV's stars are a match rating, not a tournament tier, so no S/A/B tier is
+//     derived here; `tier` passes through only if the feed itself says 'S'.
+//   - "Premier series" is a claim about the EVENT NAME (see lib/stream-catalog.js),
+//     labelled as such, not a tier ruling.
+//   - A match gets a watch channel only when HLTV actually supplied a stream URL.
+//     An event called "BLAST Premier" is not evidence that twitch/blastpremier is
+//     carrying THIS match, so there is no organizer fallback.
+//   - A stale feed cannot assert "live": past STALE_AFTER_MS the status of a match
+//     the feed called live degrades to 'unknown'.
+//   - Directory channels carry no live inference; we report only what OUR station is
+//     playing and how many of today's matches list that channel as their broadcast.
 //
 // stream-station resolves live streams with streamlink and remuxes them to HLS; the
 // bearer token lives ONLY here — the browser never sees it. The video itself does not
 // come through this route: nginx proxies /hls straight to nn (see nginx-wg.conf).
 const { proxyJson } = require('../lib/upstream');
 const { cachedInject } = require('../lib/hldb-cache');
-const { FALLBACK_PRESETS, channelFromUrl, organizerForEvent, organizerForChannel, norm } = require('../lib/stream-catalog');
+const { FALLBACK_PRESETS, channelFromUrl, organizerForChannel, normTeam, isPremier } = require('../lib/stream-catalog');
 
 const STREAM_URL = process.env.STREAM_URL || 'http://192.168.1.6:8098';
 const STREAM_TOKEN = process.env.HL_STREAM_TOKEN || '';
 const TOP_N = 20;
+// The bot caches its day feed for 15 min and falls back to a last-good scrape when
+// HLTV is unreachable, so "fetched a while ago" is a normal state, not an error —
+// but it does mean we can no longer claim a match is live.
+const STALE_AFTER_MS = 30 * 60_000;
 
-// /start is slow on purpose: streamlink has to resolve the channel and negotiate the
-// source before the first segment exists, which is a few seconds on a good day.
 const ROUTES = [
   { method: 'get',  path: '/status',  up: 'GET',  upPath: '/status' },
   { method: 'get',  path: '/presets', up: 'GET',  upPath: '/presets' },
@@ -30,19 +46,6 @@ const ROUTES = [
   // idle reaper would kill whichever slots aren't in the visible tab.
   { method: 'post', path: '/keepalive', up: 'POST', upPath: '/keepalive' },
 ];
-
-const normTeam = (t) => norm(String(t || '').replace(/^team\s+/i, '')).replace(/ /g, '');
-
-// Tier: S = the match HLTV rates 4-5 stars, or 3 stars with a top-20 team; A = 2-3 stars
-// or any top-20 team; B = everything else. "stars" is HLTV's own match rating.
-function tierFor(m, topSet) {
-  const stars = m.stars ?? 0;
-  const t1 = topSet.has(normTeam(m.team1)), t2 = topSet.has(normTeam(m.team2));
-  const top = t1 || t2;
-  if (stars >= 4 || (stars >= 3 && top) || (t1 && t2)) return 'S';
-  if (stars >= 2 || top) return 'A';
-  return 'B';
-}
 
 module.exports = async function streamsRoutes(app) {
   const authHeader = STREAM_TOKEN ? { Authorization: `Bearer ${STREAM_TOKEN}` } : undefined;
@@ -80,43 +83,73 @@ module.exports = async function streamsRoutes(app) {
       cachedInject(app, '/api/hltv/vrs', 10 * 60_000),
     ]);
     const presets = presetsRaw && Array.isArray(presetsRaw.groups) ? presetsRaw : FALLBACK_PRESETS;
-    const vrsTeams = vrs.status === 200 && Array.isArray(vrs.data?.teams) ? vrs.data.teams.slice(0, TOP_N) : [];
-    const topSet = new Set(vrsTeams.map(normTeam));
+
+    // The bot serves VRS as an ordered list (bare names, or {name,rank}); position IS
+    // the rank. Keep the whole list — a team at #26 is worth showing as #26 rather
+    // than flattening it to "unranked".
+    const vrsRaw = vrs.status === 200 && Array.isArray(vrs.data?.teams) ? vrs.data.teams : [];
+    const ranks = new Map();
+    vrsRaw.forEach((t, i) => {
+      const name = typeof t === 'string' ? t : t?.name;
+      const rank = typeof t === 'object' && Number.isFinite(t?.rank) ? t.rank : i + 1;
+      if (name) ranks.set(normTeam(name), rank);
+    });
+    const rankingKnown = ranks.size > 0;
+
+    // A feed we fetched long ago cannot be quoted for what is happening NOW.
+    const fetchedMs = Number(day.data?.fetched_at) * 1000;
+    const stale = !!day.data?.stale || !Number.isFinite(fetchedMs) || Date.now() - fetchedMs > STALE_AFTER_MS;
+
     const slots = status?.slots || [];
-    const live = new Map();   // "platform/channel" → slot
-    for (const s of slots) if (['starting', 'running'].includes(s.state) && s.channel) live.set(`${s.platform}/${String(s.channel).toLowerCase()}`, s.slot);
+    const playing = new Map();   // "platform/channel" → slot we are playing it in
+    for (const s of slots) {
+      if (['starting', 'running'].includes(s.state) && s.channel) playing.set(`${s.platform}/${String(s.channel).toLowerCase()}`, s.slot);
+    }
 
     const matches = (day.status === 200 && Array.isArray(day.data?.matches) ? day.data.matches : []).map((m) => {
-      const fromUrl = channelFromUrl(m.stream?.url);
-      const org = organizerForEvent(m.event);
-      // Prefer the exact channel HLTV links; fall back to the organizer's main channel.
-      const channel = fromUrl || (org ? { platform: 'twitch', channel: org.channels[0] } : null);
-      const key = channel ? `${channel.platform}/${channel.channel}` : null;
+      // Only a stream HLTV actually attached to THIS match becomes a watch target.
+      const watch = channelFromUrl(m.stream?.url);
+      const key = watch?.type === 'channel' ? `${watch.platform}/${watch.channel}` : null;
+      const rank1 = ranks.get(normTeam(m.team1)) ?? null;
+      const rank2 = ranks.get(normTeam(m.team2)) ?? null;
       return {
         ...m,
-        tier: tierFor(m, topSet),
-        top20: [normTeam(m.team1), normTeam(m.team2)].filter((t) => topSet.has(t)),
-        organizer: org ? org.label : (m.stream?.name || null),
-        channel: channel ? { ...channel, label: m.stream?.name || (org ? org.label : channel.channel) } : null,
-        watching_slot: key && live.has(key) ? live.get(key) : null,
+        rank1,
+        rank2,
+        top20: (rank1 != null && rank1 <= TOP_N) || (rank2 != null && rank2 <= TOP_N),
+        premier: isPremier(m.event),
+        tier: m.tier === 'S' ? 'S' : null,          // never derived from stars
+        // A stale feed's "live" is a memory, not an observation.
+        status: stale && m.status === 'live' ? 'unknown' : m.status,
+        watch,
+        channel: watch?.type === 'channel'
+          ? { platform: watch.platform, channel: watch.channel, label: m.stream?.name || watch.channel }
+          : null,
+        stream_source: m.stream ? (m.stream.name || 'HLTV match stream') : null,
+        watching_slot: key && playing.has(key) ? playing.get(key) : null,
       };
     });
 
-    const tierRank = { S: 0, A: 1, B: 2 };
-    const statusRank = { live: 0, upcoming: 1, finished: 2 };
-    matches.sort((a, b) => statusRank[a.status] - statusRank[b.status] || tierRank[a.tier] - tierRank[b.tier] || (a.start_unix || 0) - (b.start_unix || 0));
+    const statusRank = { live: 0, unknown: 1, upcoming: 2, finished: 3 };
+    // Priority within a status: top-20 first, then premier events, then start time.
+    const priority = (m) => (m.top20 ? 0 : m.premier || m.tier === 'S' ? 1 : 2);
+    matches.sort((a, b) => (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9)
+      || priority(a) - priority(b)
+      || (a.start_unix || 0) - (b.start_unix || 0));
 
-    // Events rolled up: one card per tournament with its best tier and what's on.
+    // Events rolled up: one card per tournament, describing only what the feed said.
     const events = {};
     for (const m of matches) {
-      const e = events[m.event] || (events[m.event] = { event: m.event, tier: 'B', live: 0, upcoming: 0, finished: 0, organizer: m.organizer, channel: m.channel, top20: new Set() });
-      if (tierRank[m.tier] < tierRank[e.tier]) e.tier = m.tier;
+      const e = events[m.event] || (events[m.event] = {
+        event: m.event, premier: m.premier, live: 0, unknown: 0, upcoming: 0, finished: 0,
+        top20: 0, channel: m.channel, stream_source: m.stream_source,
+      });
       e[m.status] = (e[m.status] || 0) + 1;
-      for (const t of m.top20) e.top20.add(t);
-      if (!e.channel && m.channel) e.channel = m.channel;
+      if (m.top20) e.top20 += 1;
+      if (!e.channel && m.channel) { e.channel = m.channel; e.stream_source = m.stream_source; }
     }
-    const eventList = Object.values(events).map((e) => ({ ...e, top20: [...e.top20] }))
-      .sort((a, b) => (b.live - a.live) || tierRank[a.tier] - tierRank[b.tier] || (b.upcoming - a.upcoming));
+    const eventList = Object.values(events)
+      .sort((a, b) => (b.live - a.live) || (b.top20 - a.top20) || (Number(b.premier) - Number(a.premier)) || (b.upcoming - a.upcoming));
 
     // The station's presets first, then the built-in directory for anything it lacks —
     // so the guide is rich even while presets.json on nn is still the old four channels.
@@ -135,25 +168,44 @@ module.exports = async function streamsRoutes(app) {
         const key = `${c.platform}/${String(c.channel).toLowerCase()}`;
         const org = organizerForChannel(c.channel);
         channels.push({
-          ...c, group: g.name, group_label: g.label,
+          ...c,
+          group: g.name,
+          group_label: g.label,
           org: c.org || (org ? org.label : null),
-          watching_slot: live.get(key) ?? null,
-          // "on air" = some match today links this channel (live) — the closest thing to
-          // a Twitch live check without Twitch API credentials.
-          on_air: matches.some((m) => m.status === 'live' && m.channel && `${m.channel.platform}/${m.channel.channel}` === key),
-          scheduled: matches.filter((m) => m.status === 'upcoming' && m.channel && `${m.channel.platform}/${m.channel.channel}` === key).length,
+          // What OUR station is doing with this channel — an observation, not a guess.
+          watching_slot: playing.get(key) ?? null,
+          // How many of today's matches name this channel as their broadcast. This is
+          // read off the feed's own stream links; it is NOT a claim the channel is live.
+          listed_matches: matches.filter((m) => m.channel && `${m.channel.platform}/${m.channel.channel}` === key
+            && (m.status === 'live' || m.status === 'upcoming' || m.status === 'unknown')).length,
         });
       }
     }
 
     return {
-      station: status ? { ok: true, version: status.version, idle_secs: status.idle_secs, profiles: status.profiles, slots } : { ok: false, slots: [] },
+      station: status
+        ? { ok: true, version: status.version, idle_secs: status.idle_secs, profiles: status.profiles, slots }
+        : { ok: false, slots: [] },
       quality_default: presets.quality_default || FALLBACK_PRESETS.quality_default,
       channels,
       matches,
       events: eventList,
-      vrs: { as_of: vrs.data?.as_of || null, top: vrsTeams },
-      hltv: { ok: day.status === 200, stale: !!day.data?.stale, fetched_at: day.data?.fetched_at || null, date: day.data?.date || null, error: day.status === 200 ? null : (day.data?.error || `HTTP ${day.status}`) },
+      vrs: {
+        as_of: vrs.data?.as_of || null,
+        known: rankingKnown,
+        system: 'Valve Regional Standings, via HLTV',
+        counted: ranks.size,
+        top: vrsRaw.slice(0, TOP_N).map((t) => (typeof t === 'string' ? t : t?.name)).filter(Boolean),
+        error: vrs.status === 200 ? null : (vrs.data?.error || `HTTP ${vrs.status}`),
+      },
+      hltv: {
+        ok: day.status === 200,
+        stale,
+        fetched_at: day.data?.fetched_at || null,
+        date: day.data?.date || null,
+        error: day.status === 200 ? null : (day.data?.error || `HTTP ${day.status}`),
+      },
+      coverage: "HLTV's cached day feed. It deep-scrapes a bounded number of match pages per run, so map scores and broadcast links exist only for those; matches without a listed stream cannot be started from here.",
       generated_at: new Date().toISOString(),
     };
   });

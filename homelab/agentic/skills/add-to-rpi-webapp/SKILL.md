@@ -1,6 +1,6 @@
 ---
 name: add-to-rpi-webapp
-description: Add a page, tab, or API route to the homelab dashboard at webapp.rpi.lan (dashboards, reports, diagrams, tools). Use when the user asks to add/publish/put something on the rpi web app, or to change what the dashboard shows.
+description: Add a page, tab, or API route to the homelab dashboard at webapp.lan (dashboards, reports, diagrams, tools). Use when the user asks to add/publish/put something on the rpi web app, or to change what the dashboard shows.
 ---
 
 # Add something to the rpi webapp
@@ -10,7 +10,7 @@ old vanilla-JS app still served alongside it at `/legacy/`.
 
 | | |
 |---|---|
-| **URL** | `https://webapp.rpi.lan:8443/` (self-signed cert — expect a browser warning) |
+| **URL** | `https://webapp.lan:8443/` (self-signed cert — expect a browser warning) |
 | **Repo source** | `homelab/hosts/rpi/webapp.v2.legacy/` — edit here, this is authoritative |
 | **Deployed to** | `/srv/docker/compose/webapp/` on rpi, **bind-mounted** into the container at `/app` |
 | **Container** | `webapp` (`node:lts-alpine`, runs `npm install --omit=dev && node server.js`) |
@@ -216,8 +216,8 @@ back to the committed state. Two gotchas:
 A copied file that throws on load looks identical to a working one from the shell.
 
 ```bash
-curl -sk https://webapp.rpi.lan:8443/thing/ | head -20     # page serves
-curl -sk https://webapp.rpi.lan:8443/api/thing/status      # route responds
+curl -sk https://webapp.lan:8443/thing/ | head -20     # page serves
+curl -sk https://webapp.lan:8443/api/thing/status      # route responds
 ssh rpi 'cd /srv/docker/compose && docker compose logs --tail=30 webapp'
 ```
 
