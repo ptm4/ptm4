@@ -334,8 +334,18 @@ def upsert_run(conn, tool, run_at, run_date, status, summary, source_path):
     ).fetchone()
     run_id = row["id"]
     # Replace the run's children so a re-ingest is idempotent rather than duplicating.
+    #
+    # service_checks was missing from this list until 2026-09-10, and the omission was
+    # invisible for as long as each run was only ever ingested once. The moment a run
+    # was re-ingested (a doctor re-run inside the same bucket, so the same run_id) its
+    # service rows were appended instead of replaced, and hl_status — which filters by
+    # run_id and reasonably assumed that was enough — returned the same service several
+    # times over, once per ingest, each carrying whatever result was true at the time.
+    # That is how the dashboard came to show two "Homelab webapp" rows, one up and one
+    # down: not two monitors disagreeing, just one monitor remembered twice.
     conn.execute("DELETE FROM findings WHERE run_id = ?", (run_id,))
     conn.execute("DELETE FROM host_reports WHERE run_id = ?", (run_id,))
+    conn.execute("DELETE FROM service_checks WHERE run_id = ?", (run_id,))
     return run_id
 
 

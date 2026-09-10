@@ -23,7 +23,7 @@ export const LINK_GROUPS: LinkGroup[] = [
     { label: 'Router (Archer BE3600)', url: 'http://192.168.1.1/webpages/index.html', icon: 'tp-link.svg', checkOrigin: 'http://192.168.1.1' },
     { label: 'Pi-hole', url: 'http://rpi.lan/admin', icon: 'pi-hole.svg', fav: true, checkOrigin: 'http://rpi.lan' },
     { label: 'Cockpit console (rpi:9090)', url: 'https://rpi.lan:9090/', icon: 'cockpit.svg', fav: true, checkOrigin: 'https://rpi.lan:9090' },
-    { label: 'Uptime Kuma', url: 'http://rpi.lan:3001/', icon: 'uptime-kuma.svg', fav: true },
+    { label: 'Uptime Kuma', url: 'http://opti.lan:3001/', icon: 'uptime-kuma.svg', fav: true },
     { label: 'Dozzle (logs)', url: '/dozzle/', icon: 'dozzle.svg', fav: true },
     { label: 'OpenMediaVault', url: 'http://opti.lan/', icon: 'openmediavault.svg', fav: true, checkOrigin: 'http://opti.lan' },
     { label: 'Portainer', url: 'http://noblenumbat.lan:9000/', icon: 'portainer.svg', fav: true, checkOrigin: 'http://noblenumbat.lan:9000' },

@@ -33,7 +33,7 @@
 
   function botErrorMessage(e: unknown): string {
     const err = e as ApiError;
-    if (err?.status === 502) return `${bot.container} unreachable — check \`docker ps\` on rpi.`;
+    if (err?.status === 502) return `${bot.container} unreachable — check \`docker ps\` on opti.`;
     if (err?.status === 400) return `Rejected: ${err.message}`;
     return err?.message ?? 'Request failed.';
   }

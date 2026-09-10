@@ -32,7 +32,7 @@
     <span class="dot"></span> Pert’s Pocket <span class="ver">v3</span>
   </a>
 
-  {#each NAV.filter((g) => g.title !== 'Pages') as g (g.title)}
+  {#each NAV as g (g.title)}
     <div class="ngroup">
       <h3>{g.title}</h3>
       {#each g.items as it (it.path)}
@@ -63,16 +63,6 @@
       </a>
     {/each}
   </div>
-
-  {#each NAV.filter((g) => g.title === 'Pages') as g (g.title)}
-    <div class="ngroup">
-      <h3>{g.title}</h3>
-      {#each g.items as it (it.path)}
-        {@const Icon = it.icon}
-        <a class="nlink" href={it.path}><Icon aria-hidden="true" /> {it.label} <ExternalLink class="ext" aria-hidden="true" /></a>
-      {/each}
-    </div>
-  {/each}
 
   <div class="ngroup rail-foot">
     <a class="nlink" class:on={isActive('/settings')} href="/settings" onclick={() => app.setRail(false)}>

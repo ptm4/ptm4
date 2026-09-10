@@ -5,10 +5,11 @@
   import { ExternalLink, SunMoon, Palette } from '@lucide/svelte';
   import { get } from '$lib/api/client';
   import { ui, ACCENTS, type Accent } from '$lib/stores/theme.svelte';
-  import { useSettings, useSaveSettings, DEFAULT_WALLPAPERS, wallpaperUrl } from '$lib/api/boards';
+  import { useSettings, useSaveSettings } from '$lib/api/boards';
   import { toast } from '$lib/stores/toast.svelte';
   import { sse } from '$lib/api/sse.svelte';
   import { relTime } from '$lib/format';
+  import { LEGACY_PAGES } from '$lib/nav';
   import RulesEditor from './_parts/RulesEditor.svelte';
 
   const settings = useSettings();
@@ -20,7 +21,6 @@
     retry: 0,
   }));
 
-  let g = $derived(settings.data?.glass ?? { opacity: 0.62, blur: 14, dim: 0.35 });
 
   async function save(patch: Parameters<typeof saveSettings.mutateAsync>[0]) {
     try {
@@ -31,7 +31,6 @@
     }
   }
 
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
   const ACCENT_HEX: Record<Accent, string> = { yellow: '#fabd2f', orange: '#fe8019', aqua: '#8ec07c' };
 </script>
 
@@ -63,33 +62,13 @@
     </section>
 
     <section class="card c6">
-      <div class="chead"><h3>Board defaults</h3><span class="meta">used by boards without their own appearance</span></div>
-      {#if settings.data}
-        <div class="wp-grid">
-          <button class="wp-swatch" class:active={settings.data.wallpaper === null} onclick={() => save({ wallpaper: null })} title="Flat (no wallpaper)"><span>flat</span></button>
-          {#each DEFAULT_WALLPAPERS as w (w)}
-            <button class="wp-swatch" class:active={settings.data.wallpaper === w} style="background-image: url('{wallpaperUrl(w)}')" onclick={() => save({ wallpaper: w })} title={w.replace('.svg', '')} aria-label={w}></button>
-          {/each}
-        </div>
-        <div class="form-rows">
-          <label class="form-row"><span>Card opacity</span>
-            <input type="range" min="0.15" max="1" step="0.01" value={g.opacity} onchange={(e) => save({ glass: { ...g, opacity: Number(e.currentTarget.value) } })} />
-            <span class="slider-value">{pct(g.opacity)}</span></label>
-          <label class="form-row"><span>Blur</span>
-            <input type="range" min="0" max="40" step="1" value={g.blur} onchange={(e) => save({ glass: { ...g, blur: Number(e.currentTarget.value) } })} />
-            <span class="slider-value">{g.blur}px</span></label>
-          <label class="form-row"><span>Wallpaper dim</span>
-            <input type="range" min="0" max="0.9" step="0.01" value={g.dim} onchange={(e) => save({ glass: { ...g, dim: Number(e.currentTarget.value) } })} />
-            <span class="slider-value">{pct(g.dim)}</span></label>
-          <label class="form-row"><span>Reduce glass</span>
-            <input type="checkbox" checked={settings.data.reduce_glass} onchange={(e) => save({ reduce_glass: e.currentTarget.checked })} />
-            <span class="faint">solid cards, no blur (also follows the OS reduce-transparency setting)</span></label>
-        </div>
-      {:else if settings.isError}
-        <p class="err">Could not load settings.</p>
-      {:else}
-        <div class="spin"></div>
-      {/if}
+      <div class="chead"><h3>Standalone pages</h3><span class="meta">served by this dashboard, not part of it</span></div>
+      <p class="faint" style="margin: 0 0 var(--s2); font-size: 11.5px">These kept their own URLs through the v3 rewrite. They used to take a rail slot each; they live here now.</p>
+      <div class="w-actions">
+        {#each LEGACY_PAGES as p (p.path)}
+          <a class="tbtn" href={p.path}><ExternalLink /> {p.label}</a>
+        {/each}
+      </div>
     </section>
 
     <section class="card c6">
@@ -100,9 +79,8 @@
         <div class="kv-row"><span>Design</span><span>Fable synthesis · gruvbox</span></div>
       </div>
       <div class="w-actions">
-        <a class="tbtn" href="/legacy/"><ExternalLink /> Legacy UI (v1)</a>
-        <a class="tbtn" href="/agentic/"><ExternalLink /> Agentic workspace</a>
         <a class="tbtn" href="/api/events/status" target="_blank" rel="noreferrer"><ExternalLink /> Event stream status</a>
+        <a class="tbtn" href="/api/rules" target="_blank" rel="noreferrer"><ExternalLink /> Alert rules (JSON)</a>
       </div>
     </section>
   </div>

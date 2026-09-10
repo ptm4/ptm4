@@ -5,7 +5,9 @@
   // restart/update with the same blast-radius gates the Cockpit uses, a detail drawer
   // per container, and a fleet summary strip up top.
   //
-  // opti intentionally never appears here: it runs no docker (control plane only).
+  // Every host the report carries containers for appears here. Through 2026-09-09
+  // that excluded opti, which ran none; since the app-tier migration it runs 14 and
+  // shows up like any other host. Nothing in this file names a host.
   import { onMount } from 'svelte';
   import { useQueryClient } from '@tanstack/svelte-query';
   import { goto } from '$app/navigation';

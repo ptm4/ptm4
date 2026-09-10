@@ -1,12 +1,18 @@
 <script lang="ts">
   // Long-range trends — port of v2 LongTrendsWidget (widgets/hldb.tsx).
   //
-  // The board's host-vitals sparkline tops out at 48h (in-memory rings on rpi).
+  // The host-vitals sparkline tops out at 48h (in-memory rings in the backend).
   // This reads collector_metrics from homelab.db on opti, which goes back to
-  // June 2026 at 30-minute resolution. opti is a single point of failure and
-  // this dashboard runs on rpi, so the widget renders an honest "unavailable"
-  // state rather than an error boundary when the upstream is down — retry: 0
-  // for the same reason the bot proxies use it.
+  // June 2026 at 30-minute resolution.
+  //
+  // The graceful-degradation story changed on 2026-09-10 and is worth stating
+  // plainly: this used to be a cross-host dependency (dashboard on rpi, database
+  // on opti), so opti could vanish while the page stayed up. Both now live on
+  // opti, so a whole-host outage takes the page with it and this state never
+  // renders for that reason. It still earns its keep for the narrower failures
+  // that remain — homelab-db down or restarting while its host is fine, an
+  // expired token, a query that times out. retry: 0 for the same reason the bot
+  // proxies use it: a failing upstream should say so once, not hammer.
   import { createQuery } from '@tanstack/svelte-query';
   import { get } from '$lib/api/client';
   import { opt, type WidgetProps } from '$lib/widgets/sdk';

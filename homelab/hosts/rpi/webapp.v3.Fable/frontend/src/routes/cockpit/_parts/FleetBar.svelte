@@ -89,7 +89,7 @@
   <div class="w-head">
     <span class="w-title">Monitors</span>
     <span class="w-meta">
-      <a href="http://rpi.lan:3001/" target="_blank" rel="noreferrer">Uptime Kuma</a>
+      <a href="http://opti.lan:3001/" target="_blank" rel="noreferrer">Uptime Kuma</a>
     </span>
   </div>
   {#if uptime.data?.ok}

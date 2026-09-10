@@ -41,15 +41,15 @@
       <span class="pip" data-s={hosts.up === hosts.total ? 'ok' : hosts.up === 0 ? 'crit' : 'warn'}></span>
       <span class="num">{vitals.data ? `${hosts.up}/${hosts.total}` : '…'}</span> hosts
     </a>
-    <a class="fitem" href="/containers">
+    <a class="fitem" href="/cockpit?tab=containers">
       <span class="pip" data-s={cont.total === 0 ? 'unknown' : cont.up === cont.total ? 'ok' : 'warn'}></span>
       <span class="num">{containers.data ? `${cont.up}/${cont.total}` : '…'}</span> containers
     </a>
-    <a class="fitem" href="/updates">
+    <a class="fitem" href="/cockpit?tab=updates">
       <span class="pip" data-s={cont.updates > 0 ? 'warn' : 'ok'}></span>
       <span class="num">{containers.data ? cont.updates : '…'}</span> image updates
     </a>
-    <a class="fitem" href="/incidents">
+    <a class="fitem" href="/feed?view=incidents">
       <span class="pip" data-s={unacked > 0 ? (unacked > 5 ? 'crit' : 'warn') : 'ok'}></span>
       <span class="num">{notif.data ? unacked : '…'}</span> open findings
     </a>

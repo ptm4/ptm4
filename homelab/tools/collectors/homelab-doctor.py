@@ -39,11 +39,18 @@ REPORTS_DIR = os.environ.get(
 REPORT_BASE = "homelab-doctor-latest"
 
 # name -> (url, https-host:port for cert check or None)
+#
+# Hostnames here are deliberately mixed. The app tier moved from rpi to opti on
+# 2026-09-10; `webapp.rpi.lan` and `bitwarden.rpi.lan` were repointed in DNS rather
+# than renamed, because renaming a vault's URL breaks every saved client. So those
+# two keep their old names and still resolve to the right box. Notes had no such
+# alias and was being probed at rpi:3002, where nothing has listened since the
+# move — that is the "URLError" this list has been reporting.
 SERVICES = [
-    ("Homelab webapp", "https://webapp.rpi.lan:8443/api/health", ("webapp.rpi.lan", 8443)),
+    ("Homelab webapp", "https://webapp.lan:8443/api/health",     ("webapp.lan", 8443)),
     ("Vaultwarden",    "https://bitwarden.rpi.lan/",             ("bitwarden.rpi.lan", 443)),
     ("Pi-hole admin",  "http://rpi.lan/admin/",                  None),
-    ("Notes",          "http://rpi.lan:3002/notes",              None),
+    ("Notes",          "http://opti.lan:3002/notes",             None),
 ]
 
 DISK_WARN_PCT = 90

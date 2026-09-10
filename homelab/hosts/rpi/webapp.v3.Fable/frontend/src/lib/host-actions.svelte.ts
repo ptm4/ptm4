@@ -1,13 +1,13 @@
 // Host actions as a factory, so any surface (host-vitals widget, host page,
 // Cockpit) can offer Reboot / Apt / Terminal without owning Cockpit's card state.
 // Carries the same safety semantics as the Cockpit page: typed confirm with
-// blast-radius copy, the ZFS-guard 409, and "a dropped connection to rpi IS success".
+// blast-radius copy, the ZFS-guard 409, and "a dropped connection to the host serving this page IS success" (see SELF_HOST).
 // Call during component initialisation (it reads the query client from context).
 import { useQueryClient } from '@tanstack/svelte-query';
 import { get, post, ApiError } from './api/client';
 import { toast } from './stores/toast.svelte';
 import { confirm } from './stores/confirm.svelte';
-import { HOST_REBOOT_IMPACT, agentTooOld } from './impact';
+import { HOST_REBOOT_IMPACT, SELF_HOST, agentTooOld } from './impact';
 import type { AgentRow } from './api/types';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -30,7 +30,7 @@ export function createHostActions(host: () => string) {
       await sleep(5000);
       let back = false;
       try {
-        if (h === 'rpi') {
+        if (h === SELF_HOST) {
           // Parsed as JSON, not just res.ok — nginx serves a 200 holding page
           // during the boot window, which would read as a false recovery.
           const r = await get<{ status?: string }>('/api/health', 4000);
@@ -83,8 +83,8 @@ export function createHostActions(host: () => string) {
       } else if (err.status === 404) {
         busy = false;
         toast(agentTooOld(h, 'reboots'), 'crit', { sticky: true });
-      } else if (h === 'rpi') {
-        toast('Connection dropped — expected when rebooting rpi, it serves this page. Watching for it to return…', 'warn');
+      } else if (h === SELF_HOST) {
+        toast(`Connection dropped — expected when rebooting ${h}, it serves this page. Watching for it to return…`, 'warn');
         watchReturn();
       } else {
         busy = false;

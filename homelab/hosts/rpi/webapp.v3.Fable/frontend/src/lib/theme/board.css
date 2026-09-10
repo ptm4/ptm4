@@ -1,37 +1,10 @@
-/* Board engine: gridstack overrides, widget frames, edit chrome, catalog, appearance
-   panel, and the widget-kit vocabulary every widget component uses. gridstack's own
-   base CSS is imported from the package; only the look is overridden here. */
+/* The widget-kit vocabulary: the card frame, meters, sparklines, pills, vitals, kv
+   rows, feeds, app tiles and skeletons that the remaining widget components and the
+   pages that reuse them (host, cockpit, trends, launchpad, topology) are built from.
+   The board engine this file was originally written for was removed 2026-09-10; what
+   is left is the shared visual grammar, not a board. */
 
 /* ── gridstack look ─────────────────────────────────────────────────────── */
-.grid-stack { position: relative; }
-.grid-stack-item { transition: none; }
-.grid-stack-animate .grid-stack-item { transition: left .2s ease, top .2s ease, width .2s ease, height .2s ease; }
-.grid-stack-item-content { overflow: visible !important; }
-.grid-stack-placeholder > .placeholder-content {
-  background: var(--accent-dim) !important;
-  border: 1px dashed var(--accent-muted) !important;
-  border-radius: var(--glass-radius);
-}
-.grid-stack-item.ui-draggable-dragging { z-index: 3; opacity: .92; }
-.grid-stack-item.ui-draggable-dragging .w-card { box-shadow: var(--sh-2); }
-.grid-stack > .grid-stack-item > .ui-resizable-se {
-  background: none !important;
-  width: 18px; height: 18px;
-  right: 6px; bottom: 6px;
-  transform: none;
-  opacity: 0;
-  cursor: se-resize;
-}
-.grid-stack > .grid-stack-item > .ui-resizable-se::after {
-  content: "";
-  position: absolute;
-  right: 3px; bottom: 3px;
-  width: 7px; height: 7px;
-  border-right: 2px solid var(--ink-2);
-  border-bottom: 2px solid var(--ink-2);
-}
-.board.editing > .grid-stack-item > .ui-resizable-se { opacity: .6; }
-.board.editing > .grid-stack-item:hover > .ui-resizable-se { opacity: 1; }
 
 /* ── board page chrome ──────────────────────────────────────────────────── */
 .board-page { display: flex; flex-direction: column; gap: var(--s3); }
@@ -40,24 +13,6 @@
 .board-head { align-items: flex-end; }
 .board-title { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -.02em; line-height: 1.1; }
 .board-sub { font-size: var(--fs-sm); margin-top: 2px; color: var(--ink-3); }
-
-.board-item { position: relative; }
-.board.editing .board-item .grid-stack-item-content { cursor: grab; }
-.board.editing .board-item:active .grid-stack-item-content { cursor: grabbing; }
-
-.w-edit-bar { position: absolute; top: 6px; right: 6px; z-index: 5; display: flex; gap: 4px; }
-.w-edit-btn {
-  display: grid; place-items: center;
-  width: 24px; height: 24px;
-  border: 1px solid var(--border-2);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.w-edit-btn:hover { color: var(--ink); }
-.w-edit-btn.danger:hover { color: var(--crit); border-color: var(--crit-muted); }
-.w-edit-btn svg { width: 13px; height: 13px; }
 
 /* ── widget frame ───────────────────────────────────────────────────────── */
 .w-card {
@@ -248,22 +203,6 @@ a.w-link:hover { border-color: var(--accent-muted); text-decoration: none; }
 @keyframes sk { to { background-position: -200% 0; } }
 
 /* ── widget catalog + forms ─────────────────────────────────────────────── */
-.widget-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: var(--s2); }
-.catalog-item {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: var(--s3);
-  text-align: left;
-  cursor: pointer;
-  color: var(--ink-2);
-  font: inherit;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-}
-.catalog-item:hover { border-color: var(--accent-muted); color: var(--ink); }
-.catalog-title { font-weight: 600; color: var(--ink); }
-.catalog-desc { font-size: var(--fs-sm); }
-.catalog-size { font-size: var(--fs-xs); color: var(--ink-3); font-family: var(--mono); }
 
 .form-rows { display: flex; flex-direction: column; gap: var(--s3); }
 .form-row { display: flex; align-items: center; gap: var(--s3); font-size: 13px; }
@@ -275,24 +214,8 @@ a.w-link:hover { border-color: var(--accent-muted); text-decoration: none; }
   font: inherit;
 }
 .form-row input[type="range"] { flex: 1; accent-color: var(--accent); }
-.slider-value { min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-3); font-size: var(--fs-sm); }
 
 /* ── wallpaper picker ───────────────────────────────────────────────────── */
-.wp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: var(--s2); margin-bottom: var(--s3); }
-.wp-swatch {
-  width: 100%; aspect-ratio: 16 / 10;
-  border-radius: var(--r-sm);
-  border: 2px solid var(--border-2);
-  background: var(--surface-2) center/cover no-repeat;
-  cursor: pointer;
-  display: grid; place-items: center;
-  color: var(--ink-3); font-size: var(--fs-xs);
-}
-.wp-swatch.active { border-color: var(--accent); }
-.wp-user { position: relative; display: block; }
-.wp-del { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: var(--r-sm); border: 1px solid var(--border-2); background: var(--surface); color: var(--ink-2); cursor: pointer; }
-.wp-del:hover { color: var(--crit); }
-.wp-del svg { width: 12px; height: 12px; }
 
 .detail-section-title { margin: var(--s4) 0 var(--s2); font-size: var(--fs-sm); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
 .detail-section-title:first-child { margin-top: 0; }

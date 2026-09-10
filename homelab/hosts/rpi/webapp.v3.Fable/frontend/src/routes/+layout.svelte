@@ -44,7 +44,6 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-  <div class="wallpaper" aria-hidden="true"></div>
   <div class="shell">
     <Rail />
     <div class="main">

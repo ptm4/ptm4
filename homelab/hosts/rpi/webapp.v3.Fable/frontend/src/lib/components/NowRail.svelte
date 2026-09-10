@@ -39,7 +39,7 @@
   <div class="ncard">
     <h3>Incidents <span class="meta" class:t-warn={(incidents.data?.open ?? 0) > 0}>{incidents.data ? `${incidents.data.open} open · ${incidents.data.muted} muted` : incidents.isError ? 'unavailable' : '…'}</span></h3>
     {#each open as i (i.id)}
-      <a class="inc" href="/incidents#{i.id}"><span class="sev" data-s={i.severity}></span><span class="grow">{i.title}</span><span class="num faint">{i.host ?? 'fleet'}</span></a>
+      <a class="inc" href="/feed?view=incidents#{i.id}"><span class="sev" data-s={i.severity}></span><span class="grow">{i.title}</span><span class="num faint">{i.host ?? 'fleet'}</span></a>
     {/each}
     {#if incidents.data && open.length === 0}<div class="nrow"><span class="grow faint">Nothing open.</span></div>{/if}
     {#if incidents.isError}<div class="nrow"><span class="grow faint">This backend has no /api/incidents yet.</span></div>{/if}

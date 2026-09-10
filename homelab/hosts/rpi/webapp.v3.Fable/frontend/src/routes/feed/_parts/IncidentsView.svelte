@@ -1,7 +1,10 @@
 <script lang="ts">
-  // Incidents — the bell, grown up. Findings correlated by host and time, each
-  // group acknowledgeable or mutable as one thing, with the member findings and
-  // any homelab.db changes that happened around the same time.
+  // Incidents view — the bell, grown up. Findings correlated by host and time, each
+  // group acknowledgeable or mutable as one thing, with the member findings and any
+  // homelab.db changes that happened around the same time. Moved verbatim from the
+  // old routes/incidents/+page.svelte body when Activity gained the Stream/Incidents
+  // toggle (2026-09-10) — the #<id> hash deep link still works because it only
+  // depends on page.url.hash, not the route.
   import { page } from '$app/state';
   import { Check, BellOff, Undo2 } from '@lucide/svelte';
   import { useIncidents, useIncidentActions, type Incident } from '$lib/api/incidents';
@@ -31,7 +34,6 @@
 
 <div class="inc-page">
   <div class="shead">
-    <h2>Incidents</h2>
     <span class="meta">{q.data ? `${q.data.open} open · ${q.data.muted} muted · ${q.data.acked} acknowledged` : ''}</span>
     <label class="right faint" style="font-size: 12px"><input type="checkbox" bind:checked={showAll} /> show acknowledged</label>
   </div>

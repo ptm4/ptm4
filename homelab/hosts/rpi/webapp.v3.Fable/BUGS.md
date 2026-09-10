@@ -25,7 +25,7 @@ Three more surfaced (and were fixed) while verifying the above:
 
 | # | Resolution |
 |---|---|
-| B15 | **Fixed** — inside the webapp container `rpi.lan` resolves to `::1`, so the B1 probes for Pi-hole/Cockpit dialed the container's own loopback and reported them down. Probe entries now carry a `target` (LAN IP) separate from the origin `key` the frontend matches on |
+| B15 | **Fixed** — inside the webapp container `rpi.lan` resolved to `::1`, so the B1 probes for Pi-hole/Cockpit dialed the container's own loopback and reported them down. Probe entries now carry a `target` (LAN IP) separate from the origin `key` the frontend matches on. **2026-09-10 addendum:** the app tier moved to opti, and re-probing from inside the container shows this did *not* follow the move — `rpi.lan` and `opti.lan` both resolve and connect correctly now. What bites on opti instead is its ufw `drop` input policy, which blocks the docker bridge from reaching opti's own published ports; the fix for a co-resident container is the shared `compose_internal` network (Uptime Kuma), and for a host service there is none, so those origins now report `up: null` rather than a false "down" |
 | B16 | **Fixed** — `/api/timers` "passed" parser swallowed the tail of the preceding timestamp (`:05 EDT 20h ago`); now walks duration tokens back from `ago` |
 | B17 | **Fixed** — android (a phone, documented intermittent) going to sleep marked the whole network report **critical**, turning the fleet pill red. Its reachability findings are now `warn`; real hosts stay `critical` |
 
@@ -253,5 +253,9 @@ white text passes on both. One-line change per page.
 - **`GET /vitals` on the agents is unauthenticated** — read-only counters on a
   LAN-only listener; `POST /restart` on the same port requires the bearer token and
   refuses to exist without one configured.
-- **opti shows 0 containers in the fleet table** — opti genuinely runs no docker;
-  its workloads are systemd units.
+- ~~**opti shows 0 containers in the fleet table** — opti genuinely runs no docker;
+  its workloads are systemd units.~~ **No longer true as of 2026-09-10.** The app
+  tier moved from rpi to opti; opti now runs 14 containers and rpi runs two. If the
+  fleet table still shows 0 for opti, that is a stale `homelab-doctor` report, not
+  a deliberate omission — the collector path is host-agnostic, so re-run the doctor
+  and re-ingest rather than looking for a skip-list.

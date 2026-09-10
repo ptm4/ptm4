@@ -108,7 +108,9 @@ export interface RunnerRow {
 export interface RunnersResp { runners: RunnerRow[] }
 
 export interface LinkcheckResp {
-  origins: Record<string, { up: boolean; status?: number; error?: string }>;
+  /** `up: null` means this tier cannot reach the origin at all (firewall, network
+   *  segment) — explicitly NOT the same as down. `note` says why. */
+  origins: Record<string, { up: boolean | null; status?: number; error?: string; note?: string }>;
 }
 
 export interface HostReport {

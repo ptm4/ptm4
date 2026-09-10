@@ -39,7 +39,7 @@
     // pending updates
     pkgUpdates?: UpdatePackages;
     imageUpdates: UpdateImage[];
-    // containers (empty on opti — a systemd host)
+    // containers — whatever the report lists for this host, no assumptions
     containers: ContainerRow[];
     containerBusy: Record<string, boolean>;
     // systemd timers
@@ -57,7 +57,7 @@
 
 <script lang="ts">
   // One fleet host, control-center density: live vitals sparklines, disk/pool
-  // meters, containers (or systemd units on opti), allowlisted services, timers,
+  // meters, containers, allowlisted services, timers,
   // the apt log tail, and the full action row. Clicking the header toggles this
   // host's "focus" — the parent decides what that means (full width vs. a
   // one-line summary) and passes `focused`/`collapsed` down.
@@ -219,9 +219,12 @@
               </div>
             {/each}
           </div>
-        {:else if vm.host === 'opti'}
-          <p class="empty">opti runs no Docker — control plane only. See services below.</p>
         {:else}
+          <!-- Deliberately no per-host special case. This branch used to say "opti
+               runs no Docker — control plane only", which was true until the app
+               tier moved there on 2026-09-10 and false the moment it did. An empty
+               list is a fact about the report; why it is empty is not ours to
+               assert. -->
           <p class="empty">No containers reported.</p>
         {/if}
       </div>

@@ -2,16 +2,29 @@
 // the typed-confirmation gates: they say what actually breaks while the thing is
 // down, in this specific homelab.
 
+/** The host that serves this very page.
+ *
+ * Rebooting it is the one case where losing the connection means the command
+ * WORKED — so the UI has to stop treating a dropped request as a failure, and
+ * has to poll /api/health (parsed as JSON, since nginx serves a 200 holding page
+ * mid-boot) rather than the agent API it can no longer reach.
+ *
+ * This was 'rpi' until the app tier moved to opti on 2026-09-10. It lived
+ * hardcoded in three separate files, all of which then lied at once. One
+ * constant now; point it at whichever box answers :8443.
+ */
+export const SELF_HOST = 'opti';
+
 export const HOST_ROLES: Record<string, string> = {
-  rpi: 'DNS · DHCP · web',
-  opti: 'storage · control plane',
+  rpi: 'DNS appliance',
+  opti: 'storage · control plane · apps',
   noblenumbat: 'media stack',
   android: 'local LLM',
 };
 
 export const HOST_REBOOT_IMPACT: Record<string, string> = {
-  opti: 'ZFS pool and \\\\opti\\red drop for every host — reports, container data, Samba and the dispatcher all stall until it returns (~2–3 min). The agent runs a ZFS-DKMS guard first and refuses if the next kernel has no zfs module.',
-  rpi: 'LAN DNS + DHCP (Pi-hole) AND this dashboard go down (~2 min). rpi boots from an SD card: small chance it does not come back, so reboot it remotely only if you must.',
+  opti: 'You are rebooting the box that serves this page. This dashboard, Vaultwarden and all five Discord bots go down with it. Expect the connection to drop — that is success, not failure. The ZFS pool and \\\\opti\\red drop for every host — reports, container data, Samba and the dispatcher all stall until it returns (~2–3 min). The agent runs a ZFS-DKMS guard first and refuses if the next kernel has no zfs module.',
+  rpi: 'LAN DNS (Pi-hole) goes down for every host — names stop resolving until it returns (~2 min). DHCP now comes from the router, so leases survive. This dashboard runs on opti and stays up. rpi boots from a USB SSD since the microSD died on 2026-09-08.',
   noblenumbat: 'Jellyfin, the *arr stack and the VPN go down (~2 min). vpn-stack-heal re-establishes the tunnel within 2 minutes of boot.',
 };
 
@@ -32,7 +45,7 @@ export const UNIT_LABELS: Record<string, string> = {
 };
 
 export const CRITICAL_CONTAINERS: Record<string, string> = {
-  pihole: "Brief LAN-wide DNS blips — Pi-hole is this network's only DNS *and* DHCP server.",
+  pihole: "Brief LAN-wide DNS blips — Pi-hole is this network's only DNS server. (DHCP is the router's since Sept 2026, so leases are unaffected.)",
   webapp: 'This dashboard stops responding while its container comes back. The operation still completes on the host.',
   'nginx-webapp': 'This dashboard goes offline while TLS comes back.',
   bitwarden: 'Vaultwarden is unavailable while it comes back — password access included.',

@@ -6,8 +6,14 @@
 const BLOCKS = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
 /** Braille dot patterns for a denser two-row-per-cell graph (btop's default). */
+// Unicode braille dot bits:  1:0x01 4:0x08
+//                             2:0x02 5:0x10
+//                             3:0x04 6:0x20
+//                             7:0x40 8:0x80
+// Each character cell is two sample columns of four levels, bottom → top.
 const BRAILLE_BASE = 0x2800;
-const BRAILLE_COL = [0x40, 0x04, 0x02, 0x01];   // bottom → top, left dot column
+const BRAILLE_L = [0x40, 0x04, 0x02, 0x01];   // dots 7,3,2,1
+const BRAILLE_R = [0x80, 0x20, 0x10, 0x08];   // dots 8,6,5,4
 
 /**
  * A block-glyph sparkline. `values` may contain nulls (a gap in the ring buffer);
@@ -60,8 +66,8 @@ export function brailleSpark(values: (number | null | undefined)[], width = 24, 
     const b = level(cells[i + 1]);
     if (a < 0 && b < 0) { out += ' '; continue; }
     let code = BRAILLE_BASE;
-    if (a >= 0) for (let d = 0; d <= a; d++) code |= BRAILLE_COL[d];
-    if (b >= 0) for (let d = 0; d <= b; d++) code |= BRAILLE_COL[d] << 3;
+    if (a >= 0) for (let d = 0; d <= a; d++) code |= BRAILLE_L[d];
+    if (b >= 0) for (let d = 0; d <= b; d++) code |= BRAILLE_R[d];
     out += String.fromCharCode(code);
   }
   return out;
@@ -79,6 +85,29 @@ export const pad = (s: string | number, n: number) => String(s).padStart(n, ' ')
 export const padEnd = (s: string | number, n: number) => String(s).padEnd(n, ' ');
 
 /** The tone a percentage earns. Shared with the rest of the app's thresholds. */
+/** btop's load ramp, by thirds (Peter's call 2026-09-10).
+ *
+ * Deliberately NOT the ok/warn/crit ramp above. That one answers "is something
+ * wrong?" and stays grey until it is. This one answers "how hard is this box
+ * working?", which is a magnitude, not a verdict — a CPU at 50% is not a problem,
+ * it is just busier than one at 5%, and the colour should say so without crying
+ * wolf. So it walks cool → warm: blue (low) → purple (moderate) → red (>2/3),
+ * mapped onto --accent / --brand / --crit in the Monitor's stylesheet.
+ *
+ * The split is exact thirds of the scale. `mod` and `high` are overridable for
+ * gauges that are not percentages: temperature passes (60, 72) because thirds of
+ * a degree axis would paint an idle Pi purple, which tells you nothing.
+ */
+export type Load = 'low' | 'mod' | 'high' | 'dim';
+export function loadTone(
+  value: number | null | undefined,
+  mod = 100 / 3,
+  high = 200 / 3,
+): Load {
+  if (value == null || !Number.isFinite(value)) return 'dim';
+  return value >= high ? 'high' : value >= mod ? 'mod' : 'low';
+}
+
 export function toneFor(pct: number | null | undefined): 'ok' | 'warn' | 'crit' | 'dim' {
   if (pct == null || !Number.isFinite(pct)) return 'dim';
   return pct >= 90 ? 'crit' : pct >= 75 ? 'warn' : 'ok';
@@ -100,4 +129,24 @@ export function uptime(s: number | null | undefined): string {
   if (d > 0) return `${d}d ${h}h`;
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+/**
+ * A domain that keeps an idle series readable without misrepresenting it.
+ * btop pins CPU to 0-100 and an idle box draws a flat line at the floor; here the
+ * scale follows the data instead, and the caller prints the peak next to the graph
+ * so the axis is always stated rather than implied.
+ */
+export function autoDomain(values: (number | null | undefined)[], floor = 0, minSpan = 5): [number, number] {
+  const present = values.filter((v): v is number => v != null && Number.isFinite(v));
+  if (!present.length) return [floor, floor + minSpan];
+  const hi = Math.max(...present);
+  const lo = Math.min(floor, Math.min(...present));
+  return [lo, Math.max(hi, lo + minSpan)];
+}
+
+/** The peak of a series, for the "pk NN" label beside an auto-scaled graph. */
+export function peak(values: (number | null | undefined)[]): number | null {
+  const present = values.filter((v): v is number => v != null && Number.isFinite(v));
+  return present.length ? Math.max(...present) : null;
 }

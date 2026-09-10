@@ -52,7 +52,10 @@ async function buildApp(opts = {}) {
   // Health check — useful for NGINX upstream checks. Registered before the bare-/api
   // dashboard routes so nothing can shadow it.
   app.get('/api/health', async () => ({
-    status: 'ok', host: 'webapp.rpi.lan', uptime: process.uptime(),
+    // webapp.lan is the canonical name as of 2026-09-10. webapp.rpi.lan still
+    // resolves (kept as a SAN so saved bookmarks and Kuma monitors survive) but
+    // names the wrong host: this now runs on opti.
+    status: 'ok', host: 'webapp.lan', uptime: process.uptime(),
   }));
 
   await app.register(require('./routes/reports'),      { prefix: '/api/reports' });

@@ -16,7 +16,7 @@
     <div class="board-head-text">
       <h2 class="board-title">Pi-hole</h2>
       <div class="board-sub t-dim">
-        the LAN's only DNS + DHCP — pausing only lifts blocklist filtering, resolution never stops
+        the LAN's only DNS (DHCP is the router's) — pausing only lifts blocklist filtering, resolution never stops
       </div>
     </div>
     <span class="spacer"></span>

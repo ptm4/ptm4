@@ -91,7 +91,7 @@
           </div>
           <a class="faint" style="font-size: 11.5px" href="/cockpit?tab=containers">Manage on the Containers page →</a>
         {:else if !containers.isLoading}
-          <p class="empty">{host.name === 'opti' ? 'opti runs no Docker — services are systemd units.' : 'No containers reported.'}</p>
+          <p class="empty">No containers reported for {host.name}.</p>
         {/if}
       </section>
 
@@ -142,7 +142,7 @@
 
     <p class="faint" style="font-size: 11.5px; margin: 0">
       <ExternalLink size={11} aria-hidden="true" style="vertical-align: -1px" />
-      More on this host: <a href="/architecture/">architecture map</a> · <a href="/query">query homelab.db</a> · <a href="/cockpit">cockpit</a>
+      More on this host: <a href="/architecture/">architecture map</a> · <a href="/data?tab=query">query homelab.db</a> · <a href="/cockpit">cockpit</a>
     </p>
   </div>
 {/if}

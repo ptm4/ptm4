@@ -1,78 +1,39 @@
 <script lang="ts">
-  // Runners page — the scheduled collectors (doctor, hardware, software, network,
-  // coldcopy) with enable/run controls, latest-report viewer and per-run history.
-  import { createQuery } from '@tanstack/svelte-query';
-  import { get } from '$lib/api/client';
-  import type { ReportMeta } from '$lib/reports';
-  import ReportCard from '$lib/components/reports/ReportCard.svelte';
-  import ReportModal from '$lib/components/reports/ReportModal.svelte';
-  import HistoryModal from '$lib/components/reports/HistoryModal.svelte';
-  import LogTail from '$lib/components/LogTail.svelte';
+  // Reports — collector runs (/api/runners) and security-agent reports (/api/reports)
+  // in one page, switchable with a filter. Both sides render the identical
+  // ReportCard/ReportModal grammar from $lib/components/reports/; only apiBase
+  // differs. Absorbed routes/security/ 2026-09-10 — see _parts/CollectorsGrid.svelte
+  // and _parts/SecurityGrid.svelte for the (otherwise unchanged) page bodies.
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
+  import CollectorsGrid from './_parts/CollectorsGrid.svelte';
+  import SecurityGrid from './_parts/SecurityGrid.svelte';
 
-  interface RunnersResp { runners: ReportMeta[] }
-  interface AgentsResp { hosts: { reachable: boolean; drift_count?: number }[] }
+  type Filter = 'all' | 'collectors' | 'security';
+  const FILTERS: { id: Filter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'collectors', label: 'Collectors' },
+    { id: 'security', label: 'Security' },
+  ];
 
-  type ModalState =
-    | { kind: 'none' }
-    | { kind: 'report'; name: string; label: string; date?: string }
-    | { kind: 'history'; name: string; label: string };
+  let raw = $derived(page.url.searchParams.get('filter'));
+  let filter: Filter = $derived(raw === 'collectors' || raw === 'security' ? raw : 'all');
 
-  let modal = $state<ModalState>({ kind: 'none' });
-  let tail = $state<{ name: string; label: string } | null>(null);
-
-  const runners = createQuery(() => ({
-    queryKey: ['runners'],
-    queryFn: () => get<RunnersResp>('/api/runners'),
-    refetchInterval: 5 * 60_000,
-  }));
-  const agents = createQuery(() => ({
-    queryKey: ['agents-strip'],
-    queryFn: () => get<AgentsResp>('/api/agents', 15_000),
-    refetchInterval: 5 * 60_000,
-  }));
-
-  let unreachable = $derived(agents.data?.hosts.filter((h) => !h.reachable).length ?? 0);
-  let drift = $derived(agents.data?.hosts.reduce((n, h) => n + (h.drift_count || 0), 0) ?? 0);
+  function selectFilter(id: Filter) {
+    const url = new URL(page.url);
+    if (id === 'all') url.searchParams.delete('filter'); else url.searchParams.set('filter', id);
+    goto(`${url.pathname}${url.search}`, { replaceState: true, noScroll: true, keepFocus: true });
+  }
 </script>
 
 <div class="reports-page">
-  <div class="agents-strip card">
-    🛰️ Architecture agents
-    {#if agents.data}
-      — {agents.data.hosts.length} host(s)
-      {#if unreachable > 0} · <span class="t-crit">{unreachable} unreachable</span>{/if}
-      {#if drift > 0} · <span class="t-warn">{drift} drift</span>{/if}
-    {/if}
-    — <a href="/agents/">view status →</a>
-  </div>
-
-  {#if runners.isError}
-    <div class="card t-crit">Cannot reach /api/runners — is the backend running?</div>
-  {/if}
-  {#if runners.isLoading}<div class="spin"></div>{/if}
-  {#if runners.data?.runners.length === 0}
-    <div class="card">No runner reports yet. Run them from opti (GitHub Actions or the dispatcher).</div>
-  {/if}
-
-  <div class="report-grid">
-    {#each runners.data?.runners ?? [] as r (r.name)}
-      <ReportCard report={r} apiBase="runners" onTail={(name, label) => (tail = { name, label })}>
-        {#snippet actions()}
-          <button class="tbtn" onclick={() => (modal = { kind: 'report', name: r.name, label: r.label })}>View latest</button>
-          <button class="tbtn" onclick={() => (modal = { kind: 'history', name: r.name, label: r.label })}>History</button>
-          <button class="tbtn" onclick={() => (tail = { name: r.name, label: r.label })}>Log</button>
-        {/snippet}
-      </ReportCard>
+  <div class="bot-tabs">
+    {#each FILTERS as f (f.id)}
+      <button type="button" class="bot-tab" class:active={filter === f.id} onclick={() => selectFilter(f.id)}>{f.label}</button>
     {/each}
   </div>
 
-  {#if tail}<LogTail name={tail.name} label={tail.label} onclose={() => (tail = null)} />{/if}
-  {#if modal.kind === 'report'}
-    <ReportModal name={modal.name} label={modal.label} date={modal.date} onclose={() => (modal = { kind: 'none' })} />
-  {:else if modal.kind === 'history'}
-    {@const m = modal}
-    <HistoryModal name={m.name} label={m.label}
-      onOpenDate={(date) => (modal = { kind: 'report', name: m.name, label: m.label, date })}
-      onclose={() => (modal = { kind: 'none' })} />
-  {/if}
+  <!-- Only the active filter's components mount, so a filtered-out source's query never runs. -->
+  {#if filter !== 'security'}<CollectorsGrid />{/if}
+  {#if filter !== 'collectors'}<SecurityGrid />{/if}
 </div>

@@ -37,13 +37,13 @@
           <button class="chip act" disabled={mute.isPending} onclick={() => doMute(7)}>Mute 7d</button>
         {/if}
         {#if item.host}<a class="chip act" href="/host/{item.host}">Open {item.host}</a>{/if}
-        <a class="chip act" href="/incidents#{item.incident.id}">Details</a>
+        <a class="chip act" href="/feed?view=incidents#{item.incident.id}">Details</a>
       {:else}
         <span class="chip" data-s={item.tone === 'info' ? 'info' : item.tone}>{item.tone === 'info' ? item.category : item.tone}</span>
         {#if item.host}<a class="chip act" href="/host/{item.host}">{item.host}</a>{/if}
         {#if item.category === 'health'}<a class="chip act" href="/reports">Full report</a>{/if}
-        {#if item.category === 'security'}<a class="chip act" href="/security">Security</a>{/if}
-        {#if item.category === 'changes'}<a class="chip act" href="/query">hl_changes</a>{/if}
+        {#if item.category === 'security'}<a class="chip act" href="/reports?filter=security">Security</a>{/if}
+        {#if item.category === 'changes'}<a class="chip act" href="/data?tab=query">hl_changes</a>{/if}
         {#if item.category === 'updates'}<a class="chip act" href="/cockpit?tab=updates">Updates</a>{/if}
         {#if item.category === 'bots'}<a class="chip act" href="/bots">Bots</a>{/if}
       {/if}

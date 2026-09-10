@@ -392,7 +392,7 @@ NODES = [
       image="amir20/dozzle:latest", ports=["192.168.1.10:9999"],
       url="http://rpi.lan:9999/", kind="container",
       notes="Streams local containers directly and noblenumbat's via the dozzle-agent "
-            "on :7007. opti has no docker, so nothing to stream there."),
+            "on :7007. as of 2026-09-10 opti runs the app tier and has a Dozzle hub of its own."),
 
     # ── opti · storage plane (ZFS since 2026-07-25; replaced the mergerfs pool) ──
     N("opti-sdc", "sdc · 4 TB WD Red Plus", "opti", "storage", "disks",

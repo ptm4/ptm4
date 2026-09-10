@@ -5,27 +5,34 @@
 const { AGENT_HOSTS } = require('../lib/hosts');
 const { readFragments } = require('../lib/arch-data');
 
-// Matches rules/01-homelab-context.md's host table.
+// Matches rules/01-homelab-context.md's host table, re-verified against the live
+// fleet on 2026-09-10: opti answers :8443 and runs 14 containers, rpi answers
+// nothing on :8443 and runs two (pihole, dozzle-agent). The app tier moved.
+// Roles below describe what each box CONTAINS, which is what the topology map and
+// every blast-radius string read — so they are the one place to correct.
 const HOSTS = [
-  { name: 'opti',        label: 'opti',        ip: '192.168.1.11', role: 'storage · control plane', os: 'Debian 12',   kind: 'server', intermittent: false },
-  { name: 'rpi',         label: 'rpi',         ip: '192.168.1.10', role: 'DNS · DHCP · web',        os: 'Ubuntu 22.04', kind: 'server', intermittent: false },
+  { name: 'opti',        label: 'opti',        ip: '192.168.1.11', role: 'storage · control plane · apps', os: 'Debian 12',   kind: 'server', intermittent: false },
+  { name: 'rpi',         label: 'rpi',         ip: '192.168.1.10', role: 'DNS appliance',           os: 'Ubuntu 24.04', kind: 'server', intermittent: false },
   { name: 'noblenumbat', label: 'noblenumbat', ip: '192.168.1.6',  role: 'media',                   os: 'Ubuntu 24.04', kind: 'server', intermittent: false },
   { name: 'android',     label: 'android',     ip: '192.168.1.54', role: 'local LLM',               os: 'Termux',       kind: 'phone',  intermittent: true },
   { name: 'tux',         label: 'tux',         ip: '192.168.1.3',  role: 'workstation',             os: 'CachyOS',      kind: 'workstation', intermittent: true },
 ];
 
 // The two documented single points of failure — surfaced on the topology map.
-const SPOF = { opti: 'storage', rpi: 'dns' };
+// opti's is no longer just the pool: since the app-tier move an opti outage costs
+// the dashboard, the vault and the bots at the same time. rpi's stayed narrow on
+// purpose — DNS lives on the cheap always-on box precisely so rebooting opti is
+// routine, and the LAN keeps resolving names while it is down.
+const SPOF = { opti: 'storage+apps', rpi: 'dns' };
 
 // Who depends on whom (edge list), for the topology map's dependency arcs.
 const DEPENDS = [
   { from: 'noblenumbat', to: 'opti', why: 'mounts the pool over CIFS' },
   { from: 'rpi',         to: 'opti', why: 'reads reports and agent logs over CIFS' },
-  { from: 'tux',         to: 'opti', why: 'working copy of the repo lives on the pool' },
-  { from: 'opti',        to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'noblenumbat', to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'android',     to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'tux',         to: 'rpi', why: 'DNS + DHCP' },
+  { from: 'opti',        to: 'rpi', why: 'DNS' },
+  { from: 'noblenumbat', to: 'rpi', why: 'DNS' },
+  { from: 'android',     to: 'rpi', why: 'DNS' },
+  { from: 'tux',         to: 'rpi', why: 'DNS' },
 ];
 
 module.exports = async function hostRoutes(app) {

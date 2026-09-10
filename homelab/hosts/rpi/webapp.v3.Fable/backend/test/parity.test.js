@@ -71,7 +71,7 @@ test('GET /api/health', async () => {
   assert.equal(r.statusCode, 200);
   const b = r.json();
   assert.equal(b.status, 'ok');
-  assert.equal(b.host, 'webapp.rpi.lan');
+  assert.equal(b.host, 'webapp.lan');
   assert.equal(typeof b.uptime, 'number');
 });
 

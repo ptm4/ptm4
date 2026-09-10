@@ -1,0 +1,126 @@
+===== opti =====
+--HOST--
+opti
+Debian GNU/Linux 12 (bookworm)
+up 8 hours, 32 minutes
+--CPU--
+4
+Intel(R) Core(TM) i5-3570 CPU @ 3.40GHz
+--MEM--
+32020 MB total, 3366 used, 28654 avail
+--DISK--
+--DOCKER--
+bitwarden-db	running	mariadb:11
+bitwarden	running	vaultwarden/server:latest
+discord-healthdigest	running	compose-discord-healthdigest
+discord-hltv	running	compose-discord-hltv
+discord-jellyfin	running	compose-discord-jellyfin
+discord-sports	running	compose-discord-sports
+discord-weather	running	compose-discord-weather
+dozzle	running	amir20/dozzle:latest
+hltv-api	running	compose-hltv-api
+nginx-bitwarden	running	nginx:stable-alpine
+nginx-webapp	running	nginx:stable-alpine
+notes-api	running	compose-notes-api
+uptime-kuma	running	louislam/uptime-kuma:1
+webapp	running	node:lts-alpine
+--LISTEN--
+22 53 80 139 443 445 3001 3002 3350 3389 5355 5357 8443 8787 9090 9099 9100 9999 
+--SVC--
+actions.runner.ptm4-ptm4.opti.service
+atd.service
+avahi-daemon.service
+chrony.service
+collectd.service
+containerd.service
+docker.service
+hl-agent-dispatcher.service
+hl-arch-agent.service
+homelab-db-vitals.service
+homelab-db.service
+ModemManager.service
+monit.service
+NetworkManager.service
+nginx.service
+openmediavault-engined.service
+php8.2-fpm.service
+rrdcached.service
+rtkit-daemon.service
+smartmontools.service
+===== rpi =====
+--HOST--
+rpi
+Ubuntu 24.04.5 LTS
+up 28 minutes
+--CPU--
+4
+--MEM--
+3783 MB total, 523 used, 3259 avail
+--DISK--
+--DOCKER--
+dozzle-agent	running	amir20/dozzle:latest
+pihole	running	pihole/pihole:latest
+--LISTEN--
+22 53 80 7007 8787 9090 
+--SVC--
+actions.runner.ptm4-ptm4.rpi-runner.service
+cockpit-wsinstance-https@e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.service
+cockpit.service
+containerd.service
+docker-stack-logs.service
+docker.service
+hl-arch-agent.service
+ModemManager.service
+NetworkManager.service
+unattended-upgrades.service
+wpa_supplicant.service
+===== nn =====
+--HOST--
+noblenumbat
+Ubuntu 24.04.5 LTS
+up 52 minutes
+--CPU--
+8
+Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz
+--MEM--
+15798 MB total, 2715 used, 13083 avail
+--DISK--
+--DOCKER--
+bazarr	running	lscr.io/linuxserver/bazarr
+dozzle-agent	running	amir20/dozzle:latest
+flaresolverr	running	ghcr.io/flaresolverr/flaresolverr:latest
+gluetun	running	qmcgaw/gluetun:v3.41.0
+jellyfin	running	lscr.io/linuxserver/jellyfin
+kavita	running	lscr.io/linuxserver/kavita
+lidarr	running	lscr.io/linuxserver/lidarr
+mylar3	running	lscr.io/linuxserver/mylar3
+portainer	running	portainer/portainer-ce
+prowlarr	running	lscr.io/linuxserver/prowlarr
+qbittorrent	running	lscr.io/linuxserver/qbittorrent:4.6.3
+radarr	running	lscr.io/linuxserver/radarr
+sabnzbd	running	lscr.io/linuxserver/sabnzbd:latest
+sonarr	running	lscr.io/linuxserver/sonarr
+stream-station	running	8108b190c08e
+--LISTEN--
+22 53 111 631 3389 5000 6767 7007 7878 8003 8081 8090 8096 8098 8191 8388 8686 8787 8888 8989 9000 9090 9696 
+--SVC--
+accounts-daemon.service
+actions.runner.ptm4-ptm4.noblenumbat.service
+avahi-daemon.service
+bluetooth.service
+bolt.service
+cockpit-wsinstance-https@e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.service
+cockpit.service
+colord.service
+containerd.service
+cups-browsed.service
+cups.service
+docker.service
+fwupd.service
+gdm.service
+gnome-remote-desktop.service
+hl-arch-agent.service
+iio-sensor-proxy.service
+kerneloops.service
+ModemManager.service
+NetworkManager.service

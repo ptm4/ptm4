@@ -1,11 +1,20 @@
 // The navigation model — one source for the rail, the command palette, the topbar
-// title and the mobile menu. Ordered by how often each thing is reached for.
+// title and the mobile menu.
+//
+// Consolidated 2026-09-10, from 26 entries to 12. What went and where:
+//   Home board, Dashboard (widget boards)  → deleted; Dashboard is now the monitor
+//   Containers, Updates, Pi-hole, Logs     → tabs on /cockpit
+//   Security                               → /reports?filter=security
+//   Incidents                              → /feed?view=incidents
+//   Query                                  → /data?tab=query
+//   Streams (v1), Agents, Architecture     → moved off the rail into Settings
+// The rule for earning a rail entry: it is a place you go, not a view of somewhere
+// you already are.
 import type { Component } from 'svelte';
 import {
-  LayoutDashboard, Grid2x2, Waypoints, ListOrdered, TriangleAlert, SlidersHorizontal,
-  Boxes, ShieldCheck, TrendingUp, FileText, Shield, ScrollText, Database, Terminal,
-  Bot, Crosshair, BrainCircuit, Rocket, Network, Tv, ServerCog, Workflow, Settings,
-  Server, Smartphone, Radio,
+  LayoutDashboard, Activity, Waypoints, SlidersHorizontal, Radio, Rocket,
+  FileText, TrendingUp, Database, Bot, Crosshair, BrainCircuit, Settings,
+  Server, Smartphone, Gauge,
 } from '@lucide/svelte';
 
 export interface NavItem {
@@ -23,51 +32,47 @@ export interface NavGroup { title: string; items: NavItem[] }
 export const NAV: NavGroup[] = [
   { title: 'Now', items: [
     { path: '/', label: 'Home', icon: LayoutDashboard, key: '1' },
-    { path: '/streams', label: 'Streams', icon: Radio, key: '2' },
-    { path: '/launchpad', label: 'Launchpad', icon: Rocket, key: '3' },
-    { path: '/feed', label: 'Feed', icon: ListOrdered },
-    { path: '/incidents', label: 'Incidents', icon: TriangleAlert },
-    { path: '/topology', label: 'Topology', icon: Waypoints },
+    { path: '/dashboard', label: 'Monitor', icon: Gauge, key: '2' },
+    { path: '/streams', label: 'Streams', icon: Radio, key: '3' },
+    { path: '/launchpad', label: 'Launchpad', icon: Rocket, key: '4' },
   ]},
-  { title: 'Control', items: [
+  { title: 'Operate', items: [
     { path: '/cockpit', label: 'Control center', icon: SlidersHorizontal },
-    { path: '/containers', label: 'Containers', icon: Boxes },
-    { path: '/updates', label: 'Updates', icon: TrendingUp },
-    { path: '/pihole', label: 'Pi-hole', icon: ShieldCheck },
-    { path: '/trends', label: 'Trends', icon: TrendingUp },
+    { path: '/feed', label: 'Activity', icon: Activity },
+    { path: '/topology', label: 'Topology', icon: Waypoints },
     { path: '/reports', label: 'Reports', icon: FileText },
-    { path: '/security', label: 'Security', icon: Shield },
-    { path: '/logs', label: 'Logs', icon: ScrollText },
   ]},
-  { title: 'Boards & data', items: [
-    { path: '/b/home', label: 'Home board', icon: Grid2x2 },
-    { path: '/b/dashboard', label: 'Dashboard', icon: Grid2x2 },
-    { path: '/data', label: 'Data', icon: Database },
-    { path: '/query', label: 'Query', icon: Terminal },
+  { title: 'Data', items: [
+    { path: '/trends', label: 'Metrics', icon: TrendingUp },
+    { path: '/data', label: 'Database', icon: Database },
   ]},
   { title: 'Play', items: [
     { path: '/bots', label: 'Discord bots', icon: Bot },
     { path: '/leetify', label: 'CS2 / Leetify', icon: Crosshair },
     { path: '/llm', label: 'Local LLM', icon: BrainCircuit },
   ]},
-  { title: 'Pages', items: [
-    { path: '/architecture/', label: 'Architecture', icon: Network, external: true },
-    { path: '/legacy/streams/', label: 'Streams (v1)', icon: Tv, external: true },
-    { path: '/samba/', label: 'Samba', icon: ServerCog, external: true },
-    { path: '/agentic/', label: 'Agentic', icon: Workflow, external: true },
-    { path: '/agents/', label: 'Agents', icon: ServerCog, external: true },
-    { path: '/notes/', label: 'Notes', icon: FileText, external: true },
-  ]},
 ];
 
 export const SETTINGS_ITEM: NavItem = { path: '/settings', label: 'Settings', icon: Settings };
+
+/** Standalone pages the dashboard serves but does not own. Reachable from Settings
+ *  and the command palette; they no longer take up a rail slot each. */
+export const LEGACY_PAGES: NavItem[] = [
+  { path: '/architecture/', label: 'Architecture map', icon: Waypoints, external: true },
+  { path: '/agents/', label: 'Agents', icon: Server, external: true },
+  { path: '/samba/', label: 'Samba', icon: Server, external: true },
+  { path: '/agentic/', label: 'Agentic workspace', icon: FileText, external: true },
+  { path: '/notes/', label: 'Notes', icon: FileText, external: true },
+  { path: '/legacy/streams/', label: 'Streams (v1)', icon: Radio, external: true },
+  { path: '/legacy/', label: 'Legacy UI (v1)', icon: LayoutDashboard, external: true },
+];
 
 // The hosts group is data-driven (from /api/hosts once it exists; until then this
 // static list, which is also the fallback when the backend is unreachable).
 export interface HostNav { name: string; label: string; role: string; ip: string; icon: Component; intermittent?: boolean }
 export const HOSTS: HostNav[] = [
-  { name: 'opti', label: 'opti', role: 'storage · control plane', ip: '192.168.1.11', icon: Server },
-  { name: 'rpi', label: 'rpi', role: 'DNS · DHCP · web', ip: '192.168.1.10', icon: Server },
+  { name: 'opti', label: 'opti', role: 'storage · control plane · apps', ip: '192.168.1.11', icon: Server },
+  { name: 'rpi', label: 'rpi', role: 'DNS', ip: '192.168.1.10', icon: Server },
   { name: 'noblenumbat', label: 'noblenumbat', role: 'media', ip: '192.168.1.6', icon: Server },
   { name: 'android', label: 'android', role: 'local LLM', ip: '192.168.1.54', icon: Smartphone, intermittent: true },
 ];
@@ -77,9 +82,23 @@ for (const g of NAV) for (const i of g.items) TITLES.set(i.path, i.label);
 TITLES.set('/settings', 'Settings');
 TITLES.set('/links', 'Launchpad');
 
-export function titleFor(pathname: string): string {
+/** Sub-views that live inside a page, so the topbar can name where you actually are. */
+const SUBTITLES: Record<string, Record<string, string>> = {
+  '/cockpit': { containers: 'Containers', updates: 'Updates', pihole: 'Pi-hole', logs: 'Logs' },
+  '/feed': { incidents: 'Incidents', stream: 'Stream' },
+  '/data': { query: 'Query' },
+  '/reports': { security: 'Security', collectors: 'Collectors' },
+};
+
+export function titleFor(pathname: string, search?: URLSearchParams): string {
+  const sub = SUBTITLES[pathname];
+  if (sub && search) {
+    for (const key of ['tab', 'view', 'filter']) {
+      const v = search.get(key);
+      if (v && sub[v]) return `${TITLES.get(pathname) ?? pathname} · ${sub[v]}`;
+    }
+  }
   if (TITLES.has(pathname)) return TITLES.get(pathname)!;
-  if (pathname.startsWith('/b/')) return 'Board';
   if (pathname.startsWith('/host/')) return decodeURIComponent(pathname.slice(6));
   return "Pert's Pocket";
 }

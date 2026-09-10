@@ -4,7 +4,7 @@
   import { goto } from '$app/navigation';
   import { Dialog, Command } from 'bits-ui';
   import { Boxes, BrainCircuit, RefreshCw, Stethoscope, SunMoon, Palette, TrendingUp, Server } from '@lucide/svelte';
-  import { NAV, HOSTS } from '$lib/nav';
+  import { NAV, HOSTS, LEGACY_PAGES } from '$lib/nav';
   import { ALL_LINKS, iconUrl, isExternal } from '$lib/links';
   import { app } from '$lib/stores/ui.svelte';
   import { ui } from '$lib/stores/theme.svelte';
@@ -20,7 +20,7 @@
   let answer = $state<{ q: string; a: string } | null>(null);
 
   const pages = NAV.flatMap((g) => g.items.filter((i) => !i.external));
-  const external = NAV.flatMap((g) => g.items.filter((i) => i.external));
+  const external = LEGACY_PAGES;
 
   const run = (fn: () => void) => { app.setCmdk(false); query = ''; fn(); };
   const go = (path: string) => run(() => { goto(path); });
@@ -137,7 +137,7 @@
                 <Command.GroupHeading class="cmdk-heading">Containers</Command.GroupHeading>
                 <Command.GroupItems>
                   {#each allContainers as c (`${c.host}/${c.name}`)}
-                    <Command.Item class="cmdk-item" value="container {c.name} {c.host}" onSelect={() => go('/containers')}>
+                    <Command.Item class="cmdk-item" value="container {c.name} {c.host}" onSelect={() => go('/cockpit?tab=containers')}>
                       <Boxes aria-hidden="true" /> {c.name}
                       <span class="hint">{c.host} · {c.up ? 'up' : 'down'}{c.update_available ? ' · update' : ''}</span>
                     </Command.Item>
@@ -149,7 +149,7 @@
             <Command.Group value="actions">
               <Command.GroupHeading class="cmdk-heading">Actions</Command.GroupHeading>
               <Command.GroupItems>
-                <Command.Item class="cmdk-item" value="action open updates queue" onSelect={() => go('/updates')}>
+                <Command.Item class="cmdk-item" value="action open updates queue" onSelect={() => go('/cockpit?tab=updates')}>
                   <TrendingUp aria-hidden="true" /> Open the updates queue
                 </Command.Item>
                 <Command.Item class="cmdk-item" value="action run homelab doctor" onSelect={() => run(runDoctor)}>

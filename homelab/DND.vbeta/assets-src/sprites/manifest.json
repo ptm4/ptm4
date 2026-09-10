@@ -1,8 +1,8 @@
 {
   "goblin": {
-    "date": "2026-09-09",
+    "date": "2026-09-10",
     "placeholder": false,
-    "sha256": "e20d8cb694a09fe1c23c496ef1687500ef2c26bcbe517e33fe2bfb37a2e99cea",
+    "sha256": "d85363c864c740339dbeabf6cdb13b329ba6b091a63dde14be7f2f7aa7cc46ab",
     "sheet": "assets-src/sprites/out/goblin.png",
     "size": "M",
     "sources": [

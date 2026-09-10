@@ -233,3 +233,84 @@ Ports/processes: 5174 PID 4136; 3003 PID 27028.
 Progress: Launched hidden Node processes; verify the URLs and logs if either server exits.
 Next: Preview http://127.0.0.1:5174 ; API http://127.0.0.1:3003/api/health
 Coordination: No other process modified.
+
+### Fable: 2026-09-10T02:10-04:00 — DONE — Streams reworked from Astra's model; Dashboard is now a TUI monitor; nav cut 26 → 13
+
+Peter reviewed both v3 previews and asked me to take Astra's *functional* lessons into the Fable
+design. Conflicts were put to him rather than decided; his calls, and what I built:
+
+**Streams — adopted webapp.v3.Astra's epistemics wholesale (his call on all four conflicts):**
+- No invented tier. Fable used to derive S/A/B from HLTV's star rating; that is gone. Matches now
+  carry real VRS rank numbers per team (`rank1`/`rank2`, "VRS #3" / "Unranked"), a `premier` flag
+  read off the EVENT NAME, and `tier` only when the feed itself says 'S'. Astra's reasoning was
+  right and is quoted in the code: HLTV stars are a match rating, not a tournament tier.
+- No organizer fallback. A Watch button appears only where HLTV actually attached a broadcast URL.
+  An event called "BLAST Premier" is no longer treated as evidence that twitch/blastpremier carries
+  that match.
+- Stale feed cannot assert "live": past 30 min a match the feed called live shows as `unknown`.
+- Directory channels carry no live inference (`on_air` removed); they report only what OUR station
+  is playing plus how many of today's matches list them.
+- Ported from Astra: favourites + recent channels, match search, priority/status filters, and the
+  provenance disclosure panel. Astra's stricter `channelFromUrl` (https only, no credentials,
+  Twitch reserved paths rejected, YouTube passed through as a URL) replaced mine.
+- Kept from Fable: real station control (Astra's preview is read-only by design), auto slot pick,
+  multiview, theater, keyboard. Peter declined the replace-slot confirm.
+
+**Dashboard → `/dashboard` is a btop-style TUI monitor.** Full terminal imitation, his pick:
+monospace, box-drawn panels with inset titles, block + braille glyph graphs, gruvbox on near-black.
+Layout is metric panels with hosts as rows (cpu / memory / network / temperature / storage /
+containers / alerts / hosts / upkeep). Graphs autoscale and print their peak so the axis is stated,
+never implied. New: `lib/features/tui/{glyphs.ts,Panel.svelte}`.
+
+**The widget-board system is deleted** (his call). gridstack, the 26-widget registry, the catalog,
+board settings, board persistence UI and `/b/[slug]` are gone; `HostVitals`, `Changes` and
+`LongTrends` survive as plain components on `/host/[name]`. Home no longer embeds a board — that
+duplication was what made Home and Home board look identical. Backend `/api/ui/*` is untouched
+(settings still store Launchpad favourites).
+
+**Nav consolidated 26 → 13 entries.** Containers/Updates/Pi-hole/Logs are tabs on `/cockpit`;
+Security → `/reports?filter=security`; Incidents → `/feed?view=incidents`; Query → `/data?tab=query`;
+the standalone legacy pages moved off the rail into Settings. Every internal link was rewritten;
+all sub-views are URL-addressable.
+
+Verification: frontend `svelte-check` 0 errors / 0 warnings across 4767 files, production build
+clean, backend 60/60. Checked in the browser at desktop and 375px against the local v3 backend.
+Ports unchanged (Fable 5173 / 3000). Astra untouched — I read it, I did not edit it. Its preview
+runs on 5174/3003 when started.
+
+
+---
+
+## Fable: 2026-09-10 — CLAIM — collector + architecture files outside `webapp.v3.Fable/`
+
+Claiming these for edit, on Peter's instruction to make homelab-db the single source of
+architecture truth. All are stale in the same direction: they encode the pre-2026-09-10
+topology, where rpi ran the app tier and opti ran no containers.
+
+- `homelab/Tools/collectors/homelab-doctor.py` — `SERVICES` still probes `rpi.lan:3002`
+  for Notes (moved to opti; currently reports URLError) and names the webapp by the
+  misleading `webapp.rpi.lan`.
+- `homelab/Tools/arch-agent/hl-arch-agent.py` — `ALLOWED_UNITS["opti"]` comment asserts
+  "no docker.service on opti — it runs no containers (verified 2026-08-02)". opti now
+  runs 14 and has docker.service.
+- `homelab/Tools/architecture/build-arch-data.py` — curated Dozzle edge note says
+  "opti has no docker, so nothing to stream there".
+
+Astra: none of this touches `webapp.v3.Astra/`. If you hold any of these three, say so
+and I will back out — they are shared infrastructure, not webapp code.
+
+**Evidence** (live, 2026-09-10, not inferred from docs): opti answers `:8443` and runs 14
+containers; rpi answers nothing on `:8443` and runs 2 (pihole, dozzle-agent). homelab-db's
+`/api/status` still reports opti `"0 container(s)"` and rpi `"1 container(s)"`.
+
+**Not a collector bug.** The container path (`homelab-doctor.host_containers` → `ingest.py`
+→ `mcp_tools.hl_status`) is host-agnostic end to end; there is no skip-list. The `0` is a
+faithful relay of a `docker ps` that returned nothing when it ran. Fixing the number means
+re-running the doctor, not patching the pipeline.
+
+**Separate finding, no change made:** opti's ufw input policy is `drop`, so the webapp
+container cannot reach opti's own published ports (`:80` OMV, `:3001` Kuma) by name or IP.
+`:9099`/`:9100` have explicit allows. I routed the Kuma probe over the shared
+`compose_internal` network instead of touching the firewall. OMV has no such path and now
+reports `up: null` ("cannot see it from here") rather than a false "down". Peter's call
+whether to open ufw.

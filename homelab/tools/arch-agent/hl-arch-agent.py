@@ -121,8 +121,12 @@ _INTERESTING_FSTYPES = ("cifs", "nfs", "nfs4", "fuse", "fuse.")
 # topology is fixed and known, the list is versioned with the code, and it deploys
 # atomically to all three hosts instead of drifting per-host in /etc.
 ALLOWED_UNITS = {
-    # No docker.service on opti — it runs no containers (verified 2026-08-02);
-    # the dispatcher and Samba are its levers.
+    # Was: "no docker.service on opti — it runs no containers (verified 2026-08-02)".
+    # False since 2026-09-10: the app tier moved here from rpi and opti now runs 14
+    # containers. docker.service is still deliberately absent from this allowlist,
+    # but for a different reason than before. Restarting it would bounce the
+    # dashboard, the vault and every bot at once — from a request made through that
+    # same dashboard. Per-container restarts are the right lever and already exist.
     "opti": ["hl-agent-dispatcher.service", "hl-arch-agent.service", "smbd.service"],
     "rpi": ["hl-arch-agent.service"],
     # vpn-stack-heal is a oneshot: restarting it while inactive just runs it, so the

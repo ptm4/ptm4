@@ -19,13 +19,17 @@ export interface FleetHost {
   agent: boolean;
   agent_base?: string | null;
   agent_version?: string | null;
-  spof: 'storage' | 'dns' | null;
+  spof: Spof | null;
   vitals: Pick<VitalsSample, 't' | 'load1' | 'cpu_pct' | 'mem_pct' | 'temp_c' | 'uptime_s'> | null;
   vitals_error?: string | null;
   containers?: number;
   containers_up?: number;
   fragment_at?: string | null;
 }
+
+// What kind of single point of failure a host is, if any. 'storage+apps' is opti
+// since the 2026-09-10 app-tier move: one box, two distinct blast radii.
+export type Spof = 'storage' | 'storage+apps' | 'dns';
 
 export interface Dependency { from: string; to: string; why: string }
 
@@ -36,15 +40,16 @@ export interface HostsResp {
   generated_at?: string;
 }
 
-const SPOF: Record<string, 'storage' | 'dns'> = { opti: 'storage', rpi: 'dns' };
+// Mirrors backend/routes/hosts.js. Keep the two in step — this copy is only the
+// offline fallback, and a fallback that disagrees with the server is worse than none.
+const SPOF: Record<string, Spof> = { opti: 'storage+apps', rpi: 'dns' };
 const STATIC_DEPENDS: Dependency[] = [
   { from: 'noblenumbat', to: 'opti', why: 'mounts the pool over CIFS' },
   { from: 'rpi', to: 'opti', why: 'reads reports and agent logs over CIFS' },
-  { from: 'tux', to: 'opti', why: 'working copy of the repo lives on the pool' },
-  { from: 'opti', to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'noblenumbat', to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'android', to: 'rpi', why: 'DNS + DHCP' },
-  { from: 'tux', to: 'rpi', why: 'DNS + DHCP' },
+  { from: 'opti', to: 'rpi', why: 'DNS' },
+  { from: 'noblenumbat', to: 'rpi', why: 'DNS' },
+  { from: 'android', to: 'rpi', why: 'DNS' },
+  { from: 'tux', to: 'rpi', why: 'DNS' },
 ];
 
 export const FALLBACK_FLEET: HostsResp = {

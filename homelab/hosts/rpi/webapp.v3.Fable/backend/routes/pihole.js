@@ -5,8 +5,11 @@
 // DELETE /api/auth. v6 caps concurrent sessions — a leaked session eventually locks out
 // every other client, so release is in a finally and failures there are swallowed.
 //
-// The webapp container is on the compose "internal" bridge; Pi-hole is host-network on
-// this same rpi, so we reach it via the host's LAN IP (PIHOLE_URL, default below).
+// The webapp container is on the compose "internal" bridge; Pi-hole is host-network
+// on rpi, which since the 2026-09-10 app-tier move is a DIFFERENT box from the one
+// running this container, so we reach it across the LAN by IP (PIHOLE_URL, default
+// below). The default address is unchanged — it was always rpi's LAN IP — but the
+// reason changed from "avoid our own loopback" to "reach another host".
 // Requires PIHOLE_WEB_PASSWORD in the webapp environment.
 //
 // A 30s in-process cache keeps tile refreshes from churning auth sessions.
@@ -157,7 +160,7 @@ module.exports = async function piholeRoutes(app) {
   //
   // Safety: a pause ALWAYS carries a timer, so blocking resumes on its own even if the
   // browser is closed or the resume click never happens. DNS itself is never touched —
-  // Pi-hole is this LAN's only DNS *and* DHCP server, so nothing here can stop resolution;
+  // Pi-hole is this LAN's only DNS server (DHCP has been the router's since Sept 2026), so nothing here can stop resolution;
   // pausing only disables blocklist filtering.
   app.post('/blocking', async (req, reply) => {
     const enabled = !!req.body?.enabled;

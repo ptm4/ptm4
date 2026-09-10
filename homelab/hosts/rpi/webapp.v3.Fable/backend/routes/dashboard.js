@@ -79,7 +79,7 @@ const PROBE_ORIGINS = [
   { key: 'http://rpi.lan', target: 'http://192.168.1.10' },               // Pi-hole admin
   { key: 'https://rpi.lan:9090', target: 'https://192.168.1.10:9090' },   // Cockpit (self-signed)
   { key: 'https://bitwarden.rpi.lan' },                                   // Vaultwarden — name resolves via nginx SNI, keep hostname
-  { key: 'http://opti.lan' },                                             // OpenMediaVault
+  { key: 'http://opti.lan', unprobeable: 'opti’s ufw drops docker-bridge traffic to its own :80' },  // OpenMediaVault
   { key: 'http://jellyfin.lan:8096' },
   { key: 'http://comics.lan:5000' },                                      // Kavita
   { key: 'http://noblenumbat.lan:9000' },                                 // Portainer
@@ -94,15 +94,17 @@ const PROBE_ORIGINS = [
   { key: 'http://192.168.1.6:8098' },                                     // stream-station
   { key: 'http://noblenumbat.lan:8003' },                                 // Gluetun control
   { key: 'http://noblenumbat.lan:8191' },                                 // FlareSolverr
-  { key: 'http://rpi.lan:3001', target: 'http://192.168.1.10:3001' },     // Uptime Kuma
+  { key: 'http://opti.lan:3001', target: 'http://uptime-kuma:3001' },     // Uptime Kuma — moved to opti 2026-09-10; dialed over compose_internal
   { key: 'http://192.168.1.11:9100' },                                    // homelab-db
   { key: 'http://192.168.1.54:8080' },                                    // llama.cpp (android)
   { key: 'http://192.168.1.54:8081' },                                    // llama-ctl
 ];
 
 // Any HTTP response counts as "up" — a 401 from the router or a 302 from Jellyfin is
-// a service answering. Only connect errors and timeouts are "down".
-function probe({ key, target }) {
+// a service answering. Only connect errors and timeouts are "down". An origin marked
+// `unprobeable` is never dialed at all and reports up: null (see the note above).
+function probe({ key, target, unprobeable }) {
+  if (unprobeable) return Promise.resolve({ origin: key, up: null, note: unprobeable });
   return new Promise((resolve) => {
     const url = (target || key) + '/';
     const mod = url.startsWith('https') ? https : http;

@@ -4,7 +4,7 @@
   // containers, allowlisted systemd services, timers, and every host action.
   // Rebuilt from the original Cockpit; every safety gate below is load-bearing
   // and carried over verbatim:
-  //   - rebooting rpi kills the connection serving this page; a dropped fetch
+  //   - rebooting SELF_HOST kills the connection serving this page; a dropped fetch
   //     there IS success, and the watcher then polls /api/health (parsed as
   //     JSON, since nginx serves a 200 holding page during the boot window).
   //     That logic lives in $lib/host-actions.svelte.ts and is reused as-is.
@@ -23,7 +23,7 @@
   } from '$lib/api/queries';
   import { useArchLive, useUpdates } from '$lib/api/fleet';
   import { createHostActions, termUrlFor } from '$lib/host-actions.svelte';
-  import { CRITICAL_UNITS, HOST_ROLES, UNIT_IMPACT, CRITICAL_CONTAINERS, SELF_CONTAINERS } from '$lib/impact';
+  import { CRITICAL_UNITS, HOST_ROLES, UNIT_IMPACT, CRITICAL_CONTAINERS, SELF_CONTAINERS, SELF_HOST } from '$lib/impact';
   import { HOSTS as NAV_HOSTS } from '$lib/nav';
   import type { AgentRow } from '$lib/api/types';
   import HostCard, { type AptStatus, type HostVM } from './HostCard.svelte';
@@ -70,7 +70,7 @@
     Record<string, ReturnType<typeof useVitalsRange>>;
 
   // ── reboot / apt: delegated to the shared host-actions module — same typed
-  // confirm, ZFS-guard 409 handling, and "a dropped rpi connection IS success". ──
+  // confirm, ZFS-guard 409 handling, and "a dropped SELF_HOST connection IS success". ──
   const hostActions = Object.fromEntries(HOST_IDS.map((h) => [h, createHostActions(() => h)])) as
     Record<string, ReturnType<typeof createHostActions>>;
 
@@ -140,7 +140,7 @@
 
       let back = false;
       try {
-        if (host === 'rpi') {
+        if (host === SELF_HOST) {
           // Must parse as JSON, not just res.ok: during the boot window nginx
           // serves the 200 "_restarting" holding page, a false recovery.
           const health = await get<{ status?: string }>('/api/health', 4000);

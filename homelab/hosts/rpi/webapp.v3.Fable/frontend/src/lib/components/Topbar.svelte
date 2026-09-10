@@ -21,9 +21,9 @@
       : 'Event stream interrupted — polling until it returns');
   const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
-  let title = $derived(titleFor(page.url.pathname));
+  let title = $derived(titleFor(page.url.pathname, page.url.searchParams));
   // Boards carry their own hero title; the topbar goes quiet there.
-  let quiet = $derived(page.url.pathname === '/' || page.url.pathname.startsWith('/b/'));
+  let quiet = $derived(page.url.pathname === '/');
   let unacked = $derived(notif.data?.unacked ?? 0);
 </script>
 
@@ -40,7 +40,7 @@
     <kbd>{isMac ? '⌘' : 'Ctrl'} K</kbd>
   </button>
 
-  <a class="tbtn" href="/incidents" title="Open findings">
+  <a class="tbtn" href="/feed?view=incidents" title="Open findings">
     <Bell aria-hidden="true" /> <span class="lbl">Incidents</span>
     {#if unacked > 0}<span class="bell" data-s={unacked > 5 ? 'crit' : 'warn'}>{unacked}</span>{/if}
   </a>

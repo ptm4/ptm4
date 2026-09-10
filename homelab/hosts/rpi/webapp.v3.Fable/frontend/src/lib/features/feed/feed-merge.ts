@@ -67,7 +67,7 @@ export function mergeFeed(
       excerpt: inc.items.slice(0, 3).map((i) => `${i.source}: ${i.message}`).join(' · ') + (inc.count > 3 ? ` · +${inc.count - 3}` : ''),
       host: inc.host,
       source: inc.sources.join(', '),
-      link: `/incidents#${inc.id}`,
+      link: `/feed?view=incidents#${inc.id}`,
       incident: inc,
     });
   }

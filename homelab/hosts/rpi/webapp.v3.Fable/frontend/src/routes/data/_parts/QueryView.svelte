@@ -1,16 +1,20 @@
 <script lang="ts">
-  // Query — a SQL console over homelab.db, SSMS-shaped: schema on the left, editor on
-  // top, results grid under it.
+  // Query view — a SQL console over homelab.db, SSMS-shaped: schema on the left,
+  // editor on top, results grid under it.
   //
   // There is deliberately no client-side SQL validation. Read-only is enforced where it
   // cannot be bypassed — the upstream opens the database on a read-only file descriptor
   // with a default-deny authorizer — and a second, weaker validator here would only drift
   // from the real one. Anything the engine refuses comes back as a plain error message,
   // and every query lands in the server's audit trail.
+  //
+  // Moved verbatim from the old routes/query/+page.svelte body when Data gained the
+  // Data flow/Query tabs (2026-09-10); SchemaTree.svelte and ResultsGrid.svelte moved
+  // alongside it into this same _parts directory.
   import { createQuery, createMutation } from '@tanstack/svelte-query';
   import { get, post, ApiError } from '$lib/api/client';
-  import SchemaTree, { type SchemaTable } from './_parts/SchemaTree.svelte';
-  import ResultsGrid, { type QueryResp } from './_parts/ResultsGrid.svelte';
+  import SchemaTree, { type SchemaTable } from './SchemaTree.svelte';
+  import ResultsGrid, { type QueryResp } from './ResultsGrid.svelte';
 
   interface SchemaResp {
     schema?: string;
