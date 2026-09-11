@@ -75,6 +75,8 @@ Peter (or Fable on Peter's ask) registers a task
 | Provider failures | **Enforced**: 2 transport retries (30 s, 120 s); usage/rate-limit text pauses the whole bridge with one notification; a 10-minute silent run is warned, not killed; 90-minute hard timeout. |
 | No commits, pushes, model or billing changes | **Enforced** by construction (nothing in the bridge does these) and by the packet rules. |
 | Dispatch off until activation | **Enforced**: `config.enabled` is false; `bridge run` only ingests and reports. |
+| Editor reachable before a Unity-bound run | **Enforced**: `config.unity_probe` must succeed or the bridge pauses and notifies. |
+| Provider exe moved by a self-update | **Enforced**: `exe_glob` fallback picks the newest `codex.exe`. |
 
 ## Operating it
 
@@ -127,6 +129,19 @@ fixed before this result:
 An earlier smoke also showed the packet rules working: when the scratch path accidentally sat
 inside a protected path, Astra sent `blocked` explaining the conflict instead of writing.
 
+## Pilot result: "Dungeon door open/close" (t-79edec25, 2026-09-11)
+
+**Done, approved by Fable after 2 review cycles.** Astra implemented `DungeonDoor` + GridMap
+door registry + line of sight + adjacency-gated toggling + WallCutaway registration, with
+`PocDoorChecks.CheckGrid()` (17) and `CheckScene()` (8) as the evidence; Fable re-ran both
+live in Play Mode, watched the door state survive three turn transitions (the goblin AI walked
+through the open doorway), and pixel-diffed the captures. Review 1 sent it back because the
+door stood in open floor and sealed nothing; review 2 because the screenshots did not show the
+door; review 3 approved. Agent time was about 1 h 10 min across 7 attempts; wall-clock was
+longer because of the operator problems listed below, every one of which is now enforced or
+documented. Non-blocking follow-ups: door visibility from the default gameplay camera (POC
+polish ticket) and the pre-existing `PocHud.EnsureStyles` warning flood.
+
 ## Operating rules learned from the pilot (2026-09-11)
 
 - **Do not edit either repo while a run is active.** The scope audit diffs the working trees
@@ -140,6 +155,23 @@ inside a protected path, Astra sent `blocked` explaining the conflict instead of
   Fable starts one detached, Peter must not start another in a terminal, and vice versa.
 - Codex reached the Editor's Pipeline server from its `workspace-write` sandbox without the
   network override; the override is kept in `config.json` as belt-and-braces.
+- **The Editor must be open on Dungine before any Unity-bound run.** Enforced since the pilot:
+  `config.unity_probe` (`unity eval ... "return 1;"`) runs before each such launch; a failure
+  pauses the bridge with a feed line instead of launching. Astra's first fix run started against
+  a closed Editor and spent 20 minutes launching its own instances (batch and GUI, both died on
+  licensing IPC) and terminating them with ctypes before handing off with stale screenshots.
+  Reopen with `unity open E:/Unity/Projects/Dungine`; it takes 3-5 minutes to become ready.
+- **Codex self-updates and moves its exe.** The versioned dir under
+  `%LOCALAPPDATA%/OpenAI/Codex/bin/<hash>/` changed on 2026-09-11 and the old one was deleted,
+  so `launch_failed [WinError 2]`. `config.agents.astra.exe_glob` now picks the newest
+  `codex.exe` when the configured path is gone.
+- **Fable's headless run has an allowlist, not a prompt.** Commands outside it are denied
+  silently. The review run lost its live verification by using `cd ...;`, `& "<full path>"`
+  and `git -C` forms. The packet now carries a SHELL paragraph naming the approved forms, and
+  the allowlist gained `git -C <repo> status|diff|log|show`, `git show`, `unity.exe`,
+  `certutil -hashfile`, `Get-FileHash`, `Get-Command`.
+- `task unblock` re-applies the latest hand-off without counting a re-applied review as a new
+  cycle (the first version double-counted and would have tripped the 2-cycle limit early).
 
 ## Known limitations
 

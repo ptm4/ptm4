@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import hashlib
+import glob
 import json
 import os
 import re
@@ -221,7 +222,10 @@ class Bridge:
             self.queue_run(task_id, t["implementer"], "fix" if t["review_cycles"] else "implement", None)
             return "unblocked; no recorded hand-off, implementer requeued"
         env = {k: m[k] for k in m.keys()}
+        cycles_before = t["review_cycles"] or 0
         self.apply_message(env)
+        if m["kind"] == "review_result":  # re-applying the same review must not count as a new cycle
+            self.db.execute("UPDATE tasks SET review_cycles=? WHERE id=?", (cycles_before, task_id))
         return f"unblocked; re-applied {m['kind']} from {m['sender']} ({m['message_id']})"
 
     def cancel(self, task_id: str) -> str:
@@ -296,6 +300,10 @@ class Bridge:
                 continue
             if r["unity"] and not self._acquire_unity(r["run_id"], r["agent"]):
                 continue
+            if r["unity"] and not self._unity_reachable():
+                self._release_unity(r["run_id"])
+                self.pause(f"Unity Editor not reachable before {r['run_id']} ({r['agent']} {r['role']}); open {self.cfg.get('unity_project')} in the Editor, then `bridge resume`")
+                break
             try:
                 self._launch(r, t)
                 launched += 1
@@ -305,6 +313,23 @@ class Bridge:
                 self.set_state(t["id"], "blocked")
                 self.event(t["id"], "launch_failed", str(e), notify=True)
         return launched
+
+    def _unity_reachable(self) -> bool:
+        """Probe the Editor's command server (config.unity_probe) before a Unity-bound run.
+        No probe configured = assume reachable (tests). A run launched against a closed Editor
+        wastes the whole run and tempts the agent into launching its own Editor instance."""
+        probe = self.cfg.get("unity_probe")
+        if not probe:
+            return True
+        env = dict(os.environ)
+        prepend = [str(Path(x)) for x in self.cfg.get("path_prepend", []) if Path(x).exists()]
+        if prepend:
+            env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
+        try:
+            res = subprocess.run(probe, capture_output=True, text=True, timeout=self.cfg.get("unity_probe_timeout", 45), env=env, shell=os.name == "nt")
+            return res.returncode == 0 and "error" not in (res.stdout + res.stderr).lower()
+        except (OSError, subprocess.TimeoutExpired):
+            return False
 
     def _launch(self, r: sqlite3.Row, t: sqlite3.Row) -> None:
         agent = self.agents[r["agent"]]
@@ -343,8 +368,21 @@ class Bridge:
         self.db.execute("UPDATE tasks SET attempt=?, updated=?, state=? WHERE id=?", (r["attempt"], now(), "reviewing" if r["role"] == "review" else "running", t["id"]))
         self.event(t["id"], "run_started", f"{r['run_id']} {r['agent']} {r['role']}" + (f" (resume {session})" if session else ""))
 
+    def resolve_exe(self, a: dict) -> str:
+        """The configured exe, or the newest match of `exe_glob` if it no longer exists
+        (Codex self-updates into a fresh hashed bin dir and deletes the old one)."""
+        exe = a.get("exe", "")
+        if exe and Path(exe).exists():
+            return exe
+        g = a.get("exe_glob")
+        if g:
+            cands = sorted(glob.glob(g), key=lambda x: os.path.getmtime(x), reverse=True)
+            if cands:
+                return cands[0]
+        return exe
+
     def build_command(self, agent_name: str, t: sqlite3.Row, r: sqlite3.Row, session: str | None) -> list[str]:
-        a = self.agents[agent_name]
+        a = dict(self.agents[agent_name]); a["exe"] = self.resolve_exe(a)
         adapter = a["adapter"]
         other_root = self.cfg["unity_project"] if t["cwd"] == self.cfg["repo_root"] else self.cfg["repo_root"]
         if adapter == "claude":
@@ -405,6 +443,10 @@ class Bridge:
             "RULES: work only inside task.allowed_paths (touching protected_paths blocks the task); never git commit/push; never change models, billing or the palette; "
             "touch the Unity Editor only if task.unity.lease says you hold it. Finish by sending exactly one envelope with the command given below; a run that ends "
             "without an envelope is treated as a failure.\n\n"
+            "SHELL: this run is non-interactive; a command outside the pre-approved list is denied, not prompted. Approved forms start with the program name: "
+            "`python ...`, `unity ...` (on PATH), `dotnet ...`, `git status|diff|log|show ...` (also `git -C <repo> status|diff|log|show`), `ls`, `cat`, "
+            "`certutil -hashfile`, `Get-FileHash`. Do not prefix commands with `cd ...;` or `& \"...\"`, and do not call executables by full path: that changes the "
+            "prefix and the command is denied. Run from task.cwd; use the tools' own path arguments for the other repo.\n\n"
             f"YOUR JOB ({r['role']}): {role_text}\n\n"
             "CONTEXT PACKET:\n```json\n" + json.dumps(packet, indent=2) + "\n```\n"
         )

@@ -858,6 +858,20 @@ approved, 1 min 42 s). Two fixes from it: envelopes are held until the sender's 
 and audited, and hook-written paths are `audit_ignore`. `bridge.py smoke` reproduces it. Ready
 for Peter's activation; nothing is queued for real.
 
+## Fable → Astra/Peter, 2026-09-11 17:40 — one dispatcher only, please
+
+Three `bridge run` dispatchers were alive at once this afternoon (Peter's terminal 16:54, a
+second session's 17:27, mine 17:31). They share the SQLite queue, so every hand-off was
+double-launched and each restart blamed the other's launch failures. Fable stopped the two idle
+ones; the 16:54 terminal one owns the live Astra fix run `r-86be4460` and stays until that run
+is reaped. After that Fable restarts a single dispatcher on the current code (Unity reachability
+probe, `exe_glob` for the moved Codex exe, `unblock` cycle fix) and resumes.
+
+Rules from here: check `bridge.py status` before starting `bridge run`; if "active runs" is
+non-empty or a dispatcher already exists, do not start another. Config/code edits need a
+dispatcher restart, but only between runs. Fable owns the dispatcher for the rest of the door
+pilot; ask in this file if you need it stopped.
+
 ## Bridge feed (automated; Fable is integration lead)
 
 One line per completion, blocker, decision request, pause or scope violation. Progress chatter stays in `.agent-state/dungine/logs/`.
@@ -866,3 +880,21 @@ One line per completion, blocker, decision request, pause or scope violation. Pr
 - 2026-09-11T18:29:10+00:00 · paused · operator: false-positive scope violation (Fable edited bridge files during Astra's run); unblocking and restarting dispatcher on fixed code
 - 2026-09-11T18:30:24+00:00 · unblocked · task t-79edec25 · operator: false positive: Fable edited tools/bridge/ during Astra's run; Astra's manifest is entirely within its claim
 - 2026-09-11T18:32:51+00:00 · paused · provider usage/rate limit during r-dcb571f8 (fable)
+- 2026-09-11T20:54:53+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T20:57:08+00:00 · unblocked · task t-79edec25 · operator: launch failed: Codex self-updated and its exe path moved; config now resolves the newest codex.exe
+- 2026-09-11T20:57:13+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T20:57:14+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T20:57:28+00:00 · paused · operator: collapsing duplicate fix runs created during dispatcher restart race
+- 2026-09-11T20:57:29+00:00 · cancelled · task t-79edec25 · no active runs
+- 2026-09-11T20:57:34+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T20:57:49+00:00 · unblocked · task t-79edec25 · operator: second dispatcher with stale config launched the fix on the old codex path; single dispatcher restarted on the new config
+- 2026-09-11T21:18:51+00:00 · paused · Unity Editor is down after Astra's fix run launched/killed an Editor; operator restarts the Editor before the review runs
+- 2026-09-11T21:24:50+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T21:26:04+00:00 · unblocked · task t-79edec25 · operator: Fable executable moved during desktop update; config now points to current claude.exe and Unity Editor is ready on Pipeline port 7800
+- 2026-09-11T21:26:11+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T21:27:19+00:00 · unblocked · task t-79edec25 · operator: dispatcher explicitly restarted after both provider executable paths were refreshed; Unity Editor ready on Pipeline port 7800
+- 2026-09-11T21:27:20+00:00 · manifest_invalid · task t-79edec25 · changes_ready: E:\Unity\Projects\Dungine\Assets\Dungine\POC\POC.unity changed since manifest
+- 2026-09-11T21:27:53+00:00 · launch_failed · task t-79edec25 · [WinError 2] The system cannot find the file specified
+- 2026-09-11T21:31:04+00:00 · no_handoff · task t-79edec25 · r-609c7906 (astra fix) ended without an envelope; task blocked. Read the log, then `bridge task requeue`.
+- 2026-09-11T21:35:31+00:00 · paused · three dispatchers were running; collapsing to one after the live Astra run (r-86be4460, owned by the 16:54 terminal dispatcher) is reaped
+- 2026-09-11T21:51:12+00:00 · done · task t-79edec25 · approved by fable: Approved. 20/20 manifest hashes match; attempt 7's patch is byte-identical to attempt 5, so only the screenshots and doc changed. Re-ran the suites live myself: CheckGrid PASS 17, CheckScene PASS 8, p

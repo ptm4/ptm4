@@ -31,7 +31,7 @@
   "agents": {
     "fable": {
       "adapter": "claude",
-      "exe": "C:/Users/ptm/AppData/Roaming/Claude/claude-code/2.1.260/claude.exe",
+      "exe": "C:/Users/ptm/.local/bin/claude.exe",
       "args": [
         "-p",
         "--output-format",
@@ -55,7 +55,16 @@
         "Bash(git diff*)",
         "Bash(git log*)",
         "Bash(ls *)",
-        "Bash(cat *)"
+        "Bash(cat *)",
+        "Bash(git show*)",
+        "Bash(git -C * status*)",
+        "Bash(git -C * diff*)",
+        "Bash(git -C * log*)",
+        "Bash(git -C * show*)",
+        "Bash(unity.exe *)",
+        "Bash(certutil -hashfile *)",
+        "Bash(Get-FileHash *)",
+        "Bash(Get-Command *)"
       ],
       "resume_sessions": true,
       "model": null,
@@ -63,7 +72,7 @@
     },
     "astra": {
       "adapter": "codex",
-      "exe": "C:/Users/ptm/AppData/Local/OpenAI/Codex/bin/8e5b6932251c2c1c/codex.exe",
+      "exe": "C:/Users/ptm/AppData/Local/OpenAI/Codex/bin/21cdff1aa9fa39da/codex.exe",
       "args": [
         "exec",
         "--json",
@@ -76,7 +85,9 @@
       "resume_sessions": false,
       "model": null,
       "_auth": "ChatGPT login (codex login status: 'Logged in using ChatGPT'). Model and reasoning come from ~/.codex/config.toml (gpt-6-astra, xhigh); the bridge never passes -m.",
-      "_sandbox": "workspace-write with localhost network allowed so `unity` can reach the Editor's Pipeline server; verified to parse 2026-09-11."
+      "_sandbox": "workspace-write with localhost network allowed so `unity` can reach the Editor's Pipeline server; verified to parse 2026-09-11.",
+      "exe_glob": "C:/Users/ptm/AppData/Local/OpenAI/Codex/bin/*/codex.exe",
+      "_exe": "Codex self-updates into a new hashed bin dir (2026-09-11 15:30 it moved from 8e5b... to 21cd...); exe_glob picks the newest if exe is gone."
     }
   },
   "audit_ignore": [
@@ -91,5 +102,8 @@
   "_audit_ignore_comment": "Paths written by hooks/background agents or shared logs; never attributed to a run. Everything else outside the task's allowed paths blocks the task.",
   "path_prepend": [
     "C:/Users/ptm/AppData/Local/Unity/bin"
-  ]
+  ],
+  "unity_probe": "unity command eval --project-path \"E:/Unity/Projects/Dungine\" --code \"return 1;\" --no-banner",
+  "unity_probe_timeout": 45,
+  "_unity_probe": "Shell command run before every Unity-bound run; failure pauses the bridge instead of launching (2026-09-11: Astra's fix run started against a closed Editor and tried to launch its own)."
 }
