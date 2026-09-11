@@ -1,4 +1,7 @@
 {
+  "host-down|noblenumbat|": {
+    "first_seen": "2026-09-11T07:01:04.254Z"
+  },
   "reboot|rpi|": {
     "first_seen": "2026-09-10T20:52:52.626Z"
   }

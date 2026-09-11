@@ -25,6 +25,15 @@ in `Assets/Dungine/Sprites/POC/`; the goblin is the first real Codex-generated s
 `Dungine/Assets/Captures/` (gitignored). **Remaining:** Peter plays a fight to the death and
 judges the look against `Plans/Digital-Influences/`.
 
+## Peter's first play review (2026-09-11) and what changed
+| Note | Resolution |
+|---|---|
+| No abilities; wizard cannot attack at range or use cantrips | POC now has a ranged option per unit: Fire Bolt (wizard, 120 ft, 1d10), Sacred Flame (cleric, 60 ft, 1d8, attack-roll approximation), thrown dagger (rogue), javelin (fighter), shortbow (goblins, and their AI shoots when it cannot close). Projectile visual with light. Real spell rules are Plan 03c. |
+| Goblin did not die / animate after dying | Death path verified deterministically (Hit → Idle, then Death frames 0-3 and hold; later Idle requests ignored). Animator step is now a public `Advance(dt)` so it is testable. Likely what Peter saw: play mode paused when the Editor lost focus (Run In Background was off; now on). Re-test. |
+| Figures look like 2D cutouts, not figures in the world | Peter chose "keep sprites, ground them" (D40): contact-shadow blob under every unit, cool fill light so figures read on dark floors, lean reduced 12° → 5°; cast shadows already on. Not a switch to 3D models. |
+| Highlight the space I am selecting to move | `MoveHighlighter`: reachable tiles (cyan), hovered tile (bright), attackable enemies (red; melee or in ranged range). Dim enough not to bloom. |
+| Free camera | `CameraRig`: WASD/arrows pan, Q/E rotate, scroll zoom, middle-drag pan, F re-centers; a new turn re-follows the active unit but keeps the chosen yaw/zoom. |
+
 ## Learnings (feed 04 / 05 / 06 / 11)
 - **Camera:** the bible's 38° pitch at 15 u puts a 10-ft wall between camera and party;
   50° / 11 u works. The real game needs **cutaway or dithering of walls that occlude the

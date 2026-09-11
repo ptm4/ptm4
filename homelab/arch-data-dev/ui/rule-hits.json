@@ -1,6 +1,17 @@
 {
   "hits": [
     {
+      "key": "host-down|noblenumbat|",
+      "rule_id": "host-down",
+      "rule": "Host unreachable",
+      "kind": "host_down",
+      "severity": "critical",
+      "host": "noblenumbat",
+      "value": null,
+      "message": "noblenumbat: no vitals — The operation was aborted due to timeout",
+      "since": "2026-09-11T07:01:04.254Z"
+    },
+    {
       "key": "reboot|rpi|",
       "rule_id": "reboot",
       "rule": "Reboot required",
@@ -12,5 +23,5 @@
       "since": "2026-09-10T20:52:52.626Z"
     }
   ],
-  "evaluated_at": "2026-09-10T23:07:51.795Z"
+  "evaluated_at": "2026-09-11T13:52:08.028Z"
 }

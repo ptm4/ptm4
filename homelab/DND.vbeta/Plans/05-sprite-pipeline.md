@@ -100,6 +100,29 @@ remaining 10 plus a second batch of 10 (PROMPT-PACK §3b) with turnaround approv
 against the identity blocks; it logs progress to `inbox/BATCH-LOG.md` and resumes after
 usage limits. Claude verifies each batch on request ("verify the batch").
 
+### Batch 1 progress (2026-09-10): 10/14 done
+Codex produced cleric_dwarf, skeleton, zombie, bandit, cultist, ghoul, then paused with a
+correct defect report: enclosed background pockets survived keying. Fixed in 0.5.0 (D34);
+all six rebuilt, reviewed, installed. Remaining: wolf, giant_rat, giant_spider, ogre, then
+batch 2 (10). Sheets in the POC folder now: 10 creatures.
+
+### Batch closed (2026-09-11): 24 creatures verified and installed
+Astra finished both batches (20 creatures, 1,200 frames, 20 portraits) with one delegated
+judgment (D37, width-fit spider) and no script edits. Fable verification: all 24 sheets PASS,
+no empty frames, statures correct, composites reviewed, installed in Dungine, Editor and POC
+at 0 errors. One more tool fix from Astra's ogre evidence (0.7.0, D38). Roster now: fighter,
+wizard, rogue, cleric; goblin, skeleton, zombie, bandit, cultist, ghoul, wolf, giant_rat,
+giant_spider (L), ogre (L); kobold, hobgoblin, orc, bugbear, thug, guard, acolyte, wererat,
+black_bear, owlbear (L). **Plan 05 done_when met except Peter's in-scene look approval.**
+Open cosmetic items live in each creature's `inbox/<id>/STATUS.md`.
+
+Second blocker from Codex: the wolf side profile clipped at 111 px because stature scaling is
+by height. Resolved with `--fit width` for quadrupeds (0.6.0, D35); wolf turnaround rebuilt
+clean, strips pending. Fable then went offline; **Astra holds delegated authority** for the
+rest of the batch (D36, `ptm4/AgentComms.md`). When Fable returns: "verify the batch" =
+re-check every sheet in `out/`, contact sheets, install into Dungine, review any script
+changes Astra made against D-rows.
+
 Inbox/out contract (also enforced by the tool): frames `<FACING>_<anim>_<i>.png` at any
 integer scale of 64x96 (256x384 recommended), or `sheet.png` at an integer scale of
 1280x288; `portrait.png` any square. Output `out/<id>.png` 1280x288 RGBA, alpha 0 or 255,

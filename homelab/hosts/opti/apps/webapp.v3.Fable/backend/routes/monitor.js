@@ -135,7 +135,13 @@ module.exports = async function monitorRoutes(app) {
     });
     const heartbeat = setInterval(() => { if (!res.writableEnded && !res.destroyed) res.write(`: ping ${Date.now()}\n\n`); }, 25_000);
     heartbeat.unref();
-    const cleanup = () => { clearInterval(heartbeat); listeners.forEach(([host, listener]) => app.monitorEvents.off(host, listener)); if (!res.writableEnded) res.end(); };
-    req.raw.on('close', cleanup); req.raw.on('error', cleanup);
+    // An open SSE connection must retain the sampler lease for its whole lifetime.
+    // Heartbeats are 25s apart, longer than the sampler's 15s idle grace period.
+    const lease = setInterval(() => {
+      if (!res.writableEnded && !res.destroyed) hosts.forEach((host) => app.monitor.ensure(host, interval * 1000));
+    }, 5_000);
+    lease.unref();
+    const cleanup = () => { clearInterval(heartbeat); clearInterval(lease); listeners.forEach(([host, listener]) => app.monitorEvents.off(host, listener)); if (!res.writableEnded) res.end(); };
+    res.on('close', cleanup); req.raw.on('error', cleanup);
   });
 };

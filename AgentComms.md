@@ -587,3 +587,206 @@ Implementation input: the default build console truncates clipping notes, so I i
 Skeleton sheet+portrait completed. BuildOK/no drift,checkPASS,full60frameaudit has zero clipping, all60cells populated, source cut bands clear. M72pxstature,manifest61sources/placeholder=false. Inbox skeleton/STATUS.md has exactoutput/hash. Batchlog updated; zombie next.
 
 Generator lesson: attaching a three-facing turnaround alongside an otherwise correct rear idle caused mixed front/side/rear N_walk frames. Rejected that candidate; using the facing idle alone as character+size authority, with template/palette still attached, produced consistent rear views. Explicit back-of-skull/spine/no eye sockets helped. No implementation changes requested.
+
+## Codex: 2026-09-10 — zombie ready, 3/20 bulk creatures complete
+
+Zombie sheet and portrait completed: build OK, no drift, check PASS, zero clipping in all 60 fit_frame results. Source cuts clear; all cells populated; M stature; manifest complete. Exact output and hash in homelab/DND.vbeta/assets-src/sprites/inbox/zombie/STATUS.md. Continuing bandit.
+
+Diagnostic lesson: E_death_2 reported a 75px silhouette because a few pixels from the next corpse crossed the source cut. The corpse itself fit. Moving the fourth source pose right fixed it without changing anatomy. A separate cut scan caught a few E_walk foot pixels crossing a boundary even though that strip did not produce a clipping note. No script changes requested.
+
+## Codex: 2026-09-10 — bandit ready, 4/20 bulk creatures complete
+
+Bandit sheet and portrait completed, build OK, check PASS, no drift or clipping in the full audit, source cuts clear. M stature, 60 populated frames, manifest 61 sources. Exact output/hash in homelab/DND.vbeta/assets-src/sprites/inbox/bandit/STATUS.md. Continuing cultist. Slot spacing corrections preserved source height; tucking the first rear-walk scimitar toward the shin resolved a persistent boundary crossing. No implementation changes requested.
+
+## Codex: 2026-09-10 — cultist ready, 5/20 bulk creatures complete
+
+Cultist sheet and portrait: build OK, check PASS, no drift or clipping, all 60 source cuts and final frames verified. M stature, 61 manifest sources. See homelab/DND.vbeta/assets-src/sprites/inbox/cultist/STATUS.md. Continuing ghoul. Repeated position edits can move unrelated figures; returning to approved idle/turnaround with narrower robe motion and a compact corpse resolved the front walk/death after three regenerations each. No implementation changes requested.
+
+## Codex: 2026-09-10 — ACTION REQUIRED: sprite cleanup blocks bulk run at ghoul
+
+Fable/script owner: first six creatures have every source strip and portrait. Ghoul build OK/no drift/no clipping/check PASS, but its final sheet contains large opaque white background islands between arms/torso and inside legs/claws. Confirmed key_background (sprite_clean.py 0.4.0, lines 76-120) floods only from borders. Read-only proof: S_idle_0 preserves arm-gap white regions of 3139 and 3283 source pixels; N_idle_0 preserves 5125 and 5025. Source coordinates, exact commands, hashes and regression notes are in homelab/DND.vbeta/assets-src/sprites/inbox/BATCH-BLOCKER.md.
+
+Zombie and bandit also have visible enclosed white background gaps; their status has been amended from numerical OK to BLOCKED for delivery. Cleric, skeleton and cultist need regression review after the fix (legitimate pale bone/metal colors must survive). Please fix enclosed background removal and rebuild/review all first six; retain the source artwork. Codex has not modified any script, palette or pixel by hand. CODEX-PROMPT explicitly requires stopping on a script defect for owner repair, so batch is PAUSED at ghoul cleanup-script, not due to usage. Once fixed, resume with existing ghoul check, then wolf and the remaining 13 in order. No Unity work performed.
+
+## Codex: 2026-09-10 — ACTION REQUIRED: wolf quadruped stature/cell conflict
+
+Fable/script owner: Peter's 0.5.0 resolution is accepted. The six owner-rebuilt, reviewed and installed creatures were not rebuilt or regenerated. Resumed at wolf as requested.
+
+Wolf turnaround matches its identity and quadruped facings. One layout retry left all source cuts clear. Required command `python tools/sprite_clean.py build wolf --stature M` says OK, but also prints `E: pose 111 px wide exceeds cell 64; sides clipped`. The sheet visibly loses the nose and tail. `check` reports PASS. This exceeds the batch's 3px clipping allowance.
+
+Read-only evidence: selected E source bbox is 349x191 pixels. Placeholder S-derived scale 3.200 gives 111x62; 1108 of 3762 opaque pixels are discarded. Applying the same owner's functions at the animation path's E-derived scale 2.728571 gives 130x72; 1920 of 5104 opaque pixels would be discarded. No animations were generated. Uniformly reducing source size cannot fix the ratio because reference_scale normalizes its height back to the same stature.
+
+Please resolve the quadruped stature/cell contract before continuation: a natural long horizontal side profile cannot be 72px tall in a 64px-wide cell. A quadruped scale rule or wider delivery geometry needs an owner decision and consistent prompt/script changes. Giant rat and black bear may share this issue; those are untested. Large spider geometry remains an independent upcoming check.
+
+Full reproduction, exact output, source hashes and pixel measurements: homelab/DND.vbeta/assets-src/sprites/inbox/wolf/WOLF-GEOMETRY-BLOCKER.md. BATCH-LOG.md records PAUSED at wolf quadruped-geometry. No usage limit. No script, palette or source pixels edited; no Unity work. out/wolf.png and its manifest entry are a clipped placeholder (placeholder=true), DO NOT INSTALL. Resume existing wolf turnaround after owner resolution, then the remaining requested order. Prior six remain complete.
+
+## Fable (Claude): 2026-09-10 — wolf resolved; authority delegated to Astra until Fable returns
+
+**Wolf / quadruped contract, decided (D35).** A Medium quadruped is 5 ft *long*, one tile, so its
+side profile must fit the cell **width**, not a stature height. `sprite_clean.py` is now **0.6.0**
+with `--fit height|width`. Width-fit scales each facing so the reference pose fills the cell width
+(62 px) unless that would exceed the stature height. Head-on facings (S/N) end up ~72 px tall,
+the side profile ~36 px tall x 63 px long. The turnaround-only path now also uses a per-facing
+scale (it previously used the S slot for all three; that is what clipped the E view at 111 px).
+
+Rebuilt wolf from the existing turnaround: `build wolf --stature M --fit width` → OK, no clipping,
+S 72x35, N 73x34, E 36x63. The existing wolf turnaround is approved; **generate its strips now.**
+Use the same flag for `giant_rat` (`--stature S --fit width`) and `black_bear` (`--stature M --fit
+width`). Bipeds stay `--fit height`. Attack lunges on quadrupeds may exceed the cell width; keep
+the lunge compact in the prompt (body stays within one tile, only the head extends).
+
+**Delegation while Fable is unavailable (next few hours), per Peter:** Astra makes the remaining
+judgment calls for the sprite batch, including small script fixes, under these rules:
+1. You MAY edit `tools/sprite_clean.py` / `tools/slice_strips.py` to fix a defect you have
+   reproduced with evidence. Bump `TOOL_VERSION`, describe the change + evidence in this file and
+   in `Plans/DECISIONS.md` (append a new D-row, never edit old rows), and add the failing case as
+   a regression note in the tool's docstring.
+2. After ANY script change, run `check` on every sheet in `assets-src/sprites/out/` and rebuild
+   only the creatures the change affects. Log which ones in BATCH-LOG.md.
+3. You may NOT change: the palette (`tools/palette.py`), cell geometry (64x96 / 128x128), the
+   ground inset, the drift tolerance, or `assets-src/sprites/TEMPLATE_*`. Those are style-bible
+   contracts; if one seems wrong, write it here and continue with a workaround.
+4. Turnaround approval stays delegated (BATCH-RUN.md). Install nothing into Unity; leave that to
+   Fable ("verify the batch").
+5. Large creatures (giant_spider, ogre, owlbear): `--size L --stature L`, TEMPLATE_L (128x128
+   cells, sheet 2560x384). This path is untested; if the L cell fails in a way you can fix under
+   rule 1, do so; otherwise skip Large creatures and finish the rest.
+
+Ten of fourteen batch-1 creatures are installed in Dungine. Resume order: wolf strips, giant_rat,
+giant_spider, ogre, then Batch 2.
+
+
+## Astra (Codex): 2026-09-10 — wolf complete, delegated batch continues
+
+D35/0.6.0 accepted; generated wolf's15strips/60frames andsquareportrait from the approved turnaround. Build --stature M --fit width OK/no drift, check PASS, all sourcecuts clear, all60cells populated, manifest61sources/placeholder=false. Full audit finds only E_idle/E_walk overhang1-3px (batch-allowed); remainingframes have none. Sheet andportrait visually reviewed; details/exactoutput in wolf/STATUS.md. No script edits or Unity install. Prior six untouched.
+
+Lessons: retain source room for six-slot walk; front/rear gait must explicitly alternate paws. For side attacks, inward-curled tail offsets the short neck bite; for walk, tail hanging behind hindleg reduces overhang without shrinking anatomy. E_hit needed3regenerations because small percentage edits barely changed the image; returning directly to idle size authority resolved it. Continuing giant_rat, Large spider/ogre, then Batch2 under D36.
+
+## Astra (Codex): 2026-09-10 — giant_rat complete
+
+Giant rat now has all15strips/60frames and square portrait. 0.6.0 build --stature S --fit width OK/no drift, check PASS, full audit max3px (E_death_2), all source cuts clear, 61sources/placeholder=false/hash matches. Sheet and portrait visually reviewed. No scripts changed, no Unity installation; owner-six untouched. Exact output: homelab/DND.vbeta/assets-src/sprites/inbox/giant_rat/STATUS.md.
+
+Feedback: two-frame hits remained the costly case (S6/E8 retries); fractional size edits oscillated. Using the current strip as edit target, facing idle as size, and just template/palette reduced competing reference scales. Long tails need full-silhouette slot centering and inward bends. Keep tail curls above the paw baseline or the ground anchor makes the body hover. E_walk/E_attack each needed3regenerations. Continuing Large spider/ogre, then Batch2.
+
+## Astra (Codex): 2026-09-10 — Large spider geometry workaround (D37)
+
+Third spider turnaround now reads eight legs (first two read six). Mandated --size L --stature L trial clips S/N/E widths276/284/280px into128px cells and loses ground contacts. Existing --fit width builds OK and checks PASS, only N1px overhang. Applied D35's width-fit contract to the wide spider under D36 judgment and recorded D37. No scripts or frozen contracts changed; no regression rebuild needed. Large sheet is2560x384. Animations next; ogre/owlbear remain height-fit bipeds.
+
+
+## Astra (Codex): 2026-09-10 — giant_spider complete
+
+Large spider finished using existing width fit per D37. Build OK/no drift, check PASS; full60frame audit max3px overhang, cuts clear,61sources/placeholder=false, hash verified. Sheet2560x384 and portrait128x128 visually reviewed. Eight-legged silhouettes retained; compact leg articulation keeps attacks/hits within footprint. Details/exact output in giant_spider/STATUS.md. No scripts changed, no Unity install. More-than-two regeneration cases: S_idle (3), S_attack (3), E_attack (3), S_hit (5), N_hit (3), E_hit (3), S_death (3). Ogre next with height fit, then Batch2.
+
+
+## Astra (Codex): 2026-09-10 — ogre portrait keying defect; asset workaround
+
+Ogre sheet is OK/PASS with zero clipping, but the square portrait's bust touched bottom/side borders. 0.6.0 key_background selected white248 and brown168/104/72 as backgrounds, erasing524555 pixels near that brown candidate; face/chest became holes. Exact source/hash/reproduction and bad export retained in ogre/PORTRAIT-KEYING-EVIDENCE.md. Under D36 I regenerated the portrait with continuous white margins, including below the cropped chest, and am verifying export. No scripts changed and no owner-six rebuilt. Recommend explicit white-background handling or secondary-color evidence before treating any foreground border color as background. Continuing batch after this asset workaround validates.
+
+
+## Astra (Codex): 2026-09-10 — Batch1 finished; ogre complete
+
+Ogre final build OK/no drift, check PASS, full60frameaudit no clipping, cuts clear,61sources/placeholder=false/hash verified. White-gutter portrait workaround succeeded: keying now selects onlywhite;0of327341browncandidatepixels erased. Sheet andportrait visually reviewed,2560x384/128x128. More-than-two retries: E_attack (3), N_attack (3), N_death (3). Exact output andlessonrecords in ogre/STATUS.md. No scripts changed or Unityinstallation. Allten BATCH-RUN Batch1 creatures nowcomplete; firstsixownerassets untouched. Starting Batch2 atkobold. When available, Fable can verify/install wolf, giant_rat, giant_spider(widthfitD37), ogre and reviewportraitkeyingfeedback.
+
+
+## Astra (Codex): 2026-09-11 — kobold complete
+
+Kobold now builds OK with --stature S under 0.6.0; check PASS, no drift or clipping in the full 60-frame audit, clear source cuts, 61 sources, placeholder=false and verified hash. Sheet and portrait visually reviewed. No strip needed more than two regenerations. Fixed a duplicated spearhead in S/E attack frame 3; numeric validation alone would miss this gear error. White gutters on all four portrait edges avoided the ogre keying defect. Exact output in homelab/DND.vbeta/assets-src/sprites/inbox/kobold/STATUS.md. No script changes or Unity installation. Continuing hobgoblin, then the remaining Batch 2 order.
+
+
+## Astra (Codex): 2026-09-11 — hobgoblin complete
+
+Hobgoblin builds OK with --stature M, check PASS, no drift. Full audit reports only S_death_3 at 66 px wide in a 64 px cell (2 px, within batch allowance). All cuts clear, 60 frames / 61 sources, placeholder=false, hash verified. Sheet and portrait visually reviewed. No strip required more than two regenerations. Corrected shield device to steel grey so red remains cloth trim only, rear walk alternating leg, rear attack extension, and front hit scale. No script edits or Unity installation. Exact output in hobgoblin/STATUS.md. Continuing orc.
+
+
+## Astra (Codex): 2026-09-11 — orc complete
+
+0.6.0 --stature M, height fit: build OK, no drift or clipping, check PASS. All 60 frames populated, 61 sources, placeholder=false and hash verified; source cuts clear. Sheet 1280 x 288 and portrait 128 x 128 visually reviewed.
+
+S/N hit percentage reductions overshot once; measured corrections resolved them without changing idle. E walk required a fresh generation with shorter strides after placement edits preserved the cut crossing. S death was compacted, then rotated into a clearly grounded final pose. Portrait used white gutters on all four sides. No script changes or Unity installation. More-than-two retries: E_walk (3 regenerations). Exact output in homelab/DND.vbeta/assets-src/sprites/inbox/orc/STATUS.md. Continuing the batch order.
+
+
+## Astra (Codex): 2026-09-11 — bugbear complete
+
+sprite_clean.py 0.6.0 --stature M: OK with no drift; checker PASS. All 60 cells populated, 61 sources, placeholder false and manifest hash verified. Sheet 1280 x 288; portrait 128 x 128. Full audit reports only E_attack_2 and E_death_3 at 67 px in a 64 px cell, within the allowed 3 px. Source cuts are clear: two S_walk guard-band pixels at x1450 are inside the fifth slot, whose boundary is1448. Final sheet and portrait visually reviewed.
+
+The broad bugbear needed compact downward morningstar strikes and curled death poses. S/N hit enlargement was corrected against own-facing idles; rear recoil was strengthened after reduction made its poses too similar. Before fixing a strip boundary, inspect coordinates on both sides: the final E death foot was spilling backward into slot3. A ±2px guard scan can also flag safe pixels inside a neighboring slot, as S_walk demonstrated. Numeric size edits can overshoot and must be measured. Portrait uses white gutter on all four edges. No script changes or Unity installation. More-than-two retries: N_death (3 regenerations). Exact output in homelab/DND.vbeta/assets-src/sprites/inbox/bugbear/STATUS.md. Continuing the batch order.
+
+
+## Astra (Codex): 2026-09-11 — user-authorized parallel sprite production
+
+Peter explicitly asked to spin up multiple agents to finish faster. Guard, acolyte and wererat are now assigned to separate agents while I finish thug, then the remaining black bear and owlbear. Each agent owns its creature inbox/output only. I retain the batch log and handoff records, and serialize sprite_clean.py builds because they update shared manifest.json. No script or Unity changes. All creatures still require the full source and export validation before completion.
+
+
+## Astra (Codex): 2026-09-11 — thug complete
+
+sprite_clean.py 0.6.0 --stature M: OK with no drift; checker PASS. Full 60-frame audit has no clipping notes. All source cuts clear, 60 populated cells, 61 sources, placeholder false and manifest hash verified. Sheet1280 x288; portrait128 x128. Final sheet and portrait visually reviewed.
+
+S/N idles were calibrated before animation. S/E walks received a leg-phase correction. Front death generation produced a detached duplicate hair patch above frame2; targeted regeneration removed it. Compact mace position in S_hit and curled S/N/E corpse poses eliminated all >3px clipping. E_death frame4's foot was shifted out of slot3 before shortening its final curl. Portrait white gutters preserved foreground. No script changes or Unity installation. More-than-two retries: none. Exact output in homelab/DND.vbeta/assets-src/sprites/inbox/thug/STATUS.md. Continuing the batch order.
+
+
+Peter also requested owlbear be queued. It is assigned to the acolyte agent immediately after acolyte completion; all four available agent slots are active. Current coverage: root black_bear; agents guard, wererat, acolyte then owlbear. Thug is complete with zero clipping, recorded in BATCH-LOG.md. Remaining total: five.
+
+
+Owlbear queue reassigned to the guard agent because guard reached OK/PASS first. It will start after recording guard's final visual review. Acolyte agent was explicitly told to cancel its owlbear queue and finish only acolyte. This starts the last creature sooner with no overlapping ownership.
+
+
+## Astra (Codex): 2026-09-11 — guard complete via parallel agent
+
+sprite_clean.py 0.6.0 --stature M: OK/no drift, checker PASS, zero clipping across all60 frames, all source cuts clear,60 populated cells,61sources,placeholder false and hash verified. Sheet1280x288; portrait128x128; final exports visually reviewed by worker and root.
+
+SHA256 2e4b6da3f9db77ce3588a01400e58841f69810c2e06b7fdd5c11ee0ce6eb746b. Exact output/audit in homelab/DND.vbeta/assets-src/sprites/inbox/guard/STATUS.md. More-than-two retries: S_walk (3); a targeted edit changed an unrelated walking leg, so all six were rechecked. Death fixes centered the entire spear and corpse. No script or Unity changes. Agent is now producing owlbear.
+
+### Astra → Fable: wererat complete (2026-09-11)
+
+60 frames, M stature, height fit, no drift, maximum 3 px clipping within batch allowance, all source cuts clear. Sheet and portrait visually reviewed. No strip exceeded two regenerations. sprite_clean 0.6.0 build OK and checker PASS; 61 manifest sources, placeholder=false, matching hash 57251112ce19d94435968532108a0fffc2c2fbff99442f595eca94d94dc23b6f. Evidence and exact final output: homelab/DND.vbeta/assets-src/sprites/inbox/wererat/STATUS.md. Walking repairs can omit gear: recheck the entire strip after phase edits. Recenter each whole silhouette to remove tail cut crossings; curl long tails above the feet. No script changes or Unity installation. Ready for your verify-the-batch pass.
+
+### Astra → Fable: acolyte complete (2026-09-11)
+
+60 frames, M stature, height fit, no drift or clipping, all source cuts clear. Sheet and portrait visually reviewed. S_walk and N_walk each needed three regenerations. sprite_clean 0.6.0 build OK and checker PASS; 61 manifest sources, placeholder=false, matching hash 16bed102fc75d99a9d92cee9497e20de406f46e92091c3cfd882a3005ca78e86. Evidence and exact final output: homelab/DND.vbeta/assets-src/sprites/inbox/acolyte/STATUS.md. Using front idle for rear facing can confuse the reference: turnaround-only rear idle resolved it. Name the specific character and boot for walk corrections, then inspect all six poses. Measured correction resolved N/E hit scale undershoot. No script changes or Unity installation. Ready for your verify-the-batch pass.
+
+
+## Astra (Codex): 2026-09-11 — black_bear complete
+
+sprite_clean 0.6.0 --stature M --fit width: build OK, no drift, checker PASS. All 60 populated frames (minimum 1203 opaque pixels), all 15 source cuts clear, full clipping audit maximum 3 px within the batch allowance. Sheet 1280x288 and portrait 128x128 visually reviewed; 61 manifest sources, placeholder=false, matching SHA256 7d392d0ff394590607f92dc9fc4d32625f0a198f3191ac521a064b4342a2a064.
+
+Quadruped front/rear death poses must stay foreshortened within their facing footprint; rear final hindpaw compaction reduced 4 px clipping to 1 px. Percentage size edits under-corrected E hit repeatedly, so remeasurement against its own idle was required. The first front death compaction accidentally restored frame 2 to idle; a targeted second-pose buckling edit restored the four-stage sequence. N/E death and portrait generation was delegated in separate source files; exact provenance is in PARALLEL-GENERATION-LOG.md alongside the root GENERATION-LOG.md. Four-sided white portrait gutters preserved fur during keying. No script changes or Unity installation. More-than-two retries: strip_E_hit (3), strip_N_death (3). Exact output in homelab/DND.vbeta/assets-src/sprites/inbox/black_bear/STATUS.md. Continuing the batch order.
+
+
+### Astra → Fable: batch delivery inventory (2026-09-11)
+
+The completed 18-creature read-only inventory passed: all manifest hashes match, all entries placeholder=false, 60 populated frames and 61 existing sources per creature, expected sizes/statures, and 128x128 portraits. Report: homelab/DND.vbeta/assets-src/sprites/inbox/FINAL-INVENTORY-18.md. The owner six were inspected only. Black bear separately passed the same checks, making 19 of 20 complete. Owlbear is split between guard agent (main integration and S/E assets) and wererat agent (N attack, hit, death); final builds remain serialized. No new script or Unity changes.
+
+
+## Astra → Fable: both sprite batches complete — verify the batch (2026-09-11)
+
+All 20 requested bulk creatures are complete: 20 sprite sheets, 20 portraits and 1,200 animation frames. Owlbear was last: sprite_clean 0.6.0 --size L --stature L, height fit, build OK/no drift, checker PASS, no clipping across all 60 frames, source cuts clear. Sheet 2560x384; portrait128x128; 61 manifest sources, placeholder=false, hash matches 9811fb5cd8ada69ce327bfff66bb2327812d48226e839c1d99ef61672476387e. Worker and root visually reviewed both exports. Owlbear retries over two: S_idle (3), N_hit (3), counted across all three generation logs. Its exact output and audit are in inbox/owlbear/STATUS.md.
+
+Full batch log and all 40 produced output PNG paths: homelab/DND.vbeta/assets-src/sprites/inbox/BATCH-REPORT.md. The independent read-only inventory of the earlier 18 is FINAL-INVENTORY-18.md; black_bear and owlbear passed the same inventory checks separately. Every final sheet has 60 populated cells and a matching manifest hash; every portrait is128x128. Each creature's STATUS.md retains exact outputs and full clipping evidence. Some sheets retain1–3px clipping explicitly permitted by BATCH-RUN; none exceeds3px and there are no final drift lines. The owner-completed six remain unchanged since your0.5.0 handoff. No Unity installation or script edits by Astra during this resumed run. Ready for your verify-the-batch review and installation.
+
+Implementation notes to carry forward: giant_spider uses --size L --stature L --fit width under D37; wolf, giant_rat and black_bear use their documented quadruped width fit. Portraits need continuous white gutter on all four edges, including below the bust, so foreground colors are not selected as background (ogre/PORTRAIT-KEYING-EVIDENCE.md). Whole-body death placement and compact/curl poses prevent neighboring slot fragments. A multi-facing turnaround can contaminate rear-facing strips; using the approved rear idle for both identity and size resolved owlbear N. Numeric percentage size edits can under-correct or overshoot, so measure each result rather than stacking edits blindly. Keep creature-specific gear out of reusable style boilerplate: one delegated prompt carried a stale shortsword phrase, caught in provenance review; all resulting bear/owlbear images were inspected and have no gear. Exact prompts remain unaltered in their logs.
+
+Parallel production completed with isolated strip ownership and serialized shared-manifest builds. The last creature used GENERATION-LOG.md, N-GENERATION-LOG.md and HIT-GENERATION-LOG.md; black bear also has PARALLEL-GENERATION-LOG.md. No remaining asset task is queued in this batch.
+
+## Fable (Claude): 2026-09-11 — batch verified: 24/24 creatures accepted
+
+Independent verification of every sheet in `assets-src/sprites/out/` (4 party + 20 batch):
+checker PASS on all 24; zero empty frames; statures correct (S 52 / M 72 / L 104, width-fit
+quadrupeds fill the tile); composites reviewed by eye; all sheets installed in Dungine
+(`Assets/Dungine/Sprites/POC/`, 58 files incl. portraits), Editor imports with 0 errors, POC
+plays with 0 errors. Astra's D37 (width-fit spider) accepted as a correct application of D35.
+
+Owner fix from Astra's ogre evidence: `sprite_clean` **0.7.0** treats only light border colors
+(mean >= 180) as background, so a bust touching the border can never key its own skin/armor
+(D38). Regression: the original bad ogre portrait source now keys white only. Keep the
+white-gutter portrait habit anyway. All 24 sheets re-checked PASS under 0.7.0.
+
+Notes for Astra's next assignment (when Peter gives one): nothing outstanding on sprites.
+Delegated authority (D36) stands for future sprite batches under the same rules.
+
+## Fable (Claude): 2026-09-11 — Plan 06 voxel kit handed to Astra
+
+Sprites are closed. Next Astra job: Plan 06 (dungeon voxel kit), no image generation. Read
+`homelab/DND.vbeta/assets-src/voxels/CODEX-VOX-PROMPT.md` (Peter will paste it). You write
+`tools/vox_write.py`, the 30-odd dungeon `.vox` tiles, `kit.json`, and `tools/vox_to_obj.py`;
+you must pass `tools/vox_check.py kit` (mine; do not edit; report defects here with evidence).
+Fable then writes the Unity importer and rebuilds the POC room from your tiles.

@@ -20,8 +20,8 @@ BATCH 1 (finish the first roster):
   bandit           --stature M
   cultist          --stature M
   ghoul            --stature M
-  wolf             --stature M   (quadruped: S = head toward viewer, N = tail toward viewer, E = side profile)
-  giant_rat        --stature S   (quadruped, same facing rule)
+  wolf             --stature M --fit width   (quadruped: S = head toward viewer, N = tail toward viewer, E = side profile; --fit width = fill the cell width, one tile long)
+  giant_rat        --stature S --fit width   (quadruped, same facing rule)
   giant_spider     --size L --stature L   (use TEMPLATE_L_guide.png)
   ogre             --size L --stature L   (use TEMPLATE_L_guide.png)
 
@@ -34,7 +34,7 @@ BATCH 2 (PROMPT-PACK §3b, identity blocks are there):
   guard            --stature M
   acolyte          --stature M
   wererat          --stature M
-  black_bear       --stature M   (quadruped)
+  black_bear       --stature M --fit width   (quadruped)
   owlbear          --size L --stature L
 
 APPROVAL: Peter pre-approves any turnaround that matches its identity block (silhouette,

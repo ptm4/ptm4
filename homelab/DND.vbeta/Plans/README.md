@@ -7,7 +7,7 @@ Keep `status` here in sync with each file's frontmatter.
 |---|---|---|---|---|---|---|
 | [00](00-MASTER.md) | Master plan | 0 | fable | decide | | done (awaiting Peter's review) |
 | [01](01-environment-setup.md) | Environment setup (Unity project, plugin, MCP, engine solution) | 1 | sonnet | execute | 00 | in-progress (all agent steps done; Peter: fresh-session MCP check + UGS Relay/Lobby) |
-| [02](02-poc-vertical-slice.md) | POC vertical slice (throwaway) | 1 | fable | decide | 01 | in-progress (scene built, plays clean; Peter's look review pending) |
+| [02](02-poc-vertical-slice.md) | POC vertical slice (throwaway) | 1 | fable | decide | 01 | in-progress (Peter's 5 review notes addressed 2026-09-11; re-test pending; look review after Plan 06 tiles) |
 | [03](03-rules-engine.md) | Rules engine (headless) | 2 | fable | decide | 01 | in-progress (skeleton + 31 tests; architecture doc written) |
 | [03a](Rules/03a-data-ingest.md) | SRD / Open5e data ingest | 2 | sonnet | execute | 03 | stub (sources confirmed 2026-09-09; ready to run) |
 | [03b](Rules/03b-core-mechanics.md) | Core mechanics | 2 | sonnet | execute | 03, 03a | stub |
@@ -15,8 +15,8 @@ Keep `status` here in sync with each file's frontmatter.
 | [03d](Rules/03d-conditions-and-status.md) | Conditions and status | 2 | sonnet | execute | 03b | stub |
 | [03e](Rules/03e-character-model-2024.md) | 2024 character model | 2 | fable | decide | 03a, 03b | stub |
 | [04](04-art-style-bible.md) | Art style bible | 1 | fable | decide | 00 | drafted (v0.1; Peter review + POC check pending) |
-| [05](05-sprite-pipeline.md) | Sprite pipeline | 1 | codex-image + sonnet | execute | 04 | in-progress (4/14 done: goblin, fighter, wizard, rogue; bulk run of 20 more handed to Codex via BATCH-RUN.md) |
-| [06](06-voxel-world-kit.md) | Voxel world kit | 1 | sonnet + codex-image | execute | 04 | stub |
+| [05](05-sprite-pipeline.md) | Sprite pipeline | 1 | codex-image + sonnet | execute | 04 | done-pending-review (24 creatures verified + installed 2026-09-11; Peter's in-scene look approval outstanding) |
+| [06](06-voxel-world-kit.md) | Voxel world kit | 1 | codex (vox files) + fable (importer) | execute | 04 | drafted (Codex hand-off ready: CODEX-VOX-PROMPT.md; validator written) |
 | [07](07-campaign-format-storybook.md) | Campaign format (storybook schema) | 2 | fable | decide | 03 | stub |
 | [08](08-auto-dm-engine.md) | Auto-DM engine | 2 | fable | decide | 03, 07 | stub |
 | [09](09-local-llm-improv.md) | Local LLM improv (optional layer) | 3 | fable | decide | 07, 08 | stub |

@@ -1,7 +1,7 @@
 """Sprite pipeline: raw generations -> template-exact, palette-exact sheets (style bible §3).
 
 Usage
-  python tools/sprite_clean.py build  <creature> [--size M|L] [--stature T|S|M|L] [--no-outline] [--from-turnaround]
+  python tools/sprite_clean.py build  <creature> [--size M|L] [--stature T|S|M|L] [--fit height|width] [--no-outline] [--from-turnaround]
   python tools/sprite_clean.py check  <sheet.png> [--size M|L]
   python tools/sprite_clean.py build-all [--size M|L]
 
@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.7.0"
 ROOT = Path(__file__).resolve().parents[1]
 SPRITES = ROOT / "assets-src" / "sprites"
 INBOX, OUT = SPRITES / "inbox", SPRITES / "out"
@@ -53,6 +53,9 @@ ALPHA_CUTOFF = 128   # < 50 % alpha becomes transparent (bible: no semi-transpar
 BG_TOLERANCE = 28    # per-channel distance to count as a background color when keying
 EDGE_TOLERANCE = 90  # looser distance for anti-aliased fringe pixels next to keyed background
 DRIFT_TOLERANCE = 0.12  # an animation whose mean height differs from idle by more than this fails
+ISLAND_TOLERANCE = 10   # enclosed pockets must match a background color this tightly (source px)
+ISLAND_MIN_PX = 24      # ...and be at least this many source pixels; smaller = a highlight, kept
+LIGHT_BG_MIN = 180      # a border color counts as background only if its mean channel is this light
 
 
 def load_palette() -> tuple[np.ndarray, tuple[int, int, int]]:
@@ -84,7 +87,12 @@ def key_background(rgba: np.ndarray) -> tuple[np.ndarray, str | None]:
     border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
     # Quantize border colors coarsely to find the (up to) two dominant background colors.
     keys = Counter(map(tuple, (border // 16 * 16).tolist()))
-    bg = [np.array(k) + 8 for k, _ in keys.most_common(2)]
+    # Backgrounds in this project are white or checkerboard greys (prompts ask for flat white).
+    # Only LIGHT colors may be treated as background; a bust touching the border must not make
+    # its own brown/skin/armor a "background" (ogre portrait, 2026-09-10: brown 168/104/72 was
+    # keyed, erasing the face). Fall back to the most common color only if nothing is light.
+    ranked = [np.array(k) + 8 for k, _ in keys.most_common(4)]
+    bg = [c for c in ranked if c.mean() >= LIGHT_BG_MIN][:2] or ranked[:1]
     near = np.zeros((h, w), bool)
     for c in bg:
         near |= (np.abs(rgb - c) <= BG_TOLERANCE).all(axis=2)
@@ -104,6 +112,36 @@ def key_background(rgba: np.ndarray) -> tuple[np.ndarray, str | None]:
         for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
             if 0 <= ny < h and 0 <= nx < w and near[ny, nx] and not seen[ny, nx]:
                 seen[ny, nx] = True; q.append((ny, nx))
+    # Enclosed islands: background pockets the silhouette surrounds (between arm and torso,
+    # inside a curled claw) never touch the border. Key any component NOT reached by the flood
+    # fill whose pixels are all a tight match to a background color and that is large enough
+    # to be a pocket rather than a highlight. Bone, metal and fabric highlights are neither
+    # exact background colors nor that large, so they survive (skeleton is the regression case).
+    exact = np.zeros((h, w), bool)
+    for c in bg:
+        exact |= (np.abs(rgb - c) <= ISLAND_TOLERANCE).all(axis=2)
+    island_candidates = exact & ~seen
+    islands = 0
+    if island_candidates.any():
+        comp_seen = np.zeros((h, w), bool)
+        for y0 in range(h):
+            row = island_candidates[y0]
+            if not row.any():
+                continue
+            for x0 in np.where(row & ~comp_seen[y0])[0]:
+                comp: list[tuple[int, int]] = []
+                q2: deque[tuple[int, int]] = deque([(y0, int(x0))])
+                comp_seen[y0, x0] = True
+                while q2:
+                    y, x = q2.popleft()
+                    comp.append((y, x))
+                    for ny, nx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                        if 0 <= ny < h and 0 <= nx < w and island_candidates[ny, nx] and not comp_seen[ny, nx]:
+                            comp_seen[ny, nx] = True; q2.append((ny, nx))
+                if len(comp) >= ISLAND_MIN_PX:
+                    for y, x in comp:
+                        seen[y, x] = True
+                    islands += len(comp)
     out = rgba.copy()
     out[seen, 3] = 0
     # Fringe pass: opaque pixels touching the keyed region that are still close to a bg color.
@@ -117,7 +155,8 @@ def key_background(rgba: np.ndarray) -> tuple[np.ndarray, str | None]:
         kill = adj & ~t & fringe_loose
         out[kill, 3] = 0
     keyed = int(seen.sum())
-    return out, f"keyed painted background ({keyed} px, colors {[tuple(int(v) for v in c) for c in bg]})"
+    extra = f", {islands} px in enclosed islands" if islands else ""
+    return out, f"keyed painted background ({keyed} px{extra}, colors {[tuple(int(v) for v in c) for c in bg]})"
 
 
 # ---- per-frame processing ----------------------------------------------------------------
@@ -161,7 +200,7 @@ def keyed_content(img: Image.Image) -> tuple[np.ndarray, tuple[int, int, int, in
     return arr, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), notes
 
 
-def reference_scale(img: Image.Image, cell: tuple[int, int], target_h: int) -> float:
+def reference_scale(img: Image.Image, cell: tuple[int, int], target_h: int, fit: str = "height") -> float:
     """Source-pixels-per-output-pixel so the reference pose's HEIGHT lands on the stature target
     (bible §3: Tiny 36, Small 52, Medium 72, Large 104). ONE value per facing: every frame of
     that facing is scaled by the same factor, so poses keep their relative size (a crouching
@@ -171,6 +210,11 @@ def reference_scale(img: Image.Image, cell: tuple[int, int], target_h: int) -> f
     if bbox is None:
         return 1.0
     x0, y0, x1, y1 = bbox
+    if fit == "width":
+        # Quadrupeds / long creatures: a Medium wolf is 5 ft LONG = one tile. Fit the reference
+        # pose's width to the cell (minus outline); height falls where it falls, capped by height.
+        cw, ch = cell
+        return max((x1 - x0) / max(1, cw - 2), (y1 - y0) / max(1, target_h - 2), 1e-6)
     return max((y1 - y0) / max(1, target_h - 2), 1e-6)  # -2: outline adds a pixel top and bottom
 
 
@@ -232,7 +276,7 @@ def fit_frame(img: Image.Image, cell: tuple[int, int], pal, ink, add_outline: bo
 
 # ---- build / check -------------------------------------------------------------------------
 
-def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = False, stature: str | None = None) -> bool:
+def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = False, stature: str | None = None, fit: str = "height") -> bool:
     pal, ink = load_palette()
     cw, ch = SIZES[size]
     stature = stature or ("L" if size == "L" else "M")
@@ -257,8 +301,8 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         sources.append("sheet.png")
         if abs(sx - sy) > 0.02:
             problems.append(f"sheet.png {img.width}x{img.height} is not a uniform scale of {cw * cols}x{ch * len(FACINGS)}")
-        scale = reference_scale(img.crop((0, 0, int(cw * sx), int(ch * sy))), (cw, ch), target_h)
-        notes.append(f"shared scale {scale:.3f} from sheet r0c0 (stature {stature}, {target_h} px)")
+        scale = reference_scale(img.crop((0, 0, int(cw * sx), int(ch * sy))), (cw, ch), target_h, fit)
+        notes.append(f"shared scale {scale:.3f} from sheet r0c0 (stature {stature}, {target_h} px, fit {fit})")
         for r in range(len(FACINGS)):
             for c in range(cols):
                 box = (int(c * cw * sx), int(r * ch * sy), int((c + 1) * cw * sx), int((r + 1) * ch * sy))
@@ -273,8 +317,8 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         for f in FACINGS:
             ref = src / f"{f}_idle_0.png"
             if ref.exists():
-                scales[f] = reference_scale(Image.open(ref), (cw, ch), target_h)
-                notes.append(f"{f}: scale {scales[f]:.3f} from {f}_idle_0 (stature {stature}, {target_h} px)")
+                scales[f] = reference_scale(Image.open(ref), (cw, ch), target_h, fit)
+                notes.append(f"{f}: scale {scales[f]:.3f} from {f}_idle_0 (stature {stature}, {target_h} px, fit {fit})")
             else:
                 scales[f] = None
                 problems.append(f"{f}_idle_0.png missing: {f} frames fitted individually")
@@ -312,10 +356,11 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         img = Image.open(turn).convert("RGBA")
         slot = img.width // 3
         sources.append("turnaround.png (placeholder: all frames from one pose)")
-        scale = reference_scale(img.crop((0, 0, slot, img.height)), (cw, ch), target_h)
-        notes.append(f"shared scale {scale:.3f} from turnaround S slot (stature {stature}, {target_h} px)")
         for r, f in enumerate(FACINGS):
-            frame, n_ = fit_frame(img.crop((r * slot, 0, (r + 1) * slot, img.height)), (cw, ch), pal, ink, add_outline, scale)
+            slot_img = img.crop((r * slot, 0, (r + 1) * slot, img.height))
+            scale = reference_scale(slot_img, (cw, ch), target_h, fit)  # per facing, like the strips path
+            notes.append(f"{f}: scale {scale:.3f} from turnaround slot (stature {stature}, {target_h} px, fit {fit})")
+            frame, n_ = fit_frame(slot_img, (cw, ch), pal, ink, add_outline, scale)
             notes += [f"{f}: {x}" for x in n_]
             for c in range(cols):
                 sheet[r * ch:(r + 1) * ch, c * cw:(c + 1) * cw] = frame
@@ -337,7 +382,7 @@ def build(creature: str, size: str, add_outline: bool, from_turnaround: bool = F
         Image.fromarray(parr, "RGBA").save(OUT / f"{creature}_portrait.png")
         sources.append("portrait.png")
 
-    write_manifest(creature, out_path, sources, size, placeholder=("turnaround.png" in " ".join(sources)), stature=stature)
+    write_manifest(creature, out_path, sources, size, placeholder=("turnaround.png" in " ".join(sources)), stature=stature, fit=fit)
     ok = check(out_path, size, quiet=True) and not problems
     print(f"{creature}: {'OK' if ok else 'NEEDS REGEN'} -> {out_path.relative_to(ROOT)}")
     for p in problems:
@@ -384,7 +429,7 @@ def check(sheet_path: Path, size: str, quiet: bool = False) -> bool:
     return not errs
 
 
-def write_manifest(creature: str, out_path: Path, sources: list[str], size: str, placeholder: bool, stature: str = "M") -> None:
+def write_manifest(creature: str, out_path: Path, sources: list[str], size: str, placeholder: bool, stature: str = "M", fit: str = "height") -> None:
     mpath = SPRITES / "manifest.json"
     manifest = json.loads(mpath.read_text()) if mpath.exists() else {}
     manifest[creature] = {
@@ -392,6 +437,7 @@ def write_manifest(creature: str, out_path: Path, sources: list[str], size: str,
         "sha256": hashlib.sha256(out_path.read_bytes()).hexdigest(),
         "size": size,
         "stature": stature,
+        "fit": fit,
         "sources": sources,
         "placeholder": placeholder,
         "date": date.today().isoformat(),
@@ -406,11 +452,12 @@ def main() -> None:
     b = sub.add_parser("build"); b.add_argument("creature"); b.add_argument("--size", default="M", choices=SIZES)
     b.add_argument("--no-outline", action="store_true"); b.add_argument("--from-turnaround", action="store_true")
     b.add_argument("--stature", choices=STATURE_HEIGHT, help="T/S/M/L target height (default M, or L for --size L)")
+    b.add_argument("--fit", choices=("height", "width"), default="height", help="height (bipeds, default) or width (quadrupeds/long creatures: fill the cell width)")
     ba = sub.add_parser("build-all"); ba.add_argument("--size", default="M", choices=SIZES); ba.add_argument("--no-outline", action="store_true")
     c = sub.add_parser("check"); c.add_argument("sheet"); c.add_argument("--size", default="M", choices=SIZES)
     a = ap.parse_args()
     if a.cmd == "build":
-        sys.exit(0 if build(a.creature, a.size, not a.no_outline, a.from_turnaround, a.stature) else 1)
+        sys.exit(0 if build(a.creature, a.size, not a.no_outline, a.from_turnaround, a.stature, a.fit) else 1)
     if a.cmd == "build-all":
         ok = all(build(p.name, a.size, not a.no_outline) for p in sorted(INBOX.iterdir()) if p.is_dir())
         sys.exit(0 if ok else 1)

@@ -54,7 +54,7 @@
 </script>
 
 <QueryClientProvider client={queryClient}>
-  <div class="shell">
+  <div class="shell" class:rail-toggled={app.railOpen}>
     <Rail />
     <div class="main">
       <Topbar />
