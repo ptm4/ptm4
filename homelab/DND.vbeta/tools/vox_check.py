@@ -5,7 +5,7 @@ Usage
   python tools/vox_check.py file <tile.vox> [--footprint W D] [--height H]
 
 Checks per tile:
-  - parses as VOX 150 with SIZE/XYZI (first model only; multi-model files are rejected)
+  - parses as VOX with version exactly 150 (149 rejected; found by Astra 2026-09-11) and SIZE/XYZI (one model)
   - model dimensions == footprint * 16 wide/deep and <= height * 16 tall (16 voxels per tile)
   - every used palette index maps to a master-palette color (the file's RGBA chunk must equal
     assets-src/palettes/master.png order: index 1 = first master color)
@@ -40,6 +40,8 @@ def read_vox(path: Path):
     if data[:4] != b"VOX ":
         raise ValueError("not a VOX file")
     version = struct.unpack("<i", data[4:8])[0]
+    if version != 150:
+        raise ValueError(f"VOX version {version}; the kit contract requires 150")
     pos = 8
     size = None; voxels = None; palette = None; models = 0
     while pos + 12 <= len(data):

@@ -14,6 +14,12 @@ the rules-data rows on 2026-09-09; asset fallbacks stay pending until first used
 | 5e-database (github.com/5e-bits/5e-database) | SRD 5.1 as JSON dumps, well-structured for monsters/spells/classes | MIT (code) + SRD terms (data); verify | Yes | yes (Peter, 2026-09-09) |
 | Homebrew (Peter) | Own classes, monsters, items in the engine's homebrew format | Peter's | Yes | yes (Peter, 2026-09-09) |
 
+## Reference only (read to understand rules; never ingested, never quoted into content/)
+
+| Source | Use | Why not ingested |
+|---|---|---|
+| dnd5e.wikidot.com (2014 rules) and dnd2024.wikidot.com (2024 rules) | Peter's chosen reference for character-sheet structure, class features, spell text, and rule interpretation while designing Plans 03/03e/11. Cross-check implementations against it. | Fan transcription of the full published books, including non-SRD material; not licensed for redistribution. SRD-covered facts it shows are the same facts the confirmed sources carry. Added 2026-09-11 (Peter). |
+
 ## Explicitly excluded
 
 | Source | Why |

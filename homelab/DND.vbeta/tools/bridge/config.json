@@ -1,0 +1,95 @@
+{
+  "_comment": "Astra-Fable bridge (Plan: AGENT-COLLABORATION). Dispatch is DISABLED until Peter sets enabled=true. Executable paths and argument arrays are explicit; envelope text is never interpolated into commands.",
+  "enabled": true,
+  "state_root": "E:/REPO/ptm4/.agent-state/dungine",
+  "repo_root": "E:/REPO/ptm4",
+  "unity_project": "E:/Unity/Projects/Dungine",
+  "runbook": "E:/REPO/ptm4/homelab/agentic/runbooks/11-dungine-agent-collaboration.md",
+  "agentcomms": "E:/REPO/ptm4/AgentComms.md",
+  "poll_seconds": 10,
+  "limits": {
+    "max_review_cycles": 2,
+    "transport_retries": 2,
+    "retry_delays_seconds": [
+      30,
+      120
+    ],
+    "no_output_warn_minutes": 10,
+    "lease_heartbeat_seconds": 15,
+    "lease_stale_seconds": 120,
+    "message_ttl_hours": 48,
+    "run_timeout_minutes": 90
+  },
+  "protected_paths": [
+    "homelab/DND.vbeta/tools/palette.py",
+    "homelab/DND.vbeta/assets-src/palettes/",
+    "homelab/DND.vbeta/assets-src/sprites/TEMPLATE_",
+    "homelab/DND.vbeta/tools/bridge/",
+    "homelab/DND.vbeta/Plans/DECISIONS.md",
+    ".agent-state/"
+  ],
+  "agents": {
+    "fable": {
+      "adapter": "claude",
+      "exe": "C:/Users/ptm/AppData/Roaming/Claude/claude-code/2.1.260/claude.exe",
+      "args": [
+        "-p",
+        "--output-format",
+        "json",
+        "--permission-mode",
+        "acceptEdits",
+        "--max-turns",
+        "200"
+      ],
+      "allowed_tools": [
+        "Read",
+        "Edit",
+        "Write",
+        "Glob",
+        "Grep",
+        "Bash(python *)",
+        "Bash(python3 *)",
+        "Bash(unity *)",
+        "Bash(dotnet *)",
+        "Bash(git status*)",
+        "Bash(git diff*)",
+        "Bash(git log*)",
+        "Bash(ls *)",
+        "Bash(cat *)"
+      ],
+      "resume_sessions": true,
+      "model": null,
+      "_auth": "Claude Desktop OAuth login (Max subscription). No API key. Do not add ANTHROPIC_API_KEY to this process environment."
+    },
+    "astra": {
+      "adapter": "codex",
+      "exe": "C:/Users/ptm/AppData/Local/OpenAI/Codex/bin/8e5b6932251c2c1c/codex.exe",
+      "args": [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "-s",
+        "workspace-write",
+        "-c",
+        "sandbox_workspace_write.network_access=true"
+      ],
+      "resume_sessions": false,
+      "model": null,
+      "_auth": "ChatGPT login (codex login status: 'Logged in using ChatGPT'). Model and reasoning come from ~/.codex/config.toml (gpt-6-astra, xhigh); the bridge never passes -m.",
+      "_sandbox": "workspace-write with localhost network allowed so `unity` can reach the Editor's Pipeline server; verified to parse 2026-09-11."
+    }
+  },
+  "audit_ignore": [
+    "homelab/arch-data-dev/",
+    "homelab/agentic/generated/",
+    "homelab/agentic/status/",
+    ".claude/",
+    "AgentComms.md",
+    ".agent-state/",
+    "homelab/DND.vbeta/tools/pilot-scratch/"
+  ],
+  "_audit_ignore_comment": "Paths written by hooks/background agents or shared logs; never attributed to a run. Everything else outside the task's allowed paths blocks the task.",
+  "path_prepend": [
+    "C:/Users/ptm/AppData/Local/Unity/bin"
+  ]
+}

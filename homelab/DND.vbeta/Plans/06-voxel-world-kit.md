@@ -8,12 +8,26 @@ depends_on: [04]
 inputs: [docs/style-bible.md §4, assets-src/palettes/master.png + master.json, tools/vox_check.py, assets-src/voxels/CODEX-VOX-PROMPT.md]
 outputs: [tools/vox_write.py (Codex), tools/vox_to_obj.py (Codex), assets-src/voxels/dungeon/*.vox (Codex), assets-src/voxels/kit.json (Codex), assets-src/voxels/obj/* (generated), Assets/Dungine/Editor/VoxelKitImporter.cs + VoxelTile component (Fable), Assets/Dungine/Kit/Dungeon/*.prefab (generated), POC rebuilt on kit tiles (Fable)]
 done_when: [vox_check.py kit passes for every tile, every tile imports as a prefab with metadata, the POC room is rebuilt from kit tiles and lights correctly under the night profile, Peter approves the look against Digital-Influences]
-status: drafted
+status: in-progress
 ---
 
 # 06: Voxel world kit
 
-**Status 2026-09-11: drafted as a Codex hand-off (D39).** Codex writes the `.vox` files
+**Status 2026-09-11 (evening): Codex delivered, Fable imported, POC rebuilt on the kit.**
+Codex: `tools/vox_write.py`, `tools/vox_to_obj.py`, `tools/test_voxel_pipeline.py` (6 tests,
+byte-identical regeneration), 35 `dungeon/*.vox`, `kit.json`, 35 OBJ/MTL + `palette_atlas.png`.
+`vox_check.py kit`: 35/35 PASS (validator gained the version-150 check from Astra's report).
+Fable: `Assets/Dungine/Kit/VoxelTile.cs` (metadata component), `Assets/Dungine/Editor/
+VoxelKitImporter.cs` (menu **Dungine > Kit > Import Dungeon**: copies the kit into
+`Assets/Dungine/Kit/Dungeon/Meshes`, atlas import point/no-mips/uncompressed, `KitPalette` +
+`KitEmissive` URP materials, one prefab per tile with VoxelTile + MeshCollider). `PocSceneBuilder`
+now places kit prefabs from the ASCII map (floors with hashed worn variants, walls with hashed
+cracked/mossy, sconce walls rotated toward the room, pillars, props incl. 2x1 table and
+sarcophagus, brazier with its point light), props that block movement feed GridMap. Zero errors.
+**Remaining:** Peter's look review; GridMap reading VoxelTile directly (Plan 12 contract); the
+water tile shader; more biomes. Conventions learned are in D41.
+
+**Earlier (morning): drafted as a Codex hand-off (D39).** Codex writes the `.vox` files
 programmatically (its image tool cannot make voxels; the VOX format is trivial to emit), plus
 the converter to meshes. Fable owns the validator (`tools/vox_check.py`, written) and the Unity
 importer. Same division of labour as Plan 05: spec and validation here, bulk production there.

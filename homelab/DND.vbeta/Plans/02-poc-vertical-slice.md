@@ -34,6 +34,30 @@ judges the look against `Plans/Digital-Influences/`.
 | Highlight the space I am selecting to move | `MoveHighlighter`: reachable tiles (cyan), hovered tile (bright), attackable enemies (red; melee or in ranged range). Dim enough not to bloom. |
 | Free camera | `CameraRig`: WASD/arrows pan, Q/E rotate, scroll zoom, middle-drag pan, F re-centers; a new turn re-follows the active unit but keeps the chosen yaw/zoom. |
 
+## Peter's second play review (2026-09-11) and what changed
+| Note | Resolution |
+|---|---|
+| Characters move through NPC spaces and walls | Movement was a straight-line lerp from start to destination. `GridMap.Path` now returns the BFS route and units walk it cell by cell (verified: a move around the pillar block takes the corridor, never a wall cell). Rules never allowed the shortcut; only the animation did. |
+| Clipping (figures hidden by walls next to them) | `WallCutaway`: walls one and two tiles toward the camera from any living unit (and their side neighbours) render at 22 % alpha; restored when clear. This is the POC form of D28's cutaway rule; Plan 06 tiles get the same component. |
+| Proper turn display: portraits, initiative, health bar | New initiative bar across the top: portrait per combatant in initiative order, team tick, init number, HP bar and numbers, current unit framed orange, dead greyed with an X. Portraits are the Plan 05 128x128 outputs. |
+| Bottom text jumbled | Flat full-width action bar: one bold line (unit, movement left, action state, ranged option) plus one small controls line and an End Turn button; log moved to a compact right panel. |
+| (round 3) Portrait text cramped, HP unreadable | Wider slots (96 px), name / initiative / HP on separate rows, HP text dark on the bar. |
+| (round 3) Amber ring at the selected unit's feet | `MoveHighlighter` draws a pulsing amber annulus (same amber as the portrait frame) under the unit whose turn it is; red for an enemy's turn. Follows the unit while it moves. |
+
+## Third review (2026-09-11 evening) and the kit
+| Note | Resolution |
+|---|---|
+| Ring centered and ~35 % thinner | Band 0.80-0.90, nudged 0.12 u away from the camera so it reads centered on the feet. |
+| Abilities on the bottom bar: heal, spells, attack types, utilities, potions, an item slot | `Ability` hotbar per unit (kinds: attack, ranged, spell, heal, utility, potion, item; targets enemy/ally/self/none; uses; action vs bonus). Cleric: Cure Wounds, Healing Word. Wizard: Fire Bolt, Magic Missile (3 auto-hit darts). Fighter: Second Wind. Rogue: Cunning Dash. Everyone: Potion of Healing, empty Item. Numbers cross-checked against dnd2024.wikidot.com (reference only, SOURCES.md). Slots are numbered 1-9; valid targets highlight (enemies red, allies green). |
+| Battle log movable, top-right or bottom-right | Draggable IMGUI window, defaults top-right, clamped to the screen. |
+| (kit) | The room is now built from the Plan 06 voxel kit instead of cubes. |
+
+## Fourth review (2026-09-11 night)
+| Note | Resolution |
+|---|---|
+| Opportunity attacks | Each unit has one reaction per round (reset at its turn start, shown on the status bar). Moving is resolved step by step: before each step, every hostile adjacent to the current cell but not to the next one, with its reaction available, makes a melee attack against the mover; a mover killed mid-path stops there. The AI provokes too. Reachable tiles whose route provokes are tinted amber so the player sees it before clicking. Verified by script: a route leaving reach reports "provokes", a route staying adjacent does not. |
+| Sprites should face the way they last moved and square off in combat | Facing/mirror verified working (west = east row mirrored). Added: at turn start a unit turns toward the nearest hostile within 4 tiles; after a move, toward the nearest hostile within 2 tiles; attacker and target already face each other. So adjacent combatants always face one another. |
+
 ## Learnings (feed 04 / 05 / 06 / 11)
 - **Camera:** the bible's 38° pitch at 15 u puts a 10-ft wall between camera and party;
   50° / 11 u works. The real game needs **cutaway or dithering of walls that occlude the

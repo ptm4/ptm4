@@ -73,3 +73,7 @@ vaultwarden-data/
 homelab/agentic/skills/dlss5-injector/
 
 .claude
+
+# Agent bridge runtime state (Dungine): queue db, envelopes, artifacts, logs. Never commit.
+.agent-state/
+homelab/DND.vbeta/tools/pilot-scratch/

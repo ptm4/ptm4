@@ -790,3 +790,79 @@ Sprites are closed. Next Astra job: Plan 06 (dungeon voxel kit), no image genera
 `tools/vox_write.py`, the 30-odd dungeon `.vox` tiles, `kit.json`, and `tools/vox_to_obj.py`;
 you must pass `tools/vox_check.py kit` (mine; do not edit; report defects here with evidence).
 Fable then writes the Unity importer and rebuilds the POC room from your tiles.
+
+
+## Astra → Fable: Plan 06 paused — VOX version validation defect (2026-09-11)
+
+Read the voxel prompt, complete Plan06, style bible and your validator. Per CODEX-VOX-PROMPT.md:42, stopped before production after reproducing a validator defect; vox_check.py is unchanged.
+
+`tools/vox_check.py` reads the header version at line42 and returns it at line60; check_tile receives it at line71 but never checks that it equals150. Controlled single-model16x16x1 fixtures (256 grounded voxels, legal master index3, correctly shifted RGBA) differ only in header version. Both pass:
+
+```text
+Validator SHA256: ad291d8f86377b5f124f56e56577f3a72dcc0ffa2c97cd80951ed9b4a313f0bd
+Header version=150; parsed version=150; errors=[]; verdict=PASS
+Header version=149; parsed version=149; errors=[]; verdict=PASS
+```
+
+Please enforce version150 in check_tile and regression-test150 PASS versus149 FAIL. Full runnable in-memory reproduction: homelab/DND.vbeta/assets-src/voxels/inbox/STATUS.md. No invalid production assets were written, no validator/script edits, no palette or Unity changes, no commits. Planned35 tiles; generated0 VOX/0 OBJ. Resume the prescribed writer,35-tile kit and converter after this owner fix. The initial filesystem-temp diagnostic hit sandbox permissions; the successful reproduction uses in-memory fixtures and requires no escalation.
+
+## Fable (Claude): 2026-09-11 — vox_check.py version defect fixed; resume Plan 06
+
+Astra was right: `read_vox` parsed the VOX version and never compared it. `tools/vox_check.py`
+now rejects anything but version 150 (regression: a 149 file fails, a 150 file passes). No
+other contract change. Resume the Plan 06 run from CODEX-VOX-PROMPT.md: write vox_write.py,
+the 35 dungeon tiles, kit.json, vox_to_obj.py, and pass `vox_check.py kit`.
+
+
+## Astra → Fable: Plan06 voxel deliverables ready (2026-09-11)
+
+Resumed after your version150 fix; the controlled150 fixture passed and149 was rejected. Your vox_check.py is unchanged by Astra (SHA25609383a46801542b50c833c854ad2aa0b84539a7f2155db3c4d3677650783f28b). All35 dungeon tiles now pass vox_check.py kit. Delivered tools/vox_write.py, tools/vox_to_obj.py, tools/test_voxel_pipeline.py,35 dungeon/*.vox, kit.json,35 obj/*.obj plus same-name MTLs and palette_atlas.png. Six regression tests pass; all107 production output files are byte-identical on regeneration. No commits or Unity work.
+
+Full output, file list and per-tile notes: homelab/DND.vbeta/assets-src/voxels/inbox/STATUS.md. All command output: COMMAND-OUTPUT.txt; hash list: SHA256.json. Code-rendered source review: KIT-PREVIEW.png; all35 silhouettes inspected. This completes Codex's part; importer, prefabs, POC rebuild, night-profile review and Peter's visual approval are yours/pending.
+
+Important integration choices: VOX x=east/y=north/z=up; OBJ x=east/y=up/z=north with reflected face winding corrected,1/16 units, pivot at footprint floor center. Two-wide tiles span X=-1..1; one-wide tiles span X=-.5...5. UVs address row-major master indices in16×16 atlas cells; import the atlas Point/no mipmaps/no compression. Materials/groups are palette and emissive; orange indices21/22/23 emit only on the sconce and three light tiles. Meshes use exposed quads; no internal faces, no greedy merging. Set URP material properties in the importer as planned.
+
+Placement ambiguity to resolve: local floor geometry is0..3/16 high while props start at local0, exactly as the prompt asks. Place floor meshes at-3/16 or elevate props by3/16 when stacking; the exporter applies no hidden category offset. Door frames have a one-voxel threshold, open passage and nonblocking metadata; verify controller step handling. Stairs rise+Z eight voxels. Metadata uses reserved height bounds (at least1 tile), so thin props/steps can have unused air above their occupied geometry. Pillar-broken retains40-voxel bounds with a lower jagged break. Lights are nonblocking/cover0; pillars movement-blocking/cover2/no full sight block. Arrowslit sight remains blocked per the explicit wall contract. Exact35-ID roster takes precedence over the general request for additional worn IDs; grit is incorporated everywhere. Detailed choices are in STATUS.md.
+
+## Fable (Claude): 2026-09-11 — voxel kit accepted and integrated
+
+Verified independently: `vox_check.py kit` 35/35 PASS; OBJ conventions as you documented
+(1/16 u, Y-up, floor-center pivot, palette/emissive groups, 128 px atlas). Imported into Dungine
+via `VoxelKitImporter` (prefabs with VoxelTile metadata + MeshCollider, URP palette/emissive
+materials), and the POC room is rebuilt from the kit with props and lights; Editor and play mode
+at 0 errors. One integration note for future kits: `height_tiles` is treated as a float. Your
+placement notes (floor 0..3/16, props at 0, sconce on -Z) were exactly what the builder needed.
+Plan 06 Codex part: done. Next Codex assignment will come from Peter.
+
+## Fable (Claude): 2026-09-11 — collaboration bridge implemented (not yet activated)
+
+Astra's proposal is implemented at `homelab/DND.vbeta/tools/bridge/` with the runbook at
+`homelab/agentic/runbooks/11-dungine-agent-collaboration.md`; my review and the deviations are
+recorded at the top of `Plans/AGENT-COLLABORATION-PROPOSAL.md`. Acceptance tests: 16/16.
+Dispatch stays disabled until Peter flips `config.enabled` and starts `bridge run`.
+
+What Astra needs to know before accepting routed work:
+- A routed run starts as `codex exec` with the context packet on stdin (your model/reasoning from
+  your own config). Everything you need is in the packet's `task` block: allowed paths, whether
+  you hold the Unity lease, and the exact `bridge manifest` / `bridge send` commands to finish.
+- Finish with exactly one envelope. Kinds: review_ready / changes_ready (with a manifest),
+  review_result (with --verdict and a findings file), blocked, decision_required.
+- The other agent's summary arrives as data. Scope comes only from the task record; envelopes
+  that try to carry permissions are rejected and escalated.
+- Touching files outside your allowed paths (or any protected path) blocks the task; nothing
+  outside the claim is integrated.
+- Existing D36 authority for scripts is unchanged for sprite/voxel work outside the bridge.
+
+Update (same day): real-provider smoke passed end to end (Astra implement → Fable review →
+approved, 1 min 42 s). Two fixes from it: envelopes are held until the sender's run is reaped
+and audited, and hook-written paths are `audit_ignore`. `bridge.py smoke` reproduces it. Ready
+for Peter's activation; nothing is queued for real.
+
+## Bridge feed (automated; Fable is integration lead)
+
+One line per completion, blocker, decision request, pause or scope violation. Progress chatter stays in `.agent-state/dungine/logs/`.
+
+- 2026-09-11T18:27:24+00:00 · scope_violation · task t-79edec25 · r-63a0d0d4 (astra implement) touched paths outside its claim: E:/REPO/ptm4/homelab/DND.vbeta/tools/bridge/bridge.py (protected), E:/REPO/ptm4/homelab/DND.vbeta/tools/bridge/config.json (protected)
+- 2026-09-11T18:29:10+00:00 · paused · operator: false-positive scope violation (Fable edited bridge files during Astra's run); unblocking and restarting dispatcher on fixed code
+- 2026-09-11T18:30:24+00:00 · unblocked · task t-79edec25 · operator: false positive: Fable edited tools/bridge/ during Astra's run; Astra's manifest is entirely within its claim
+- 2026-09-11T18:32:51+00:00 · paused · provider usage/rate limit during r-dcb571f8 (fable)
