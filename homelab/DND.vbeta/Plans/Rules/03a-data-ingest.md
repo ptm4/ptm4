@@ -8,7 +8,7 @@ depends_on: [03]
 inputs: [SOURCES.md rows marked confirmed: yes, engine JSON schema from 03]
 outputs: [tools/ingest_srd.py, tools/validate_rules.py, content/rules/{2024,2014}/*.json, content/rules/LICENSES.md with attribution text, content/rules/coverage.md listing 2014 fallbacks used, content/rules/manifest.json]
 done_when: [ingest is re-runnable and idempotent, every record carries ruleset + source + license fields, schema validation passes, coverage.md lists every level 1-5 entity and whether it came from 2024 or 2014]
-status: done (2024 spells pending a re-run once Open5e's TLS chain issue clears; see "How it ran")
+status: done
 ---
 
 # 03a: SRD / Open5e data ingest
@@ -29,18 +29,20 @@ certificate chain (`certificate has expired`) even though every certificate in t
 independently valid through at least 2028 (checked with `openssl x509 -noout -dates` on each
 link) and `curl` on the same machine, using Windows' own certificate store, connects fine. This
 looks like a stale/incomplete local trust-store entry for Open5e's recently-rotated Let's
-Encrypt intermediate ("YE1"/"Root YE"), not a problem with the data or the script. **Ask
-Peter**: either refresh the machine's CA trust store, or re-run
-`python tools/ingest_srd.py --kinds spells --refresh` once Open5e is reachable from Python; the
-script does not need any other change to pick up 2024 spells.
+Encrypt intermediate ("YE1"/"Root YE"), not a problem with the data or the script.
+**Resolved by Fable 2026-09-12:** `ingest_srd.py` now falls back to the system `curl` (which
+verifies through the OS trust store) only when urllib raises `SSLCertVerificationError`;
+verification is never disabled. 2024 spells landed: 339 records. Open5e's spell shape is
+normalized to 5e-database's vocabulary (ability abbreviations, class slugs without the
+`srd-2024_` prefix, the spell's own level included in `at_slot_level`).
 
-**What was ingested.** All 8 other kinds (monsters, conditions, equipment, classes, species,
-backgrounds, skills, damage-types) for both rulesets, plus 2014 spells. `content/rules/` is
-5.1 MB (1214 records across 17 files), well under the 40 MB stop-and-ask threshold. `species`
+**What was ingested.** All nine kinds (monsters, conditions, equipment, classes, species,
+backgrounds, skills, damage-types) for both rulesets. `content/rules/` is
+6.6 MB (1553 records across 18 files), well under the 40 MB stop-and-ask threshold. `species`
 2014 reads `5e-SRD-Races.json` (2014 calls them "races"); 2024's own `5e-SRD-Species.json` is
 used directly. Every skipped/blocked kind is recorded in `coverage.md`, not silently dropped.
 
-**Verification.** `python tools/validate_rules.py` → `OK 17 files 1214 records`.
+**Verification.** `python tools/validate_rules.py` → `OK 18 files 1553 records`.
 `python tools/ingest_srd.py --twice` → `IDEMPOTENT` (byte-identical per-kind data files across
 two runs from cache; `manifest.json`/`coverage.md` are excluded from that check since they
 carry a `generated` timestamp by design).
@@ -48,7 +50,7 @@ carry a `generated` timestamp by design).
 ## Steps (as executed)
 1. ~~Confirm each `SOURCES.md` row with Peter~~ — already confirmed 2026-09-09 (see `SOURCES.md`).
 2. Pull SRD 5.2 (species, backgrounds, classes, monsters, equipment, conditions, skills,
-   damage-types) from 5e-database; spells blocked, see above.
+   damage-types) from 5e-database; 2024 spells from Open5e v2 (`srd-2024`).
 3. Pull SRD 5.1 (all nine kinds) from 5e-database.
 4. Normalized into the envelope schema; every record tagged `ruleset`, `source`, `source_url`,
    `license`, `attribution`, plus `data` (normalized) and `raw` (untouched source record).
@@ -64,6 +66,5 @@ carry a `generated` timestamp by design).
 ## Open questions
 - ~~Is there a machine-readable SRD 5.2 yet~~ — yes, 5e-database's `src/2024/en/`, except spells.
 - ~~Open5e document slugs for SRD-only filtering~~ — `document__key=srd-2024` / `srd-2014`.
-- Open5e's TLS chain issue (above) — needs Peter's call on trust-store refresh vs. waiting.
 - Feats, magic items, subclasses and rules-text prose are out of scope for this batch
   (`coverage.md` "Skipped kinds"); a future batch should size that work.

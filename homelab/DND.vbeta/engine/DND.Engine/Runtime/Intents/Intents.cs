@@ -1,4 +1,5 @@
 using DND.Engine.Core;
+using DND.Engine.Model;
 
 namespace DND.Engine.Intents
 {
@@ -27,7 +28,6 @@ namespace DND.Engine.Intents
         public EndTurnIntent(string actorId) : base(actorId) { }
     }
 
-    public enum Interaction { Open, Close, ForceOpen, PickLock }
     public sealed class InteractIntent : Intent { public readonly string ObjectId; public readonly Interaction Kind; public InteractIntent(string actorId, string objectId, Interaction kind) : base(actorId) { ObjectId = objectId; Kind = kind; } }
     public sealed class AttackObjectIntent : Intent { public readonly string ObjectId; public readonly int AttackIndex; public AttackObjectIntent(string actorId, string objectId, int attackIndex = 0) : base(actorId) { ObjectId = objectId; AttackIndex = attackIndex; } }
 

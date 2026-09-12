@@ -6,6 +6,11 @@
       "sha256": "b201cbaedfd5e9ab24993178da20fb44b6b74bb1aa935089cd3dbdfce8cbdff9"
     },
     {
+      "path": "2024/spells.json",
+      "records": 339,
+      "sha256": "c418694bced29b06a9416e2d1a95eb1e4f312c3e7affc2db8512fd64dce3a6ed"
+    },
+    {
       "path": "2024/conditions.json",
       "records": 15,
       "sha256": "fe96bb4a2b5dae189155b2ef6cb07da139351a0f663ba8d0890de193deedfc7e"
@@ -13,7 +18,7 @@
     {
       "path": "2024/equipment.json",
       "records": 182,
-      "sha256": "bfc6aa6f08414b6c03c4516e1547c806652db207322c7b4056ec1d1ed6ef41fb"
+      "sha256": "360c6f40b97dce67b97f5031f419df6fc2cbba852d5d514d2d6b5e93b03feaf0"
     },
     {
       "path": "2024/classes.json",
@@ -58,7 +63,7 @@
     {
       "path": "2014/equipment.json",
       "records": 237,
-      "sha256": "bb9323c9098729afcd9d623866bd20b73e0f2ae3eee86daaf126b8de35e14762"
+      "sha256": "7b2f472ee3b72fe70b51bc2b03d2c679e8d25679dbf545833dc1f6a661be3d82"
     },
     {
       "path": "2014/classes.json",
@@ -86,13 +91,19 @@
       "sha256": "45a7addaa5c0dac6a9bb09190d4bbf7811d73840b43c0d89098fdd61fedfeb88"
     }
   ],
-  "generated": "2026-09-11T23:04:24+00:00",
+  "generated": "2026-09-12T18:30:24+00:00",
   "sources": [
     {
       "commit_or_key": "0b171af231d8325e1567c431ae6176a5b8866e7e",
-      "fetched_at": "2026-09-11T23:04:23+00:00",
+      "fetched_at": "2026-09-12T18:30:24+00:00",
       "name": "5e-database",
       "url": "https://github.com/5e-bits/5e-database/tree/0b171af231d8325e1567c431ae6176a5b8866e7e"
+    },
+    {
+      "commit_or_key": "srd-2024",
+      "fetched_at": "2026-09-12T18:30:24+00:00",
+      "name": "Open5e v2",
+      "url": "https://api.open5e.com/v2/"
     }
   ],
   "tool": "ingest_srd.py 1.0.0"

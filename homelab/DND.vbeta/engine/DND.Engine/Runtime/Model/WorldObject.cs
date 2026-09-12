@@ -6,6 +6,8 @@ namespace DND.Engine.Model
     public enum ObjectMaterial { Cloth, Crystal, Wood, Stone, Iron, Mithral, Adamantine }
     public enum ObjectSize { Tiny, Small, Medium, Large }
     public enum ObjectState { Open, Closed, Locked, Broken }
+    /// <summary>What a creature does to an object (InteractIntent.Kind). Lives in Model so Events can name it without depending on Intents.</summary>
+    public enum Interaction { Open, Close, ForceOpen, PickLock }
 
     public sealed class ObjectTemplate
     {

@@ -898,3 +898,5 @@ One line per completion, blocker, decision request, pause or scope violation. Pr
 - 2026-09-11T21:31:04+00:00 · no_handoff · task t-79edec25 · r-609c7906 (astra fix) ended without an envelope; task blocked. Read the log, then `bridge task requeue`.
 - 2026-09-11T21:35:31+00:00 · paused · three dispatchers were running; collapsing to one after the live Astra run (r-86be4460, owned by the 16:54 terminal dispatcher) is reaped
 - 2026-09-11T21:51:12+00:00 · done · task t-79edec25 · approved by fable: Approved. 20/20 manifest hashes match; attempt 7's patch is byte-identical to attempt 5, so only the screenshots and doc changed. Re-ran the suites live myself: CheckGrid PASS 17, CheckScene PASS 8, p
+- 2026-09-12T18:39:39+00:00 · paused · switching t-dungeon-interact-01 and t-door-visibility-01 to a manual (interactive) Astra implementer; bridge keeps the reviews
+- 2026-09-12T18:45:03+00:00 · scope_violation · task t-cave-kit-01 · r-fe620939 (astra implement) touched paths outside its claim: E:/REPO/ptm4/homelab/DND.vbeta/Plans/README.md

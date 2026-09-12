@@ -648,6 +648,342 @@
       "biome": "dungeon",
       "mode": "both",
       "variant_of": null
+    },
+    "floor_cave": {
+      "file": "cave/floor_cave.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "floor_cave_gravel": {
+      "file": "cave/floor_cave_gravel.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "floor_cave"
+    },
+    "floor_cave_puddle": {
+      "file": "cave/floor_cave_puddle.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": true,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "floor_cave"
+    },
+    "floor_cave_moss": {
+      "file": "cave/floor_cave_moss.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "floor_cave"
+    },
+    "pool_deep": {
+      "file": "cave/pool_deep.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": true,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "wall_cave": {
+      "file": "cave/wall_cave.vox",
+      "category": "wall",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": true,
+      "blocks_sight": true,
+      "cover": 3,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "wall_cave_cracked": {
+      "file": "cave/wall_cave_cracked.vox",
+      "category": "wall",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": true,
+      "blocks_sight": true,
+      "cover": 3,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "wall_cave"
+    },
+    "wall_cave_crystal": {
+      "file": "cave/wall_cave_crystal.vox",
+      "category": "wall",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": true,
+      "blocks_sight": true,
+      "cover": 3,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [
+        17,
+        18,
+        19
+      ],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "wall_cave"
+    },
+    "stalagmite_small": {
+      "file": "cave/stalagmite_small.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": true,
+      "blocks_sight": false,
+      "cover": 1,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "stalagmite_large": {
+      "file": "cave/stalagmite_large.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": true,
+      "blocks_sight": true,
+      "cover": 3,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "stalactite_hanging": {
+      "file": "cave/stalactite_hanging.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "wall_cave"
+    },
+    "boulder": {
+      "file": "cave/boulder.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": true,
+      "blocks_sight": false,
+      "cover": 1,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "rubble_cave": {
+      "file": "cave/rubble_cave.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": true,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "mushroom_cluster": {
+      "file": "cave/mushroom_cluster.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [
+        17,
+        18,
+        19
+      ],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "crystal_cluster": {
+      "file": "cave/crystal_cluster.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": true,
+      "blocks_sight": false,
+      "cover": 1,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [
+        17,
+        18,
+        19
+      ],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "campfire_remains": {
+      "file": "cave/campfire_remains.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "bones_cave": {
+      "file": "cave/bones_cave.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": null
+    },
+    "cave_mouth": {
+      "file": "cave/cave_mouth.vox",
+      "category": "door",
+      "footprint": [
+        2,
+        1
+      ],
+      "height_tiles": 2,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "cave",
+      "mode": "both",
+      "variant_of": "archway"
     }
   }
 }

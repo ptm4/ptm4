@@ -31,6 +31,9 @@ import argparse
 import hashlib
 import json
 import re
+import shutil
+import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -74,13 +77,30 @@ def cache_path(url: str) -> Path:
     return CACHE_DIR / (hashlib.sha256(url.encode("utf-8")).hexdigest() + ".json")
 
 
+def _fetch_bytes(url: str) -> bytes:
+    """urllib first. If Python's OpenSSL rejects the server's certificate chain but the OS trust
+    store accepts it (seen 2026-09-11 with api.open5e.com's rotated Let's Encrypt intermediate:
+    every link valid, curl fine, urllib 'certificate has expired'), retry through the system
+    curl, which verifies via the OS store. Verification is never disabled."""
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed SRD hosts only
+            return resp.read()
+    except urllib.error.URLError as e:
+        if not isinstance(getattr(e, "reason", None), ssl.SSLCertVerificationError) or not shutil.which("curl"):
+            raise
+        res = subprocess.run(["curl", "-sS", "-L", "--fail", "--max-time", "60", "-A", USER_AGENT, url], capture_output=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"curl fallback failed for {url}: {res.stderr.decode(errors='replace').strip()}") from e
+        log(f"note: urllib rejected {url.split('/')[2]}'s TLS chain ({e.reason}); fetched via system curl (OS trust store)")
+        return res.stdout
+
+
 def fetch_json(url: str, refresh: bool):
     cp = cache_path(url)
     if not refresh and cp.exists():
         return json.loads(cp.read_text(encoding="utf-8"))
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed SRD hosts only
-        raw = resp.read()
+    raw = _fetch_bytes(url)
     log(f"fetched {url}")
     data = json.loads(raw.decode("utf-8"))
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -265,7 +285,10 @@ def norm_equipment(rec: dict) -> dict:
             "category": equip_category(rec), "range_class": None,
             "damage": {"dice": dmg.get("damage_dice"), "type": (dmg.get("damage_type") or {}).get("index")} if dmg else None,
             "two_handed_damage": {"dice": two_h.get("damage_dice"), "type": (two_h.get("damage_type") or {}).get("index")} if two_h else None,
-            "range_ft": [rng.get("normal"), rng.get("long", rng.get("normal"))] if rng.get("normal") else None,
+            # 5e-database gives melee weapons range {"normal": 5} (their reach); only a real ranged
+            # weapon has "long". Thrown weapons carry a separate throw_range.
+            "range_ft": [rng.get("normal"), rng.get("long")] if rng.get("long") else None,
+            "throw_range_ft": [tr.get("normal"), tr.get("long")] if (tr := rec.get("throw_range") or {}).get("normal") else None,
             "properties": names_of(rec.get("properties")),
         }
     armor = None
@@ -349,10 +372,14 @@ def norm_spell_open5e(rec: dict) -> dict:
             m = re.search(r"slot_level_(\d+)", opt.get("type", ""))
             if m and opt.get("damage_roll"):
                 at_slot[m.group(1)] = opt["damage_roll"]
-        if not at_slot and rec.get("level") is not None:
-            at_slot = {str(rec["level"]): rec["damage_roll"]}
+        # Open5e lists only the upcast options; the spell's own level uses damage_roll.
+        if rec.get("level") is not None and str(rec["level"]) not in at_slot:
+            at_slot[str(rec["level"])] = rec["damage_roll"]
         damage = {"type": dtypes[0] if dtypes else None, "at_slot_level": at_slot or None}
-    dc = {"ability": rec["saving_throw_ability"], "success": None} if rec.get("saving_throw_ability") else None
+    # 2014 data (5e-database) abbreviates abilities ("dex"); match it so the loader sees one vocabulary.
+    ability_abbrev = {"strength": "str", "dexterity": "dex", "constitution": "con", "intelligence": "int", "wisdom": "wis", "charisma": "cha"}
+    sta = rec.get("saving_throw_ability")
+    dc = {"ability": ability_abbrev.get(sta, sta), "success": None} if sta else None
     area = {"type": rec.get("shape_type"), "size_ft": rec.get("shape_size")} if rec.get("shape_type") else None
     components = [c for c, present in (("V", rec.get("verbal")), ("S", rec.get("somatic")), ("M", rec.get("material"))) if present]
     return {
@@ -360,7 +387,8 @@ def norm_spell_open5e(rec: dict) -> dict:
         "casting_time": rec.get("casting_time"), "range": rec.get("range_text") or rec.get("range"),
         "components": components, "material": rec.get("material_specified"),
         "duration": rec.get("duration"), "concentration": bool(rec.get("concentration")),
-        "ritual": bool(rec.get("ritual")), "classes": [c.get("key") for c in rec.get("classes") or []],
+        # class keys arrive as "srd-2024_wizard"; strip the document prefix to match 5e-database's "wizard".
+        "ritual": bool(rec.get("ritual")), "classes": [(c.get("key") or "").split("_", 1)[-1] for c in rec.get("classes") or []],
         "description": rec.get("desc"), "higher_level": rec.get("higher_level"),
         "damage": damage, "dc": dc, "area": area,
     }

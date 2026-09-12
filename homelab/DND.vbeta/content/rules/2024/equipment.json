@@ -561,10 +561,8 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": {
           "dice": "1d10",
           "type": "slashing"
@@ -824,6 +822,7 @@
           25,
           100
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 1
@@ -2179,10 +2178,8 @@
           "Light"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -2582,9 +2579,10 @@
           "Thrown"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          20,
+          60
         ],
         "two_handed_damage": null
       },
@@ -2689,6 +2687,10 @@
         ],
         "range_class": null,
         "range_ft": [
+          20,
+          60
+        ],
+        "throw_range_ft": [
           20,
           60
         ],
@@ -3664,10 +3666,8 @@
         },
         "properties": [],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -3938,10 +3938,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 6
@@ -4149,10 +4147,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 7
@@ -4245,10 +4241,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 10
@@ -4337,10 +4331,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 6
@@ -4435,10 +4427,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 6
@@ -4601,6 +4591,7 @@
           30,
           120
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -4705,9 +4696,10 @@
           "Thrown"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          20,
+          60
         ],
         "two_handed_damage": null
       },
@@ -4851,6 +4843,7 @@
           100,
           400
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 18
@@ -5333,9 +5326,10 @@
           "Thrown"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          30,
+          120
         ],
         "two_handed_damage": null
       },
@@ -5656,10 +5650,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 6
@@ -6026,6 +6018,7 @@
           80,
           320
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 5
@@ -6130,9 +6123,10 @@
           "Thrown"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          20,
+          60
         ],
         "two_handed_damage": null
       },
@@ -6275,6 +6269,7 @@
           150,
           600
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -6378,10 +6373,8 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": {
           "dice": "1d10",
           "type": "slashing"
@@ -6626,10 +6619,8 @@
         },
         "properties": [],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -6898,10 +6889,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 10
@@ -7032,6 +7021,7 @@
         "properties": [],
         "range_class": null,
         "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 4
@@ -7116,6 +7106,7 @@
           40,
           120
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 10
@@ -7808,10 +7799,8 @@
           "Two-Handed"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 6
@@ -7914,6 +7903,7 @@
           30,
           90
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 3
@@ -8585,10 +8575,8 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": {
           "dice": "1d8",
           "type": "bludgeoning"
@@ -8775,10 +8763,8 @@
           "Finesse"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -9346,10 +9332,8 @@
           "Light"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 3
@@ -9577,6 +9561,7 @@
           80,
           320
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -9676,10 +9661,8 @@
           "Light"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -9811,10 +9794,8 @@
           "Light"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 2
@@ -9945,6 +9926,7 @@
           30,
           120
         ],
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 0
@@ -10288,9 +10270,10 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          20,
+          60
         ],
         "two_handed_damage": {
           "dice": "1d8",
@@ -11236,9 +11219,10 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
+        "range_ft": null,
+        "throw_range_ft": [
+          20,
+          60
         ],
         "two_handed_damage": {
           "dice": "1d8",
@@ -11503,10 +11487,8 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": {
           "dice": "1d10",
           "type": "piercing"
@@ -11605,10 +11587,8 @@
           "Versatile"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": {
           "dice": "1d10",
           "type": "bludgeoning"
@@ -11883,10 +11863,8 @@
           "Reach"
         ],
         "range_class": null,
-        "range_ft": [
-          5,
-          5
-        ],
+        "range_ft": null,
+        "throw_range_ft": null,
         "two_handed_damage": null
       },
       "weight_lb": 3

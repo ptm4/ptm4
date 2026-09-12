@@ -1,4 +1,4 @@
-"""Deterministic Plan 06 dungeon kit. Run: python tools/vox_write.py --all.
+"""Deterministic Plan 06 dungeon and cave kits. Run: python tools/vox_write.py --all.
 
 Arrays are uint8[x east, y north, z up]; zero is empty. Box bounds are
 half-open. All carving and decoration is confined to the declared model.
@@ -151,6 +151,8 @@ def tile_specs():
 
 
 def build_tile(tid, meta):
+    if meta.get('biome') == 'cave':
+        return build_cave_tile(tid, meta)
     c = named_colors()
     stone, shadow, light = (c[n] for n in ('neutral_2', 'night_purple_1', 'neutral_3'))
     wood, wood_dark, wood_light = (c[f'earth_wood_{i}'] for i in (2, 1, 3))
@@ -353,8 +355,195 @@ def build_tile(tid, meta):
     return a
 
 
+def cave_specs():
+    # Retain the dungeon-only tile_specs() API; generate_all combines both rosters.
+    groups = {
+        'floor': ['floor_cave', 'floor_cave_gravel', 'floor_cave_puddle',
+                  'floor_cave_moss', 'pool_deep'],
+        'wall': ['wall_cave', 'wall_cave_cracked', 'wall_cave_crystal'],
+        'prop': ['stalagmite_small', 'stalagmite_large', 'stalactite_hanging',
+                 'boulder', 'rubble_cave', 'mushroom_cluster', 'crystal_cluster',
+                 'campfire_remains', 'bones_cave'],
+        'door': ['cave_mouth'],
+    }
+    variants = {tid: 'floor_cave' for tid in
+                ('floor_cave_gravel', 'floor_cave_puddle', 'floor_cave_moss')}
+    variants.update(wall_cave_cracked='wall_cave', wall_cave_crystal='wall_cave',
+                    stalactite_hanging='wall_cave', cave_mouth='archway')
+    result = {}
+    for category, ids in groups.items():
+        for tid in ids:
+            wall = category == 'wall'
+            tall = wall or tid in ('stalagmite_large', 'stalactite_hanging', 'cave_mouth')
+            blocks = wall or tid in ('stalagmite_small', 'stalagmite_large',
+                                      'boulder', 'crystal_cluster')
+            sight = wall or tid == 'stalagmite_large'
+            result[tid] = dict(
+                file=f'cave/{tid}.vox', category=category,
+                footprint=[2, 1] if tid == 'cave_mouth' else [1, 1],
+                height_tiles=2 if tall else 1, blocks_move=blocks, blocks_sight=sight,
+                cover=3 if sight else 1 if blocks else 0, elevation_half=0,
+                difficult=tid in ('floor_cave_puddle', 'pool_deep', 'rubble_cave'),
+                emissive=[], biome='cave', mode='both', variant_of=variants.get(tid))
+    return result
+
+
+def build_cave_tile(tid, meta):
+    c = named_colors()
+    stone, shadow, light = (c[n] for n in ('neutral_2', 'night_purple_1', 'neutral_3'))
+    cyan = [c[f'emissive_cyan_{i}'] for i in range(3)]
+    w, d = (v * 16 for v in meta['footprint'])
+    h = 3 if meta['category'] == 'floor' else int(meta['height_tiles'] * 16)
+    a = np.zeros((w, d, h), dtype=np.uint8)
+    x, y = np.ogrid[:w, :d]
+
+    def b(lo, hi, color=stone):
+        box(a, lo, hi, color)
+
+    def spire(cx, cy, radius, height, z0=0, hanging=False, crystal=False):
+        # Faceted columns narrow to a one-voxel tip; all bases remain in bounds.
+        for k in range(height):
+            r = max(0, int(radius * (1 - k / max(1, height - 1))))
+            mask = abs(x - cx) + abs(y - cy) <= r
+            z = z0 - k if hanging else z0 + k
+            a[:, :, z][mask] = cyan[1] if crystal else stone
+            a[:, :, z][mask & (x < cx)] = cyan[0] if crystal else shadow
+            a[:, :, z][mask & (y >= cy) & (x >= cx)] = cyan[2] if crystal else light
+
+    def rock(cx, cy, rx, ry, height):
+        # Broad, irregular boulder with a flat ground contact and chipped upper rim.
+        for z in range(height):
+            scale = 1 - 0.55 * (z / max(1, height - 1)) ** 2
+            mask = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= scale
+            a[:, :, z][mask] = light if z == height - 1 else stone
+            a[:, :, z][mask & (x < cx - rx / 2)] = shadow
+
+    if meta['category'] == 'floor':
+        b((0, 0, 0), (w, d, 2), shadow)
+        fill_layer(a, 2, stone)
+        # Natural two-voxel patches: no flagstone joints or mortar grid.
+        gen = rng(tid + ':floor')
+        for _ in range(13):
+            px, py = (int(v) for v in gen.integers(0, 7, 2) * 2)
+            b((px, py, 2), (px + 2, py + 2, 3), light)
+        a[1:3, 12:15, 2] = 0  # chipped top only; continuous two-layer substrate
+        if tid == 'floor_cave_gravel':
+            fill_layer(a, 2, shadow)
+            for px, py in ((1, 2), (5, 1), (10, 3), (3, 7), (8, 8), (12, 11), (5, 13)):
+                b((px, py, 2), (px + 2, py + 2, 3), light)
+        elif tid == 'floor_cave_moss':
+            mask = ((x - 7) / 6) ** 2 + ((y - 9) / 5) ** 2 <= 1
+            a[:, :, 2][mask] = c['foliage_0']
+            a[4:9, 8:11, 2] = c['foliage_1']
+            a[5:7, 9:11, 2] = c['foliage_2']
+        elif tid in ('floor_cave_puddle', 'pool_deep'):
+            mask = ((x - 8) / 6) ** 2 + ((y - 7) / 5) ** 2 <= 1
+            if tid == 'pool_deep':
+                a[:] = c['water_0']
+                fill_layer(a, 2, c['water_0'])
+                a[1:15, 1:3, 2] = c['water_1']
+                a[2:5, 2, 2] = c['water_2']
+                a[10:14, 12, 2] = c['water_1']
+            else:
+                a[:, :, 2][mask] = c['water_1']
+                a[6:10, 6:9, 2] = c['water_0']
+                a[5:9, 4, 2] = c['water_2']
+    elif meta['category'] == 'wall':
+        a[:] = stone
+        fill_layer(a, 0, shadow)
+        fill_layer(a, h - 1, light)
+        # Start at the footprint boundary and recess irregular 2x2 patches by
+        # two voxels, leaving uncarved two-voxel bulges. No periodic courses.
+        gen = rng('cave:shared-wall-relief')
+        for axis in (0, 1):
+            for side in (0, 1):
+                for u in range(0, 16, 2):
+                    for z in range(2, 30, 2):
+                        if gen.random() < 0.38:
+                            lo, hi = [u, 0 if side == 0 else 14, z], [u + 2, 2 if side == 0 else 16, z + 2]
+                            if axis == 0:
+                                lo[0], lo[1] = lo[1], lo[0]
+                                hi[0], hi[1] = hi[1], hi[0]
+                            b(lo, hi, 0)
+        if tid == 'wall_cave_cracked':
+            for z in range(3, 32):
+                px = 6 + (z // 6) % 3
+                b((px, 0, z), (px + 2, 4, z + 1), 0)
+            b((12, 0, 28), (16, 4, 32), 0)
+        elif tid == 'wall_cave_crystal':
+            for z in range(4, 29):
+                px = 5 + (z // 5) % 4
+                b((px, 0, z), (px + 2, 3, z + 1), cyan[z % 3])
+            for k in range(6):
+                b((8 + k, 0, 17 + k), (9 + k, 3, 19 + k), cyan[k % 3])
+    elif tid in ('stalagmite_small', 'stalagmite_large'):
+        spire(8, 8, 6 if tid.endswith('large') else 5,
+              32 if tid.endswith('large') else 13)
+        spire(4, 5, 3, 9 if tid.endswith('large') else 5)
+        a[8, 2:4, 1:3] = 0
+    elif tid == 'stalactite_hanging':
+        # Local floor-center pivot retained; mount underside of ceiling at z=32.
+        b((2, 2, 30), (14, 14, 32))
+        spire(8, 8, 6, 20, z0=30, hanging=True)
+        spire(4, 5, 3, 10, z0=30, hanging=True)
+        spire(11, 11, 2, 7, z0=30, hanging=True)
+        b((2, 2, 30), (4, 4, 31), 0)
+    elif tid == 'boulder':
+        rock(7.5, 7.5, 7, 6, 13)
+        b((5, 2, 7), (7, 4, 10), 0)
+    elif tid == 'rubble_cave':
+        for args in ((4, 4, 3, 3, 4), (10, 5, 4, 3, 6),
+                     (5, 11, 3, 3, 3), (12, 12, 2, 2, 2)):
+            rock(*args)
+        b((9, 3, 4), (11, 5, 6), 0)
+    elif tid == 'crystal_cluster':
+        rock(7.5, 7.5, 6, 6, 2)
+        for cx, cy, radius, height in ((8, 8, 3, 16), (4, 6, 2, 10),
+                                       (11, 10, 3, 12), (6, 12, 2, 7)):
+            spire(cx, cy, radius, height, crystal=True)
+        a[9, 8, 10] = cyan[0]  # fractured dark facet
+    elif tid == 'mushroom_cluster':
+        for cx, cy, top, radius in ((5, 5, 7, 3), (11, 6, 5, 2), (8, 11, 9, 3)):
+            b((cx, cy, 0), (cx + 1, cy + 1, top), c['earth_wood_1'])
+            for z in (top - 1, top):
+                mask = (x - cx) ** 2 + (y - cy) ** 2 <= (radius - (z == top)) ** 2
+                a[:, :, z][mask] = cyan[0] if z < top else cyan[1]
+            a[cx, cy, top] = cyan[2]
+            a[cx - radius, cy, top - 1] = 0  # nibbled cap edge
+    elif tid == 'cave_mouth':
+        fill_layer(a, 0, shadow)  # visible threshold, same contract as archway
+        for z in range(1, 32):
+            inset = 5 if z < 20 else 5 + (z - 20) // 2
+            b((0, 3, z), (inset, 13, z + 1))
+            b((w - inset, 3, z), (w, 13, z + 1))
+        b((0, 3, 29), (32, 13, 32), light)
+        for px, z in ((1, 6), (2, 16), (28, 12), (26, 25), (9, 30), (19, 30)):
+            b((px, 3, z), (px + 2, 5, z + 2), 0)
+    elif tid == 'campfire_remains':
+        for cx, cy in ((3, 5), (3, 10), (7, 13), (12, 10), (12, 5), (7, 2)):
+            rock(cx, cy, 2, 2, 2)
+        b((5, 5, 0), (11, 11, 1), c['neutral_1'])
+        b((4, 7, 1), (12, 9, 3), c['earth_wood_0'])
+        b((7, 4, 1), (9, 12, 2), c['earth_wood_1'])
+        a[5:7, 7:9, 2] = c['neutral_2']  # ash; extinguished, no emission
+    elif tid == 'bones_cave':
+        for px, py in ((2, 3), (3, 11), (8, 8)):
+            b((px, py, 0), (px + 5, py + 1, 2), c['neutral_5'])
+            b((px, py, 0), (px + 1, py + 2, 2), c['neutral_4'])
+        b((9, 2, 0), (13, 6, 4), c['neutral_5'])
+        a[10, 2, 2] = a[12, 2, 2] = c['neutral_3']
+        a[12, 5, 3] = 0  # broken skull corner
+    else:
+        raise ValueError(tid)
+
+    if tid != 'bones_cave':
+        noise_patch(a, tid + ':stone', [shadow, light], 14, [stone, shadow, light])
+    meta['emissive'] = sorted(set(int(v) for v in np.unique(a)) & set(cyan))
+    return a
+
+
 def generate_all():
-    specs = tile_specs()
+    specs = {**tile_specs(), **cave_specs()}
     for tid, meta in specs.items():
         a = build_tile(tid, meta)
         save_vox(DEST / meta['file'], a)
