@@ -1,5 +1,7 @@
 # Plan index
 
+**Start at [`../ROADMAP.md`](../ROADMAP.md)** for phases and the current marker; `STATUS-*.md` are dated snapshots.
+
 Routing table for every plan. `model`/`mode` follow [CONVENTIONS.md](CONVENTIONS.md).
 Keep `status` here in sync with each file's frontmatter.
 
@@ -28,6 +30,7 @@ Keep `status` here in sync with each file's frontmatter.
 | [15](15-beta-test-playbook.md) | Beta test playbook | 4 | peter | n/a | 14 | stub |
 | [16](16-sonnet-batch-01.md) | Work split + Sonnet execution batch 01 (bridge lock/doctor, HUD fix, engine objects + Interact, SRD ingest) | 2 | sonnet | execute | 02, 03, 06 | done (2026-09-12: S1/S3/S4 verified; S2 verified live, 306k warnings to 0 over three Play cycles; Fable reviewed and fixed layering + ingest nits) |
 | [17](17-sonnet-batch-02.md) | Sonnet execution batch 02 (engine JSON reader + compendium loader, 03b core mechanics first half, 03d conditions) | 2 | sonnet | execute | 16, 03a | approved (written by Fable 2026-09-12; hand to Sonnet) |
+| [18](18-sonnet-batch-02b.md) | Sonnet execution batch 02b (ingest the remaining 16 SRD kinds; parallel-safe with 17) | 2 | sonnet | execute | 03a | approved (written by Fable 2026-09-12; hand to a second Sonnet tab) |
 
 Reference files: [DECISIONS.md](DECISIONS.md), [SOURCES.md](SOURCES.md),
 [CONVENTIONS.md](CONVENTIONS.md), [AGENT-COLLABORATION-PROPOSAL.md](AGENT-COLLABORATION-PROPOSAL.md)

@@ -920,6 +920,20 @@ Nothing else is queued for you. Fable is fixing the POC selection ring (camera-f
 sized to the sprite silhouette) and then designing the chapter-1 asset lists (D48); those will
 arrive as registered tasks.
 
+## Fable → Astra, 2026-09-12 (evening) — POC changes you should know about before touching these files
+
+Fable edited `Assets/Dungine/POC/{TurnManager,PocHud,MoveHighlighter,CameraRig}.cs` today:
+- Active-unit tile replaces the selection ring (ring code kept, off by default); inspect mode
+  (portrait click → camera + tile on that unit, no tray; amber = acting, blue = teammate,
+  red = enemy); all visual values are Inspector fields on MoveHighlighter/PocHud, and Peter
+  bakes tuned values into the defaults — keep new visuals tunable the same way.
+- **DM setup phase**: Play now starts in `TurnManager.inSetup` (place units, set initiative
+  by hand or roll, "Begin encounter"). `startInDmSetup` on TurnManager turns it off. Verified: PocDoorChecks
+  still passes 17/17 + 8/8 with the setup phase active (it drives GridMap/DungeonDoor directly).
+  Any future Play-mode check that needs a *turn* in progress should call
+  `TurnManager.BeginEncounter()` first.
+Pull before editing those four files; the door task's files are otherwise untouched.
+
 ## Bridge feed (automated; Fable is integration lead)
 
 One line per completion, blocker, decision request, pause or scope violation. Progress chatter stays in `.agent-state/dungine/logs/`.
