@@ -19,12 +19,13 @@ the rules-data rows on 2026-09-09; asset fallbacks stay pending until first used
 | Source | Use | Why not ingested |
 |---|---|---|
 | dnd5e.wikidot.com (2014 rules) and dnd2024.wikidot.com (2024 rules) | Peter's chosen reference for character-sheet structure, class features, spell text, and rule interpretation while designing Plans 03/03e/11. Cross-check implementations against it. | Fan transcription of the full published books, including non-SRD material; not licensed for redistribution. SRD-covered facts it shows are the same facts the confirmed sources carry. Added 2026-09-11 (Peter). |
+| r/DescentintoAvernus master post (reddit.com/r/DescentintoAvernus/comments/1iqnoy0) and the guides it indexes: the Alexandrian Remix of Avernus, Eventyr's DM bundle, David Simoes' tier-4 adaptation, the prologue one-offs, community map packs | Design reference for Plans 07 and 13: campaign structure, pacing, remix ideas (the hex-crawl restructuring of Avernus in particular), what tables found weak in the book. Peter's paid purchases stay on his machine. | Third-party guides and fan content with mixed licenses. We read them for structure; we never copy their text, maps or art. Maps and tokens are made by us (Astra) from our own kits. Added 2026-09-12 (Peter). |
 
 ## Explicitly excluded
 
 | Source | Why |
 |---|---|
-| 5e.tools and any non-SRD WotC text | Copyrighted, not licensed for redistribution. Never in the repo or a build. Private-table use only, and only in gitignored `content/private/`. |
+| 5e.tools and any non-SRD WotC text | Copyrighted, not licensed for redistribution. Never in the repo or a build. Private-table use only, and only in gitignored `content/private/`. Applies to the Descent into Avernus adventure text on 5e.tools too (D48): Peter reads it; agents never fetch it or paraphrase from it. |
 | Published modules (e.g. Descent into Avernus) | Same. An adapted campaign file may exist in `content/private/` for the home table only. |
 
 ## Asset fallbacks (used only where generation can't deliver)

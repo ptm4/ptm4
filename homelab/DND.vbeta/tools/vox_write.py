@@ -150,7 +150,131 @@ def tile_specs():
     return result
 
 
+DUNGEON_INTERACTABLE_IDS = (
+    'lever_wall_off', 'lever_wall_on', 'pressure_plate', 'lantern_post',
+    'portcullis_closed', 'portcullis_open', 'trapdoor_closed',
+)
+
+
+def dungeon_interactable_specs():
+    """Swap-compatible dungeon props; dimensions/pivots do not follow moving parts."""
+    result = {}
+    for tid in DUNGEON_INTERACTABLE_IDS:
+        floor = tid in ('pressure_plate', 'trapdoor_closed')
+        gate = tid.startswith('portcullis_')
+        category = 'floor' if floor else 'door' if gate else 'prop'
+        height = 3 if floor else 28 if tid.startswith('lever_') else 32
+        variant = ('floor_stone' if floor else 'lever_wall_off' if tid == 'lever_wall_on'
+                   else 'portcullis_closed' if tid == 'portcullis_open' else None)
+        result[tid] = dict(
+            file=f'dungeon/{tid}.vox', category=category, footprint=[1, 1],
+            height_tiles=height / 16, blocks_move=tid in ('lantern_post', 'portcullis_closed'),
+            blocks_sight=False, cover=1 if tid == 'portcullis_closed' else 0,
+            elevation_half=0, difficult=False, emissive=[], biome='dungeon',
+            mode='both', variant_of=variant,
+        )
+    return result
+
+
+def build_dungeon_interactable(tid, meta):
+    c = named_colors()
+    stone, shadow, light = (c[n] for n in ('neutral_2', 'night_purple_1', 'neutral_3'))
+    wood_dark, wood, wood_light = (c[f'earth_wood_{i}'] for i in (1, 2, 3))
+    metal_dark, metal, metal_light = (c[f'metal_{i}'] for i in range(3))
+    orange = [c[f'emissive_orange_{i}'] for i in (1, 2, 3)]
+    w, d = (v * 16 for v in meta['footprint'])
+    a = np.zeros((w, d, int(meta['height_tiles'] * 16)), dtype=np.uint8)
+
+    def b(lo, hi, color):
+        box(a, lo, hi, color)
+
+    if tid.startswith('lever_wall_'):
+        # Mount the +Y back at the north wall of the placement cell. Both states
+        # keep the floor-center pivot and the same plate/axle; only the arm moves.
+        b((5, 14, 12), (11, 16, 24), metal_dark)
+        b((6, 13, 13), (10, 14, 23), metal)
+        for x in (5, 10):
+            for z in (13, 22):
+                b((x, 13, z), (x + 1, 14, z + 1), metal_light)
+        b((5, 14, 23), (6, 16, 24), 0)  # chipped mounting-plate corner
+        b((4, 11, 17), (12, 14, 20), metal_dark)
+        b((4, 10, 18), (12, 11, 19), metal_light)
+        direction = 1 if tid.endswith('_off') else -1
+        for step in range(7):
+            y, z = 12 - step, 18 + direction * step
+            b((7, y, z), (9, y + 2, z + 2), metal)
+        grip_z = 24 if direction == 1 else 11
+        b((6, 5, grip_z), (10, 8, grip_z + 3), wood)
+        b((6, 5, grip_z), (10, 6, grip_z + 1), wood_dark)
+        b((6, 5, grip_z + 2), (10, 7, grip_z + 3), wood_light)
+    elif tid in ('pressure_plate', 'trapdoor_closed'):
+        b((0, 0, 0), (16, 16, 2), stone)
+        fill_layer(a, 2, light)
+        a[::8, :, 2] = shadow
+        a[:, ::8, 2] = shadow
+        b((2, 2, 2), (14, 14, 3), metal_dark)  # recessed perimeter
+        if tid == 'pressure_plate':
+            b((3, 3, 2), (13, 13, 3), metal)
+            for x, y in ((3, 3), (3, 12), (12, 3), (12, 12)):
+                a[x, y, 2] = metal_dark  # clipped corners define the plate
+            a[4:12, 3, 2] = metal_light
+            a[3, 4:12, 2] = metal_light
+            for x, y in ((4, 4), (4, 11), (11, 4), (11, 11)):
+                a[x, y, 2] = metal_light  # four flush fasteners
+            a[8, 6:10, 2] = metal_dark  # scored center, not a drain/grille
+        else:
+            b((3, 3, 2), (13, 13, 3), wood)
+            for x in (5, 8, 11):
+                a[x, 3:13, 2] = wood_dark
+            a[3:13, 3, 2] = wood_light
+            for y in (4, 10):
+                b((2, y, 2), (5, y + 2, 3), metal)
+                a[2, y, 2] = metal_light
+            b((10, 6, 2), (13, 10, 3), metal)
+            b((11, 7, 2), (12, 9, 3), metal_dark)  # inset pull ring
+            a[6:8, 10, 2] = wood_light  # scuffed plank
+        a[1:3, 14, 2] = stone  # chipped floor edge, intact base underneath
+    elif tid == 'lantern_post':
+        b((5, 5, 0), (11, 11, 2), stone)
+        b((6, 6, 2), (10, 10, 3), light)
+        b((7, 7, 3), (9, 9, 20), metal_dark)
+        b((7, 7, 5), (8, 8, 18), metal)
+        b((4, 4, 20), (12, 12, 22), metal_dark)
+        b((5, 5, 22), (11, 11, 29), orange[0])
+        b((5, 5, 24), (11, 11, 28), orange[1])
+        b((7, 5, 24), (9, 11, 27), orange[2])
+        b((5, 7, 24), (11, 9, 27), orange[2])
+        for x in (4, 11):
+            for y in (4, 11):
+                b((x, y, 22), (x + 1, y + 1, 29), metal)
+        b((4, 4, 29), (12, 12, 30), metal_dark)
+        b((5, 5, 30), (11, 11, 31), metal)
+        b((7, 7, 31), (9, 9, 32), metal_light)
+        a[5, 5, 1] = shadow  # chipped pedestal
+    elif tid.startswith('portcullis_'):
+        # Same jambs, lintel and one-voxel threshold in both states. The lifted
+        # grille is stowed under the lintel, entirely inside the 16x16x32 model.
+        fill_layer(a, 0, stone)
+        b((0, 5, 1), (3, 11, 32), stone)
+        b((13, 5, 1), (16, 11, 32), stone)
+        b((0, 5, 28), (16, 11, 32), light)
+        a[1, 5, 17:20] = shadow
+        a[14, 5, 6:9] = light
+        low = 1 if tid.endswith('_closed') else 24
+        for x in (4, 7, 10):
+            b((x, 7, low), (x + 1, 9, 28), metal)
+            b((x, 7, low), (x + 1, 8, 28), metal_light)
+        for z in ((7, 18, 26) if low == 1 else (26,)):
+            b((3, 7, z), (13, 9, z + 1), metal_dark)
+    else:
+        raise ValueError(tid)
+    meta['emissive'] = sorted(set(int(v) for v in np.unique(a)) & set(orange))
+    return a
+
+
 def build_tile(tid, meta):
+    if tid in DUNGEON_INTERACTABLE_IDS:
+        return build_dungeon_interactable(tid, meta)
     if meta.get('biome') == 'cave':
         return build_cave_tile(tid, meta)
     c = named_colors()
@@ -543,7 +667,7 @@ def build_cave_tile(tid, meta):
 
 
 def generate_all():
-    specs = {**tile_specs(), **cave_specs()}
+    specs = {**tile_specs(), **dungeon_interactable_specs(), **cave_specs()}
     for tid, meta in specs.items():
         a = build_tile(tid, meta)
         save_vox(DEST / meta['file'], a)

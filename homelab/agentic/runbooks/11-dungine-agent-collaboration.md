@@ -93,6 +93,7 @@ python tools/bridge/bridge.py task new --title "Open/close dungeon door" --reque
   --unity --unity-actions "open POC scene, play, capture"
 python tools/bridge/bridge.py run                        # dispatcher loop (leave it running in a terminal)
 python tools/bridge/bridge.py run --force                 # take over a dead dispatcher's lock
+python tools/bridge/bridge.py task manual <id>             # interactive implementer; bridge runs only the reviewer (--off reverts)
 python tools/bridge/bridge.py status                     # or read .agent-state/dungine/STATUS.md
 python tools/bridge/bridge.py pause --reason "..."       # global pause; `resume` to continue
 python tools/bridge/bridge.py task cancel <id>             # stops the in-flight run and reports whether it stopped
@@ -178,6 +179,23 @@ polish ticket) and the pre-existing `PocHud.EnsureStyles` warning flood.
   `certutil -hashfile`, `Get-FileHash`, `Get-Command`.
 - `task unblock` re-applies the latest hand-off without counting a re-applied review as a new
   cycle (the first version double-counted and would have tripped the 2-cycle limit early).
+
+## Hybrid mode: manual implementer, bridge-run reviews (2026-09-12)
+
+Peter can drive Astra (or Fable) in an interactive session instead of a headless run, while the
+bridge still owns the reviews. `bridge.py task new ... --manual-implementer`, or
+`bridge.py task manual <id>` on an existing task (cancels its queued implementer runs; `--off`
+reverts). For a manual task the dispatcher never launches `implement`/`fix` runs: it posts a
+`manual_wait` feed line ("waiting for astra (manual implementer) to `bridge send --kind ...`")
+and the interactive session hands off exactly as a run would (`bridge manifest`, then
+`bridge send --sender astra ...`). Reviews, manifest verification, review-invalidation and the
+2-cycle limit behave unchanged. Status marks such tasks `astra (manual)`.
+
+The one rule the interactive session must keep: **do not write to either repo while a bridge
+run is active** (`bridge.py status` → "active runs"), because the scope audit blames the active
+run for every change in both working trees. Reviews take 5–10 minutes; read or plan meanwhile.
+The Astra brief that states this is in the 2026-09-12 conversation and should be pasted at the
+start of any new interactive Astra session.
 
 ## Known limitations
 

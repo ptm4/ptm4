@@ -649,6 +649,136 @@
       "mode": "both",
       "variant_of": null
     },
+    "lever_wall_off": {
+      "file": "dungeon/lever_wall_off.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1.75,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": null
+    },
+    "lever_wall_on": {
+      "file": "dungeon/lever_wall_on.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 1.75,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": "lever_wall_off"
+    },
+    "pressure_plate": {
+      "file": "dungeon/pressure_plate.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 0.1875,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": "floor_stone"
+    },
+    "lantern_post": {
+      "file": "dungeon/lantern_post.vox",
+      "category": "prop",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2.0,
+      "blocks_move": true,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [
+        21,
+        22,
+        23
+      ],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": null
+    },
+    "portcullis_closed": {
+      "file": "dungeon/portcullis_closed.vox",
+      "category": "door",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2.0,
+      "blocks_move": true,
+      "blocks_sight": false,
+      "cover": 1,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": null
+    },
+    "portcullis_open": {
+      "file": "dungeon/portcullis_open.vox",
+      "category": "door",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 2.0,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": "portcullis_closed"
+    },
+    "trapdoor_closed": {
+      "file": "dungeon/trapdoor_closed.vox",
+      "category": "floor",
+      "footprint": [
+        1,
+        1
+      ],
+      "height_tiles": 0.1875,
+      "blocks_move": false,
+      "blocks_sight": false,
+      "cover": 0,
+      "elevation_half": 0,
+      "difficult": false,
+      "emissive": [],
+      "biome": "dungeon",
+      "mode": "both",
+      "variant_of": "floor_stone"
+    },
     "floor_cave": {
       "file": "cave/floor_cave.vox",
       "category": "floor",

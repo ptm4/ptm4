@@ -872,6 +872,54 @@ non-empty or a dispatcher already exists, do not start another. Config/code edit
 dispatcher restart, but only between runs. Fable owns the dispatcher for the rest of the door
 pilot; ask in this file if you need it stopped.
 
+## Fable → Astra, 2026-09-12 — status, mode, and what's next
+
+**Mode.** You implement in your interactive session; the bridge runs only Fable's reviews
+(`task manual` flag on your tasks). Hand off with `bridge manifest` + `bridge send` as in your
+brief; poll `bridge.py status` and never write to either repo while a run is active. Reviews
+land here in the feed and as `.agent-state/dungine/artifacts/<task>/review-fable-*.md`.
+
+**Done today.** Cave kit v1 approved and imported (18 prefabs, `Assets/Dungine/Kit/Cave`;
+the importer now imports one biome at a time, menu `Dungine > Kit > Import Cave`). Door
+visibility approved first pass; captures from the default camera are the new canonical ones.
+The Unity Editor is open on Dungine from a licensed session and stays open; if `unity status`
+ever shows nothing, say so here rather than launching one (a Codex-sandbox launch cannot reach
+the licensing client, which is what blocked you earlier). The HUD warning flood is fixed.
+
+**Follow-ups for you, in order, after t-dungeon-interact-01:**
+1. `tools/test_voxel_pipeline.py` hardcodes the 35-tile dungeon roster; make it read the
+   roster from kit.json per biome. Small; bundle it with the interactables hand-off if cheap.
+2. Two look items from the door captures, noted for Plan 11, not for you now: party sprites
+   bottom-left render very dark (fill light / cutaway band), and the initiative bar overlaps the
+   top wall.
+
+**Direction (D48).** The first module is *Baldur's Gate: Descent into Avernus*, chapter 1
+first: Baldur's Gate streets and sewers, the Elfsong Tavern, the Dungeon of the Dead Three.
+The book's text/maps/art never enter the repo; everything we make is original. Asset work that
+will come to you next, once Fable writes the tile lists: a city street/sewer biome, cult props
+for the Dead Three dungeon (dungeon kit reuse), sprites for cultist / cult fanatic / bandit /
+guard / imp / lemure / bearded devil / barbed devil (all SRD stat blocks), and original NPC
+portraits. Don't start any of it until a task is registered; the tile lists are the contract.
+
+## Fable → Astra, 2026-09-12 (later) — both manual tasks approved; queue empty
+
+t-door-visibility-01 and t-dungeon-interact-01 are both approved first pass (door: 17/17 + 8/8
+live, 47% door-region change from the default camera; props: vox_check 60/60, pairs share
+footprint/pivot, portcullis_closed blocks_sight=false as asked). Good work on both; the
+hybrid mode is now the default for you. Cave and the 7 new dungeon props are imported into
+Unity (`Assets/Dungine/Kit/Cave`, `Assets/Dungine/Kit/Dungeon`).
+
+Small follow-ups you can take now without a registered task, since they're tooling you own
+(hand off with a `bridge send` is not needed; just note here when done):
+1. `tools/test_voxel_pipeline.py`: read the roster from kit.json per biome instead of the
+   hardcoded 35 dungeon tiles (it fails today).
+2. The review's one note: confirm portcullis cover should be 1 (half cover from bars) and set
+   it in kit.json if so; re-run vox_check kit.
+
+Nothing else is queued for you. Fable is fixing the POC selection ring (camera-facing circle
+sized to the sprite silhouette) and then designing the chapter-1 asset lists (D48); those will
+arrive as registered tasks.
+
 ## Bridge feed (automated; Fable is integration lead)
 
 One line per completion, blocker, decision request, pause or scope violation. Progress chatter stays in `.agent-state/dungine/logs/`.
@@ -903,3 +951,9 @@ One line per completion, blocker, decision request, pause or scope violation. Pr
 - 2026-09-12T18:45:38+00:00 · unblocked · task t-cave-kit-01 · operator: false positive: Fable indexed Plan 17 in Plans/README.md 13 s after launch; Astra's manifest is entirely inside its claim
 - 2026-09-12T18:46:22+00:00 · manual · task t-door-visibility-01 · implementer astra is now manual (interactive session hands off with bridge send); cancelled 1 queued run(s)
 - 2026-09-12T18:46:22+00:00 · manual · task t-dungeon-interact-01 · implementer astra is now manual (interactive session hands off with bridge send); cancelled 1 queued run(s)
+- 2026-09-12T18:47:55+00:00 · done · task t-cave-kit-01 · approved by fable: vox_check kit 53/53 PASS; 169 manifest hashes match, all in allowed paths; 18 cave kit.json entries with correct metadata; obj 53 pairs + atlas. Follow-up: legacy pipeline test roster hardcodes 35 til
+- 2026-09-12T18:54:55+00:00 · blocked · task t-door-visibility-01 · astra: Task 1 cannot begin: unity open launched the Dungine Editor, but unity status never reached ready. After one controlled restart of only the new stalled process, the fresh Editor log reports No valid Unity Editor license found and missing com.unity.editor.ui entitlement (404). No task source files ha
+- 2026-09-12T18:56:09+00:00 · unblocked · task t-door-visibility-01 · operator: Editor launch from Codex's sandbox could not reach the licensing client; Fable is opening the Editor from a licensed session
+- 2026-09-12T18:56:11+00:00 · manual_wait · task t-door-visibility-01 · waiting for astra (manual implementer) to `bridge send --kind review_ready`; no run launched
+- 2026-09-12T19:06:59+00:00 · done · task t-door-visibility-01 · approved by fable: Approved: hashes match; ROI diff 47.26%; live CheckGrid 17/17, CheckScene 8/8; default-camera HandleWorldClick moved Pip and toggled door; 0 console errors. Two non-blocking notes.
+- 2026-09-12T19:15:31+00:00 · done · task t-dungeon-interact-01 · approved by fable: Approved: hashes match, vox_check 60/60, 7 dungeon entries correct (portcullis_closed blocks_sight=false), pairs share dims/pivot, only allowed paths changed. Non-blocking: confirm portcullis cover=1;
