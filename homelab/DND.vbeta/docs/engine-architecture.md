@@ -46,6 +46,21 @@ Rule of thumb: a namespace may reference only the rows above it.
   unconscious/dying for PCs (death saves in 03b).
 - `EndTurnIntent` advances; dead creatures are skipped; a new round emits `RoundStarted`.
 
+## 3b. Objects and interaction (v0.2)
+
+Interactable scenery (`WorldObject`/`ObjectTemplate` in `DND.Engine.Model`) sits alongside
+creatures: doors, chests, levers. Opening or closing one is a free interaction once per turn
+(SRD "interacting with things around you"); a second interaction on the same turn costs the
+**Utilize** action instead, tracked by `Encounter.FreeInteractionAvailable` alongside the other
+per-turn economy flags. Forcing a stuck or locked object is a Strength (Athletics) check and
+picking a lock is a Dexterity (Sleight of Hand) check with thieves' tools, both rolled against
+the object's `LockDc`/`StuckDc` and both consuming the action whether or not they succeed. AC
+comes from material (`ObjectTemplate.ArmorClass`, cloth 11 through adamantine 23) and HP from
+size and fragility (`ObjectTemplate.MaxHp`, DMG object rules); objects are immune to poison and
+psychic damage. A broken object (`WorldObject.IsBroken`) never blocks movement or sight again,
+so `InteractIntent` and `AttackObjectIntent` join `MoveIntent`/`AttackIntent` on the same
+intent-in/event-out contract described in §1.
+
 ## 4. Event log
 
 Append-only list of immutable events with a monotonically increasing `Sequence`. Clients

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using DND.Engine.Core;
+using DND.Engine.Intents;
+using DND.Engine.Model;
 using DND.Engine.Rules;
 
 namespace DND.Engine.Events
@@ -80,6 +82,51 @@ namespace DND.Engine.Events
         public readonly string Outcome;
         public EncounterEnded(string outcome) { Outcome = outcome; }
         public override string Describe() => $"Encounter over: {Outcome}";
+    }
+
+    public sealed class ObjectStateChanged : GameEvent
+    {
+        public readonly string ObjectId;
+        public readonly ObjectState From, To;
+        public readonly string ById, Cost;
+        public ObjectStateChanged(string objectId, ObjectState from, ObjectState to, string byId, string cost) { ObjectId = objectId; From = from; To = to; ById = byId; Cost = cost; }
+        public override string Describe()
+        {
+            var verb = To == ObjectState.Open ? "opens"
+                : To == ObjectState.Broken ? "breaks"
+                : (From == ObjectState.Locked && To == ObjectState.Closed) ? "unlocks"
+                : "closes";
+            return $"{ById} {verb} {ObjectId} ({Cost})";
+        }
+    }
+
+    public sealed class ObjectCheckRolled : GameEvent
+    {
+        public readonly string ActorId, ObjectId, Skill;
+        public readonly Interaction Kind;
+        public readonly D20Result Roll;
+        public readonly int Dc;
+        public readonly bool Success;
+        public ObjectCheckRolled(string actorId, string objectId, Interaction kind, string skill, D20Result roll, int dc, bool success) { ActorId = actorId; ObjectId = objectId; Kind = kind; Skill = skill; Roll = roll; Dc = dc; Success = success; }
+        public override string Describe() => $"{ActorId} {Kind} {ObjectId}: {Skill} {Roll} vs DC {Dc} => {(Success ? "success" : "failure")}";
+    }
+
+    public sealed class ObjectDamaged : GameEvent
+    {
+        public readonly string SourceId, ObjectId, DamageType;
+        public readonly int Amount, HpAfter;
+        public ObjectDamaged(string sourceId, string objectId, int amount, string damageType, int hpAfter) { SourceId = sourceId; ObjectId = objectId; Amount = amount; DamageType = damageType; HpAfter = hpAfter; }
+        public override string Describe() => $"{ObjectId} takes {Amount} {DamageType} (HP {HpAfter})";
+    }
+
+    public sealed class ObjectAttackRolled : GameEvent
+    {
+        public readonly string AttackerId, ObjectId, AttackName;
+        public readonly D20Result Roll;
+        public readonly int Ac;
+        public readonly bool Hit, Critical;
+        public ObjectAttackRolled(string attackerId, string objectId, string attackName, D20Result roll, int ac, bool hit, bool crit) { AttackerId = attackerId; ObjectId = objectId; AttackName = attackName; Roll = roll; Ac = ac; Hit = hit; Critical = crit; }
+        public override string Describe() => $"{AttackerId} {AttackName} vs {ObjectId}: {Roll} vs AC {Ac} => {(Critical ? "CRIT" : Hit ? "hit" : "miss")}";
     }
 
     /// <summary>Append-only, sequence-numbered. This is the save file and the wire format.</summary>

@@ -8,4 +8,5 @@ engine/**/.vs/
 engine/.build/
 # Unity writes .meta files next to package sources; they are part of the package, keep them.
 tools/**/__pycache__/
+tools/.ingest-cache/
 *.log

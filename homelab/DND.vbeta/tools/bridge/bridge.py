@@ -29,6 +29,7 @@ CLI
 from __future__ import annotations
 
 import argparse
+import atexit
 import datetime as _dt
 import hashlib
 import glob
@@ -36,6 +37,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -145,6 +147,96 @@ class Bridge:
 
     def paused(self) -> bool:
         return (self.root / "PAUSE").exists()
+
+    # ------------------------------------------------------------------ dispatcher lock
+    # Exactly one `bridge run` may own the SQLite queue at a time. The lock file records
+    # {pid, started, heartbeat, host}; a live dispatcher refreshes its heartbeat every tick()
+    # so a stale lock (crashed dispatcher) is distinguishable from a live one.
+    @property
+    def _lock_path(self) -> Path:
+        return self.root / "dispatcher.lock"
+
+    @staticmethod
+    def pid_alive(pid: int) -> bool:
+        if os.name == "nt":
+            import ctypes  # noqa: PLC0415
+            import ctypes.wintypes  # noqa: PLC0415
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
+            handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if not handle:
+                return False
+            try:
+                code = ctypes.wintypes.DWORD()
+                ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+                return bool(ok) and code.value == STILL_ACTIVE
+            finally:
+                ctypes.windll.kernel32.CloseHandle(handle)
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def acquire_dispatcher_lock(self, force: bool = False) -> tuple[bool, str]:
+        """True if this process now owns the dispatcher lock. False + reason if a live dispatcher holds it."""
+        path = self._lock_path
+        if not path.exists():
+            atomic_write_json(path, {"pid": os.getpid(), "started": now(), "heartbeat": now(), "host": socket.gethostname()})
+            return True, "acquired"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            pid = int(data["pid"])
+            heartbeat = parse_ts(data["heartbeat"])
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            atomic_write_json(path, {"pid": os.getpid(), "started": now(), "heartbeat": now(), "host": socket.gethostname()})
+            return True, "acquired (replaced unreadable lock)"
+        if pid == os.getpid():
+            self.refresh_dispatcher_lock()
+            return True, "already ours"
+        age = (_dt.datetime.now(_dt.timezone.utc) - heartbeat).total_seconds()
+        if self.pid_alive(pid) and age < self.limits.get("lease_stale_seconds", 120):
+            if force:
+                atomic_write_json(path, {"pid": os.getpid(), "started": now(), "heartbeat": now(), "host": socket.gethostname()})
+                return True, f"forced takeover of pid {pid}"
+            return False, f"dispatcher pid {pid} is alive (heartbeat {age:.0f}s ago); stop it first or use --force"
+        atomic_write_json(path, {"pid": os.getpid(), "started": now(), "heartbeat": now(), "host": socket.gethostname()})
+        return True, f"replaced stale lock of pid {pid}"
+
+    def refresh_dispatcher_lock(self) -> None:
+        path = self._lock_path
+        if not path.exists():
+            return
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if int(data.get("pid", -1)) != os.getpid():
+                return
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            return
+        data["heartbeat"] = now()
+        atomic_write_json(path, data)
+
+    def release_dispatcher_lock(self) -> None:
+        path = self._lock_path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if int(data.get("pid", -1)) != os.getpid():
+                return
+        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            return
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+    def _read_dispatcher_lock(self) -> dict | None:
+        """Parsed lock file, or None if it is missing or unreadable. Shared by write_status() and doctor()."""
+        try:
+            return json.loads(self._lock_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return None
 
     def event(self, task_id: str | None, kind: str, text: str, notify: bool = False) -> None:
         self.db.execute("INSERT INTO events(ts, task_id, kind, text, notify) VALUES(?,?,?,?,?)", (now(), task_id, kind, text, int(notify)))
@@ -314,6 +406,16 @@ class Bridge:
                 self.event(t["id"], "launch_failed", str(e), notify=True)
         return launched
 
+    def _run_env(self) -> dict:
+        """Environment for any subprocess this dispatcher launches (agent runs, the Unity probe,
+        `doctor`'s exe/auth checks): strip provider API keys so a run can never silently switch
+        to API billing, and prepend config.path_prepend (e.g. the Unity CLI) onto PATH."""
+        env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")}
+        prepend = [str(Path(x)) for x in self.cfg.get("path_prepend", []) if Path(x).exists()]
+        if prepend:  # e.g. the Unity CLI, which a Desktop-app-spawned shell may not have on PATH
+            env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
+        return env
+
     def _unity_reachable(self) -> bool:
         """Probe the Editor's command server (config.unity_probe) before a Unity-bound run.
         No probe configured = assume reachable (tests). A run launched against a closed Editor
@@ -321,12 +423,8 @@ class Bridge:
         probe = self.cfg.get("unity_probe")
         if not probe:
             return True
-        env = dict(os.environ)
-        prepend = [str(Path(x)) for x in self.cfg.get("path_prepend", []) if Path(x).exists()]
-        if prepend:
-            env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
         try:
-            res = subprocess.run(probe, capture_output=True, text=True, timeout=self.cfg.get("unity_probe_timeout", 45), env=env, shell=os.name == "nt")
+            res = subprocess.run(probe, capture_output=True, text=True, timeout=self.cfg.get("unity_probe_timeout", 45), env=self._run_env(), shell=os.name == "nt")
             return res.returncode == 0 and "error" not in (res.stdout + res.stderr).lower()
         except (OSError, subprocess.TimeoutExpired):
             return False
@@ -342,10 +440,7 @@ class Bridge:
             s = self.db.execute("SELECT session_id FROM sessions WHERE agent=? AND task_id=?", (r["agent"], t["id"])).fetchone()
             session = s["session_id"] if s else None
         cmd = self.build_command(r["agent"], t, r, session)
-        env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY")}
-        prepend = [str(Path(x)) for x in self.cfg.get("path_prepend", []) if Path(x).exists()]
-        if prepend:  # e.g. the Unity CLI, which a Desktop-app-spawned shell may not have on PATH
-            env["PATH"] = os.pathsep.join(prepend + [env.get("PATH", "")])
+        env = self._run_env()
         env.update({
             "BRIDGE_STATE_ROOT": str(self.root), "BRIDGE_TASK_ID": t["id"], "BRIDGE_RUN_ID": r["run_id"],
             "BRIDGE_AGENT": r["agent"], "BRIDGE_ROLE": r["role"], "BRIDGE_SCRIPT": str(HERE / "bridge.py"),
@@ -849,6 +944,7 @@ class Bridge:
             self.db.execute("UPDATE leases SET heartbeat=? WHERE resource='unity'", (now(),))
 
     def tick(self) -> dict:
+        self.refresh_dispatcher_lock()
         self.heartbeat()
         reaped = self.reap()      # audit finished runs BEFORE their envelopes can be applied
         ingested = self.ingest()
@@ -856,9 +952,22 @@ class Bridge:
         self.write_status()
         return {"ingested": ingested, "reaped": reaped, "launched": launched}
 
+    def _dispatcher_status_line(self) -> str:
+        lock = self._read_dispatcher_lock()
+        if lock is None:
+            return "dispatcher: none"
+        try:
+            pid = int(lock["pid"])
+            age = (_dt.datetime.now(_dt.timezone.utc) - parse_ts(lock["heartbeat"])).total_seconds()
+        except (KeyError, ValueError):
+            return "dispatcher: none"
+        if age >= self.limits.get("lease_stale_seconds", 120):
+            return f"dispatcher: STALE pid {pid} (heartbeat {age:.0f}s ago)"
+        return f"dispatcher: pid {pid}, heartbeat {age:.0f}s ago"
+
     def write_status(self) -> None:
         try:
-            lines = [f"# Bridge status  ({now()})", "", f"enabled: {self.cfg.get('enabled')}   paused: {self.paused()}", ""]
+            lines = [f"# Bridge status  ({now()})", "", f"enabled: {self.cfg.get('enabled')}   paused: {self.paused()}", self._dispatcher_status_line(), ""]
             l = self.db.execute("SELECT * FROM leases WHERE resource='unity'").fetchone()
             lines.append(f"unity lease: {dict(l) if l else 'free'}")
             lines += ["", "| task | state | title | impl | review | cycles | updated |", "|---|---|---|---|---|---|---|"]
@@ -873,6 +982,112 @@ class Bridge:
             (self.root / "STATUS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         except sqlite3.Error:
             pass
+
+    # ------------------------------------------------------------------ doctor
+    def doctor(self) -> list[tuple[str, str, str]]:
+        """Preflight checks an operator (or `bridge run`) should pass before dispatch: config,
+        state root, dispatcher lock, provider executables, provider auth, the Unity Editor,
+        both repos, and the AgentComms feed. Returns (name, status, detail) rows; status is
+        PASS, WARN, or FAIL. Never raises; a check that cannot run reports FAIL/WARN with why."""
+        rows: list[tuple[str, str, str]] = []
+
+        # 1. config
+        enabled = self.cfg.get("enabled")
+        rows.append(("config", "PASS" if enabled else "WARN", f"enabled={enabled}"))
+
+        # 2. state_root
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            probe = self.root / f".doctor-probe-{os.getpid()}"
+            probe.write_text("x", encoding="utf-8")
+            probe.unlink()
+            rows.append(("state_root", "PASS", str(self.root)))
+        except OSError as e:
+            rows.append(("state_root", "FAIL", str(e)))
+
+        # 3. dispatcher lock
+        lock = self._read_dispatcher_lock()
+        if lock is None:
+            rows.append(("dispatcher", "PASS", "none"))
+        else:
+            try:
+                pid = int(lock["pid"])
+                age = (_dt.datetime.now(_dt.timezone.utc) - parse_ts(lock["heartbeat"])).total_seconds()
+                if self.pid_alive(pid) and age < self.limits.get("lease_stale_seconds", 120):
+                    rows.append(("dispatcher", "PASS", f"pid {pid} alive (heartbeat {age:.0f}s ago)"))
+                else:
+                    rows.append(("dispatcher", "WARN", f"stale (pid {pid}, heartbeat {age:.0f}s ago)"))
+            except (KeyError, ValueError):
+                rows.append(("dispatcher", "WARN", "stale (unreadable lock)"))
+
+        # 4. exe:<agent> for each configured agent
+        for name, a in self.agents.items():
+            resolved = self.resolve_exe(a)
+            if not resolved or not Path(resolved).exists():
+                rows.append((f"exe:{name}", "FAIL", f"not found: {resolved or '(no exe configured)'}"))
+                continue
+            configured = a.get("exe", "")
+            if configured and Path(configured).exists():
+                rows.append((f"exe:{name}", "PASS", resolved))
+            else:
+                rows.append((f"exe:{name}", "WARN", f"config path missing; resolved via exe_glob: {resolved}"))
+
+        # 5-6. auth:fable, auth:astra
+        env = self._run_env()
+        if "fable" in self.agents:
+            exe = self.resolve_exe(self.agents["fable"])
+            try:
+                res = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30, env=env)
+                out = (res.stdout or res.stderr or "").strip()
+                first_line = out.splitlines()[0] if out else "exit 0"
+                if res.returncode == 0:
+                    rows.append(("auth:fable", "PASS", first_line))
+                else:
+                    rows.append(("auth:fable", "FAIL", f"exit {res.returncode}: {first_line}"))
+            except (OSError, subprocess.TimeoutExpired) as e:
+                rows.append(("auth:fable", "FAIL", str(e)))
+        if "astra" in self.agents:
+            exe = self.resolve_exe(self.agents["astra"])
+            try:
+                res = subprocess.run([exe, "login", "status"], capture_output=True, text=True, timeout=30, env=env)
+                out = (res.stdout or "") + (res.stderr or "")
+                first_line = out.strip().splitlines()[0] if out.strip() else f"exit {res.returncode}"
+                if res.returncode == 0 and "Logged in" in out:
+                    rows.append(("auth:astra", "PASS", first_line))
+                else:
+                    rows.append(("auth:astra", "FAIL", first_line))
+            except (OSError, subprocess.TimeoutExpired) as e:
+                rows.append(("auth:astra", "FAIL", str(e)))
+
+        # 7. unity
+        if not self.cfg.get("unity_probe"):
+            rows.append(("unity", "WARN", "no probe configured"))
+        else:
+            rows.append(("unity", "PASS" if self._unity_reachable() else "FAIL", str(self.cfg.get("unity_probe"))))
+
+        # 8. repo:ptm4, repo:dungine
+        for label, root in (("repo:ptm4", self.cfg.get("repo_root")), ("repo:dungine", self.cfg.get("unity_project"))):
+            if not root:
+                rows.append((label, "FAIL", "not configured")); continue
+            try:
+                res = subprocess.run(["git", "-C", root, "rev-parse", "--is-inside-work-tree"], capture_output=True, text=True, timeout=15)
+                detail = (res.stdout or res.stderr or "").strip() or root
+                rows.append((label, "PASS" if res.returncode == 0 else "FAIL", detail))
+            except (OSError, subprocess.TimeoutExpired) as e:
+                rows.append((label, "FAIL", str(e)))
+
+        # 9. agentcomms
+        ac = self.cfg.get("agentcomms")
+        if not ac:
+            rows.append(("agentcomms", "WARN", "not configured"))
+        else:
+            p = Path(ac)
+            if p.exists():
+                rows.append(("agentcomms", "PASS" if os.access(p, os.W_OK) else "FAIL", str(p)))
+            else:
+                rows.append(("agentcomms", "FAIL", f"missing: {p}"))
+
+        return rows
 
 
 # ---------------------------------------------------------------------- smoke
@@ -942,10 +1157,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--task", required=True); s.add_argument("--kind", required=True); s.add_argument("--summary", required=True)
     s.add_argument("--manifest"); s.add_argument("--verdict"); s.add_argument("--findings"); s.add_argument("--sender", default=os.environ.get("BRIDGE_AGENT"))
     m = sub.add_parser("manifest"); m.add_argument("--task", required=True); m.add_argument("--attempt", type=int, required=True); m.add_argument("--patch", action="store_true"); m.add_argument("paths", nargs="+")
-    r = sub.add_parser("run"); r.add_argument("--once", action="store_true"); r.add_argument("--loops", type=int, default=0)
+    r = sub.add_parser("run"); r.add_argument("--once", action="store_true"); r.add_argument("--loops", type=int, default=0); r.add_argument("--force", action="store_true", help="take over a dead/stale dispatcher's lock")
     sub.add_parser("status"); p = sub.add_parser("pause"); p.add_argument("--reason", default="operator pause"); sub.add_parser("resume")
     l = sub.add_parser("lease"); ls = l.add_subparsers(dest="lcmd", required=True); ls.add_parser("status"); lc = ls.add_parser("clear"); lc.add_argument("--confirm", action="store_true")
     sub.add_parser("test")
+    sub.add_parser("doctor", help="preflight: config, exes, provider auth, Unity Editor, repos, dispatcher lock")
     sm = sub.add_parser("smoke", help="real-provider end-to-end check on a throwaway state root (spends two short runs per agent)")
     sm.add_argument("--minutes", type=int, default=15); sm.add_argument("--implementer", default="astra"); sm.add_argument("--reviewer", default="fable")
     a = ap.parse_args(argv)
@@ -982,16 +1198,30 @@ def main(argv: list[str] | None = None) -> int:
     if a.cmd == "manifest":
         print(b.make_manifest(a.task, a.attempt, a.paths, a.patch)); return 0
     if a.cmd == "run":
+        ok, reason = b.acquire_dispatcher_lock(a.force)
+        if not ok:
+            print(reason, file=sys.stderr)
+            return 2
+        print(f"dispatcher pid {os.getpid()}: {reason}")
         if not b.cfg.get("enabled"):
             print("dispatch is DISABLED (config.enabled=false); ingest/status only.")
-        loops = 1 if a.once else (a.loops or 10**9)
-        for i in range(loops):
-            r_ = b.tick()
-            if a.once or a.loops:
-                print(r_)
-            if i + 1 < loops:
-                time.sleep(b.cfg.get("poll_seconds", 10))
+        atexit.register(b.release_dispatcher_lock)
+        try:
+            loops = 1 if a.once else (a.loops or 10**9)
+            for i in range(loops):
+                r_ = b.tick()
+                if a.once or a.loops:
+                    print(r_)
+                if i + 1 < loops:
+                    time.sleep(b.cfg.get("poll_seconds", 10))
+        finally:
+            b.release_dispatcher_lock()
         return 0
+    if a.cmd == "doctor":
+        rows = b.doctor()
+        for name, status, detail in rows:
+            print(f"{status:4s}  {name:16s}  {detail}")
+        return 1 if any(status == "FAIL" for _, status, _ in rows) else 0
     if a.cmd == "status":
         b.write_status(); print((b.root / "STATUS.md").read_text(encoding="utf-8")); return 0
     if a.cmd == "pause":

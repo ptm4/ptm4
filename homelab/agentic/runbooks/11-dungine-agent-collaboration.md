@@ -77,6 +77,7 @@ Peter (or Fable on Peter's ask) registers a task
 | Dispatch off until activation | **Enforced**: `config.enabled` is false; `bridge run` only ingests and reports. |
 | Editor reachable before a Unity-bound run | **Enforced**: `config.unity_probe` must succeed or the bridge pauses and notifies. |
 | Provider exe moved by a self-update | **Enforced**: `exe_glob` fallback picks the newest `codex.exe`. |
+| Second dispatcher | **Enforced**: `dispatcher.lock` with pid + heartbeat; a live holder refuses a second run. |
 
 ## Operating it
 
@@ -84,15 +85,17 @@ Peter (or Fable on Peter's ask) registers a task
 cd E:/REPO/ptm4/homelab/DND.vbeta
 python tools/bridge/bridge.py init
 python tools/bridge/bridge.py test                       # 16 acceptance checks, ~1 min, no tokens
+python tools/bridge/bridge.py doctor                      # preflight: exes, auth, Editor, repos, dispatcher lock
 python tools/bridge/bridge.py smoke                      # real Codex + Claude on a trivial task, ~2 min, isolated state root
 python tools/bridge/bridge.py task new --title "Open/close dungeon door" --request "..." \
   --acceptance "..." --implementer astra --reviewer fable \
   --allow "homelab/DND.vbeta/assets-src/voxels/" --allow "E:/Unity/Projects/Dungine/Assets/Dungine/" \
   --unity --unity-actions "open POC scene, play, capture"
 python tools/bridge/bridge.py run                        # dispatcher loop (leave it running in a terminal)
+python tools/bridge/bridge.py run --force                 # take over a dead dispatcher's lock
 python tools/bridge/bridge.py status                     # or read .agent-state/dungine/STATUS.md
 python tools/bridge/bridge.py pause --reason "..."       # global pause; `resume` to continue
-python tools/bridge/bridge.py task cancel <id>           # stops the in-flight run and reports whether it stopped
+python tools/bridge/bridge.py task cancel <id>             # stops the in-flight run and reports whether it stopped
 python tools/bridge/bridge.py lease status | lease clear --confirm
 ```
 
@@ -151,8 +154,11 @@ polish ticket) and the pre-existing `PocHud.EnsureStyles` warning flood.
 - **Config and code changes take effect on dispatcher restart only.** The running `bridge run`
   keeps the config it loaded. Restart it (`Ctrl+C`, run again) after editing `config.json` or
   `bridge.py`; a restart never replays runs and suspends any held lease until cleared.
-- **Exactly one dispatcher.** Two dispatchers over the same queue would double-launch runs. If
-  Fable starts one detached, Peter must not start another in a terminal, and vice versa.
+- **Exactly one dispatcher — now enforced.** Two dispatchers over the same queue would
+  double-launch runs. `bridge run` acquires `dispatcher.lock` (pid + heartbeat) and a second
+  `bridge run` against the same state root refuses to start (exit 2) while that lock is live;
+  `bridge run --force` takes over a dead or stale one. Run `bridge doctor` before starting a
+  dispatcher to see whether one is already running.
 - Codex reached the Editor's Pipeline server from its `workspace-write` sandbox without the
   network override; the override is kept in `config.json` as belt-and-braces.
 - **The Editor must be open on Dungine before any Unity-bound run.** Enforced since the pilot:

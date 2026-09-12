@@ -1,0 +1,287 @@
+[
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Blinded condition, you experience the following effects.\n**Can't See.** You can't see and automatically fail any ability check that requires sight.\n**Attacks Affected.** Attack rolls against you have Advantage, and your attack rolls have Disadvantage."
+    },
+    "id": "blinded",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Blinded",
+    "raw": {
+      "description": "While you have the Blinded condition, you experience the following effects.\n**Can't See.** You can't see and automatically fail any ability check that requires sight.\n**Attacks Affected.** Attack rolls against you have Advantage, and your attack rolls have Disadvantage.",
+      "index": "blinded",
+      "name": "Blinded",
+      "url": "/api/2024/conditions/blinded"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Charmed condition, you experience the following effects.\n**Can't Harm the Charmer.** You can't attack the charmer or target the charmer with damaging abilities or magical effects.\n**Social Advantage.** The charmer has Advantage on ability checks to interact socially with you."
+    },
+    "id": "charmed",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Charmed",
+    "raw": {
+      "description": "While you have the Charmed condition, you experience the following effects.\n**Can't Harm the Charmer.** You can't attack the charmer or target the charmer with damaging abilities or magical effects.\n**Social Advantage.** The charmer has Advantage on ability checks to interact socially with you.",
+      "index": "charmed",
+      "name": "Charmed",
+      "url": "/api/2024/conditions/charmed"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Deafened condition, you experience the following effect.\n**Can't Hear.** You can't hear and automatically fail any ability check that requires hearing."
+    },
+    "id": "deafened",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Deafened",
+    "raw": {
+      "description": "While you have the Deafened condition, you experience the following effect.\n**Can't Hear.** You can't hear and automatically fail any ability check that requires hearing.",
+      "index": "deafened",
+      "name": "Deafened",
+      "url": "/api/2024/conditions/deafened"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Exhaustion condition, you experience the following effects.\n**Exhaustion Levels.** This condition is cumulative. Each time you receive it, you gain 1 Exhaustion level. You die if your Exhaustion level is 6.\n**D20 Tests Affected.** When you make a D20 Test, the roll is reduced by 2 times your Exhaustion level.\n**Speed Reduced.** Your Speed is reduced by a number of feet equal to 5 times your Exhaustion level.\n**Removing Exhaustion Levels.** Finishing a Long Rest removes 1 of your Exhaustion levels. When your Exhaustion level reaches 0, the condition ends."
+    },
+    "id": "exhaustion",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Exhaustion",
+    "raw": {
+      "description": "While you have the Exhaustion condition, you experience the following effects.\n**Exhaustion Levels.** This condition is cumulative. Each time you receive it, you gain 1 Exhaustion level. You die if your Exhaustion level is 6.\n**D20 Tests Affected.** When you make a D20 Test, the roll is reduced by 2 times your Exhaustion level.\n**Speed Reduced.** Your Speed is reduced by a number of feet equal to 5 times your Exhaustion level.\n**Removing Exhaustion Levels.** Finishing a Long Rest removes 1 of your Exhaustion levels. When your Exhaustion level reaches 0, the condition ends.",
+      "index": "exhaustion",
+      "name": "Exhaustion",
+      "url": "/api/2024/conditions/exhaustion"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Frightened condition, you experience the following effects.\n**Ability Checks and Attacks Affected.** You have Disadvantage on ability checks and attack rolls while the source of fear is within line of sight.\n**Can't Approach.** You can't willingly move closer to the source of your fear."
+    },
+    "id": "frightened",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Frightened",
+    "raw": {
+      "description": "While you have the Frightened condition, you experience the following effects.\n**Ability Checks and Attacks Affected.** You have Disadvantage on ability checks and attack rolls while the source of fear is within line of sight.\n**Can't Approach.** You can't willingly move closer to the source of your fear.",
+      "index": "frightened",
+      "name": "Frightened",
+      "url": "/api/2024/conditions/frightened"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Grappled condition, you experience the following effects.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** You have Disadvantage on attack rolls against any target other than the grappler.\n**Movable.** The grappler can drag or carry you when it moves, but every foot of movement costs it 1 extra foot unless you are Tiny or two or more sizes smaller."
+    },
+    "id": "grappled",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Grappled",
+    "raw": {
+      "description": "While you have the Grappled condition, you experience the following effects.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** You have Disadvantage on attack rolls against any target other than the grappler.\n**Movable.** The grappler can drag or carry you when it moves, but every foot of movement costs it 1 extra foot unless you are Tiny or two or more sizes smaller.",
+      "index": "grappled",
+      "name": "Grappled",
+      "url": "/api/2024/conditions/grappled"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Incapacitated condition, you experience the following effects.\n**Inactive.** You can't take any action, Bonus Action, or Reaction.\n**No Concentration.** Your Concentration is broken.\n**Speechless.** You can't speak.\n**Surprised.** If you're Incapacitated when you roll Initiative, you have Disadvantage on the roll."
+    },
+    "id": "incapacitated",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Incapacitated",
+    "raw": {
+      "description": "While you have the Incapacitated condition, you experience the following effects.\n**Inactive.** You can't take any action, Bonus Action, or Reaction.\n**No Concentration.** Your Concentration is broken.\n**Speechless.** You can't speak.\n**Surprised.** If you're Incapacitated when you roll Initiative, you have Disadvantage on the roll.",
+      "index": "incapacitated",
+      "name": "Incapacitated",
+      "url": "/api/2024/conditions/incapacitated"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Invisible condition, you experience the following effects.\n**Surprise.** If you're Invisible when you roll Initiative, you have Advantage on the roll.\n**Concealed.** You aren't affected by any effect that requires its target to be seen unless the effect's creator can somehow see you. Any equipment you are wearing or carrying is also concealed.\n**Attacks Affected.** Attack rolls against you have Disadvantage, and your attack rolls have Advantage. If a creature can somehow see you, you don't gain this benefit against that creature."
+    },
+    "id": "invisible",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Invisible",
+    "raw": {
+      "description": "While you have the Invisible condition, you experience the following effects.\n**Surprise.** If you're Invisible when you roll Initiative, you have Advantage on the roll.\n**Concealed.** You aren't affected by any effect that requires its target to be seen unless the effect's creator can somehow see you. Any equipment you are wearing or carrying is also concealed.\n**Attacks Affected.** Attack rolls against you have Disadvantage, and your attack rolls have Advantage. If a creature can somehow see you, you don't gain this benefit against that creature.",
+      "index": "invisible",
+      "name": "Invisible",
+      "url": "/api/2024/conditions/invisible"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Paralyzed condition, you experience the following effects.\n**Incapacitated.** You have the Incapacitated condition.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Automatic Critical Hits.** Any attack roll that hits you is a Critical Hit if the attacker is within 5 feet of you."
+    },
+    "id": "paralyzed",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Paralyzed",
+    "raw": {
+      "description": "While you have the Paralyzed condition, you experience the following effects.\n**Incapacitated.** You have the Incapacitated condition.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Automatic Critical Hits.** Any attack roll that hits you is a Critical Hit if the attacker is within 5 feet of you.",
+      "index": "paralyzed",
+      "name": "Paralyzed",
+      "url": "/api/2024/conditions/paralyzed"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Petrified condition, you experience the following effects.\n**Turned to Inanimate Substance.** You are transformed, along with any nonmagical objects you are wearing and carrying, into a solid inanimate substance (usually stone). Your weight increases by a factor of ten, and you cease aging.\n**Incapacitated.** You have the Incapacitated condition.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Resist Damage.** You have Resistance to all damage.\n**Poison Immunity.** You have Immunity to the Poisoned condition.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Resist Damage.** You have Resistance to all damage.\n**Poison Immunity.** You have Immunity to the Poisoned condition."
+    },
+    "id": "petrified",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Petrified",
+    "raw": {
+      "description": "While you have the Petrified condition, you experience the following effects.\n**Turned to Inanimate Substance.** You are transformed, along with any nonmagical objects you are wearing and carrying, into a solid inanimate substance (usually stone). Your weight increases by a factor of ten, and you cease aging.\n**Incapacitated.** You have the Incapacitated condition.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Resist Damage.** You have Resistance to all damage.\n**Poison Immunity.** You have Immunity to the Poisoned condition.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Resist Damage.** You have Resistance to all damage.\n**Poison Immunity.** You have Immunity to the Poisoned condition.",
+      "index": "petrified",
+      "name": "Petrified",
+      "url": "/api/2024/conditions/petrified"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Poisoned condition, you experience the following effect.\n**Ability Checks and Attacks Affected.** You have Disadvantage on attack rolls and ability checks."
+    },
+    "id": "poisoned",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Poisoned",
+    "raw": {
+      "description": "While you have the Poisoned condition, you experience the following effect.\n**Ability Checks and Attacks Affected.** You have Disadvantage on attack rolls and ability checks.",
+      "index": "poisoned",
+      "name": "Poisoned",
+      "url": "/api/2024/conditions/poisoned"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Prone condition, you experience the following effects.\n**Restricted Movement.** Your only movement options are to crawl or to spend an amount of movement equal to half your Speed (round down) to right yourself and thereby end the condition. If your Speed is 0, you can't right yourself.\n**Attacks Affected.** You have Disadvantage on attack rolls. An attack roll against you has Advantage if the attacker is within 5 feet of you. Otherwise, that attack roll has Disadvantage."
+    },
+    "id": "prone",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Prone",
+    "raw": {
+      "description": "While you have the Prone condition, you experience the following effects.\n**Restricted Movement.** Your only movement options are to crawl or to spend an amount of movement equal to half your Speed (round down) to right yourself and thereby end the condition. If your Speed is 0, you can't right yourself.\n**Attacks Affected.** You have Disadvantage on attack rolls. An attack roll against you has Advantage if the attacker is within 5 feet of you. Otherwise, that attack roll has Disadvantage.",
+      "index": "prone",
+      "name": "Prone",
+      "url": "/api/2024/conditions/prone"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Restrained condition, you experience the following effects.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage, and your attack rolls have Disadvantage.\n**Saving Throws Affected.** You have Disadvantage on Dexterity saving throws."
+    },
+    "id": "restrained",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Restrained",
+    "raw": {
+      "description": "While you have the Restrained condition, you experience the following effects.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage, and your attack rolls have Disadvantage.\n**Saving Throws Affected.** You have Disadvantage on Dexterity saving throws.",
+      "index": "restrained",
+      "name": "Restrained",
+      "url": "/api/2024/conditions/restrained"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Stunned condition, you experience the following effects.\n**Incapacitated.** You have the Incapacitated condition.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Attacks Affected.** Attack rolls against you have Advantage."
+    },
+    "id": "stunned",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Stunned",
+    "raw": {
+      "description": "While you have the Stunned condition, you experience the following effects.\n**Incapacitated.** You have the Incapacitated condition.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Attacks Affected.** Attack rolls against you have Advantage.",
+      "index": "stunned",
+      "name": "Stunned",
+      "url": "/api/2024/conditions/stunned"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "While you have the Unconscious condition, you experience the following effects.\n**Inert.** You have the Incapacitated and Prone conditions, and you drop whatever you're holding.\n**When this condition ends, you remain Prone.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Automatic Critical Hits.** Any attack roll that hits you is a Critical Hit if the attacker is within 5 feet of you.\n**Unaware.** You're unaware of your surroundings."
+    },
+    "id": "unconscious",
+    "kind": "condition",
+    "license": "CC-BY-4.0",
+    "name": "Unconscious",
+    "raw": {
+      "description": "While you have the Unconscious condition, you experience the following effects.\n**Inert.** You have the Incapacitated and Prone conditions, and you drop whatever you're holding.\n**When this condition ends, you remain Prone.\n**Speed 0.** Your Speed is 0 and can't increase.\n**Attacks Affected.** Attack rolls against you have Advantage.\n**Saving Throws Affected.** You automatically fail Strength and Dexterity saving throws.\n**Automatic Critical Hits.** Any attack roll that hits you is a Critical Hit if the attacker is within 5 feet of you.\n**Unaware.** You're unaware of your surroundings.",
+      "index": "unconscious",
+      "name": "Unconscious",
+      "url": "/api/2024/conditions/unconscious"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Conditions.json"
+  }
+]

@@ -1,0 +1,452 @@
+[
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "dex",
+      "description": "Stay on your feet in a tricky situation, or perform an acrobatic stunt."
+    },
+    "id": "acrobatics",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Acrobatics",
+    "raw": {
+      "ability_score": {
+        "index": "dex",
+        "name": "DEX",
+        "url": "/api/2024/ability-scores/dex"
+      },
+      "description": "Stay on your feet in a tricky situation, or perform an acrobatic stunt.",
+      "index": "acrobatics",
+      "name": "Acrobatics",
+      "url": "/api/2024/skills/acrobatics"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "wis",
+      "description": "Calm or train an animal, or get an animal to behave in a certain way."
+    },
+    "id": "animal-handling",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Animal Handling",
+    "raw": {
+      "ability_score": {
+        "index": "wis",
+        "name": "WIS",
+        "url": "/api/2024/ability-scores/wis"
+      },
+      "description": "Calm or train an animal, or get an animal to behave in a certain way.",
+      "index": "animal-handling",
+      "name": "Animal Handling",
+      "url": "/api/2024/skills/animal-handling"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "int",
+      "description": "Recall lore about spells, magic items, and the planes of existence."
+    },
+    "id": "arcana",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Arcana",
+    "raw": {
+      "ability_score": {
+        "index": "int",
+        "name": "INT",
+        "url": "/api/2024/ability-scores/int"
+      },
+      "description": "Recall lore about spells, magic items, and the planes of existence.",
+      "index": "arcana",
+      "name": "Arcana",
+      "url": "/api/2024/skills/arcana"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "str",
+      "description": "Jump farther than normal, stay afloat in rough water, or break something."
+    },
+    "id": "athletics",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Athletics",
+    "raw": {
+      "ability_score": {
+        "index": "str",
+        "name": "STR",
+        "url": "/api/2024/ability-scores/str"
+      },
+      "description": "Jump farther than normal, stay afloat in rough water, or break something.",
+      "index": "athletics",
+      "name": "Athletics",
+      "url": "/api/2024/skills/athletics"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "cha",
+      "description": "Tell a convincing lie, or wear a disguise convincingly."
+    },
+    "id": "deception",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Deception",
+    "raw": {
+      "ability_score": {
+        "index": "cha",
+        "name": "CHA",
+        "url": "/api/2024/ability-scores/cha"
+      },
+      "description": "Tell a convincing lie, or wear a disguise convincingly.",
+      "index": "deception",
+      "name": "Deception",
+      "url": "/api/2024/skills/deception"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "int",
+      "description": "Recall lore about historical events, people, nations, and cultures."
+    },
+    "id": "history",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "History",
+    "raw": {
+      "ability_score": {
+        "index": "int",
+        "name": "INT",
+        "url": "/api/2024/ability-scores/int"
+      },
+      "description": "Recall lore about historical events, people, nations, and cultures.",
+      "index": "history",
+      "name": "History",
+      "url": "/api/2024/skills/history"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "wis",
+      "description": "Discern a person’s mood and intentions."
+    },
+    "id": "insight",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Insight",
+    "raw": {
+      "ability_score": {
+        "index": "wis",
+        "name": "WIS",
+        "url": "/api/2024/ability-scores/wis"
+      },
+      "description": "Discern a person’s mood and intentions.",
+      "index": "insight",
+      "name": "Insight",
+      "url": "/api/2024/skills/insight"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "cha",
+      "description": "Awe or threaten someone into doing what you want."
+    },
+    "id": "intimidation",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Intimidation",
+    "raw": {
+      "ability_score": {
+        "index": "cha",
+        "name": "CHA",
+        "url": "/api/2024/ability-scores/cha"
+      },
+      "description": "Awe or threaten someone into doing what you want.",
+      "index": "intimidation",
+      "name": "Intimidation",
+      "url": "/api/2024/skills/intimidation"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "int",
+      "description": "Find obscure information in books, or deduce how something works."
+    },
+    "id": "investigation",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Investigation",
+    "raw": {
+      "ability_score": {
+        "index": "int",
+        "name": "INT",
+        "url": "/api/2024/ability-scores/int"
+      },
+      "description": "Find obscure information in books, or deduce how something works.",
+      "index": "investigation",
+      "name": "Investigation",
+      "url": "/api/2024/skills/investigation"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "wis",
+      "description": "Diagnose an illness, or determine what killed the recently slain."
+    },
+    "id": "medicine",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Medicine",
+    "raw": {
+      "ability_score": {
+        "index": "wis",
+        "name": "WIS",
+        "url": "/api/2024/ability-scores/wis"
+      },
+      "description": "Diagnose an illness, or determine what killed the recently slain.",
+      "index": "medicine",
+      "name": "Medicine",
+      "url": "/api/2024/skills/medicine"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "int",
+      "description": "Recall lore about terrain, plants, animals, and weather."
+    },
+    "id": "nature",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Nature",
+    "raw": {
+      "ability_score": {
+        "index": "int",
+        "name": "INT",
+        "url": "/api/2024/ability-scores/int"
+      },
+      "description": "Recall lore about terrain, plants, animals, and weather.",
+      "index": "nature",
+      "name": "Nature",
+      "url": "/api/2024/skills/nature"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "wis",
+      "description": "Using a combination of senses, notice something that’s easy to miss."
+    },
+    "id": "perception",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Perception",
+    "raw": {
+      "ability_score": {
+        "index": "wis",
+        "name": "WIS",
+        "url": "/api/2024/ability-scores/wis"
+      },
+      "description": "Using a combination of senses, notice something that’s easy to miss.",
+      "index": "perception",
+      "name": "Perception",
+      "url": "/api/2024/skills/perception"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "cha",
+      "description": "Act, tell a story, perform music, or dance."
+    },
+    "id": "performance",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Performance",
+    "raw": {
+      "ability_score": {
+        "index": "cha",
+        "name": "CHA",
+        "url": "/api/2024/ability-scores/cha"
+      },
+      "description": "Act, tell a story, perform music, or dance.",
+      "index": "performance",
+      "name": "Performance",
+      "url": "/api/2024/skills/performance"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "cha",
+      "description": "Honestly and graciously convince someone of something."
+    },
+    "id": "persuasion",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Persuasion",
+    "raw": {
+      "ability_score": {
+        "index": "cha",
+        "name": "CHA",
+        "url": "/api/2024/ability-scores/cha"
+      },
+      "description": "Honestly and graciously convince someone of something.",
+      "index": "persuasion",
+      "name": "Persuasion",
+      "url": "/api/2024/skills/persuasion"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "int",
+      "description": "Recall lore about gods, religious rituals, and holy symbols."
+    },
+    "id": "religion",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Religion",
+    "raw": {
+      "ability_score": {
+        "index": "int",
+        "name": "INT",
+        "url": "/api/2024/ability-scores/int"
+      },
+      "description": "Recall lore about gods, religious rituals, and holy symbols.",
+      "index": "religion",
+      "name": "Religion",
+      "url": "/api/2024/skills/religion"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "dex",
+      "description": "Pick a pocket, conceal a handheld object, or perform legerdemain."
+    },
+    "id": "sleight-of-hand",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Sleight of Hand",
+    "raw": {
+      "ability_score": {
+        "index": "dex",
+        "name": "DEX",
+        "url": "/api/2024/ability-scores/dex"
+      },
+      "description": "Pick a pocket, conceal a handheld object, or perform legerdemain.",
+      "index": "sleight-of-hand",
+      "name": "Sleight of Hand",
+      "url": "/api/2024/skills/sleight-of-hand"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "dex",
+      "description": "Escape notice by moving quietly and hiding behind things."
+    },
+    "id": "stealth",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Stealth",
+    "raw": {
+      "ability_score": {
+        "index": "dex",
+        "name": "DEX",
+        "url": "/api/2024/ability-scores/dex"
+      },
+      "description": "Escape notice by moving quietly and hiding behind things.",
+      "index": "stealth",
+      "name": "Stealth",
+      "url": "/api/2024/skills/stealth"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "ability": "wis",
+      "description": "Follow tracks, forage, find a trail, or avoid natural hazards."
+    },
+    "id": "survival",
+    "kind": "skill",
+    "license": "CC-BY-4.0",
+    "name": "Survival",
+    "raw": {
+      "ability_score": {
+        "index": "wis",
+        "name": "WIS",
+        "url": "/api/2024/ability-scores/wis"
+      },
+      "description": "Follow tracks, forage, find a trail, or avoid natural hazards.",
+      "index": "survival",
+      "name": "Survival",
+      "url": "/api/2024/skills/survival"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Skills.json"
+  }
+]

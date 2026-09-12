@@ -31,8 +31,10 @@ namespace DND.Engine.Combat
         public readonly IBattlefield Field;
         private readonly Dictionary<string, Creature> _byId = new Dictionary<string, Creature>();
         private readonly List<Creature> _creatures = new List<Creature>();
+        private readonly Dictionary<string, WorldObject> _objects = new Dictionary<string, WorldObject>();
 
         public IReadOnlyList<Creature> Creatures => _creatures;
+        public IReadOnlyCollection<WorldObject> Objects => _objects.Values;
         public IReadOnlyList<Creature> Order { get; private set; } = Array.Empty<Creature>();
         public int Round { get; private set; }
         public int TurnIndex { get; private set; } = -1;
@@ -43,6 +45,7 @@ namespace DND.Engine.Combat
         public int MovementLeftFeet { get; private set; }
         public bool ActionAvailable { get; private set; }
         public bool BonusActionAvailable { get; private set; }
+        public bool FreeInteractionAvailable { get; private set; }
 
         public Creature? Current => TurnIndex >= 0 && TurnIndex < Order.Count ? Order[TurnIndex] : null;
 
@@ -62,6 +65,22 @@ namespace DND.Engine.Combat
 
         public Creature? Get(string id) => _byId.TryGetValue(id, out var c) ? c : null;
         public Creature? OccupantAt(GridPos p) => _creatures.FirstOrDefault(c => !c.IsDead && c.Position == p);
+
+        public WorldObject AddObject(WorldObject o)
+        {
+            if (_objects.ContainsKey(o.Id)) throw new ArgumentException($"duplicate object id {o.Id}");
+            _objects[o.Id] = o;
+            return o;
+        }
+
+        public WorldObject? GetObject(string id) => _objects.TryGetValue(id, out var o) ? o : null;
+        public WorldObject? ObjectAt(GridPos cell) => _objects.Values.FirstOrDefault(o => o.Cell == cell);
+
+        /// <summary>True if the cell is blocked by terrain or by a closed/locked object occupying it.</summary>
+        public bool IsBlocked(GridPos cell) => Field.IsBlocked(cell) || (ObjectAt(cell)?.BlocksMovement ?? false);
+
+        /// <summary>True if an object occupying the cell blocks sight (terrain LoS is 03b).</summary>
+        public bool BlocksSight(GridPos cell) => ObjectAt(cell)?.BlocksSight ?? false;
 
         /// <summary>SRD: initiative = d20 + Dex mod. Ties: higher Dex score first, then insertion order (table decides; we make it deterministic).</summary>
         public void Start()
@@ -104,6 +123,8 @@ namespace DND.Engine.Combat
                 MoveIntent m => HandleMove(actor, m),
                 AttackIntent a => HandleAttack(actor, a),
                 EndTurnIntent => HandleEndTurn(actor),
+                InteractIntent i => HandleInteract(actor, i),
+                AttackObjectIntent ao => HandleAttackObject(actor, ao),
                 _ => RuleResult.Reject("intent", $"unsupported intent {intent.GetType().Name}"),
             };
         }
@@ -113,7 +134,7 @@ namespace DND.Engine.Combat
             var cells = GridPos.Cells(actor.Position, m.To);
             if (cells == 0) return RuleResult.Reject("movement", "already there");
             if (cells != 1) return RuleResult.Reject("movement", "v0.1 moves one cell per intent; send a path as single steps");
-            if (Field.IsBlocked(m.To)) return RuleResult.Reject("movement", $"{m.To} is blocked");
+            if (IsBlocked(m.To)) return RuleResult.Reject("movement", $"{m.To} is blocked");
             if (OccupantAt(m.To) != null) return RuleResult.Reject("movement", $"{m.To} is occupied");
             var cost = GridPos.Feet(actor.Position, m.To);
             if (cost > MovementLeftFeet) return RuleResult.Reject("movement", $"needs {cost} ft, {MovementLeftFeet} ft left");
@@ -162,6 +183,131 @@ namespace DND.Engine.Combat
             return RuleResult.Ok();
         }
 
+        /// <summary>Consumes the free interaction if it is still available this turn, else the action, else rejects.</summary>
+        private RuleResult ConsumeInteractionCost(out string cost)
+        {
+            if (FreeInteractionAvailable) { FreeInteractionAvailable = false; cost = "free"; return RuleResult.Ok(); }
+            if (ActionAvailable) { ActionAvailable = false; cost = "action"; return RuleResult.Ok(); }
+            cost = "";
+            return RuleResult.Reject("action-economy", "free interaction and action both used this turn");
+        }
+
+        private RuleResult HandleInteract(Creature actor, InteractIntent i)
+        {
+            var obj = GetObject(i.ObjectId);
+            if (obj == null) return RuleResult.Reject("object", $"unknown object {i.ObjectId}");
+            if (obj.IsBroken) return RuleResult.Reject("object", $"{i.ObjectId} is broken");
+            var feet = GridPos.Feet(actor.Position, obj.Cell);
+            if (GridPos.Cells(actor.Position, obj.Cell) != 1) return RuleResult.Reject("reach", $"{i.ObjectId} is {feet} ft away; you must be within 5 ft");
+
+            return i.Kind switch
+            {
+                Interaction.Open => HandleObjectOpen(actor, obj),
+                Interaction.Close => HandleObjectClose(actor, obj),
+                Interaction.ForceOpen => HandleObjectForceOpen(actor, obj),
+                Interaction.PickLock => HandleObjectPickLock(actor, obj),
+                _ => RuleResult.Reject("interact", $"unsupported interaction {i.Kind}"),
+            };
+        }
+
+        private RuleResult HandleObjectOpen(Creature actor, WorldObject obj)
+        {
+            if (obj.State == ObjectState.Locked) return RuleResult.Reject("locked", $"{obj.Id} is locked; force it or pick the lock");
+            if (obj.State == ObjectState.Open) return RuleResult.Reject("object", "already open");
+            var costResult = ConsumeInteractionCost(out var cost);
+            if (!costResult.Accepted) return costResult;
+            var from = obj.State;
+            obj.State = ObjectState.Open;
+            Log.Append(new ObjectStateChanged(obj.Id, from, ObjectState.Open, actor.Id, cost));
+            return RuleResult.Ok();
+        }
+
+        private RuleResult HandleObjectClose(Creature actor, WorldObject obj)
+        {
+            if (obj.State != ObjectState.Open) return RuleResult.Reject("object", "not open");
+            var occupant = OccupantAt(obj.Cell);
+            if (occupant != null) return RuleResult.Reject("occupied", $"{occupant.Id} is standing in the doorway");
+            var costResult = ConsumeInteractionCost(out var cost);
+            if (!costResult.Accepted) return costResult;
+            var from = obj.State;
+            obj.State = ObjectState.Closed;
+            Log.Append(new ObjectStateChanged(obj.Id, from, ObjectState.Closed, actor.Id, cost));
+            return RuleResult.Ok();
+        }
+
+        private RuleResult HandleObjectForceOpen(Creature actor, WorldObject obj)
+        {
+            int? dc = obj.State == ObjectState.Locked ? obj.Template.LockDc
+                : obj.State == ObjectState.Closed ? obj.Template.StuckDc
+                : null;
+            if (dc == null) return RuleResult.Reject("object", "nothing to force");
+            if (!ActionAvailable) return RuleResult.Reject("action-economy", "action already used this turn");
+            ActionAvailable = false;
+            var roll = D20Test.Roll(Rng, actor.SkillMod(Ability.Str, "athletics"));
+            var success = D20Test.MeetsDc(roll, dc.Value);
+            Log.Append(new ObjectCheckRolled(actor.Id, obj.Id, Interaction.ForceOpen, "Strength (Athletics)", roll, dc.Value, success));
+            if (success)
+            {
+                var from = obj.State;
+                obj.State = ObjectState.Open;
+                Log.Append(new ObjectStateChanged(obj.Id, from, ObjectState.Open, actor.Id, "action"));
+            }
+            return RuleResult.Ok();
+        }
+
+        private RuleResult HandleObjectPickLock(Creature actor, WorldObject obj)
+        {
+            if (obj.State != ObjectState.Locked) return RuleResult.Reject("object", "not locked");
+            if (!actor.Template.ToolProficiencies.Contains("thieves' tools")) return RuleResult.Reject("tools", "requires thieves' tools");
+            if (!ActionAvailable) return RuleResult.Reject("action-economy", "action already used this turn");
+            ActionAvailable = false;
+            var dc = obj.Template.LockDc ?? 0;
+            var roll = D20Test.Roll(Rng, actor.SkillMod(Ability.Dex, "sleight of hand"));
+            var success = D20Test.MeetsDc(roll, dc);
+            Log.Append(new ObjectCheckRolled(actor.Id, obj.Id, Interaction.PickLock, "Dexterity (Sleight of Hand)", roll, dc, success));
+            if (success)
+            {
+                var from = obj.State;
+                obj.State = ObjectState.Closed;
+                Log.Append(new ObjectStateChanged(obj.Id, from, ObjectState.Closed, actor.Id, "action"));
+            }
+            return RuleResult.Ok();
+        }
+
+        private RuleResult HandleAttackObject(Creature actor, AttackObjectIntent ao)
+        {
+            if (!ActionAvailable) return RuleResult.Reject("action-economy", "action already used this turn");
+            var obj = GetObject(ao.ObjectId);
+            if (obj == null) return RuleResult.Reject("object", $"unknown object {ao.ObjectId}");
+            if (obj.IsBroken) return RuleResult.Reject("object", $"{ao.ObjectId} is already broken");
+            if (ao.AttackIndex < 0 || ao.AttackIndex >= actor.Template.Attacks.Count) return RuleResult.Reject("attack", "no such attack");
+            var atk = actor.Template.Attacks[ao.AttackIndex];
+            var feet = GridPos.Feet(actor.Position, obj.Cell);
+            if (feet > atk.ReachFeet) return RuleResult.Reject("reach", $"{obj.Id} is {feet} ft away, reach is {atk.ReachFeet} ft");
+
+            ActionAvailable = false;
+            var roll = D20Test.Roll(Rng, atk.AttackBonus);
+            var hit = D20Test.AttackHits(roll, obj.Template.ArmorClass);
+            var crit = roll.IsNat20;
+            Log.Append(new ObjectAttackRolled(actor.Id, obj.Id, atk.Name, roll, obj.Template.ArmorClass, hit, crit));
+            if (hit)
+            {
+                var dmg = (crit ? atk.Damage.Doubled() : atk.Damage).Roll(Rng);
+                var rawAmount = Math.Max(0, dmg.Total);
+                var immune = atk.DamageType == "poison" || atk.DamageType == "psychic";
+                var amount = immune ? 0 : rawAmount;
+                obj.Hp = Math.Max(0, obj.Hp - amount);
+                Log.Append(new ObjectDamaged(actor.Id, obj.Id, amount, atk.DamageType, obj.Hp));
+                if (obj.Hp == 0)
+                {
+                    var from = obj.State;
+                    obj.State = ObjectState.Broken;
+                    Log.Append(new ObjectStateChanged(obj.Id, from, ObjectState.Broken, actor.Id, "damage"));
+                }
+            }
+            return RuleResult.Ok();
+        }
+
         private void AdvanceTurn()
         {
             if (Finished) return;
@@ -182,6 +328,7 @@ namespace DND.Engine.Combat
             MovementLeftFeet = c.SpeedFeet;
             ActionAvailable = true;
             BonusActionAvailable = true;
+            FreeInteractionAvailable = true;
             Log.Append(new TurnStarted(c.Id, MovementLeftFeet));
         }
 

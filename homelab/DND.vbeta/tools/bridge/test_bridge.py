@@ -224,10 +224,75 @@ def test_11_12_artifacts_and_quiet_logs(e: Env) -> None:
     check("12 logs, notes and inbox files do not trigger dispatch", r["launched"] == 0 and r["ingested"] == 0 and b.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == n_runs)
 
 
+def test_13_dispatcher_lock(e: Env) -> None:
+    b = e.bridge()
+    ok1, reason1 = b.acquire_dispatcher_lock()
+    lock_data = json.loads((e.state / "dispatcher.lock").read_text(encoding="utf-8"))
+    check("13a acquiring a free lock succeeds and records our pid", ok1 and lock_data.get("pid") == os.getpid(), f"ok={ok1} reason={reason1} pid={lock_data.get('pid')}")
+
+    # Simulate a second, genuinely different live dispatcher (our own pid would just be
+    # "already ours" per acquire_dispatcher_lock step 3): write the lock as our parent
+    # process's pid, which is alive for the duration of this test run.
+    foreign_pid = os.getppid()
+    B.atomic_write_json(e.state / "dispatcher.lock", {"pid": foreign_pid, "started": B.now(), "heartbeat": B.now(), "host": "x"})
+    b2 = e.bridge()
+    ok2, reason2 = b2.acquire_dispatcher_lock()
+    check("13b a second dispatcher on the same state root is refused", not ok2 and "alive" in reason2, f"ok={ok2} reason={reason2} foreign_pid={foreign_pid}")
+
+    ok3, reason3 = b2.acquire_dispatcher_lock(force=True)
+    check("13c --force takes over a live lock", ok3 and "forced" in reason3, f"ok={ok3} reason={reason3}")
+
+    B.atomic_write_json(e.state / "dispatcher.lock", {"pid": 999999, "started": B.now(), "heartbeat": B.now(), "host": "x"})
+    ok4, reason4 = b.acquire_dispatcher_lock()
+    check("13d a lock held by a dead pid is replaced without --force", ok4 and ("stale" in reason4 or "replaced" in reason4), f"ok={ok4} reason={reason4}")
+
+    old_hb = (B._dt.datetime.now(B._dt.timezone.utc) - B._dt.timedelta(minutes=10)).isoformat(timespec="seconds")
+    B.atomic_write_json(e.state / "dispatcher.lock", {"pid": os.getpid(), "started": B.now(), "heartbeat": old_hb, "host": "x"})
+    ok5, reason5 = b.acquire_dispatcher_lock()
+    check("13e our own pid re-acquires regardless of heartbeat age", ok5 and "ours" in reason5, f"ok={ok5} reason={reason5}")
+
+    B.atomic_write_json(e.state / "dispatcher.lock", {"pid": 999999, "started": B.now(), "heartbeat": B.now(), "host": "x"})
+    b.release_dispatcher_lock()
+    check("13f release does not delete a lock owned by another pid", (e.state / "dispatcher.lock").exists())
+    try:
+        (e.state / "dispatcher.lock").unlink()  # tidy up for later tests; dispatcher row is never FAIL either way
+    except OSError:
+        pass
+
+
+def test_14_doctor_runs(e: Env) -> None:
+    # Real exes so exe:* rows PASS (dummy config normally leaves "exe" empty).
+    e.cfg["agents"]["fable"]["exe"] = sys.executable
+    e.cfg["agents"]["astra"]["exe"] = sys.executable
+    b = e.bridge()
+
+    def fake_reachable(self) -> bool:
+        return True
+
+    def fake_run(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout="Logged in\n", stderr="")
+
+    orig_reachable, orig_run = B.Bridge._unity_reachable, B.subprocess.run
+    B.Bridge._unity_reachable = fake_reachable
+    B.subprocess.run = fake_run
+    try:
+        rows = b.doctor()
+    finally:
+        B.Bridge._unity_reachable = orig_reachable
+        B.subprocess.run = orig_run
+    names = [r[0] for r in rows]
+    fails = [r for r in rows if r[1] == "FAIL"]
+    check(
+        "14 doctor covers dispatcher/exe rows with no FAIL under the dummy config",
+        "dispatcher" in names and "exe:astra" in names and "exe:fable" in names and not fails,
+        f"names={names} fails={fails}",
+    )
+
+
 def run_all() -> int:
     e = Env()
     try:
-        for fn in (test_1_2_3_handoff_duplicate_restart, test_4_busy_agent_queues, test_5_unity_lease, test_6_review_invalidation, test_7_usage_limit_pauses, test_8_two_cycles_then_decision, test_9_pause_cancel, test_10_scope, test_11_12_artifacts_and_quiet_logs):
+        for fn in (test_1_2_3_handoff_duplicate_restart, test_4_busy_agent_queues, test_5_unity_lease, test_6_review_invalidation, test_7_usage_limit_pauses, test_8_two_cycles_then_decision, test_9_pause_cancel, test_10_scope, test_11_12_artifacts_and_quiet_logs, test_13_dispatcher_lock, test_14_doctor_runs):
             try:
                 fn(e)
             except Exception as ex:  # noqa: BLE001

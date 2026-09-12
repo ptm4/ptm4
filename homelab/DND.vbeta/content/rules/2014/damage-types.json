@@ -1,0 +1,275 @@
+[
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "acid",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Acid",
+    "raw": {
+      "desc": [
+        "The corrosive spray of a black dragon's breath and the dissolving enzymes secreted by a black pudding deal acid damage."
+      ],
+      "index": "acid",
+      "name": "Acid",
+      "url": "/api/2014/damage-types/acid"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "bludgeoning",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Bludgeoning",
+    "raw": {
+      "desc": [
+        "Blunt force attacks, falling, constriction, and the like deal bludgeoning damage."
+      ],
+      "index": "bludgeoning",
+      "name": "Bludgeoning",
+      "url": "/api/2014/damage-types/bludgeoning"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "cold",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Cold",
+    "raw": {
+      "desc": [
+        "The infernal chill radiating from an ice devil's spear and the frigid blast of a white dragon's breath deal cold damage."
+      ],
+      "index": "cold",
+      "name": "Cold",
+      "url": "/api/2014/damage-types/cold"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "fire",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Fire",
+    "raw": {
+      "desc": [
+        "Red dragons breathe fire, and many spells conjure flames to deal fire damage."
+      ],
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2014/damage-types/fire"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "force",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Force",
+    "raw": {
+      "desc": [
+        "Force is pure magical energy focused into a damaging form. Most effects that deal force damage are spells, including magic missile and spiritual weapon."
+      ],
+      "index": "force",
+      "name": "Force",
+      "url": "/api/2014/damage-types/force"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "lightning",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Lightning",
+    "raw": {
+      "desc": [
+        "A lightning bolt spell and a blue dragon's breath deal lightning damage."
+      ],
+      "index": "lightning",
+      "name": "Lightning",
+      "url": "/api/2014/damage-types/lightning"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "necrotic",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Necrotic",
+    "raw": {
+      "desc": [
+        "Necrotic damage, dealt by certain undead and a spell such as chill touch, withers matter and even the soul."
+      ],
+      "index": "necrotic",
+      "name": "Necrotic",
+      "url": "/api/2014/damage-types/necrotic"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "piercing",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Piercing",
+    "raw": {
+      "desc": [
+        "Puncturing and impaling attacks, including spears and monsters' bites, deal piercing damage."
+      ],
+      "index": "piercing",
+      "name": "Piercing",
+      "url": "/api/2014/damage-types/piercing"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "poison",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Poison",
+    "raw": {
+      "desc": [
+        "Venomous stings and the toxic gas of a green dragon's breath deal poison damage."
+      ],
+      "index": "poison",
+      "name": "Poison",
+      "url": "/api/2014/damage-types/poison"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "psychic",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Psychic",
+    "raw": {
+      "desc": [
+        "Mental abilities such as a psionic blast deal psychic damage."
+      ],
+      "index": "psychic",
+      "name": "Psychic",
+      "url": "/api/2014/damage-types/psychic"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "radiant",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Radiant",
+    "raw": {
+      "desc": [
+        "Radiant damage, dealt by a cleric's flame strike spell or an angel's smiting weapon, sears the flesh like fire and overloads the spirit with power."
+      ],
+      "index": "radiant",
+      "name": "Radiant",
+      "url": "/api/2014/damage-types/radiant"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "slashing",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Slashing",
+    "raw": {
+      "desc": [
+        "Swords, axes, and monsters' claws deal slashing damage."
+      ],
+      "index": "slashing",
+      "name": "Slashing",
+      "url": "/api/2014/damage-types/slashing"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.1 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": null
+    },
+    "id": "thunder",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Thunder",
+    "raw": {
+      "desc": [
+        "A concussive burst of sound, such as the effect of the thunderwave spell, deals thunder damage."
+      ],
+      "index": "thunder",
+      "name": "Thunder",
+      "url": "/api/2014/damage-types/thunder"
+    },
+    "ruleset": "2014",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2014/en/5e-SRD-Damage-Types.json"
+  }
+]

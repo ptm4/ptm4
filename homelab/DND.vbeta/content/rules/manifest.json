@@ -1,0 +1,99 @@
+{
+  "files": [
+    {
+      "path": "2024/monsters.json",
+      "records": 3,
+      "sha256": "b201cbaedfd5e9ab24993178da20fb44b6b74bb1aa935089cd3dbdfce8cbdff9"
+    },
+    {
+      "path": "2024/conditions.json",
+      "records": 15,
+      "sha256": "fe96bb4a2b5dae189155b2ef6cb07da139351a0f663ba8d0890de193deedfc7e"
+    },
+    {
+      "path": "2024/equipment.json",
+      "records": 182,
+      "sha256": "bfc6aa6f08414b6c03c4516e1547c806652db207322c7b4056ec1d1ed6ef41fb"
+    },
+    {
+      "path": "2024/classes.json",
+      "records": 12,
+      "sha256": "37458bf1abec602ca6d57c482bdcc3d676760b4701d964c38095c592f2bae03f"
+    },
+    {
+      "path": "2024/species.json",
+      "records": 9,
+      "sha256": "c029fa1abe3263363d6d33c313a78b43abf7a631e4e16535242a50ba4bb25e0f"
+    },
+    {
+      "path": "2024/backgrounds.json",
+      "records": 4,
+      "sha256": "023dee266470773d3d3194b06509cf791da7d7e31d9c9b4e6387292a2a798191"
+    },
+    {
+      "path": "2024/skills.json",
+      "records": 18,
+      "sha256": "50caad94a261bb399c8afd6f3b1e88b787235f94813865b130abfda32221e831"
+    },
+    {
+      "path": "2024/damage-types.json",
+      "records": 13,
+      "sha256": "760ee6e986a91ce962bc823475d09cc23a78f80ea9090329c3ac019424d9819c"
+    },
+    {
+      "path": "2014/monsters.json",
+      "records": 334,
+      "sha256": "6eeea20fb5c2734721580565d18401f3ba01ab881127fe92ce1b38110d33c0cf"
+    },
+    {
+      "path": "2014/spells.json",
+      "records": 319,
+      "sha256": "c499f976a0f9f15528582167ac6005accbcf6cd5373558cf81c9953c6159fa96"
+    },
+    {
+      "path": "2014/conditions.json",
+      "records": 15,
+      "sha256": "620d5505c58d34afd38a45f271d7af83ce27ae5ff5a3db50fff391d0245be348"
+    },
+    {
+      "path": "2014/equipment.json",
+      "records": 237,
+      "sha256": "bb9323c9098729afcd9d623866bd20b73e0f2ae3eee86daaf126b8de35e14762"
+    },
+    {
+      "path": "2014/classes.json",
+      "records": 12,
+      "sha256": "55379d6b9ec5ed1a3aaedbec9d0200006f5fd55e8def488f3c0f554ccd93d0c9"
+    },
+    {
+      "path": "2014/species.json",
+      "records": 9,
+      "sha256": "2a70acea4a662db1fdf38cca7100c24031728a76873347f1bc52cfa10ee5845b"
+    },
+    {
+      "path": "2014/backgrounds.json",
+      "records": 1,
+      "sha256": "b1e49cf1df454ae1e782de96dedecbe8e55fd97c9a97aca24d0f31b9500c51ca"
+    },
+    {
+      "path": "2014/skills.json",
+      "records": 18,
+      "sha256": "683e38fb5b6cc13e2c0affb4c3ec0d1b9e5f3701b1691ff25f46ce79016a9280"
+    },
+    {
+      "path": "2014/damage-types.json",
+      "records": 13,
+      "sha256": "45a7addaa5c0dac6a9bb09190d4bbf7811d73840b43c0d89098fdd61fedfeb88"
+    }
+  ],
+  "generated": "2026-09-11T23:04:24+00:00",
+  "sources": [
+    {
+      "commit_or_key": "0b171af231d8325e1567c431ae6176a5b8866e7e",
+      "fetched_at": "2026-09-11T23:04:23+00:00",
+      "name": "5e-database",
+      "url": "https://github.com/5e-bits/5e-database/tree/0b171af231d8325e1567c431ae6176a5b8866e7e"
+    }
+  ],
+  "tool": "ingest_srd.py 1.0.0"
+}

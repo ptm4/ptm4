@@ -8,8 +8,8 @@ Keep `status` here in sync with each file's frontmatter.
 | [00](00-MASTER.md) | Master plan | 0 | fable | decide | | done (awaiting Peter's review) |
 | [01](01-environment-setup.md) | Environment setup (Unity project, plugin, MCP, engine solution) | 1 | sonnet | execute | 00 | in-progress (all agent steps done; Peter: fresh-session MCP check + UGS Relay/Lobby) |
 | [02](02-poc-vertical-slice.md) | POC vertical slice (throwaway) | 1 | fable | decide | 01 | in-progress (two review rounds addressed 2026-09-11: ranged, highlights, camera, grounding, pathing, wall cutaway, portrait HUD; re-test pending) |
-| [03](03-rules-engine.md) | Rules engine (headless) | 2 | fable | decide | 01 | in-progress (skeleton + 31 tests; architecture doc written) |
-| [03a](Rules/03a-data-ingest.md) | SRD / Open5e data ingest | 2 | sonnet | execute | 03 | stub (sources confirmed 2026-09-09; ready to run) |
+| [03](03-rules-engine.md) | Rules engine (headless) | 2 | fable | decide | 01 | in-progress (skeleton + 31 tests; architecture doc written; objects + Interact action (S3, 2026-09-11)) |
+| [03a](Rules/03a-data-ingest.md) | SRD / Open5e data ingest | 2 | sonnet | execute | 03 | done (2026-09-11: 8/9 kinds ingested both rulesets + 2014 spells, 1214 records, validated + idempotent; 2024 spells blocked by an Open5e TLS chain issue, ask Peter) |
 | [03b](Rules/03b-core-mechanics.md) | Core mechanics | 2 | sonnet | execute | 03, 03a | stub |
 | [03c](Rules/03c-spells-and-effects.md) | Spells and effects | 2 | fable | decide | 03b | stub |
 | [03d](Rules/03d-conditions-and-status.md) | Conditions and status | 2 | sonnet | execute | 03b | stub |
@@ -26,6 +26,7 @@ Keep `status` here in sync with each file's frontmatter.
 | [13](13-first-campaign-content.md) | First campaign content | 3 | fable + peter | decide | 07, 08 | stub |
 | [14](14-build-and-distribution.md) | Build and distribution | 4 | sonnet | execute | 10 | stub |
 | [15](15-beta-test-playbook.md) | Beta test playbook | 4 | peter | n/a | 14 | stub |
+| [16](16-sonnet-batch-01.md) | Work split + Sonnet execution batch 01 (bridge lock/doctor, HUD fix, engine objects + Interact, SRD ingest) | 2 | sonnet | execute | 02, 03, 06 | in-progress (2026-09-11: S1 bridge lock/doctor done+verified, S3 engine objects done+verified 47/47, S4 SRD ingest done+verified (1 blocker: 2024 spells, ask Peter); S2 HUD fix code done, verification blocked — Unity Editor not open, cannot open it myself) |
 
 Reference files: [DECISIONS.md](DECISIONS.md), [SOURCES.md](SOURCES.md),
 [CONVENTIONS.md](CONVENTIONS.md), [AGENT-COLLABORATION-PROPOSAL.md](AGENT-COLLABORATION-PROPOSAL.md)

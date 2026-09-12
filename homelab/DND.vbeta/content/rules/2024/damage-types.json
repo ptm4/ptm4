@@ -1,0 +1,249 @@
+[
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Corrosive liquids, digestive enzymes"
+    },
+    "id": "acid",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Acid",
+    "raw": {
+      "description": "Corrosive liquids, digestive enzymes",
+      "index": "acid",
+      "name": "Acid",
+      "url": "/api/2024/damage-types/acid"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Blunt objects, constriction, falling"
+    },
+    "id": "bludgeoning",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Bludgeoning",
+    "raw": {
+      "description": "Blunt objects, constriction, falling",
+      "index": "bludgeoning",
+      "name": "Bludgeoning",
+      "url": "/api/2024/damage-types/bludgeoning"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Freezing water, icy blasts"
+    },
+    "id": "cold",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Cold",
+    "raw": {
+      "description": "Freezing water, icy blasts",
+      "index": "cold",
+      "name": "Cold",
+      "url": "/api/2024/damage-types/cold"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Flames, unbearable heat"
+    },
+    "id": "fire",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Fire",
+    "raw": {
+      "description": "Flames, unbearable heat",
+      "index": "fire",
+      "name": "Fire",
+      "url": "/api/2024/damage-types/fire"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Pure magical energy"
+    },
+    "id": "force",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Force",
+    "raw": {
+      "description": "Pure magical energy",
+      "index": "force",
+      "name": "Force",
+      "url": "/api/2024/damage-types/force"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Electricity"
+    },
+    "id": "lightning",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Lightning",
+    "raw": {
+      "description": "Electricity",
+      "index": "lightning",
+      "name": "Lightning",
+      "url": "/api/2024/damage-types/lightning"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Life-draining energy"
+    },
+    "id": "necrotic",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Necrotic",
+    "raw": {
+      "description": "Life-draining energy",
+      "index": "necrotic",
+      "name": "Necrotic",
+      "url": "/api/2024/damage-types/necrotic"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Fangs, puncturing objects"
+    },
+    "id": "piercing",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Piercing",
+    "raw": {
+      "description": "Fangs, puncturing objects",
+      "index": "piercing",
+      "name": "Piercing",
+      "url": "/api/2024/damage-types/piercing"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Toxic gas, venom"
+    },
+    "id": "poison",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Poison",
+    "raw": {
+      "description": "Toxic gas, venom",
+      "index": "poison",
+      "name": "Poison",
+      "url": "/api/2024/damage-types/poison"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Mind-rending energy"
+    },
+    "id": "psychic",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Psychic",
+    "raw": {
+      "description": "Mind-rending energy",
+      "index": "psychic",
+      "name": "Psychic",
+      "url": "/api/2024/damage-types/psychic"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Holy energy, searing radiation"
+    },
+    "id": "radiant",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Radiant",
+    "raw": {
+      "description": "Holy energy, searing radiation",
+      "index": "radiant",
+      "name": "Radiant",
+      "url": "/api/2024/damage-types/radiant"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Claws, cutting objects"
+    },
+    "id": "slashing",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Slashing",
+    "raw": {
+      "description": "Claws, cutting objects",
+      "index": "slashing",
+      "name": "Slashing",
+      "url": "/api/2024/damage-types/slashing"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  },
+  {
+    "attribution": "SRD 5.2 (Wizards of the Coast) via 5e-database",
+    "data": {
+      "description": "Concussive sound"
+    },
+    "id": "thunder",
+    "kind": "damage-type",
+    "license": "CC-BY-4.0",
+    "name": "Thunder",
+    "raw": {
+      "description": "Concussive sound",
+      "index": "thunder",
+      "name": "Thunder",
+      "url": "/api/2024/damage-types/thunder"
+    },
+    "ruleset": "2024",
+    "source": "5e-database@0b171af231d8325e1567c431ae6176a5b8866e7e",
+    "source_url": "https://raw.githubusercontent.com/5e-bits/5e-database/0b171af231d8325e1567c431ae6176a5b8866e7e/src/2024/en/5e-SRD-Damage-Types.json"
+  }
+]
