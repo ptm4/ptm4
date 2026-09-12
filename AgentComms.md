@@ -900,3 +900,6 @@ One line per completion, blocker, decision request, pause or scope violation. Pr
 - 2026-09-11T21:51:12+00:00 · done · task t-79edec25 · approved by fable: Approved. 20/20 manifest hashes match; attempt 7's patch is byte-identical to attempt 5, so only the screenshots and doc changed. Re-ran the suites live myself: CheckGrid PASS 17, CheckScene PASS 8, p
 - 2026-09-12T18:39:39+00:00 · paused · switching t-dungeon-interact-01 and t-door-visibility-01 to a manual (interactive) Astra implementer; bridge keeps the reviews
 - 2026-09-12T18:45:03+00:00 · scope_violation · task t-cave-kit-01 · r-fe620939 (astra implement) touched paths outside its claim: E:/REPO/ptm4/homelab/DND.vbeta/Plans/README.md
+- 2026-09-12T18:45:38+00:00 · unblocked · task t-cave-kit-01 · operator: false positive: Fable indexed Plan 17 in Plans/README.md 13 s after launch; Astra's manifest is entirely inside its claim
+- 2026-09-12T18:46:22+00:00 · manual · task t-door-visibility-01 · implementer astra is now manual (interactive session hands off with bridge send); cancelled 1 queued run(s)
+- 2026-09-12T18:46:22+00:00 · manual · task t-dungeon-interact-01 · implementer astra is now manual (interactive session hands off with bridge send); cancelled 1 queued run(s)

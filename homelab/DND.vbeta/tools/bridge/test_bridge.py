@@ -289,10 +289,31 @@ def test_14_doctor_runs(e: Env) -> None:
     )
 
 
+def test_15_manual_implementer(e: Env) -> None:
+    b = e.bridge()
+    e.behave({"t15": {"review": {"verdict": "approved"}}})
+    b.new_task("manual", "do", "done", "astra", "fable", ["w15/"], False, "", task_id="t15", manual_implementer=True)
+    r = b.tick()
+    queued = [dict(x) for x in b.db.execute("SELECT * FROM runs WHERE task_id='t15'")]
+    check("15a a manual-implementer task launches no implementer run", r["launched"] == 0 and not queued and b.task("t15")["state"] == "queued", f"runs={queued}")
+    # The interactive implementer hands off exactly like a run would.
+    (e.repo / "w15").mkdir(exist_ok=True); (e.repo / "w15" / "a.txt").write_text("x\n", encoding="utf-8")
+    m = b.make_manifest("t15", 1, [str(e.repo / "w15" / "a.txt")], False)
+    b.send("astra", "t15", "review_ready", "done by hand", manifest=str(m))
+    settle(b)
+    rs = runs(b, "t15")
+    check("15b the bridge runs the reviewer and finishes the task", [x["role"] for x in rs] == ["review"] and b.task("t15")["state"] == "done", f"runs={[(x['agent'], x['role'], x['status']) for x in rs]} state={b.task('t15')['state']}")
+    # Flipping an automatic task to manual cancels its queued implementer run.
+    b.new_task("flip", "do", "done", "astra", "fable", ["w15/"], False, "", task_id="t15b")
+    b.pause("hold"); msg = b.set_manual("t15b", True); b.resume()
+    q = [dict(x) for x in b.db.execute("SELECT status FROM runs WHERE task_id='t15b'")]
+    check("15c task manual cancels the queued implementer run", "cancelled 1" in msg and q and q[0]["status"] == "cancelled", msg)
+
+
 def run_all() -> int:
     e = Env()
     try:
-        for fn in (test_1_2_3_handoff_duplicate_restart, test_4_busy_agent_queues, test_5_unity_lease, test_6_review_invalidation, test_7_usage_limit_pauses, test_8_two_cycles_then_decision, test_9_pause_cancel, test_10_scope, test_11_12_artifacts_and_quiet_logs, test_13_dispatcher_lock, test_14_doctor_runs):
+        for fn in (test_1_2_3_handoff_duplicate_restart, test_4_busy_agent_queues, test_5_unity_lease, test_6_review_invalidation, test_7_usage_limit_pauses, test_8_two_cycles_then_decision, test_9_pause_cancel, test_10_scope, test_11_12_artifacts_and_quiet_logs, test_13_dispatcher_lock, test_14_doctor_runs, test_15_manual_implementer):
             try:
                 fn(e)
             except Exception as ex:  # noqa: BLE001

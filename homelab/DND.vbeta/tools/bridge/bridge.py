@@ -274,7 +274,7 @@ class Bridge:
     # ------------------------------------------------------------------ tasks
     def new_task(self, title: str, request: str, acceptance: str, implementer: str, reviewer: str | None,
                  allowed_paths: list[str], unity_required: bool, unity_actions: str, cwd: str | None = None,
-                 task_id: str | None = None) -> str:
+                 task_id: str | None = None, manual_implementer: bool = False) -> str:
         for a in (implementer, reviewer):
             if a and a not in self.agents:
                 raise SystemExit(f"unknown agent {a}")
@@ -284,12 +284,30 @@ class Bridge:
         cwd = cwd or self.cfg["repo_root"]
         rev = self._git_rev(cwd)
         self.db.execute(
-            "INSERT INTO tasks(id,title,request,acceptance,implementer,reviewer,state,allowed_paths,unity_required,unity_actions,cwd,base_revision,attempt,review_cycles,created,updated,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?,'')",
-            (tid, title, request, acceptance, implementer, reviewer, "queued", json.dumps(allowed_paths), int(unity_required), unity_actions, cwd, rev, now(), now()),
+            "INSERT INTO tasks(id,title,request,acceptance,implementer,reviewer,state,allowed_paths,unity_required,unity_actions,cwd,base_revision,attempt,review_cycles,created,updated,notes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,0,0,?,?,?)",
+            (tid, title, request, acceptance, implementer, reviewer, "queued", json.dumps(allowed_paths), int(unity_required), unity_actions, cwd, rev, now(), now(), self.MANUAL_MARK if manual_implementer else ''),
         )
         self.event(tid, "task_created", f"{title} (impl {implementer}, review {reviewer or 'none'}, unity {'yes' if unity_required else 'no'})")
         self.queue_run(tid, implementer, "implement", None)
         return tid
+
+    def set_manual(self, task_id: str, manual: bool) -> str:
+        """Switch a task's implementer between bridge runs and a manual (interactive) session.
+        Cancels any queued implementer run so the dispatcher will not double up the work."""
+        t = self.task(task_id)
+        if t is None:
+            raise SystemExit("no such task")
+        notes = (t["notes"] or "").replace(self.MANUAL_MARK, "").strip()
+        if manual:
+            notes = (notes + " " + self.MANUAL_MARK).strip()
+        self.db.execute("UPDATE tasks SET notes=?, updated=? WHERE id=?", (notes, now(), task_id))
+        cancelled = 0
+        if manual:
+            for r in self.db.execute("SELECT run_id FROM runs WHERE task_id=? AND agent=? AND status='queued' AND role IN ('implement','fix')", (task_id, t["implementer"])).fetchall():
+                self.db.execute("UPDATE runs SET status='cancelled', ended=?, note='manual implementer' WHERE run_id=?", (now(), r["run_id"]))
+                cancelled += 1
+        self.event(task_id, "manual" if manual else "automatic", f"implementer {t['implementer']} is now {'manual (interactive session hands off with bridge send)' if manual else 'run by the bridge'}; cancelled {cancelled} queued run(s)", notify=True)
+        return f"{task_id}: implementer {'manual' if manual else 'automatic'}; cancelled {cancelled} queued run(s)"
 
     def requeue(self, task_id: str) -> None:
         t = self.task(task_id)
@@ -338,9 +356,21 @@ class Bridge:
         return "\n".join(report) or "cancelled (no active runs)"
 
     # ------------------------------------------------------------------ runs / queue
+    MANUAL_MARK = "manual-implementer"
+
+    def is_manual_implementer(self, t: sqlite3.Row) -> bool:
+        return self.MANUAL_MARK in (t["notes"] or "")
+
     def queue_run(self, task_id: str, agent: str, role: str, message_id: str | None, unity: bool | None = None) -> str:
         assert role in ROLES
         t = self.task(task_id)
+        if role in ("implement", "fix") and agent == t["implementer"] and self.is_manual_implementer(t):
+            # Hybrid mode: Peter drives the implementer in an interactive session; the bridge only
+            # runs the reviewer. The implementer hands off with `bridge send` exactly as a run would.
+            expected = "changes_ready" if role == "fix" else "review_ready"
+            self.set_state(task_id, "changes_requested" if role == "fix" else "queued")
+            self.event(task_id, "manual_wait", f"waiting for {agent} (manual implementer) to `bridge send --kind {expected}`; no run launched", notify=True)
+            return ""
         rid = "r-" + uuid.uuid4().hex[:8]
         self.db.execute(
             "INSERT INTO runs(run_id,task_id,agent,role,message_id,status,attempt,created,unity) VALUES(?,?,?,?,?,'queued',?,?,?)",
@@ -972,7 +1002,8 @@ class Bridge:
             lines.append(f"unity lease: {dict(l) if l else 'free'}")
             lines += ["", "| task | state | title | impl | review | cycles | updated |", "|---|---|---|---|---|---|---|"]
             for t in self.db.execute("SELECT * FROM tasks ORDER BY created DESC LIMIT 30"):
-                lines.append(f"| {t['id']} | {t['state']} | {t['title']} | {t['implementer']} | {t['reviewer']} | {t['review_cycles']} | {t['updated']} |")
+                impl = t['implementer'] + (" (manual)" if self.is_manual_implementer(t) else "")
+                lines.append(f"| {t['id']} | {t['state']} | {t['title']} | {impl} | {t['reviewer']} | {t['review_cycles']} | {t['updated']} |")
             lines += ["", "active runs:"]
             for r in self.db.execute("SELECT * FROM runs WHERE status IN ('running','queued') ORDER BY created"):
                 lines.append(f"- {r['run_id']} {r['status']} {r['agent']} {r['role']} task {r['task_id']}" + (f" (next {r['next_attempt_at']})" if r['next_attempt_at'] else ""))
@@ -1150,6 +1181,8 @@ def main(argv: list[str] | None = None) -> int:
     tn.add_argument("--allow", action="append", default=[], help="allowed write path (prefix), repeatable")
     tn.add_argument("--unity", action="store_true"); tn.add_argument("--unity-actions", default="read-only probes")
     tn.add_argument("--cwd", default=None); tn.add_argument("--id", default=None)
+    tn.add_argument("--manual-implementer", action="store_true", help="Peter drives the implementer interactively; the bridge runs only the reviewer")
+    tm = ts.add_parser("manual"); tm.add_argument("id"); tm.add_argument("--off", action="store_true")
     ts.add_parser("list"); tsh = ts.add_parser("show"); tsh.add_argument("id")
     trq = ts.add_parser("requeue"); trq.add_argument("id"); tc = ts.add_parser("cancel"); tc.add_argument("id")
     tu = ts.add_parser("unblock"); tu.add_argument("id"); tu.add_argument("--reason", required=True)
@@ -1178,7 +1211,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"state root ready: {b.root}"); return 0
     if a.cmd == "task":
         if a.tcmd == "new":
-            print(b.new_task(a.title, a.request, a.acceptance, a.implementer, a.reviewer, a.allow, a.unity, a.unity_actions, a.cwd, a.id)); return 0
+            print(b.new_task(a.title, a.request, a.acceptance, a.implementer, a.reviewer, a.allow, a.unity, a.unity_actions, a.cwd, a.id, a.manual_implementer)); return 0
+        if a.tcmd == "manual":
+            print(b.set_manual(a.id, not a.off)); return 0
         if a.tcmd == "list":
             for t_ in b.db.execute("SELECT id,state,implementer,reviewer,review_cycles,title FROM tasks ORDER BY created"):
                 print(f"{t_['id']:12s} {t_['state']:18s} {t_['implementer']:>6s}->{(t_['reviewer'] or '-'):6s} cycles={t_['review_cycles']}  {t_['title']}")
