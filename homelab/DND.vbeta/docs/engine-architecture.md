@@ -23,6 +23,7 @@ networked client can replay the host's decisions byte-for-byte (D16).
 |---|---|---|
 | `DND.Engine.Core` | `IRng`/`SeededRng`, `Dice`, `Ability`, `GridPos`, `Distance` | nothing |
 | `DND.Engine.Model` | `Creature` (live stat block + position + conditions), `Condition` | Core |
+| `DND.Engine.Data` | Json reader, RulesRecord, Compendium, RulesFiles | Core, Model |
 | `DND.Engine.Rules` | `D20Test` (checks, saves, attacks, advantage), `Damage`, movement rules, cover/LoS (later 03b) | Core, Model |
 | `DND.Engine.Events` | `GameEvent` hierarchy, `EventLog` | Model |
 | `DND.Engine.Intents` | `Intent` hierarchy, `RuleResult` | Model |
@@ -83,3 +84,16 @@ xUnit in `engine/DND.Engine.Tests`. One test class per rule area. Deterministic 
 ```
 cd homelab/DND.vbeta/engine && dotnet test
 ```
+
+## 7. Data loading
+
+`content/rules/<ruleset>/<kind>.json` (Plan 03a) is an array of envelope records, each with
+`id`/`kind`/`ruleset`/`name`/`source`/`license`/`attribution`/`data` (plus an untouched `raw` the
+engine never loads); `DND.Engine.Data.Compendium.AddFile` validates the envelope and indexes
+records by `(ruleset, kind, id)`, and `Find`/`Monster` look up an id in the 2024 ruleset first,
+falling back to 2014 per id when 2024 has no record (D14). `Compendium.Monster` maps a monster
+record's `data` into a `CreatureTemplate` (abilities, HP, AC, speed, proficiency bonus, skills,
+attacks parsed from `data.attacks`), skipping and warning on an attack whose damage cannot be
+parsed rather than throwing. The JSON itself is read by the host, not the engine: Unity loads it
+from `StreamingAssets/rules/` (copied there by a build step in Plan 14) and `dotnet test` reads
+it from the test project's copied `rules/` output folder.

@@ -1,6 +1,6 @@
 # content/rules coverage
 
-Generated 2026-09-12T18:30:24+00:00 by ingest_srd.py 1.0.0.
+Generated 2026-09-12T21:04:06+00:00 by ingest_srd.py 1.1.0.
 
 | Kind | 2024 records | 2014 records | 2014-only (no 2024 counterpart) |
 |---|---|---|---|
@@ -13,6 +13,22 @@ Generated 2026-09-12T18:30:24+00:00 by ingest_srd.py 1.0.0.
 | backgrounds | 4 | 1 | 0 |
 | skills | 18 | 18 | 0 |
 | damage-types | 13 | 13 | 0 |
+| levels | 287 | 290 | 17 |
+| features | 232 | 407 | 395 |
+| subclasses | 12 | 12 | 9 |
+| feats | 17 | 1 | 0 |
+| magic-items | 262 | 362 | 116 |
+| magic-schools | 8 | 8 | 0 |
+| weapon-properties | 10 | 11 | 2 |
+| weapon-mastery-properties | 8 | 0 | 0 |
+| proficiencies | 74 | 117 | 51 |
+| languages | 19 | 16 | 0 |
+| alignments | 10 | 9 | 0 |
+| ability-scores | 6 | 6 | 0 |
+| equipment-categories | 30 | 39 | 14 |
+| traits | 67 | 38 | 27 |
+| subspecies | 24 | 4 | 4 |
+| poisons | 14 | 0 | 0 |
 
 ## Monsters CR ≤ 5
 
@@ -455,13 +471,107 @@ Generated 2026-09-12T18:30:24+00:00 by ingest_srd.py 1.0.0.
 | wind-wall | yes | yes |
 | zone-of-truth | yes | yes |
 
+## Class levels 1–5
+
+| id | 2024 | 2014 |
+|---|---|---|
+| barbarian-1 | yes | yes |
+| barbarian-2 | yes | yes |
+| barbarian-3 | yes | yes |
+| barbarian-4 | yes | yes |
+| barbarian-5 | yes | yes |
+| bard-1 | yes | yes |
+| bard-2 | yes | yes |
+| bard-3 | yes | yes |
+| bard-4 | yes | yes |
+| bard-5 | yes | yes |
+| berserker-3 | yes | yes |
+| champion-3 | yes | yes |
+| cleric-1 | yes | yes |
+| cleric-2 | yes | yes |
+| cleric-3 | yes | yes |
+| cleric-4 | yes | yes |
+| cleric-5 | yes | yes |
+| devotion-3 | yes | yes |
+| draconic-1 | no | yes |
+| draconic-sorcery-3 | yes | no |
+| druid-1 | yes | yes |
+| druid-2 | yes | yes |
+| druid-3 | yes | yes |
+| druid-4 | yes | yes |
+| druid-5 | yes | yes |
+| evocation-2 | no | yes |
+| evoker-3 | yes | no |
+| fiend-1 | no | yes |
+| fiend-patron-3 | yes | no |
+| fighter-1 | yes | yes |
+| fighter-2 | yes | yes |
+| fighter-3 | yes | yes |
+| fighter-4 | yes | yes |
+| fighter-5 | yes | yes |
+| hunter-3 | yes | yes |
+| land-2 | no | yes |
+| land-3 | yes | no |
+| life-1 | no | yes |
+| life-2 | no | yes |
+| life-3 | yes | no |
+| lore-3 | yes | yes |
+| monk-1 | yes | yes |
+| monk-2 | yes | yes |
+| monk-3 | yes | yes |
+| monk-4 | yes | yes |
+| monk-5 | yes | yes |
+| open-hand-3 | yes | yes |
+| paladin-1 | yes | yes |
+| paladin-2 | yes | yes |
+| paladin-3 | yes | yes |
+| paladin-4 | yes | yes |
+| paladin-5 | yes | yes |
+| ranger-1 | yes | yes |
+| ranger-2 | yes | yes |
+| ranger-3 | yes | yes |
+| ranger-4 | yes | yes |
+| ranger-5 | yes | yes |
+| rogue-1 | yes | yes |
+| rogue-2 | yes | yes |
+| rogue-3 | yes | yes |
+| rogue-4 | yes | yes |
+| rogue-5 | yes | yes |
+| sorcerer-1 | yes | yes |
+| sorcerer-2 | yes | yes |
+| sorcerer-3 | yes | yes |
+| sorcerer-4 | yes | yes |
+| sorcerer-5 | yes | yes |
+| thief-3 | yes | yes |
+| warlock-1 | yes | yes |
+| warlock-2 | yes | yes |
+| warlock-3 | yes | yes |
+| warlock-4 | yes | yes |
+| warlock-5 | yes | yes |
+| wizard-1 | yes | yes |
+| wizard-2 | yes | yes |
+| wizard-3 | yes | yes |
+| wizard-4 | yes | yes |
+| wizard-5 | yes | yes |
+
 ## Skipped kinds (this batch)
 
-- feats
-- magic-items
-- subclasses
-- rules-text
+- rules
+- rule-sections
 
 ## Parse warnings
 
+- feats/2024: ability-score-improvement has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: grappler has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: archery has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: defense has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: great-weapon-fighting has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: two-weapon-fighting has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-combat-prowess has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-dimensional-travel has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-fate has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-irresistible-offense has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-spell-recall has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-the-night-spirit has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
+- feats/2024: boon-of-truesight has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw
 - octopus: could not parse reach/range from action 'Ink Cloud'

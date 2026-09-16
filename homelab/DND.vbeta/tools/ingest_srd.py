@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""SRD / Open5e data ingest (Plan 03a). Pulls SRD-licensed 5e data into ruleset-tagged JSON
-that the engine (Plan 03) loads. 2024 (SRD 5.2) is primary; 2014 (SRD 5.1) fills gaps.
+"""SRD / Open5e data ingest (Plan 03a, widened by Plan 18 batch 02b). Pulls SRD-licensed 5e
+data into ruleset-tagged JSON that the engine (Plan 03) loads. 2024 (SRD 5.2) is primary; 2014
+(SRD 5.1) fills gaps.
 
 Sources (see homelab/DND.vbeta/Plans/SOURCES.md; only SRD documents are ingested):
   - 5e-database (github.com/5e-bits/5e-database): SRD 5.1 (src/2014/en/) and SRD 5.2
-    (src/2024/en/) as JSON, pinned to a commit sha. Primary source for both rulesets.
-  - Open5e v2 API (api.open5e.com), document key `srd-2024`: used ONLY where 5e-database's
-    2024 set has a gap. As of this writing that is exactly one file: 2024 spells (5e-database
-    ships no `src/2024/en/5e-SRD-Spells.json`; confirmed by a 404 on that path). Every other
-    2024 kind (monsters, conditions, equipment, classes, species, backgrounds, skills,
-    damage-types) comes from 5e-database like everything else.
+    (src/2024/en/) as JSON, pinned to a commit sha. Primary source for both rulesets, and the
+    only source for the batch 02b kinds (levels, features, subclasses, feats, magic items and
+    the small lookup tables) — there is no Open5e fallback for any of those.
+  - Open5e v2 API (api.open5e.com), document key `srd-2024`: used ONLY for 2024 spells, the one
+    kind 5e-database's 2024 set does not ship (confirmed by a 404 on
+    `src/2024/en/5e-SRD-Spells.json`).
 
 Never fetches wikidot, 5e.tools, or any non-SRD document (see SOURCES.md "Never ingest").
 
@@ -17,8 +18,8 @@ Usage
   python tools/ingest_srd.py [--refresh] [--kinds monsters,spells] [--out content/rules] [--twice]
 
   --refresh   bypass the download cache (tools/.ingest-cache/, gitignored)
-  --kinds     comma-separated subset of: monsters,spells,conditions,equipment,classes,species,
-              backgrounds,skills,damage-types (default: all)
+  --kinds     comma-separated subset of KINDS (default: all) — see KINDS in this file for the
+              full list (the original nine plus the sixteen batch 02b kinds)
   --out       output root (default: content/rules, relative to homelab/DND.vbeta/)
   --twice     run the full ingest twice into --out and report whether every output file is
               byte-identical between the two runs (idempotence check for Plan 03a's done_when)
@@ -39,7 +40,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 HERE = Path(__file__).resolve().parent
 DEFAULT_OUT = HERE.parent / "content" / "rules"
 CACHE_DIR = HERE / ".ingest-cache"
@@ -49,19 +50,49 @@ GITHUB_REPO = "5e-bits/5e-database"
 OPEN5E_DOC_KEY = "srd-2024"
 
 RULESETS = ("2024", "2014")
-KINDS = ("monsters", "spells", "conditions", "equipment", "classes", "species", "backgrounds", "skills", "damage-types")
+KINDS = (
+    "monsters", "spells", "conditions", "equipment", "classes", "species", "backgrounds", "skills", "damage-types",
+    # Batch 02b (Plan 18): the rest of the SRD data.
+    "levels", "features", "subclasses", "feats", "magic-items", "magic-schools", "weapon-properties",
+    "weapon-mastery-properties", "proficiencies", "languages", "alignments", "ability-scores",
+    "equipment-categories", "traits", "subspecies", "poisons",
+)
 SINGULAR = {
     "monsters": "monster", "spells": "spell", "conditions": "condition", "equipment": "equipment",
     "classes": "class", "species": "species", "backgrounds": "background", "skills": "skill",
     "damage-types": "damage-type",
+    "levels": "level", "features": "feature", "subclasses": "subclass", "feats": "feat",
+    "magic-items": "magic-item", "magic-schools": "magic-school", "weapon-properties": "weapon-property",
+    "weapon-mastery-properties": "weapon-mastery-property", "proficiencies": "proficiency",
+    "languages": "language", "alignments": "alignment", "ability-scores": "ability-score",
+    "equipment-categories": "equipment-category", "traits": "trait", "subspecies": "subspecies",
+    "poisons": "poison",
 }
-# 5e-database filename per (ruleset, kind). species is handled specially (Species.json for
-# 2024, Races.json for 2014 — 2014 calls them "races"; both map to the "species" kind here).
+# 5e-database filename per (ruleset, kind). species/subspecies are handled specially (Species/
+# Subspecies.json for 2024, Races/Subraces.json for 2014 — 2014 calls them "races"/"subraces";
+# both map to the "species"/"subspecies" kinds here).
 FILE_FOR_KIND = {
     "monsters": "Monsters", "spells": "Spells", "conditions": "Conditions", "equipment": "Equipment",
     "classes": "Classes", "backgrounds": "Backgrounds", "skills": "Skills", "damage-types": "Damage-Types",
+    "levels": "Levels", "features": "Features", "subclasses": "Subclasses", "feats": "Feats",
+    "magic-items": "Magic-Items", "magic-schools": "Magic-Schools", "weapon-properties": "Weapon-Properties",
+    "weapon-mastery-properties": "Weapon-Mastery-Properties", "proficiencies": "Proficiencies",
+    "languages": "Languages", "alignments": "Alignments", "ability-scores": "Ability-Scores",
+    "equipment-categories": "Equipment-Categories", "traits": "Traits", "poisons": "Poisons",
 }
-SKIPPED_KINDS = ["feats", "magic-items", "subclasses", "rules-text"]
+# Kinds that exist for only one ruleset by design (Plan 18 C1), not by an incidental data gap.
+RULESET_SCOPE = {
+    "weapon-mastery-properties": {"2024"},
+    "poisons": {"2024"},
+}
+
+
+def kind_allowed(kind: str, ruleset: str) -> bool:
+    return ruleset in RULESET_SCOPE.get(kind, RULESETS)
+
+
+# Still skipped (prose, 2014-only).
+SKIPPED_KINDS = ["rules", "rule-sections"]
 
 FEET_RE = re.compile(r"(-?\d+)\s*ft")
 REACH_RE = re.compile(r"reach\s+(\d+)\s*ft", re.I)
@@ -184,6 +215,16 @@ def join_desc(v) -> str | None:
     if isinstance(v, list):
         return "\n\n".join(str(x) for x in v)
     return str(v)
+
+
+def generic_data(rec: dict) -> dict:
+    """Plan 18 C2's generic rule: copy every top-level scalar (str/int/float/bool) field
+    unchanged; desc becomes description (joined with join_desc). Objects/arrays stay out of
+    `data` (they remain in `raw`) unless a per-kind normalizer adds them back explicitly."""
+    data = {k: v for k, v in rec.items() if k != "desc" and isinstance(v, (str, int, float, bool))}
+    if "desc" in rec:
+        data["description"] = join_desc(rec["desc"])
+    return data
 
 
 # ---------------------------------------------------------------------- normalizers (5e-database shape, both rulesets)
@@ -351,6 +392,144 @@ def norm_damage_type(rec: dict) -> dict:
     return {"description": rec.get("description")}
 
 
+# ---------------------------------------------------------------------- normalizers (batch 02b, Plan 18 C2)
+def norm_level(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["class"] = (rec.get("class") or {}).get("index")
+    subclass = rec.get("subclass")
+    data["subclass"] = subclass.get("index") if isinstance(subclass, dict) else None
+    data["features"] = [f.get("index") for f in rec.get("features") or []]
+    data["proficiency_bonus"] = rec.get("prof_bonus")
+    data.pop("prof_bonus", None)
+    if "spellcasting" in rec:
+        data["spellcasting"] = rec["spellcasting"]
+    if "class_specific" in rec:
+        data["class_specific"] = rec["class_specific"]
+    return data
+
+
+def norm_feature(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["class"] = (rec.get("class") or {}).get("index")
+    subclass = rec.get("subclass")
+    data["subclass"] = subclass.get("index") if isinstance(subclass, dict) else None
+    data["prerequisites"] = rec.get("prerequisites")
+    return data
+
+
+def norm_subclass(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["class"] = (rec.get("class") or {}).get("index")
+    spells = []
+    for s in rec.get("spells") or []:
+        prereq = s.get("prerequisites") or []
+        spells.append({"level": prereq[0].get("level") if prereq else None, "spell": (s.get("spell") or {}).get("index")})
+    data["spells"] = spells
+    if "subclass_levels" in rec:
+        data["subclass_levels"] = rec["subclass_levels"]
+    return data
+
+
+def norm_feat(rec: dict, warnings: list, fid: str, ruleset: str) -> dict:
+    data = generic_data(rec)
+    prereqs = rec.get("prerequisites")
+    # 2014 SRD feats: prerequisites is a list of {ability_score, minimum_score} (Plan 18 C2's
+    # shape). 2024 SRD feats use a different schema entirely (an object with minimum_level /
+    # feature_named, plus a separate prerequisite_options for ability-score choices) — that
+    # shape is not in the plan, so it is left unnormalized here (missing = absent, per C2);
+    # the full structure is still available in `raw`. Flagged in coverage.md for Fable/Peter.
+    if isinstance(prereqs, list):
+        data["prerequisites"] = [
+            {"ability": (p.get("ability_score") or {}).get("index"), "minimum_score": p.get("minimum_score")}
+            for p in prereqs
+        ]
+    elif prereqs is not None:
+        warnings.append(f"feats/{ruleset}: {fid} has a non-list 'prerequisites' shape (2024 schema); left unnormalized, see raw")
+    return data
+
+
+def norm_magic_item(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["category"] = (rec.get("equipment_category") or {}).get("index")
+    data["rarity"] = (rec.get("rarity") or {}).get("name")
+    data["variant"] = bool(rec.get("variant"))
+    data["variants"] = [v.get("index") for v in rec.get("variants") or []]
+    return data
+
+
+def norm_magic_school(rec: dict) -> dict:
+    return generic_data(rec)
+
+
+def norm_weapon_property(rec: dict) -> dict:
+    return generic_data(rec)
+
+
+def norm_weapon_mastery_property(rec: dict) -> dict:
+    return generic_data(rec)
+
+
+def norm_proficiency(rec: dict, ruleset: str) -> dict:
+    data = generic_data(rec)
+    data["classes"] = [c.get("index") for c in rec.get("classes") or []]
+    species_key = "species" if ruleset == "2024" else "races"
+    data["species"] = [s.get("index") for s in rec.get(species_key) or []]
+    data["reference"] = (rec.get("reference") or {}).get("index")
+    return data
+
+
+def norm_language(rec: dict) -> dict:
+    data = generic_data(rec)
+    if "typical_speakers" in rec:
+        data["typical_speakers"] = rec["typical_speakers"]
+    return data
+
+
+def norm_alignment(rec: dict) -> dict:
+    return generic_data(rec)
+
+
+def norm_ability_score(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["skills"] = [s.get("index") for s in rec.get("skills") or []]
+    return data
+
+
+def norm_equipment_category(rec: dict) -> dict:
+    data = generic_data(rec)
+    data["equipment"] = [e.get("index") for e in rec.get("equipment") or []]
+    return data
+
+
+def norm_trait(rec: dict, ruleset: str) -> dict:
+    data = generic_data(rec)
+    species_key = "species" if ruleset == "2024" else "races"
+    subspecies_key = "subspecies" if ruleset == "2024" else "subraces"
+    data["species"] = [s.get("index") for s in rec.get(species_key) or []]
+    data["subspecies"] = [s.get("index") for s in rec.get(subspecies_key) or []]
+    data["proficiencies"] = [p.get("index") for p in rec.get("proficiencies") or []]
+    return data
+
+
+def norm_subspecies(rec: dict, ruleset: str) -> dict:
+    data = generic_data(rec)
+    parent_key = "species" if ruleset == "2024" else "race"
+    data["species"] = (rec.get(parent_key) or {}).get("index")
+    if "ability_bonuses" in rec:
+        data["ability_bonuses"] = [{"ability": (b.get("ability_score") or {}).get("index"), "bonus": b.get("bonus")} for b in rec["ability_bonuses"]]
+    trait_list = rec.get("racial_traits") if "racial_traits" in rec else rec.get("traits")
+    data["traits"] = [t.get("index") for t in trait_list or []]
+    return data
+
+
+def norm_poison(rec: dict) -> dict:
+    return generic_data(rec)
+
+
+# Normalizers that need to know which ruleset they are running for (source field names differ,
+# e.g. "species" (2024) vs "races" (2014)).
+NEEDS_RULESET = {"proficiencies", "traits", "subspecies"}
+
 NORMALIZERS = {
     "conditions": norm_condition,
     "equipment": norm_equipment,
@@ -359,6 +538,21 @@ NORMALIZERS = {
     "backgrounds": norm_background,
     "skills": norm_skill,
     "damage-types": norm_damage_type,
+    "levels": norm_level,
+    "features": norm_feature,
+    "subclasses": norm_subclass,
+    "magic-items": norm_magic_item,
+    "magic-schools": norm_magic_school,
+    "weapon-properties": norm_weapon_property,
+    "weapon-mastery-properties": norm_weapon_mastery_property,
+    "proficiencies": norm_proficiency,
+    "languages": norm_language,
+    "alignments": norm_alignment,
+    "ability-scores": norm_ability_score,
+    "equipment-categories": norm_equipment_category,
+    "traits": norm_trait,
+    "subspecies": norm_subspecies,
+    "poisons": norm_poison,
 }
 
 
@@ -422,10 +616,12 @@ def discover_5edb(refresh: bool) -> tuple[str, dict]:
     existing: dict = {}
     for ruleset in RULESETS:
         for kind, fname in FILE_FOR_KIND.items():
-            existing[(ruleset, kind)] = f"src/{ruleset}/en/5e-SRD-{fname}.json" in paths
-        # species: 2024 uses Species.json, 2014 uses Races.json
+            existing[(ruleset, kind)] = kind_allowed(kind, ruleset) and f"src/{ruleset}/en/5e-SRD-{fname}.json" in paths
+        # species/subspecies: 2024 uses Species/Subspecies.json, 2014 uses Races/Subraces.json
         species_file = "Species" if ruleset == "2024" else "Races"
-        existing[(ruleset, "species")] = f"src/{ruleset}/en/5e-SRD-{species_file}.json" in paths
+        existing[(ruleset, "species")] = kind_allowed("species", ruleset) and f"src/{ruleset}/en/5e-SRD-{species_file}.json" in paths
+        subspecies_file = "Subspecies" if ruleset == "2024" else "Subraces"
+        existing[(ruleset, "subspecies")] = kind_allowed("subspecies", ruleset) and f"src/{ruleset}/en/5e-SRD-{subspecies_file}.json" in paths
     return sha, existing
 
 
@@ -434,13 +630,28 @@ def open5e_document_exists(refresh: bool) -> bool:
     return any(d.get("key") == OPEN5E_DOC_KEY for d in docs.get("results", []))
 
 
+def id_for_5edb(rec: dict, kind: str, ruleset: str, index: int, warnings: list) -> str | None:
+    """Plan 18 C2 id rule: index, else slugify(name), else skip with a parse warning."""
+    idx = rec.get("index")
+    if idx:
+        return idx
+    name = rec.get("name")
+    if name:
+        return slugify(name)
+    warnings.append(f"{kind}/{ruleset}: record {index} has no index or name")
+    return None
+
+
 def run(out_dir: Path, kinds: list[str], refresh: bool) -> dict:
     sha, existing_5edb = discover_5edb(refresh)
     log(f"5e-database commit {sha}")
 
     open5e_fallback_kinds: set[tuple[str, str]] = set()
     for kind in kinds:
-        if not existing_5edb.get(("2024", kind), False):
+        # Open5e v2 is spells-only (Plan 18 C1): a batch-02b kind missing its 2024 5e-database
+        # file is skipped for 2024 (see the "no ... 5e-database file" branch below), not routed
+        # to a fallback that does not exist for it.
+        if kind == "spells" and not existing_5edb.get(("2024", kind), False):
             open5e_fallback_kinds.add(("2024", kind))
 
     blocked: list[str] = []  # "ruleset/kind: reason" for a fallback source that could not be reached at all
@@ -486,21 +697,48 @@ def run(out_dir: Path, kinds: list[str], refresh: bool) -> dict:
                     counts[(ruleset, kind)] = 0
                     all_ids[(ruleset, kind)] = set()
                     continue
-                fname = "Species" if kind == "species" and ruleset == "2024" else ("Races" if kind == "species" else FILE_FOR_KIND[kind])
+                if kind == "species":
+                    fname = "Species" if ruleset == "2024" else "Races"
+                elif kind == "subspecies":
+                    fname = "Subspecies" if ruleset == "2024" else "Subraces"
+                else:
+                    fname = FILE_FOR_KIND[kind]
                 path = f"src/{ruleset}/en/5e-SRD-{fname}.json"
                 source_url = f"https://raw.githubusercontent.com/{GITHUB_REPO}/{sha}/{path}"
                 records = fetch_json(source_url, refresh)
                 source_label = f"5e-database@{sha}"
                 normalize = norm_spell_5edb if kind == "spells" else NORMALIZERS.get(kind)
-                get_id = lambda rec: rec.get("index") or slugify(rec.get("name", ""))  # noqa: E731
-                get_name = lambda rec: rec.get("name", "")  # noqa: E731
+                if kind == "levels":
+                    # 2014's Levels.json (unlike 2024's) carries no "name" field at all; 2024's
+                    # own records name themselves "<Class> <level>" (e.g. "Barbarian 1") from
+                    # exactly these two fields, so the same convention is applied when the
+                    # source omits it, instead of leaving the required envelope field empty.
+                    def get_name(rec):
+                        n = rec.get("name")
+                        if n:
+                            return n
+                        cls = (rec.get("class") or {}).get("index") or ""
+                        lvl = rec.get("level")
+                        return f"{cls.replace('-', ' ').title()} {lvl}" if cls and lvl is not None else ""
+                else:
+                    get_name = lambda rec: rec.get("name", "")  # noqa: E731
                 attribution, _ = attribution_for(ruleset, "5edb")
 
+            is_open5e = (ruleset, kind) in open5e_fallback_kinds
             out_records = []
-            for rec in records:
-                rid = get_id(rec)
+            for i, rec in enumerate(records):
+                if is_open5e:
+                    rid = get_id(rec)
+                else:
+                    rid = id_for_5edb(rec, kind, ruleset, i, warnings)
+                    if rid is None:
+                        continue
                 if kind == "monsters":
                     data = norm_monster(rec, warnings, rid)
+                elif kind == "feats":
+                    data = norm_feat(rec, warnings, rid, ruleset)
+                elif kind in NEEDS_RULESET:
+                    data = normalize(rec, ruleset)
                 else:
                     data = normalize(rec)
                 out_records.append(envelope(rid, kind, ruleset, get_name(rec), source_label, source_url, attribution, data, rec))
@@ -584,7 +822,7 @@ def _write_coverage(out_dir: Path, kinds: list[str], counts: dict, all_ids: dict
         lines += [f"- {b}" for b in blocked]
         lines += [""]
     lines += ["| Kind | 2024 records | 2014 records | 2014-only (no 2024 counterpart) |", "|---|---|---|---|"]
-    for kind in kinds:
+    for kind in KINDS:
         c24 = counts.get(("2024", kind), 0)
         c14 = counts.get(("2014", kind), 0)
         ids24 = all_ids.get(("2024", kind), set())
@@ -595,6 +833,8 @@ def _write_coverage(out_dir: Path, kinds: list[str], counts: dict, all_ids: dict
     lines += _presence_table(out_dir, "monsters", counts, all_ids, lambda rec: (rec.get("data") or {}).get("challenge_rating") is not None and (rec["data"]["challenge_rating"] or 0) <= 5)
     lines += ["", "## Spells level ≤ 3", "", "| id | 2024 | 2014 |", "|---|---|---|"]
     lines += _presence_table(out_dir, "spells", counts, all_ids, lambda rec: (rec.get("data") or {}).get("level") is not None and rec["data"]["level"] <= 3)
+    lines += ["", "## Class levels 1–5", "", "| id | 2024 | 2014 |", "|---|---|---|"]
+    lines += _presence_table(out_dir, "levels", counts, all_ids, lambda rec: (rec.get("data") or {}).get("level") is not None and rec["data"]["level"] <= 5)
     lines += ["", "## Skipped kinds (this batch)", ""]
     lines += [f"- {k}" for k in SKIPPED_KINDS]
     lines += ["", "## Parse warnings", ""]

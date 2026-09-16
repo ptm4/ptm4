@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Validate content/rules/ against the envelope contract (Plan 03a S4.7).
+"""Validate content/rules/ against the envelope contract (Plan 03a S4.7, extended by Plan 18 C3).
 
 Checks: envelope fields present and non-empty; ruleset in {2024, 2014}; license is
 CC-BY-4.0; id unique within a file; monster abilities are six ints in 1..30; monster
-armor_class is an int; spell level is in 0..9; manifest.json sha256 values match the files
-on disk.
+armor_class is an int; spell level is in 0..9; class level ("level" kind) is an int in 1..20
+with a non-empty class; manifest.json sha256 values match the files on disk.
 
 Usage
   python tools/validate_rules.py [--root content/rules]
@@ -62,6 +62,16 @@ def check_spell(rec: dict, path: Path, index: int, problems: list) -> None:
         problems.append(f"{where}: level = {level!r}, expected an int in 0..9")
 
 
+def check_level(rec: dict, path: Path, index: int, problems: list) -> None:
+    where = f"{path.name}[{index}] id={rec.get('id')}"
+    data = rec.get("data") or {}
+    level = data.get("level")
+    if not isinstance(level, int) or not (1 <= level <= 20):
+        problems.append(f"{where}: level = {level!r}, expected an int in 1..20")
+    if not data.get("class"):
+        problems.append(f"{where}: class is empty")
+
+
 def validate_file(path: Path, problems: list) -> int:
     try:
         records = json.loads(path.read_text(encoding="utf-8"))
@@ -85,6 +95,8 @@ def validate_file(path: Path, problems: list) -> int:
             check_monster(rec, path, i, problems)
         elif rec.get("kind") == "spell":
             check_spell(rec, path, i, problems)
+        elif rec.get("kind") == "level":
+            check_level(rec, path, i, problems)
     return len(records)
 
 

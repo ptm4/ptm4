@@ -46,6 +46,86 @@
       "sha256": "760ee6e986a91ce962bc823475d09cc23a78f80ea9090329c3ac019424d9819c"
     },
     {
+      "path": "2024/levels.json",
+      "records": 287,
+      "sha256": "cc784d8b265f736ca33953aa22494d174bdd521dde555b489f6d69692bd5322b"
+    },
+    {
+      "path": "2024/features.json",
+      "records": 232,
+      "sha256": "652e6ce0902c45ce1f2912e75500ecb4b366abb3f31570285e4e29c581a5c8bf"
+    },
+    {
+      "path": "2024/subclasses.json",
+      "records": 12,
+      "sha256": "dab24be5ae42faea238d76dfd8384eca18ac6e70117725a975fac48f592d00e6"
+    },
+    {
+      "path": "2024/feats.json",
+      "records": 17,
+      "sha256": "aba15b1fb7e180e0e8fca634d79705a0df23cc94b93746aac270be82d9a44860"
+    },
+    {
+      "path": "2024/magic-items.json",
+      "records": 262,
+      "sha256": "25fbca5a74e94e12159eff94093c5d19e68325a07b710b8d44075019d880c4c1"
+    },
+    {
+      "path": "2024/magic-schools.json",
+      "records": 8,
+      "sha256": "d21b5ac753ce16eac8b2bb10b57da069c8aabec40a619b83df2bdadbac9e3897"
+    },
+    {
+      "path": "2024/weapon-properties.json",
+      "records": 10,
+      "sha256": "0fb71629027678c6efed7be1cf5498ff49b4af57fa9e29802ed4d4fee4b19880"
+    },
+    {
+      "path": "2024/weapon-mastery-properties.json",
+      "records": 8,
+      "sha256": "d2f9514f1f4d6934e36b1808c6630b299499c50d8adb7bffc7c493515c9c6fac"
+    },
+    {
+      "path": "2024/proficiencies.json",
+      "records": 74,
+      "sha256": "42a732debb90714dd3fd6b2c0898ef422e24c8bddd042c5914aa0f6081f059ab"
+    },
+    {
+      "path": "2024/languages.json",
+      "records": 19,
+      "sha256": "b3013fe55dad76a868141873d88d42083e16d8f4f3296340f9715f7989fcd8c8"
+    },
+    {
+      "path": "2024/alignments.json",
+      "records": 10,
+      "sha256": "2481e88107557d4ca12bd2a86c8a8c7ae7a7f3737cac0f5616ee457c892e29b8"
+    },
+    {
+      "path": "2024/ability-scores.json",
+      "records": 6,
+      "sha256": "9e4e456b590400d713cd30b40b6724ed376708174e9970186633771dde526586"
+    },
+    {
+      "path": "2024/equipment-categories.json",
+      "records": 30,
+      "sha256": "3a9230826532cb0ac717ffec409aed0ea135e5b3a2423a7a40a45dafea14fcd3"
+    },
+    {
+      "path": "2024/traits.json",
+      "records": 67,
+      "sha256": "0951cc1105011ff4b8d87388d5828cb08c2709e85338f09070586badcd902fc3"
+    },
+    {
+      "path": "2024/subspecies.json",
+      "records": 24,
+      "sha256": "52226ee6714726791d99f431c881fb20fdabdc9a541e78335a0ff279c853ef7a"
+    },
+    {
+      "path": "2024/poisons.json",
+      "records": 14,
+      "sha256": "03882deef0ec0f4d71f16974b50a98b4a4e1291f7d16cac07085796ec6d7c404"
+    },
+    {
       "path": "2014/monsters.json",
       "records": 334,
       "sha256": "6eeea20fb5c2734721580565d18401f3ba01ab881127fe92ce1b38110d33c0cf"
@@ -89,22 +169,92 @@
       "path": "2014/damage-types.json",
       "records": 13,
       "sha256": "45a7addaa5c0dac6a9bb09190d4bbf7811d73840b43c0d89098fdd61fedfeb88"
+    },
+    {
+      "path": "2014/levels.json",
+      "records": 290,
+      "sha256": "c344cba26c86de3cc7c08eaa4ab6ac2c9b53c5b4a001d9e93b1ff8fbb9b8cb60"
+    },
+    {
+      "path": "2014/features.json",
+      "records": 407,
+      "sha256": "049cfac27105cb1ebd34b1e12af8a66d7c5ae15cee272035454ced944feed782"
+    },
+    {
+      "path": "2014/subclasses.json",
+      "records": 12,
+      "sha256": "989ff653c379c767de8583fec478ce4c302a2dcca6f3f94007cb268482d74609"
+    },
+    {
+      "path": "2014/feats.json",
+      "records": 1,
+      "sha256": "63a30eff11652c72fe5872400a99ccbc0a42e71be9f2772d800bd2d0e7fb32c4"
+    },
+    {
+      "path": "2014/magic-items.json",
+      "records": 362,
+      "sha256": "d70546cf89d8e91ed533e4842df00a12af51ec5700ccd8011be72a5357bda0d6"
+    },
+    {
+      "path": "2014/magic-schools.json",
+      "records": 8,
+      "sha256": "6193e25563481b56c261ce34a3b7d1087e77fe8de43e8025c32a9b4750b14932"
+    },
+    {
+      "path": "2014/weapon-properties.json",
+      "records": 11,
+      "sha256": "023cb4a406a027336bb1ad1e633876584cb35055eebeabf43c8b2da714cdb4f8"
+    },
+    {
+      "path": "2014/proficiencies.json",
+      "records": 117,
+      "sha256": "828fb42742acdc10d4477d9be6c777540f788f8281d09c0352e14297fa456538"
+    },
+    {
+      "path": "2014/languages.json",
+      "records": 16,
+      "sha256": "4e407e9c459783e462a0f82b7971c84402a29efa37a080fff65185ce2723076e"
+    },
+    {
+      "path": "2014/alignments.json",
+      "records": 9,
+      "sha256": "8e153cf2b4360365c4377e9c8fe9b01de644cf0a2380e9c71064d5afcd70a631"
+    },
+    {
+      "path": "2014/ability-scores.json",
+      "records": 6,
+      "sha256": "51399b89cccef702f7e084e55d77b3b74eab6b52e608533cd77d424cba4f8275"
+    },
+    {
+      "path": "2014/equipment-categories.json",
+      "records": 39,
+      "sha256": "7279071ced36c54fa28f2e3f200c936cfd1b7397f66f352fa97eb52506c74858"
+    },
+    {
+      "path": "2014/traits.json",
+      "records": 38,
+      "sha256": "3670681c507a64cbfb8f38878f5c38cacaf6423f6382bc68a6631d0b3f1e1ad5"
+    },
+    {
+      "path": "2014/subspecies.json",
+      "records": 4,
+      "sha256": "09e4378f72a3a85afc4bfbe618bfbe82f4daf74f1b441c71f568f10aec9dd4e6"
     }
   ],
-  "generated": "2026-09-12T18:30:24+00:00",
+  "generated": "2026-09-12T21:04:06+00:00",
   "sources": [
     {
       "commit_or_key": "0b171af231d8325e1567c431ae6176a5b8866e7e",
-      "fetched_at": "2026-09-12T18:30:24+00:00",
+      "fetched_at": "2026-09-12T21:04:06+00:00",
       "name": "5e-database",
       "url": "https://github.com/5e-bits/5e-database/tree/0b171af231d8325e1567c431ae6176a5b8866e7e"
     },
     {
       "commit_or_key": "srd-2024",
-      "fetched_at": "2026-09-12T18:30:24+00:00",
+      "fetched_at": "2026-09-12T21:04:06+00:00",
       "name": "Open5e v2",
       "url": "https://api.open5e.com/v2/"
     }
   ],
-  "tool": "ingest_srd.py 1.0.0"
+  "tool": "ingest_srd.py 1.1.0"
 }

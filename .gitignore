@@ -40,6 +40,7 @@ src-tauri/target/
 .DS_Store
 Thumbs.db
 desktop.ini
+tmp
 
 # ── Editor / IDE ──────────────────────────────────────────────────────────────
 .vscode/settings.json
@@ -77,3 +78,5 @@ homelab/agentic/skills/dlss5-injector/
 # Agent bridge runtime state (Dungine): queue db, envelopes, artifacts, logs. Never commit.
 .agent-state/
 homelab/DND.vbeta/tools/pilot-scratch/
+homelab/DND.vbeta
+E:\Unity\Projects\Dungine

@@ -68,3 +68,39 @@ carry a `generated` timestamp by design).
 - ~~Open5e document slugs for SRD-only filtering~~ — `document__key=srd-2024` / `srd-2014`.
 - Feats, magic items, subclasses and rules-text prose are out of scope for this batch
   (`coverage.md` "Skipped kinds"); a future batch should size that work.
+
+## Batch 02b (Sonnet, 2026-09-12, Plan 18)
+
+Ingested the remaining 16 kinds, same envelope/sources/idempotence rules: `levels`, `features`,
+`subclasses`, `feats`, `magic-items`, `magic-schools`, `weapon-properties`,
+`weapon-mastery-properties` (2024 only), `proficiencies`, `languages`, `alignments`,
+`ability-scores`, `equipment-categories`, `traits`, `subspecies` (2024 `Subspecies.json` /
+2014 `Subraces.json`, mapped like species/races), `poisons` (2024 only). `SKIPPED_KINDS` is
+now just the 2014-only prose kinds `rules`/`rule-sections` (feats/magic-items/subclasses moved
+out of "skipped" into ingested). `content/rules/` is now 12 MB across 48 files, 3953 records —
+well under the 40 MB stop-and-ask threshold.
+
+**Two deviations from the plan text, both logged, neither a design decision:**
+- **`feats` prerequisites shape.** Plan 18 C2 specifies `prerequisites` as a list of
+  `{ability_score, minimum_score}` — true for 2014's one feat (`grappler`) but not for 2024's
+  17 feats, whose `Feats.json` uses an unrelated schema (`prerequisites: {minimum_level,
+  feature_named}` plus a separate `prerequisite_options` for ability-score choices). Normalizing
+  that 2024 shape isn't specified anywhere, so `data.prerequisites` is left absent for those 13
+  records that hit it (the plan's own "never invent a value; missing = absent") — the full
+  structure is still in `raw`. Each instance is logged in `coverage.md` "Parse warnings"
+  (`feats/2024: <id> has a non-list 'prerequisites' shape...`). Whoever designs the 2024 feat
+  model (03e) should read `raw.prerequisites`/`raw.prerequisite_options` directly.
+- **`levels` name for 2014.** 2014's `Levels.json` (unlike 2024's) has no `name` field at all,
+  which would leave the required envelope `name` field empty for all 290 2014 level records.
+  2024's own records already name themselves `"<Class> <level>"` (e.g. `"Barbarian 1"`) from
+  exactly the `class`/`level` fields every record has; the same convention is applied only when
+  the source omits `name`, so 2014 levels get e.g. `"Barbarian 1"` too. Not a new naming
+  scheme — the one the source already uses elsewhere, applied where it's missing.
+- Also fixed in passing (pre-existing, not batch-02b-specific): the Open5e-fallback path would
+  have crashed (`SystemExit`) on any *other* kind missing its 2024 5e-database file, since the
+  old code routed every 2024 gap through the (spells-only) Open5e fallback regardless of kind.
+  Restricted the fallback trigger to `kind == "spells"`, matching "no Open5e fallback for any of
+  these [16 kinds]" in Plan 18 C1.
+
+**Verification.** `python tools/validate_rules.py` → `OK 48 files 3953 records`.
+`python tools/ingest_srd.py --twice` → `IDEMPOTENT`.

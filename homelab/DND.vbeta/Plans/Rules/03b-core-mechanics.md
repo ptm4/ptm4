@@ -27,3 +27,19 @@ death saves, short/long rest.
 ## Open questions
 - Diagonal movement rule: 5-5-5 (default) vs 5-10-5 variant. Record in DECISIONS.md.
 - Flanking optional rule: off by default.
+
+## Done in batch 02 (Plan 17, B3)
+Difficult terrain (double move cost), opportunity attacks (one reaction, melee reach,
+Disengage prevents them), ranged attacks (long range rejects, beyond-normal-range and
+adjacent-hostile disadvantage), cover (`IBattlefield.CoverBonus` added to target AC), line of
+sight on the X/Z plane (`Rules/LineOfSight.cs`, cell-center walk with the diagonal-corner
+rule), advantage/disadvantage stacking (`Encounter.ResolveMode`), Dash/Disengage/Dodge
+intents, and death saves (nat 1 = 2 failures, nat 20 = revive at 1 HP, 3 successes = stable,
+3 failures or massive damage = dead; a Down party creature auto-rolls at the start of its
+turn). Tests: `engine/DND.Engine.Tests/CoreMechanicsTests.cs`.
+
+## Remaining for batch 03
+Multi-step move intents with pathing (v0.1/v0.2 send one cell per intent), short/long rests,
+initiative ties broken by player choice (currently Dex score then insertion order), mounted
+and flying movement, and the "can see" nuance for Dodge/opportunity attacks against an
+Invisible creature (03d's Invisible only changes attack advantage/disadvantage so far).

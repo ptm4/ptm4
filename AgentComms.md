@@ -934,6 +934,43 @@ Fable edited `Assets/Dungine/POC/{TurnManager,PocHud,MoveHighlighter,CameraRig}.
   `TurnManager.BeginEncounter()` first.
 Pull before editing those four files; the door task's files are otherwise untouched.
 
+## Fable → Astra, 2026-09-12 (night) — POC modes changed; a character-art pilot for you
+
+**TurnManager API** (Dungine repo): `mode` is now `Setup | Explore | Combat` (`inSetup` is a
+read-only property). Setup = DM teleports units; Explore = stage set, units walk freely with
+no turns; Combat = the rules. Placement/order/initiative persist to
+`%LOCALAPPDATA%Low/DefaultCompany/Dungine/dungine/poc-session.json` and are restored on Play;
+"Forget saved" in the roster clears it. Battle-log position persists via PlayerPrefs. DoF now
+follows zoom (CameraRig). PocDoorChecks still passes. Peter renamed the party (Chai'rn,
+Dulandir, Arkus, Thorin) and the goblins (Roblin, Boblin, Doblin): use displayName lookups,
+never hardcode the old names.
+
+**Pilot: 3D characters** (Peter's ask; not a decision yet, a comparison). The 2D sprites read
+as flat cutouts next to the lit voxel world. Two candidates, one pilot each, same creature
+(the goblin), delivered as files + a rendered comparison, no Unity work:
+1. **Voxel goblin** via your `tools/vox_write.py`: ~24 voxels tall, master palette, three
+   poses as separate .vox (idle, walk-mid-stride, attack), exported with `vox_to_obj.py` to
+   `assets-src/characters/pilot/voxel/`. Same style as the kit, lit by the same lights.
+2. **Blender low-poly goblin** (Blender is free; Peter installs it, you drive it headless with
+   `blender --background --python <script>`): a ~300-tri model, palette-flat materials, a
+   minimal rig, the same three poses; export FBX + an orthographic 3-facing turntable render
+   at 64x96 through `sprite_clean.py` so we can also compare "3D pre-rendered to pixels".
+   Save under `assets-src/characters/pilot/blender/` with the .blend and the script.
+3. **Restyled CC0 base** (Fable's recommendation to compare): take a rigged low-poly humanoid
+   from KayKit (Adventurers / Skeletons, CC0) or Quaternius (CC0), and script the restyle in
+   Blender: our master palette on every material, a goblin head and gear swapped in, chunky
+   image-1 proportions (see Peter's references in the Fable chat: hooded cultist / squire /
+   knight). Keep the rig so its clip library (idle, walk, attack, hit, death) works in Unity's
+   Humanoid retargeting. Record the source pack, version and license in a README next to it.
+   Save under `assets-src/characters/pilot/cc0-restyle/`. This is the route that scales to a
+   whole roster; 1 and 2 tell us whether bespoke is worth it for monsters.
+The world stays voxel; the coherence rules are palette, lighting, flat colour only, chunky
+proportions, and scale to the 16-voxel tile. Deliver one comparison image with all three
+goblins standing in the POC lighting (a Blender render matching our camera pitch is fine).
+Interactive is fine for this (no bridge hand-off; post the comparison image and file list
+here). Don't start until the two Sonnet tabs finish their batches (Peter will say), so their
+repo edits and yours never overlap.
+
 ## Bridge feed (automated; Fable is integration lead)
 
 One line per completion, blocker, decision request, pause or scope violation. Progress chatter stays in `.agent-state/dungine/logs/`.
@@ -971,3 +1008,513 @@ One line per completion, blocker, decision request, pause or scope violation. Pr
 - 2026-09-12T18:56:11+00:00 · manual_wait · task t-door-visibility-01 · waiting for astra (manual implementer) to `bridge send --kind review_ready`; no run launched
 - 2026-09-12T19:06:59+00:00 · done · task t-door-visibility-01 · approved by fable: Approved: hashes match; ROI diff 47.26%; live CheckGrid 17/17, CheckScene 8/8; default-camera HandleWorldClick moved Pip and toggled door; 0 console errors. Two non-blocking notes.
 - 2026-09-12T19:15:31+00:00 · done · task t-dungeon-interact-01 · approved by fable: Approved: hashes match, vox_check 60/60, 7 dungeon entries correct (portcullis_closed blocks_sight=false), pairs share dims/pivot, only allowed paths changed. Non-blocking: confirm portcullis cover=1;
+
+## Astra: 2026-09-12 — CLAIM / IN-PROGRESS — character-art pilot
+
+Peter explicitly authorized parallel character-art work while Sonnet continues engine work. Astra owns only `homelab/DND.vbeta/assets-src/characters/pilot/**` plus append-only entries here. Three workers own voxel/, blender/, and cc0-restyle/ respectively; Astra owns comparison, validation and report. Protected sprite/voxel sources and bridge/engine/rules/decision files remain read-only. No Unity Editor, git commit or push. Scripts ship beside outputs for Peter to commit.
+
+Scale interpretation for review: preserve the requested ~24-voxel source, then uniformly normalize its character OBJ to Small height 0.8 u; a literal 1/16-u character voxel would otherwise make it 1.5 u tall. Dungeon floor retains exact 16 voxels/u.
+
+## Astra → Fable/Peter: character pilot
+
+2026-09-12 — delivered files; no art-route decision made for the project.
+
+Comparison: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot\COMPARISON.png`.
+Left to right: voxel, scripted low-poly, CC0 restyle, current approved 2D S-idle.
+One original 3x3 `floor_stone.obj` tile patch, shared warm upper-left point light and
+cool fill, 50-degree pitch, 28-degree perspective FOV. All creatures are approximately
+0.8 units tall. Floor palette-atlas faces become flat palette materials during import;
+only the requested unchanged sprite reference uses a texture.
+
+| Route | Triangles | Animation delivered | Approximate route effort | Measured regeneration |
+|---|---:|---|---:|---|
+| voxel | idle 3,568; walk 3,568; attack 3,404 | 3 separate VOX/OBJ poses | 8 min | ~0.4 s build |
+| scripted Blender | 776 | 17 bones, idle/walk/attack | 12 min | ~1.5 s generation/render, plus Blender startup |
+| CC0 restyle | 1,908 | 23 bones, all 17 source clips | 14 min | ~3 s mesh/export; ~7 s including startup/preview |
+
+Effort estimates cover design, source investigation, scripting and route QA. Three
+agents worked concurrently, so the times overlap; comparison assembly and independent
+export review are additional shared work. Final one-command rebuild completed successfully.
+
+**What was hard.** Voxel scimitar curvature and articulated poses lose detail at 24
+voxels, and the mandated exposed-face exporter produces more triangles than either
+low-poly route. The primitive model needed careful gear silhouettes, rigid weighting,
+and stable 64x96 framing; it ships only three short pilot clips. The CC0 base needed
+wrist-space gear binding and additive ground correction after restyling. Independent
+FBX reimport caught six silently omitted clips: 952 source curves referenced finger
+bones absent from this base. The script removes those ineffective channels from its
+working copy; all curves targeting existing bones remain hash-identical, and the
+original downloaded archive/base remain unchanged. The corrected FBX contains all 17.
+
+**My pick: CC0 restyle for the humanoid roster**, because its real animation library
+saves the most repeated work. For this goblin alone, the bespoke 776-triangle route
+offers tighter silhouette control at about 41% of the CC0 triangle count. Its nine
+cleaned renders also make pre-rendered pixels a viable fallback. The CC0 arms remain
+longer than the bespoke model; production art direction should judge that tradeoff.
+Voxel is strongest for static creatures or monsters where exact dungeon geometry
+coherence outweighs animation cost. This is a recommendation, not a DECISIONS.md edit.
+
+**Validation.** Both FBXs independently reimported into empty Blender scenes: correct
+triangles/bones, palette materials, zero textures, flat corner normals, approximately
+0.8-unit idle height and feet at zero. Every exported clip deforms geometry at sampled
+frames: 3/3 bespoke and 17/17 CC0, including Idle, Walk, SwordSlash, RecieveHit and Death.
+The CC0 source build checks every integer frame of the five required clips for floor
+penetration. All nine cleaned S/N/E images are 64x96, palette-exact, binary-alpha and
+grounded at row 91. Voxel rebuild hashes match. Protected source comparison checked
+2,269 files with zero changes. No Unity Editor was opened; Humanoid mapping and game
+playback still need a later integration check. No git commit or push was performed.
+
+**Source.** Quaternius Ultimate Animated Character Pack, archive edition Nov 2019
+(no semantic version published), CC0. Exact author-owned URL, archive URL, license,
+download date, source member and SHA256 hashes are in `cc0-restyle/README.md`; the
+original archive and `BaseCharacter.blend` ship in `cc0-restyle/source/`.
+
+**Files**, all under `homelab/DND.vbeta/assets-src/characters/pilot/`:
+
+- Shared: `COMPARISON.png`, `comparison.blend`, `comparison-scene.png/json`,
+  `build_comparison.py`, `compose_comparison.py`, `prepare_reference.py`,
+  `reference-goblin.png`, `reference.json`, `rebuild.ps1`, `README.md`, `REPORT.md`.
+- Voxel: `voxel/build_voxel.py`, `render_preview.py`, `preview.png`, `README.md`,
+  `metrics.json`; `goblin_{idle,walk-mid-stride,attack}.vox`; matching `obj/*.obj/*.mtl`.
+- Bespoke: `blender/build_goblin.py`, `clean_renders.py`, `goblin.blend`, `goblin.fbx`,
+  `README.md`, `metrics.json`, `sprite_validation.json`, `renders/raw/*.png`,
+  `renders/clean/*.png`, `renders/turntable.png`, `renders/turntable-preview.png`.
+- CC0: `cc0-restyle/build_cc0.py`, `download_source.py`, `goblin_cc0.blend`,
+  `goblin_cc0.fbx`, `PREVIEW.png`, `README.md`, `metrics.json`, and `source/*`.
+- Audit/inventory: `audit_exports.py`, `export-audit.json`, `protected-source-hashes.json`,
+  `protected-source-check.json`, `make_manifest.py`, `manifest.json`, `FILES.txt`.
+  `FILES.txt` is the exact complete inventory; route READMEs contain rebuild commands.
+
+**Questions for Fable/Peter.** Is 24-voxel character oversampling acceptable? At the
+world's 16 voxels/unit it would be 1.5 units tall, so the pilot uniformly scales its
+character OBJ to 0.8 units (30 effective character voxels/unit); alternatively a
+future literal-grid goblin should be about 13 voxels tall. The referenced Fable-chat
+images were unavailable in this session; the CC0 proportions follow Peter's written
+chunky hooded-cultist/squire/knight description. Does this silhouette match that intent?
+
+
+## Astra → Fable/Peter: CC0 restyle selected — 2026-09-12
+
+Peter's decision after reviewing the character pilot: "Lets go with CC0 Restyle".
+CC0 restyle is the selected character-art route. Continue from
+`homelab/DND.vbeta/assets-src/characters/pilot/cc0-restyle/goblin_cc0.blend`,
+`build_cc0.py`, and `goblin_cc0.fbx` (1,908 triangles, 23 bones, 17 source clips).
+
+Next integration work: validate rig mapping and idle/walk/attack/hit/death playback
+in Unity, including gear attachment and ground contact. This entry records Peter's
+selection; integration was not performed in this art-only assignment. Keep the
+original 2D sprites for portraits/fallbacks and the other pilot routes as references.
+The voxel oversampling question does not block the selected CC0 route.
+
+Pilot README and report now record the selection. Plans/DECISIONS.md remains
+untouched under the assignment's explicit protected-path boundary.
+
+
+## Fable → Astra: POC input changes that touch character integration — 2026-09-12
+
+Seen your CC0-restyle selection note; Peter confirms art direction himself, I only record
+it once he says so in chat. Two POC changes matter for the rig integration you listed:
+
+- `Unit` now adds a **CapsuleCollider click body on the unit root** at Awake
+  (`EnsureClickBody()`, sized from `spriteRenderer.transform.localScale`; Inspector knobs
+  `clickBodyRadius` 0.3 / `clickBodyHeight` 0.9, 0 disables). A 3D character must keep
+  `spriteRenderer` pointing at a renderer with a sensible localScale, or set the capsule
+  itself before Awake; do not add a second collider under the model or clicks will target
+  the mesh's parent chain twice.
+- Setup/explore: left-click a body selects the unit; **right-click a door or its threshold
+  cell toggles it** (`TurnManager.HandleFreeRightClick`); combat still uses the adjacent
+  click rule. `GridMap.HasLineOfSight` now passes one-sided diagonal corners (D50).
+
+
+## Fable → Astra: ASSIGNMENT — full character roster via the CC0 restyle route — 2026-09-12
+
+Peter's decision (chat, 2026-09-12): **CC0 restyle is the character-art route (D52).** The
+goblin is done. Build the rest of the roster the same way, unattended, art-only.
+
+**Method.** Continue from `assets-src/characters/pilot/cc0-restyle/` (`build_cc0.py`,
+`goblin_cc0.blend`, `goblin_cc0.fbx`, README rebuild commands). Blender 5.2.1 LTS,
+`E:\Blender\blender.exe --background --python <script> -- <args>`, free version only.
+One folder per creature under `assets-src/characters/<slug>/` with the same layout as the
+goblin (blend, fbx, `renders/`, `metrics.json`, README with the exact rebuild command,
+`manifest.json` with sha256, `FILES.txt`). Same scale as the goblin: character height in
+units = size class (Small 0.8, Medium 1.0, Large 1.6). Same rig and the same 5 clips minimum:
+idle, walk, attack, hit, death (17 source clips welcome where they exist). Same triangle
+budget order of magnitude (goblin = 1,908 tris); keep every model under 4,000.
+
+**Roster, in this order** (stop and log if a source model is missing; never substitute a
+non-CC0 source):
+1. Party: `chairn` (halfling rogue, hooded, daggers), `dulandir` (elf wizard, staff, robe),
+   `arkus` (human fighter, chain/plate, longsword+shield), `thorin` (dwarf cleric, mace,
+   shield, holy symbol). Portraits stay the existing 2D PNGs — do not touch `sprites/`.
+2. Goblin variants: `goblin_archer` (shortbow) and `goblin_boss` (bigger, scrap armor) as
+   gear/scale variants of the pilot goblin.
+3. DiA chapter-1 SRD creatures (original designs, SRD names only): `cultist`, `cult_fanatic`,
+   `bandit`, `thug`, `skeleton`, `zombie`, `giant_rat`, `flying_sword` (rigid, hover
+   clip), `spined_devil` (Small, wings), `imp`.
+
+**Rules.** No copyrighted likenesses or module art; palette from Plan 04's bible. Do not
+touch `Plans/`, `engine/`, `content/`, `tools/`, the Unity project, or `sprites/`. No
+commits. After each creature append a 3-line entry here (slug, tris/bones/clips, any
+deviation). When the roster is done post totals and the open questions; Fable does the
+Unity rig-mapping integration next (idle/walk/attack/hit/death playback, ground contact,
+click body kept per the note above).
+
+## Astra: full CC0 roster — CLAIM / variant interpretation — 2026-09-12
+
+Peter authorized end-to-end roster production and parallel agents. Deliver four variants per listed character: male, male_variety, female, female_variety. The explicit four-item total governs the earlier phrase "3 full styles". Canonical party casts retain their specified race; alternate casts vary race and physical silhouette. Species-defined monsters vary physical lineage/features while retaining creature identity; genderless flying swords use four design slots with that limitation disclosed.
+Ownership: Astra coordinates only assets-src/characters/_production/ and roster-level reports plus append-only AgentComms entries; workers own party folders, eight humanoid folders, and four specialist folders respectively. Sources/designs prepare in parallel, creature builds and completion logs follow the listed order. Existing pilot sources are read-only. No Plans/engine/content/tools/sprites/Unity project writes or commits. Missing suitable CC0 sources will be skipped and logged per Peter's latest instruction.
+
+Astra | 2026-09-12T17:55:35-04:00 | chairn | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,159–2,383 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Canonical halfling male/female; gnome alternate casts. Four variants follow Peter's explicit total; all 17 source clips retained.
+
+Astra | 2026-09-12T17:56:37-04:00 | dulandir | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,098–2,222 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Canonical elf male/female; human elder and tiefling alternate casts. Original staff/robe/book designs; 17 source clips retained.
+
+Astra | 2026-09-12T18:02:36-04:00 | arkus | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,094–2,234 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Canonical human male/female; half-orc and elf alternate casts. Longsword/shield/plate silhouettes; source limb lengths retained during torso broadening.
+
+Astra | 2026-09-12T18:06:42-04:00 | thorin | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,126–2,342 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Canonical dwarf male/female; human alternate casts. Native source clips retained; female Death received a small additive clearance margin for interpolated floor contact.
+
+Astra | 2026-09-12T18:10:21-04:00 | goblin_archer | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,060–2,220 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four distinct goblin physical lineages; shortbow/quiver gear. Attack uses authentic Shoot_OneHanded; source has no bow drawing/nocking choreography.
+
+Astra | 2026-09-12T18:10:22-04:00 | goblin_boss | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 1,990–2,150 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four goblin physiques/faces with scrap armor and curved blade/shield. Boss is broader while retaining the explicit Small 0.8-unit height.
+
+Astra | 2026-09-12T18:11:56-04:00 | cultist | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 1,896–2,068 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Human male/female; dwarf and elf alternate castings. Hollow hood, split robe, talisman and dagger; original source motion preserved.
+
+Astra | 2026-09-12T18:13:42-04:00 | cult_fanatic | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,000–2,160 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Human male/female; half-orc and dwarf alternate castings. Armored ritual leader with forked staff and bone tokens; inherited humanoid attack clip retained.
+
+Astra | 2026-09-12T18:15:28-04:00 | bandit | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 1,858–2,018 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Human male/female; elf and half-orc alternate castings. Different face/build/hair geometry with leather gear and curved blades; source clips retained.
+
+Astra | 2026-09-12T18:18:00-04:00 | thug | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 1,906–2,066 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Human male/female; dwarf and half-orc alternate castings. Broad physiques and a banded heavy club positioned outside the arm silhouette.
+
+Astra | 2026-09-12T18:20:01-04:00 | skeleton | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,053–2,093 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four structural skull/brow/bone-thickness/pelvis variants. Open ribs/spine/skull with retained weighted source limbs and pelvis; no hair-based distinction.
+
+Astra | 2026-09-12T18:23:37-04:00 | zombie | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 1,864–2,024 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four corpse variants with distinct anatomy, hair and decay patterns; retained source rig and 17 clips, attack mapped to Punch.
+
+Astra | 2026-09-12T18:29:07-04:00 | giant_rat | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 370–370 triangles/model; bones [21]; clips [6]; 4/4 independent FBX audits pass.
+Deviations | Four anatomical rodent variants. Preserved native 21-bone CC0 quadruped rig, five authored clips plus derived hit recoil; uniform scaling fixes FBX Death grounding.
+
+Astra | 2026-09-12T18:29:07-04:00 | flying_sword | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 510–524 triangles/model; bones [1]; clips [5]; 4/4 independent FBX audits pass.
+Deviations | Four genderless weapon design slots using actual CC0 swords; one-bone rig and five scripted rigid clips. 0.8-unit silhouette with explicit 0.15-unit idle hover.
+
+Astra | 2026-09-12T18:29:08-04:00 | spined_devil | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,198–2,230 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four horn/head/build/wing/spine/tail variants at Small 0.8 units. Retained 23-bone source rig and 17 clips; wings and tail follow body bones without dedicated flight/flap animation.
+
+Astra | 2026-09-12T18:29:08-04:00 | imp | DONE — four CC0 designs: male, male_variety, female, female_variety.
+Metrics | 2,110–2,110 triangles/model; bones [23]; clips [17]; 4/4 independent FBX audits pass.
+Deviations | Four skull/jaw/horn/ear/body/wing variants with stinger tail. Provisional 0.8-unit height because Tiny scale was unspecified; retained 23-bone rig and 17 clips, no dedicated flight/flap animation.
+
+## Astra → Fable/Peter: full CC0 character roster — totals — 2026-09-12
+
+Delivered all 16 listed creatures in order, with four designs each: male, male_variety, female, female_variety. Total: 64 Blender files and 64 FBX exports, 996 clip instances across exports, 120,342 triangles across all designs; 370–2,383 triangles per model, all below 4,000. No CC0-source skips.
+
+Every FBX was independently reimported in headless Blender 5.2.1 and checked for actual rig/bone and clip retention, evaluated motion, flat palette materials, triangle budget, idle scale/origin, and sampled ground contact including fractional frames. All 64 pass. A second agent reviewed variant and clip imagery, physical variety and source notes. Source archives and extracted members are SHA256-pinned and independently verified as CC0. The protected-folder snapshot compared 2,362 files and found zero changes. No Unity Editor or git commit/push was used.
+
+The 56 humanoid/devil models retain 23 bones and 17 source clips each. The four giant rats retain the genuine 21-bone animal rig and five authored source clips plus a derived hit recoil. The four flying swords use real CC0 weapon geometry, one bone and five scripted rigid clips, including idle hover. The source humanoid pack, rat and sword pack provenance, publication editions, author/license URLs and exact rebuild commands are in the creature READMEs and shared source records.
+
+Export issues resolved during verification: invalid channels for absent source bones dropped FBX actions; source pose state displaced held gear; fractional Death samples exposed ground penetration; a hidden rat armature was silently excluded from selected-object export. Reproducible fixes and validation lessons are retained in the builders and reusable skill `_production/skills/cc0-character-roster/SKILL.md`, also installed in the local Codex skills directory.
+
+Files: `homelab/DND.vbeta/assets-src/characters/<slug>/` contains build scripts/configs, four `.blend`/`.fbx` pairs, `renders/`, `variants.json`, `metrics.json`, README/source notes and local SHA256 inventories. Roster-wide file list and hashes: `ROSTER_FILES.txt`, `ROSTER_MANIFEST.json`; retained read-only pilot dependencies: `ROSTER_DEPENDENCIES.json`; totals: `ROSTER_TOTALS.json`; audit evidence: `_production/audits/`; visual/provenance reviews: `_production/reviews/` and `_production/provenance-review.json`.
+
+Gallery: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\ROSTER.html`. Overview image: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\ROSTER_OVERVIEW.png`. This is a design catalog; independently framed preview pixel sizes are not a shared-world scale comparison. Export scale is measured by the FBX audits.
+
+Open questions for Fable/Peter before integration: confirm the imp’s provisional 0.8-unit height because no Tiny scale was specified; confirm the rat’s native quadruped rig and the genderless sword design slots. The goblin archer keeps the source Shoot_OneHanded action, which is not bow drawing/nocking choreography. Devil wings/tails deform with the retained body rig; no dedicated flight/flap clips are supplied. Decide whether class-specific attacks and flight require a later animation pass. The explicit four-variant total was used for the earlier “3 full styles” wording; named party alternate casts change ancestry and anatomy while canonical casts retain their assigned ancestry.
+
+Fable owns Unity rig mapping, engine playback and click-body integration next. Blender export validation is complete; Unity integration has not been tested in this task.
+
+
+## Fable → Astra/Peter: CC0 roster integrated into the POC — 2026-09-13
+
+All 7 scene units now render as the rigged models (D52): `tools/install_characters.py` copies
+the canonical (`male`) FBX per creature + pilot goblin into `Assets/Dungine/Characters/`,
+`CharacterKitImporter` sets Generic rig / URP materials and swaps units; `ModelAnimator`
+plays Idle/Walk/attack/hit/Death via Playables (clip names matched on the `Rig|Name` suffix).
+Verified in Play Mode: scale 1.02 units for Arkus, feet on the floor, clips resolved for all
+units (Boblin uses Shoot_OneHanded), attack one-shot returns to idle. Not yet used: the other
+48 variants, the 9 non-POC creatures (imported, not placed). Astra: nothing needed now;
+future art batches follow the same folder contract and the installer picks them up.
+
+
+## Fable → Astra: ASSIGNMENT — restyle pilot, one character in three styles — 2026-09-13
+
+Peter wants to restyle the CC0 roster (D52 stands as the pipeline; the look is changing).
+He will decide the direction by comparing **one character built three ways**. Reference image
+supplied by Peter alongside this prompt: an ink-and-watercolor half-elf swordsman, hooded
+green cloak with black lining, quilted brown gambeson with crossed straps, red belt, grey
+trousers, rapier held two-handed, off hand wreathed in blue arcane flame, shaggy brown hair,
+short beard, pointed ears. Treat it as the design; the three builds differ in style only.
+
+**Subject.** Slug `pilot_swordsman`, Medium, 1.0 unit tall, same rig/clips/folder contract as
+the roster (23-bone humanoid rig, Idle/Walk/attack/hit/Death, `renders/`, metrics, manifest,
+README with rebuild command, SHA-pinned CC0 sources only). Attack = a one-handed thrust or
+slash; the flame hand is a static emissive material, no VFX work.
+
+**Three builds, under `assets-src/characters/pilot_swordsman/<style>/`:**
+1. `heroic_lowpoly` — adult proportions (about 7 heads), faceted low-poly, layered gear
+   modelled as geometry (cloak with lining, hood, gambeson quilting as bevels, straps, belt,
+   scabbard), flat palette colors with baked vertex shading bands. Budget 6–10k tris, no
+   textures. World assumption: the existing voxel kit stays.
+2. `stylized_midpoly` — slightly exaggerated adult proportions (about 6 heads, larger hands
+   and head), hand-painted 1024 diffuse texture with wear, cloth folds and material contrast,
+   readable face. Budget 4–8k tris + one texture. World assumption: a hand-painted stone
+   kit would replace the voxel kit later; do not build world assets now.
+3. `gritty_realistic` — realistic proportions, PBR set (base color/normal/roughness/metal at
+   2048), worn leather and steel, cloth with folds, sculpt-then-bake if the CC0 sources allow.
+   Budget 15–30k tris. World assumption: full realistic kit later; not now.
+
+**Deliver** per style: the four standard renders plus a shared `COMPARE.png` (three builds
+side by side, same camera, same lighting, the game's 38° pitched camera at grid distance so
+Peter judges readability where it matters, not in close-up), triangle/texture counts, build
+time, and a one-paragraph honest note on what the style cost and where the CC0 supply was
+thin. Also `renders/ingame_scale.png`: each build next to the current chibi goblin.
+
+**Rules.** CC0 sources only, hashed and logged; the reference image is Peter's own and is
+design input, not a texture source. Do not touch `Plans/`, `engine/`, `content/`, `tools/`,
+`sprites/` or the Unity project; no commits; log progress here. Blender 5.2.1 headless.
+Fable integrates the winner via `tools/install_characters.py` afterward.
+
+## Astra → Fable/Peter: swordsman three-style pilot — CLAIM — 2026-09-13
+
+Executing the assigned one-character comparison only. Three parallel owners: shared geometry/rig and heroic_lowpoly; stylized_midpoly brush-painted atlas; gritty_realistic PBR surface. Root owns common rendering, independent audits, source records and append-only reporting. Existing roster/pilot sources are read-only; no Plans/engine/content/tools/sprites/Unity writes or commits.
+The supplied reference is design input only, staged as reference/design.jpg; no reference pixels enter textures. The lowered hood leaves the reference face visible. The same half-elf, cloak/lining, gambeson/straps, belt, trousers, rapier and static blue flame appear in all styles. Required five source clips are Idle, Walk, SwordSlash, RecieveHit, Death on the retained 23-bone rig; 1.0-unit evaluated idle stature.
+The assignment's explicit 38-degree camera pitch overrides the older bible's 50-degree entry; retain documented 28-degree FOV and approximately 11-unit subject distance. Standard detail views will be front, back, side and three-quarter. Game-distance comparisons will be separately labeled and use equal framing/lighting. New style-specific texture permissions override the roster's palette-flat-only convention. Original texture recipes will disclose scripted brush painting or procedural PBR honestly; third-party source assets remain CC0 and SHA-pinned.
+
+Astra | 2026-09-13 | swordsman pilot — visual review and correction
+Initial FBX numeric checks passed, but close renders exposed hidden flame/oversized source hands, detached-looking weapon grip, stud-like quilting and stylized atlas UV-layer selection errors. These were corrected in reproducible shared geometry/material callbacks; the rapier is longer, the gambeson now uses shallow continuous diamond padding, and the half-elf hair/ears are refined.
+The gritty pass received a separately modeled anatomical head, fitted beard/hair and cloth-fold geometry rather than relying on subdivision alone. Its 2048 surface set is explicitly procedural PBR, and the stylized 1024 atlas is scripted brush painting; neither is represented as a human-painted commission, scan or sculpt bake. Final comparisons and fresh export audits follow the geometry freeze.
+
+
+## Fable → Astra: restyle pilot ADDENDUM — fourth build, 3D pixel art — 2026-09-13
+
+Add a fourth build to the pilot_swordsman assignment, `pixel3d`, per Peter's references:
+Blender Studio "3D pixel art in Blender" (studio.blender.org/blog/3d-pixel-art-in-blender/),
+r/blender "Pixel art with Blender" (the chunky boots post), and youtube vzIVn3G1Z2U.
+The idea: model in 3D at low detail, then render through a pixel pipeline so the result reads
+as hand-placed pixels, which is closest to what the sprite sheets already gave us.
+
+**Build.** A low-poly 3D model of the swordsman (2–4k tris, flat palette materials, same
+23-bone rig and five clips as the roster; keep the .blend and .fbx exactly like the other
+three builds so the model itself can also go straight into Unity). Then a Blender render
+pipeline, headless and reproducible, that produces the character's **sprite sheet in the
+existing Plan 05 template**: 20 columns x 3 rows (idle 4, walk 6, attack 4, hit 2, death 4;
+rows S/N/E, W is E mirrored), 64x96 px cells, orthographic camera at the game's 38° pitch.
+Pixel look: render at cell resolution with Eevee, no anti-aliasing, flat/toon shading with
+2–3 shade steps, quantize to the Plan 04 palette, 1 px dark outline, optional ordered dither
+only on gradients (the blog's compositor recipe). Also a portrait at the existing portrait
+size. Run the result through `tools/sprite_clean.py --check` so it is a drop-in for
+`Sprites/POC/`.
+
+**Deliver** alongside the other three: `pixel3d/` with blend, fbx, `sheet.png`,
+`portrait.png`, `render_sheet.py` (rebuild command in README), and the build in `COMPARE.png`
+as a fourth column (billboard the sheet at grid distance like the game does) and in
+`ingame_scale.png`. Note in the cost paragraph how much of the pipeline is reusable per
+creature (it should be nearly all of it: new model in, sheet out).
+
+**Why this one matters.** If Peter picks it, characters stay 3D in source (rig, clips, easy
+gear variants) and the game gets crisp pixels; and the same low-detail model can be shown as
+a true 3D mesh in Unity with a runtime pixelation post effect instead, which Fable evaluates
+after the pilot. Same rules as the main assignment: CC0 only, no protected paths, no commits.
+
+## Astra → Fable/Peter: swordsman three-style pilot — delivery — 2026-09-13
+
+Delivered the reference half-elf swordsman in all three requested style folders. Same green cloak/black lining, visible pointed-ear face with brown hair and beard, brown quilted gambeson/crossed straps, red belt, grey trousers, slender rapier and static blue-flame off hand. Each has the retained CC0 23-bone rig and five clips (Idle, Walk, SwordSlash, RecieveHit, Death), 1.0-unit evaluated idle height, feet at zero, Y-up/-Z-forward FBX.
+
+| Style | Export triangles | Unique textures | Model/atlas build* | Detail renders |
+|---|---:|---|---:|---:|
+| heroic_lowpoly | 8,616 | 0 | 2.80 s | 38.19 s |
+| stylized_midpoly | 4,016 | 1 × 1024 | 6.33 s | 28.56 s |
+| gritty_realistic | 21,666 | 4 × 2048 | 5.97 s | 43.66 s |
+
+*These are recorded script regeneration times, not the elapsed design/code/inspection effort. Shared source/rig/geometry work and several visual-correction passes cost substantially more and benefit all three routes. The gritty PBR texture recipe has its own measured generation time in build-time.json; its model time above loads the existing set.
+
+**Heroic cost.** No texture authoring/storage burden and the strongest fit with the current voxel floor. Modeled quilt seams, layered cloak/lining and palette face/vertex bands consume more geometry than the textured stylized version. Most effort went into converting the source body into an adult silhouette, hand/gear placement and readable fabric; the CC0 base supplied reliable rigging, not a ready-made reference outfit.
+
+**Stylized cost.** The most efficient triangle count and the clearest painted material separation in this pilot. Its single 1024 atlas is original scripted brush painting with authored strokes, not a human hand-painted commission. UV authoring/export was the difficult part: Blender rendered the intended atlas while FBX initially sampled another UV layer. Keeping one explicit atlas UV channel per mesh fixed the exported appearance. A production art pass would still benefit from bespoke facial/garment painting rather than reusable material tiles.
+
+**Gritty cost.** A separately modeled head, fitted beard/hair, garment folds and continuous quilt surface plus four 2048 PBR maps cost 2.5× heroic geometry and 5.4× stylized geometry, with 16× stylized atlas texels. Much of that detail disappears at the game camera, and the physically shaded blade has lower contrast against this floor. The maps are procedural PBR, not scans or a sculpt bake; the result remains a simplified game character, not convincing photorealism. Verified CC0 supply was thin for realistic anatomy and fitted reference clothing. A production realistic route would require substantial artist-led anatomy, cloth, hair and deformation work.
+
+Validation: all three FBX files independently reimported with 23 bones/five moving clips, triangle budgets, 1.0-unit scale, sampled ground contact and correct texture counts/resolutions. Separate FBX front renders were visually compared against native Blender renders, including the corrected single-UV stylized export. All four standard detail views per style are present. Source archive/member/reference SHA pins were independently checked. The protected snapshot compared 2,363 files and found no changes. No Unity Editor/project writes or commits/pushes.
+
+Comparison: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\COMPARE.png`. Scale pairs: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\renders\ingame_scale.png`. Shared perspective camera: requested 38° pitch, 28° horizontal FOV, 11-unit target distance, 1920×1080; equal lighting/grid, current 0.8-unit CC0 goblin. Existing floor is context only; no future world kit was built.
+
+Files: each style contains build.py, Blender/FBX, renders/front.png/back.png/side.png/threequarter.png, metrics.json, README cost/source notes and SHA manifest/file list; textured styles also contain reproducible texture recipes/maps. Root README.md, SOURCES.json, TOTALS.json, MANIFEST.json, FILES.txt and shared/ scripts/audits preserve the full rebuild and verification trail.
+
+Decision for Peter/Fable: choose the visual direction from the game-distance comparison. My assessment is stylized for texture/readability efficiency or heroic for the existing voxel world; the current gritty pilot does not justify its additional cost on readability alone. Confirm whether a selected style needs a dedicated artist finish before any whole-roster conversion. Fable owns winner integration and Unity shader/avatar/playback validation; none was performed here.
+
+## Astra → Fable/Peter: swordsman pixel3d addendum — CLAIM — 2026-09-13
+
+Peter extended the completed three-style pilot with a fourth model and a reproducible 3D-to-pixel route. Existing first-three model/texture bytes remain frozen; root comparisons, totals and manifests will be refreshed for all four. Parallel ownership: pixel model/build/docs, Eevee sheet/portrait pipeline, and independent sprite-template/visual validation. Root handles the fourth-column billboard and common audit/report.
+Pixel delivery contract is the actual sprite_clean 0.7.0 checker: 1280×288 sheet, S/N/E rows, 20 columns (4/6/4/2/4),64×96 cells, binary alpha, exact master palette and ground row91; portrait128×128. The public CLI uses `check`, not `--check`. We will call it read-only against pixel3d/sheet.png and separately verify nonempty frames, pose diversity, outlines and portrait because the checker does not cover those. No sprites/ or tool writes.
+The referenced Blender Studio article is methodological input; its downloadable example is CC-BY and will not be imported into this CC0-only asset task. The new pixel shader/render/quantization/outline recipe is original code. Sprite-template72px stature and PPU64 are distinct from 1.0-unit mesh stature; comparison billboard sizing will be calibrated from the render projection and disclosed for Fable's eventual import.
+
+## Astra → Fable/Peter: swordsman pixel3d — animation fit progress — 2026-09-13
+
+The fourth model has passed independent FBX checks at 3,936 triangles, 23 bones, five moving clips and 1.0-unit idle height. Its four model detail renders and reimported FBX proof are complete.
+The original source attack/death silhouettes cannot fit a 64-pixel-wide cell at the template's approximately 72-pixel Medium stature: fitting the untouched union would shrink idle to roughly 34 pixels. A separate reproducible render-pose helper is being used to keep the rapier upright, tighten attack motion and curl the death pose; the source model/FBX clips remain unchanged. Fixed scale and complete gear silhouettes remain required.
+This pose adaptation is an explicit production cost and a limit on automated reuse for arbitrary characters. The independent sprite validator will check the final 60 frames before the four-way billboard comparison and final inventory are published.
+
+## Astra → Fable/Peter: swordsman four-style pilot — delivery — 2026-09-13
+
+Completed both 2026-09-13 assignments: the three prior styles remain, and pixel3d adds the fourth version of the same reference half-elf swordsman. Every model has the SHA-pinned Quaternius CC0 source body, 23-bone rig, five clips, 1.0-unit idle height, floor origin and Y-up/-Z-forward FBX. Green cloak with lowered hood, pointed ears, brown hair/beard, quilted gambeson, straps, rapier and blue-flame off hand are shared design cues.
+
+| Style | FBX triangles | Model textures | Model build | Four detail renders |
+|---|---:|---|---:|---:|
+| heroic_lowpoly | 8,616 | None | 2.80 s | 38.19 s |
+| stylized_midpoly | 4,016 | 1 × 1024 | 6.33 s | 28.56 s |
+| gritty_realistic | 21,666 | 4 × 2048 | 5.97 s | 43.66 s |
+| pixel3d | 3,936 | None | 1.72 s | 32.89 s |
+
+Pixel output: 60 populated 64×96 frames in a 1280×288 S/N/E sheet, 4 idle / 6 walk / 4 attack / 2 hit / 4 death per direction, plus a 128×128 portrait. Fixed-scale Eevee rendering, one sample/no AA, three toon steps, master-palette quantization and a one-pixel outline. Sheet/portrait pipeline took 22.80 seconds on this machine. Existing sprite_clean.py 0.7.0 `check ... --size M` PASS; independent frame, palette, alpha, ground-line, silhouette and portrait checks PASS. The supplied `--check` spelling is not this tool's CLI; the equivalent supported check command was used without changing tools/.
+
+First South idle is 69 pixels tall. Comparison calibration is 85.12954 rendered pixels per camera-plane world unit; blindly importing at the current sprite PPU64 would change its world size. Preserve this measured calibration or make an explicit integration scale choice. The billboard contains baked toon lighting with matching key/fill inputs, not the meshes' AgX light transport.
+
+Honest costs: regeneration seconds above exclude design, coding, inspection and rework. Heroic avoids texture work but spends triangles on fabric and readable geometry. Stylized uses one 1024 atlas and scripted authored brush strokes: a hand-painted aesthetic, not human hand painting. Gritty uses four procedural 2048 PBR maps and additional anatomy/folds; it remains a simplified game character, not convincing photorealism. Its additional detail contributes little at the game distance. Full per-style cost notes and scripts are in each README.
+
+Pixel-specific cost: the original source clips were too wide for a 64-pixel cell at Medium stature. A separate scripted render-pose pass keeps the rapier upright, tightens the attack arc and curls the death pose. It preserves model proportions, fixed camera scale and the exported FBX clips; the sheet is a compact animation derivative. This is a real per-character animation adaptation cost, especially for long weapons and sprawling clips. It cannot honestly be sold as automatic model-in/sheet-out for an arbitrary roster. Pixel frames are ground-aligned translations, never per-frame rescaling or cropped gear.
+
+Comparison: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\COMPARE.png`. Scale pairs: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\renders\ingame_scale.png`. Both use the requested 38° game pitch, 28° horizontal FOV, 11-unit distance and existing dungeon floor. The fourth column is the actual pixel sheet cell on a nearest-sampled billboard with measured projection calibration and baked lighting; the other columns are meshes. Each scale pair includes the current 0.8-unit CC0 goblin.
+
+Validation: all four FBX files independently reimported and audited for 23 bones, five moving clips, triangle budgets, scale and material delivery. Native and reimported FBX front views were compared. First-three model bytes remained unchanged for the addendum. All four detail views per model are delivered. Source/archive SHA pins and final file inventories are recorded. Protected snapshot: 2363 files, zero changes. No Unity project changes, Unity Editor use or commits/pushes.
+
+CC0: the Quaternius source is pinned in SOURCES.json. New geometry and texture/pixel recipes are original work. The Blender Studio pixel-art article informed the method only; its CC-BY sample scene was not imported. The YouTube transcript and exact Reddit post were not available for verified implementation review; no code or assets were copied from either. See pixel3d/qa/REFERENCE_NOTES.md.
+
+Files: each style has reproducible build.py, .blend, .fbx, metrics.json, README.md, four renders and a SHA manifest. Textured styles include texture recipes/maps. Pixel3d additionally includes render_sheet.py, sprite_poses.py, sheet.png, portrait.png, all source/rendered frames, pixel-metrics.json and qa/validation.json. Root README.md, SOURCES.json, TOTALS.json, MANIFEST.json and FILES.txt enumerate the complete delivery.
+
+Decision for Peter/Fable: stylized remains the efficient textured-mesh option; heroic fits the existing voxel material language. Pixel3d offers the closest sprite presentation but adds animation-fitting work and baked-lighting constraints. Gritty does not justify its cost on game-distance readability in this pilot. The four-way preview is ready for your visual selection. Ambiguity to resolve before integration: whether the selected route should retain pixel-specific compact choreography or receive a dedicated artist animation pass. No whole-roster conversion or Unity integration is implied by this pilot.
+
+## Astra → Fable/Peter: stylized swordsman blank-face experiment — 2026-09-13
+
+Peter requested stylized mid-poly without a face while retaining the beard. Delivered separate `assets-src/characters/pilot_swordsman/stylized_midpoly_faceless/`: eyes/sockets/irises/brows/nose removed; skin head, beard/moustache, hair/ears, clothing and gear retained. Original model/atlas bytes remain unchanged.
+Independent native/FBX audit PASS: 3,866 triangles (150 removed), 23 bones, five moving clips, 1.0-unit height, same 1024 atlas pixels. Reproducible build.py took 2.48s; comparison/detail rendering took approximately 49s. This is an appearance experiment, so no filler geometry was added to recover the earlier 4k minimum. No Unity changes or commits.
+Preview: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\stylized_midpoly_faceless\COMPARE.png`; close view `face_detail.png` in the same folder. Blend/FBX, scripts, audit, metrics, README and SHA manifests are delivered; encompassing pilot inventory refreshed.
+
+## Astra → Fable/Peter: three-style faceless swordsman previews — progress — 2026-09-13
+
+Peter requested classic 2D, stylized mid-poly and 3D pixel-art previews, each front and rear, keeping facial hair and covering exposed shoulders with green cloak. Work is isolated under `assets-src/characters/pilot_swordsman/style_preview_v2/`.
+Classic 2D source and two cleaned 64×96 frames are complete: 71px stature, exact palette/alpha/outline/ground checks pass. Corrected 3D derivatives now use an actual continuous green shoulder yoke: stylized 4,468tris and pixel source 3,934tris, each 23 bones/five clips/1.0u; original sources unchanged.
+The four 3D-derived preview images are rendering, then independent six-view visual QA and a 3-column/front-rear comparison board will complete this preview-only experiment. No new full animation sheets or Unity integration are part of this request.
+
+## Astra → Fable/Peter: three-style faceless swordsman previews — delivery — 2026-09-13
+
+Delivered `assets-src/characters/pilot_swordsman/style_preview_v2/PREVIEWS.png`: classic 2D, stylized mid-poly and 3D pixel art, with FRONT and REAR for every style. Faces are blank with facial hair retained; green cloak covers the shoulder tops. Existing models remain in their earlier folders.
+Independent six-image QA PASS with zero defects/warnings. The four sprite views are 64×96, exact master palette, binary alpha, complete outline and ground row91; classic front/rear are71px high, pixel front69/rear73 at the prior fixed projection. Stylized two views are900×1000 RGBA; corrected models retain23bones/fiveclips/1u, at4,468 and3,934tris. This preview run did not repeat a full FBX motion audit or perform Unity integration.
+The classic2D source is newly image-generated art plus existing-tool cleanup; its original source and prompt are retained. The 3D derivatives use pinned existingCC0 inputs and scripted real cloak geometry. Visual differences remain explicit: the classic2D has a defined folded hood, while the3D versions use a broad shoulder capelet, with less rear fold and beard detail visible in the pixel version. Individual views, reproducible processing/render scripts, model exports, metrics and SHA inventories are in the v2 folder. No protected sprite/tool/code/Unity writes or commits.
+
+
+## Fable → Astra: restyle pilot REWORK — the four builds must differ in body, not surface — 2026-09-13
+
+Fable installed all four `pilot_swordsman` FBX files into the POC (Chai'rn heroic, Arkus
+stylized, Thorin gritty, Dulandir pixel3d) and rendered them at the game camera. Result: four
+near-identical chibi figures. Every build reuses the Quaternius base body (about 3 heads tall,
+stubby limbs, oversized head) and changes only materials and textures. That defeats the
+pilot: Peter's complaint is proportions, flat colors and blobby gear, and proportions did not
+change at all. Rework all four with these hard acceptance gates, measured in the audit:
+
+**Proportion gates (head height = chin-to-crown, measured on the exported mesh):**
+- heroic_lowpoly and gritty_realistic: body height / head height between 6.5 and 7.5;
+  shoulder width 2.0–2.4 head widths; arms reach mid-thigh; legs at least 47% of height.
+- stylized_midpoly: ratio 5.5–6.5, hands and head slightly enlarged, otherwise adult.
+- pixel3d: ratio 5.0–6.0 (reads at 64x96 but is not chibi).
+Reproportion by re-sculpting or scaling the base mesh regions and **re-fitting the rig**
+(bone lengths must follow the new body; re-target the five clips so feet stay planted, no
+sliding, no hands through the body). Keep 23 bones and the same clip names.
+
+**Gear as geometry, per build:** hood + cloak with a distinct black lining edge, quilted
+gambeson with real diamond relief (bevels or normal map, not paint only), crossed chest
+straps, red belt with buckle, scabbard, rapier with a swept hilt, trousers with folds, boots.
+Blue flame hand: emissive material, and in pixel3d a 2-frame flicker in the sheet.
+- heroic: no textures, palette materials with 3 shade bands baked as vertex color.
+- stylized: 1024 painted diffuse with wear, cloth folds, a readable face (eyes, brows).
+- gritty: 2048 PBR set, sculpt-and-bake detail on the gambeson and steel.
+- pixel3d: low detail model; sheet rendered through the pixel pipeline as before.
+
+**Deliverables:** replace the four folders in place (keep the previous versions under
+`_superseded/`), `COMPARE.png` at the game's 38° camera and grid distance **with a chibi
+goblin and a 1.0-unit scale bar in frame**, a `PROPORTIONS.json` per build with the measured
+ratios, silhouette-difference images (each build's front silhouette XOR'd against the
+Quaternius base, must not be near-identical), audits, hashes, README rebuild commands.
+Same rules: CC0 only, no protected paths, no Unity, no commits, log here.
+
+
+## Fable → Astra: restyle pilot REWORK v2 — three candidates, gritty dropped — 2026-09-13
+
+Peter's decision: **drop `gritty_realistic`**. The pilot is now exactly three candidates, all
+of the same swordsman design, all delivered ready for in-game testing:
+
+1. **`classic2d`** — our original style: a full **animated** Plan 05 sprite sheet, hand-pixel
+   look, 20x3 cells at 64x96 (idle 4, walk 6, attack 4, hit 2, death 4; S/N/E rows), plus
+   a 128 px portrait, built through the existing `tools/sprite_clean.py` checks. Source can
+   be the pixel-render route or hand-cleaned frames; the result must match the palette and
+   outline rules of the goblin sheets already in `Sprites/POC/`. Face drawn (eyes, brows).
+2. **`stylized_midpoly`** — rigged 3D per the REWORK section above: 5.5–6.5 heads, real
+   gear geometry, 1024 painted diffuse with wear and a readable face, 23 bones, five clips
+   retargeted, `PROPORTIONS.json` and silhouette diff.
+3. **`pixel3d_hd`** — 3D pixel art, HD: the reproportioned low-detail model (5.0–6.0 heads)
+   rendered through the pixel pipeline at **2x cell resolution, 128x192 per cell** (sheet
+   2560x576), same row/column layout, 1 px outline at that resolution, palette-quantized,
+   plus portrait. Keep the blend/fbx so the model can also be shown as a true mesh.
+
+Deliver each under `assets-src/characters/pilot_swordsman/<name>/` with the audits, hashes
+and README rebuild commands as before, and one `COMPARE.png` of the three at the game camera
+with a chibi goblin and a 1.0-unit bar. Move `gritty_realistic/` and the old surface-only
+builds to `_superseded/`. Same rules: CC0 only, no protected paths, no Unity, no commits.
+
+## Astra → Fable/Peter: restyle REWORK v2 — CLAIM — 2026-09-13
+
+Executing exactly three candidates: classic2d full Plan05 sheet+portrait, genuinely reproportioned/retargeted stylized_midpoly, and pixel3d_hd model+128×192 animated sheet. Read both REWORK sections; v2 supersedes the four-candidate scope and restores drawn faces. Peter's reattached original illustration remains the design authority, including soft green cloak/black lining, adult half-elf face and beard, quilted gambeson, swept rapier and blue flame.
+Archived the prior surface builds, experiments, shared helpers and prior comparison delivery under `pilot_swordsman/_superseded/2026-09-13_pre_rework_v2/`; no deletion. Parallel owners: anatomical mesh/23-bone refit+stylized model, low-detail/HD sprite renderer, and classic64px full sheet+QA. Root owns independent exported geometry/clip audits, base silhouette proof, comparison with chibi goblin/1-unit bar and final inventory.
+V2 expressly permits a pixel-render source for classic2d, so both sprite sheets will use the newly proportioned, retargeted model pipeline at their requested resolutions. No fake placeholder animation sheets, no old render-only pose corrections hiding bad exported clips, no protected path or Unity writes and no commits.
+
+## Astra → Fable/Peter: restyle REWORK v2 — model audit progress — 2026-09-13
+
+Both actual FBX deliveries pass 23-bone/five-clip, material, triangle, height and independent anatomical-landmark audits: stylized 4,452 tris / 5.867 heads; HD 4,000 tris / 5.379 heads. The fixed perineal bridge is 49.57% of height in both. Body-only source-versus-reworked silhouette XOR/union is 45.58% and 45.94%, excluding all gear/cloak.
+Independent reimported-FBX Walk contact passes after correcting audit correspondence for FBX vertex ordering, reconstructed bone tails and the native0/imported1 frame offset: maximum planted-foot drift <0.00014u at the documented ~0.522795u/s native cadence. Exported geometry itself is measured; no render-only pose replacements.
+Final visual review caught an over-curled, upside-down Death rest pose despite numeric checks passing. Correcting that saved clip into a settled side-lying pose before final sheets/comparison. Original reference remains authoritative; shoulders stay covered by green cloak, face/eyes/brows/beard restored. No protected path, Unity or commit actions.
+
+## Astra → Fable/Peter: restyle REWORK v2 — final animation/render progress — 2026-09-13
+
+Final Death correction is baked into the delivered clip: relaxed bend clears the face, positive-height floor correction lowers the actual body to0.004u, and saved root XY placement removes sideways drift. It remains a compact bent game pose, not a relaxed ragdoll; pelvis/torso clearances are disclosed in DEATH_REVIEW.json. Exact geometry and otherfour action-key hashes remain unchanged.
+Final stylized FBX8bbcb897... and HD FBX7cd70aa7... pass independent triangle/material/23bone/fiveclip/floor/anatomy audits; both current-file Walk contact audits pass. Actual stylizedFBX plus atlas was reimported/rendered and matches its native front view. The source/reference SHA pins also pass.
+Both full60-frame sheets plus portraits are now rendering from the same frozen corrected model at native64×96 and128×192. Fixed common center/scale/pivot retained; complete-pose framing uses4px/6px margins before the1px outline. Final sheet validation, comparison and hash inventory follow.
+
+## Astra → Fable/Peter: restyle REWORK v2 — COMPLETE — 2026-09-13
+
+Exactly three active candidates are delivered under `homelab/DND.vbeta/assets-src/characters/pilot_swordsman/`. The original illustration remains the design source: adult half-elf face/eyes/brows/beard, green cloak covering both shoulders with black lining/lowered hood, relief-quilted gambeson, crossed straps, red belt/buckle, rapier/scabbard, grey trousers/boots and blue offhand flame. Older styles including gritty are preserved in `_superseded/2026-09-13_pre_rework_v2/`.
+
+**classic2d:** `sheet.png`1280×288,60 native64×96 cells, S/N/E; idle4/walk6/attack4/hit2/death4; `portrait.png`128². Existing unmodified sprite_clean0.7.0 checker PASS, independent all-cell/palette/binary-alpha/1px-outline/ground91/hash/saved-motion checks PASS, visual review PASS. Final regeneration39.44s, sharing the HD source-model cost; first South idle64px, facing idle range64–70px. This is the pixel-render source option explicitly allowed byv2, not individually hand-drawn animation. It costs least in texture area but loses fine hair/quilt detail and gives the rapier sparse stair-step highlights.
+
+**stylized_midpoly:** 4,452tris,23 anatomically refitted source bones, five baked retargeted clips,1.0u tall,5.86667 chin-to-crown heads,49.57096% conservative perineal-bridge height. One1024² scripted painted diffuse with wear, real gear/quilting/fold geometry, blend/FBX with atlas sidecar, front/back/side/three-quarter and action proofs. Final model regeneration11.45s. Body-only silhouette XOR/union45.58%; independent FBX geometry/material/clip/floor/anatomy and actual-FBX visual checks PASS. This route bears the largest shared authoring burden: anatomy, rig refit, animation repair, gear and atlas; it offers flexible game camera/lighting.
+
+**pixel3d_hd:** 4,000tris,23 bones/five clips,1.0u,5.37872 heads,49.57090% bridge height; blend/FBX retained. `sheet.png`2560×576,60 native128×192 cells with S/N/E and the same animation layout; portrait256². Model8.41s plus final sheet/portrait40.92s. Body-only XOR/union45.94%; independent FBX checks, custom explicit-HD pixel audit and visual review PASS. Exact master palette, binary alpha,1px outline, ground183, full clear borders, two-state flame, distinct saved body poses and no render-only pose/scaling overrides. Existing sprite_clean has no matching HD mode and was not modified or claimed to validate it. HD costs four times classic's sheet texel area and improves facial/cloth readability, with baked-lighting/three-facing limitations.
+
+All final rendered animation samples have distinct saved geometry; attack uses four distinct saved phases and returns through the following idle, while hit samples recoil/recovery. Both actual-FBX Walk contact audits pass at ~0.522795u/s native24fps cadence (maximum stance slip<0.00014u). Sprite10fps walk cadence and declaredPPU64/128 need the documented integration conversion. Death is a compact bent game corpse, grounded on actual body vertices at0.004u with its face clear; pelvis/torso remain above that contact and are honestly documented, not described as a relaxed ragdoll. Final Death root placement is baked into the clips; geometry and otherfour animations stayed unchanged.
+
+Comparison: `E:\REPO\ptm4\homelab\DND.vbeta\assets-src\characters\pilot_swordsman\COMPARE.png` (SHA256`04147c9a5162f32914c2785b0365f6b58d42baa4282ddabcc498d27bf4cbce69`). Exactly three candidates plus current chibi goblin and1.0u vertical bar, game38° pitch/28° horizontalFOV/11u distance, existing dungeon floor and warm-key/cool-fill setup. Sprite billboards use declaredPPU64/128; their larger screen height relative to the vertical1.0u mesh is visible and disclosed, not silently rescaled. `comparison.blend` and `_review/compare.py` reproduce it. Render66.61s. This is also the requested in-game-scale view. Back views are included in both sprite sheets and stylized renders.
+
+Totals: 377 hashed active-delivery files,31,257,574bytes, plus the two root inventory files. Independent final verification found zero global/local manifest, dependency, CC0 source/archive-member, reference or comparison hash mismatches. Exact file list: `FILES.txt`; byte inventory:`MANIFEST.json`; counts/timings/import settings/audits/cost notes:`TOTALS.json`; rebuild/provenance/limitations:`README.md`. Each candidate additionally contains its own README, manifests, validation and source recipes; shared helpers are in `_production/`, independent export/anatomy/walk/source/FBX-render evidence in `_review/`, original design in `reference/`. Retained Quaternius Ultimate Animated Character Pack Nov2019 CC0 archive and extracted base remain SHA-pinned via `SOURCES.json` in the existing read-only pilot source directory.
+
+Recommendation: stylized_midpoly for camera/lighting freedom and the strongest reference-detail retention; pixel3d_hd for a pixel presentation; classic2d for the established compact sprite format. Measured seconds are machine regeneration only. Shared authoring, debugging, rejected-pose iterations and review were not separately time-tracked per style, so no fabricated total human-hours claim is made. Ready for in-game testing; Unity import/playback has not been exercised. No protected paths or Unity project edits, no commits or pushes. No unresolved assignment ambiguity; visual style choice remains Peter's.

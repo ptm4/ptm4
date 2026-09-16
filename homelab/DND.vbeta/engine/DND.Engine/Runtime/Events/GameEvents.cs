@@ -118,6 +118,53 @@ namespace DND.Engine.Events
         public override string Describe() => $"{ObjectId} takes {Amount} {DamageType} (HP {HpAfter})";
     }
 
+    public sealed class ConditionApplied : GameEvent
+    {
+        public readonly string TargetId, SourceId;
+        public readonly Condition Kind;
+        public readonly ConditionDuration Duration;
+        public ConditionApplied(string targetId, Condition kind, string sourceId, ConditionDuration duration) { TargetId = targetId; Kind = kind; SourceId = sourceId; Duration = duration; }
+        public override string Describe() => $"{TargetId} is {Kind}";
+    }
+
+    public sealed class ConditionRemoved : GameEvent
+    {
+        public readonly string TargetId;
+        public readonly Condition Kind;
+        public ConditionRemoved(string targetId, Condition kind) { TargetId = targetId; Kind = kind; }
+        public override string Describe() => $"{TargetId} is no longer {Kind}";
+    }
+
+    public sealed class ActionTaken : GameEvent
+    {
+        public readonly string ActorId, Name;
+        public ActionTaken(string actorId, string name) { ActorId = actorId; Name = name; }
+        public override string Describe() => $"{ActorId} takes the {Name} action";
+    }
+
+    public sealed class OpportunityAttack : GameEvent
+    {
+        public readonly string ReactorId, ActorId;
+        public OpportunityAttack(string reactorId, string actorId) { ReactorId = reactorId; ActorId = actorId; }
+        public override string Describe() => $"{ReactorId} takes an opportunity attack against {ActorId}";
+    }
+
+    public sealed class DeathSaveRolled : GameEvent
+    {
+        public readonly string CreatureId;
+        public readonly D20Result Roll;
+        public readonly int Successes, Failures;
+        public DeathSaveRolled(string creatureId, D20Result roll, int successes, int failures) { CreatureId = creatureId; Roll = roll; Successes = successes; Failures = failures; }
+        public override string Describe() => $"{CreatureId} death save {Roll}: {Successes} successes / {Failures} failures";
+    }
+
+    public sealed class Stabilized : GameEvent
+    {
+        public readonly string CreatureId;
+        public Stabilized(string creatureId) { CreatureId = creatureId; }
+        public override string Describe() => $"{CreatureId} is stable";
+    }
+
     public sealed class ObjectAttackRolled : GameEvent
     {
         public readonly string AttackerId, ObjectId, AttackName;
