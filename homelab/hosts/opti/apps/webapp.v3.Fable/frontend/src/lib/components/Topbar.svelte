@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { Search, Bell, SunMoon, Menu, Palette, RefreshCw } from '@lucide/svelte';
+  import { Search, Bell, SunMoon, Menu, Palette, RefreshCw, Settings } from '@lucide/svelte';
   import { titleFor } from '$lib/nav';
   import { ui } from '$lib/stores/theme.svelte';
   import { app } from '$lib/stores/ui.svelte';
@@ -98,5 +98,6 @@
   </button>
   <button class="tbtn icon" title="Accent: {ui.accent} — click to cycle" onclick={() => ui.cycleAccent()}><Palette aria-hidden="true" /></button>
   <button class="tbtn icon" title="Theme: {ui.theme} — click to toggle" onclick={() => ui.toggleTheme()}><SunMoon aria-hidden="true" /></button>
+  <a class="tbtn icon" href="/settings" title="Settings" aria-label="Settings"><Settings aria-hidden="true" /></a>
   <a class="tbtn" href="/legacy/" title="The v1 dashboard, unchanged"><span class="lbl">Legacy</span></a>
 </header>

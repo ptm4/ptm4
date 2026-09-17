@@ -13,23 +13,10 @@
 // becomes reachable beyond the LAN, gate the POST routes at nginx first.
 const { AGENT_HOSTS } = require('../lib/hosts');
 const { buildMergedData } = require('../lib/arch-data');
+const { agentFetch } = require('../lib/agent-client');
 
-const TOKEN = process.env.HL_ARCH_INGEST_TOKEN || '';
 const STATUS_TIMEOUT_MS = 4000;
 const SYNC_TIMEOUT_MS = 20000;   // a real collection + push, not just a status read
-
-async function agentFetch(url, { method = 'GET', timeoutMs = STATUS_TIMEOUT_MS, body } = {}) {
-  const headers = {};
-  if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
-  const res = await fetch(url, {
-    method, headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const data = await res.json().catch(() => ({}));
-  return { ok: res.ok, status: res.status, data };
-}
 
 function driftCountsByHost() {
   try {

@@ -332,3 +332,86 @@ test('GET /api/jobs/audit reads the trail back and filters', async () => {
   assert.ok(b.entries.length >= 1);
   assert.ok(b.entries.every((e) => e.kind === 'test-audit'), 'the kind filter is honoured');
 });
+
+// ── Settings → Maintenance: auto-update holds ─────────────────────────────────
+// A fake hl-arch-agent on localhost. The route must (a) audit every toggle, and
+// (b) refuse to call a hold "done" unless an independent re-read agrees — an agent
+// that returns 200 and changes nothing has to produce a FAILED audit line.
+const http = require('http');
+
+function fakeAgent({ liar = false } = {}) {
+  const st = { mode: 'enabled', flag: null };
+  const state = () => ({
+    host: 'rpi', installed: true, mode: st.mode,
+    guaranteed: st.mode === 'disabled' ? !!st.flag : true,
+    will_run_unattended: st.mode === 'enabled', flag: st.flag, script_honors_flag: true,
+    timer: { unit_file_state: st.mode, active: st.mode === 'enabled' ? 'active' : 'inactive', next_run: null, last_trigger: null },
+    last_run: { active: 'inactive', result: 'success', started_at: null, finished_at: null },
+    problems: [], checked_at: new Date().toISOString(),
+  });
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      if (req.method === 'POST' && req.url === '/autoupdate') {
+        const b = JSON.parse(raw || '{}');
+        if (!liar) {
+          st.mode = b.enabled ? 'enabled' : 'disabled';
+          st.flag = b.enabled ? null : { by: b.by, at: new Date().toISOString(), reason: b.reason };
+        }
+        res.writeHead(200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ ok: true, host: 'rpi', state: state() }));
+      }
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(state()));
+    });
+  });
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+}
+
+async function withFakeRpi(opts, fn) {
+  const { AGENT_HOSTS } = require('../lib/hosts');
+  const server = await fakeAgent(opts);
+  const saved = AGENT_HOSTS.rpi.base;
+  AGENT_HOSTS.rpi.base = `http://127.0.0.1:${server.address().port}`;
+  try { await fn(); } finally { AGENT_HOSTS.rpi.base = saved; server.close(); }
+}
+
+test('POST /api/maintenance/autoupdate validates host and body', async () => {
+  const bad = await app.inject({ method: 'POST', url: '/api/maintenance/autoupdate/nope', payload: { enabled: false } });
+  assert.equal(bad.statusCode, 404);
+  const nobody = await app.inject({ method: 'POST', url: '/api/maintenance/autoupdate/rpi', payload: {} });
+  assert.equal(nobody.statusCode, 400);
+});
+
+test('disabling auto-updates is verified by a re-read and audited', async () => {
+  await withFakeRpi({}, async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/maintenance/autoupdate/rpi', payload: { enabled: false, reason: 'docker restarts' } });
+    assert.equal(r.statusCode, 200, r.body);
+    const b = r.json();
+    assert.equal(b.state.mode, 'disabled');
+    assert.deepEqual(b.job.steps.map((s) => s.status), ['ok', 'ok', 'ok']);
+    const e = app.jobs.audit({ days: 1, limit: 10, kind: 'autoupdate' })[0];
+    assert.equal(e.host, 'rpi');
+    assert.equal(e.target, 'disabled');
+    assert.equal(e.status, 'ok');
+    assert.match(e.steps[1].output, /docker restarts/, 'the reason is in the permanent record');
+
+    const g = await app.inject({ method: 'GET', url: '/api/maintenance/autoupdate' });
+    const rpi = g.json().hosts.find((h) => h.host === 'rpi');
+    assert.equal(rpi.mode, 'disabled');
+    assert.equal(rpi.guaranteed, true);
+  });
+});
+
+test('an agent that says yes but changes nothing fails verification', async () => {
+  await withFakeRpi({ liar: true }, async () => {
+    const r = await app.inject({ method: 'POST', url: '/api/maintenance/autoupdate/rpi', payload: { enabled: false } });
+    assert.equal(r.statusCode, 502);
+    const b = r.json();
+    assert.deepEqual(b.job.steps.map((s) => s.status), ['ok', 'ok', 'failed'],
+      'apply "succeeded"; verify is what catches it');
+    const e = app.jobs.audit({ days: 1, limit: 10, kind: 'autoupdate' })[0];
+    assert.equal(e.status, 'failed', 'the audit trail must not record an unverified hold as done');
+  });
+});

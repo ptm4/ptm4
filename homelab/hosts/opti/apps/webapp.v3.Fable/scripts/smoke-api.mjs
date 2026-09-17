@@ -125,6 +125,11 @@ const MANIFEST = [
   { method: 'GET', path: '/api/hosts', expect: [200] },
   { method: 'GET', path: '/api/jobs', expect: [200] },
   { method: 'GET', path: '/api/jobs/audit?days=7', expect: [200] },
+  // Settings → Maintenance (2026-09-17). GET is 200 even with every agent down — rows
+  // say unreachable. POSTs probe validation only; a valid body would change a host.
+  { method: 'GET', path: '/api/maintenance/autoupdate', expect: [200] },
+  { method: 'POST', path: '/api/maintenance/autoupdate/nope', body: { enabled: false }, expect: [404] },
+  { method: 'POST', path: '/api/maintenance/autoupdate/rpi', body: {}, expect: [400] },
   { method: 'GET', path: '/api/incidents', expect: [200] },
   { method: 'GET', path: '/api/services', expect: [200] },
   { method: 'GET', path: '/api/hldb/health', expect: [200] },

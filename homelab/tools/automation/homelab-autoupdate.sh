@@ -11,6 +11,25 @@ log() { echo "$(date -u '+%Y-%m-%dT%H:%M:%SZ') $*" | tee -a "$LOGFILE"; }
 
 log "=== homelab-autoupdate start ==="
 
+# Maintenance hold (dashboard Settings → Maintenance, via hl-arch-agent POST /autoupdate).
+# The agent also disables the timer, but opti-deploy.yml re-runs `enable --now` on every
+# push — so THIS check is what makes "disabled" hold. A manual "Upgrade now" from the
+# dashboard drops a one-shot override in /run (tmpfs, so it can never outlive a boot).
+# hl-arch-agent greps for the marker below to report whether a host's script honors it.
+# HONORS_AUTOUPDATE_FLAG
+AUTOUPDATE_FLAG=/etc/homelab/autoupdate.disabled
+AUTOUPDATE_FORCE_ONCE=/run/homelab/autoupdate.force-once
+if [ -f "$AUTOUPDATE_FLAG" ]; then
+  if [ -f "$AUTOUPDATE_FORCE_ONCE" ]; then
+    rm -f "$AUTOUPDATE_FORCE_ONCE"
+    log "auto-updates are disabled, but a manual run was requested — proceeding once"
+  else
+    log "SKIPPED: auto-updates disabled on this host ($(tr -d '\n' < "$AUTOUPDATE_FLAG" | head -c 300))"
+    log "=== homelab-autoupdate done (skipped) ==="
+    exit 0
+  fi
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 
 if ! apt-get update >>"$LOGFILE" 2>&1; then

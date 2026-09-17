@@ -88,6 +88,7 @@ export const HOSTS: HostNav[] = [
 const TITLES = new Map<string, string>();
 for (const g of NAV) for (const i of g.items) TITLES.set(i.path, i.label);
 TITLES.set('/settings', 'Settings');
+TITLES.set('/settings/maintenance', 'Settings · Maintenance');
 TITLES.set('/links', 'Launchpad');
 
 /** Sub-views that live inside a page, so the topbar can name where you actually are. */

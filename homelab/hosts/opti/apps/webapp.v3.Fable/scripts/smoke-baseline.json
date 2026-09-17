@@ -516,6 +516,26 @@
       "generated_at"
     ]
   },
+  "GET /api/maintenance/autoupdate": {
+    "status": 200,
+    "keys": [
+      "checked_at",
+      "hosts",
+      "summary"
+    ]
+  },
+  "POST /api/maintenance/autoupdate/nope": {
+    "status": 404,
+    "keys": [
+      "error"
+    ]
+  },
+  "POST /api/maintenance/autoupdate/rpi": {
+    "status": 400,
+    "keys": [
+      "error"
+    ]
+  },
   "GET /api/incidents": {
     "status": 200,
     "keys": [

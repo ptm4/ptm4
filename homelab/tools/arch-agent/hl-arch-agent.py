@@ -30,6 +30,9 @@ long-running process (Type=simple) that both self-schedules the daily run and an
       POST /service-restart -> restart one ALLOWED_UNITS systemd unit (token required)
       POST /wake    -> broadcast a WoL magic packet for a WAKE_MACS target (token
                        required; sent by this host on behalf of a powered-off one)
+      GET  /autoupdate  -> is unattended apt allowed to run here (timer + hold flag)
+      POST /autoupdate  -> {enabled: bool} hold or release nightly auto-updates (v0.6.0,
+                           token required; flag file + timer, see set_autoupdate)
   - a state file records the last successful run date, so a host that was rebooted
     or the service restarted past 00:00 catches up on the next tick instead of
     silently waiting a full day (the manual equivalent of a timer's Persistent=true)
@@ -105,7 +108,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import monitor
 
-AGENT_VERSION = "0.5.0"
+AGENT_VERSION = "0.6.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -792,6 +795,17 @@ def apt_upgrade(body):
     active, _ = _unit_prop(_APT_UNIT, "ActiveState")
     if active in ("active", "activating", "reloading"):
         return 200, {"ok": True, "host": HOST, "unit": _APT_UNIT, "already_running": True}
+    if os.path.exists(_AU_FLAG):
+        # Auto-updates are held, but this is a person pressing "Upgrade now" — let
+        # exactly one run through. /run is tmpfs, so a stale override dies with a boot.
+        try:
+            os.makedirs(os.path.dirname(_AU_FORCE_ONCE), exist_ok=True)
+            with open(_AU_FORCE_ONCE, "w", encoding="utf-8") as f:
+                f.write(datetime.now(timezone.utc).isoformat())
+        except OSError as exc:
+            return 502, {"ok": False, "stage": "override", "host": HOST,
+                         "error": f"auto-updates are held and the one-shot override "
+                                  f"could not be written: {exc}"}
     _, err = _run(["systemctl", "start", "--no-block", _APT_UNIT], timeout=15)
     if err:
         return 502, {"ok": False, "stage": "start", "host": HOST, "unit": _APT_UNIT,
@@ -839,6 +853,157 @@ def apt_status():
         "reboot_pkgs": reboot_pkgs,
         "log_tail": log_tail,
     }
+
+
+# ── auto-update hold (v0.6.0) ──────────────────────────────────────────────────
+# Backs Settings → Maintenance. Two layers, because one is not enough here:
+#   1. the timer is disabled + stopped, so nothing fires at 02:00, and
+#   2. a flag file the script itself checks, so a re-enabled timer still does nothing.
+# Layer 2 is the guarantee: opti-deploy.yml runs `systemctl enable --now` on the timer
+# on every push, which would silently undo layer 1 on opti. The flag lives in /etc
+# (survives reboots and deploys); the one-shot manual override lives in /run (does not).
+_AU_TIMER = "homelab-autoupdate.timer"
+_AU_SCRIPT = "/usr/local/bin/homelab-autoupdate.sh"
+_AU_FLAG = "/etc/homelab/autoupdate.disabled"
+_AU_FORCE_ONCE = "/run/homelab/autoupdate.force-once"
+_AU_MARKER = "HONORS_AUTOUPDATE_FLAG"
+
+
+def _script_honors_flag():
+    try:
+        with open(_AU_SCRIPT, encoding="utf-8", errors="replace") as f:
+            return _AU_MARKER in f.read()
+    except OSError:
+        return False
+
+
+def autoupdate_state():
+    """Everything needed to say whether unattended updates can run on this host —
+    read fresh from systemd and disk every call, never from a cached belief."""
+    props = {}
+    out, _ = _run(["systemctl", "show", _AU_TIMER, "-p",
+                   "LoadState,UnitFileState,ActiveState,NextElapseUSecRealtime,LastTriggerUSec"],
+                  timeout=15)
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        props[k] = v.strip()
+    svc = {}
+    out, _ = _run(["systemctl", "show", _APT_UNIT, "-p",
+                   "ActiveState,Result,ExecMainStartTimestamp,ExecMainExitTimestamp"], timeout=15)
+    for line in out.splitlines():
+        k, _, v = line.partition("=")
+        svc[k] = v.strip()
+
+    flag = None
+    if os.path.exists(_AU_FLAG):
+        flag = {"by": None, "at": None, "reason": None}
+        try:
+            with open(_AU_FLAG, encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                flag.update({k: data.get(k) for k in ("by", "at", "reason")})
+        except (OSError, ValueError):
+            pass  # a hand-touched empty flag still counts as disabled
+
+    installed = props.get("LoadState") == "loaded"
+    timer_enabled = props.get("UnitFileState") == "enabled"
+    timer_active = props.get("ActiveState") == "active"
+    honors = _script_honors_flag()
+    held = flag is not None and honors
+    # Would the 02:00 run actually upgrade packages? Only if the timer can fire AND
+    # the script would not skip itself.
+    will_run = installed and (timer_enabled or timer_active) and not held
+
+    problems = []
+    if flag is not None and not honors:
+        problems.append(f"flag is set but {_AU_SCRIPT} predates the flag check — "
+                        "it would still upgrade; redeploy the script")
+    if flag is not None and (timer_enabled or timer_active):
+        problems.append(f"{_AU_TIMER} was re-enabled (a deploy does this); "
+                        + ("runs will skip themselves via the flag" if honors
+                           else "and nothing is stopping it"))
+    if flag is None and installed and not timer_enabled:
+        problems.append(f"no hold is set but {_AU_TIMER} is disabled — updates are "
+                        "off without a record of why")
+
+    mode = "enabled" if will_run else "disabled"
+    return {
+        "host": HOST,
+        "installed": installed,
+        "mode": mode,
+        # "disabled" is only guaranteed when the script itself refuses to run.
+        "guaranteed": held if mode == "disabled" else (installed and timer_enabled),
+        "will_run_unattended": will_run,
+        "flag": flag,
+        "script_honors_flag": honors,
+        "timer": {
+            "unit_file_state": props.get("UnitFileState") or None,
+            "active": props.get("ActiveState") or None,
+            "next_run": props.get("NextElapseUSecRealtime") or None,
+            "last_trigger": props.get("LastTriggerUSec") or None,
+        },
+        "last_run": {
+            "active": svc.get("ActiveState") or None,
+            "result": svc.get("Result") or None,
+            "started_at": svc.get("ExecMainStartTimestamp") or None,
+            "finished_at": svc.get("ExecMainExitTimestamp") or None,
+        },
+        "problems": problems,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def set_autoupdate(body):
+    """POST /autoupdate {enabled: bool, by?, reason?}. Applies both layers, then
+    returns a fresh autoupdate_state() — the caller verifies from that, not from
+    this function's say-so. Never stops an upgrade already in progress (killing apt
+    mid-dpkg is how you get a broken host); it reports it instead."""
+    enabled = body.get("enabled")
+    if not isinstance(enabled, bool):
+        return 400, {"ok": False, "error": "body.enabled must be true or false"}
+    loaded, err = _unit_prop(_AU_TIMER, "LoadState")
+    if err or loaded != "loaded":
+        return 404, {"ok": False, "error": f"{_AU_TIMER} not installed on {HOST}"}
+    by = str(body.get("by") or "webapp")[:80]
+    reason = str(body.get("reason") or "")[:300] or None
+
+    if enabled:
+        try:
+            os.remove(_AU_FLAG)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            return 502, {"ok": False, "stage": "flag", "error": f"could not remove {_AU_FLAG}: {exc}"}
+        _, err = _run(["systemctl", "enable", "--now", _AU_TIMER], timeout=30)
+        if err:
+            return 502, {"ok": False, "stage": "timer", "error": err[:400]}
+    else:
+        if not _script_honors_flag():
+            # Refuse rather than half-apply: disabling only the timer would look
+            # done and quietly come undone at the next deploy.
+            return 409, {"ok": False, "stage": "script",
+                         "error": f"{_AU_SCRIPT} on {HOST} does not check the hold flag yet — "
+                                  "deploy the current homelab-autoupdate.sh first"}
+        try:
+            os.makedirs(os.path.dirname(_AU_FLAG), exist_ok=True)
+            tmp = f"{_AU_FLAG}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump({"by": by, "at": datetime.now(timezone.utc).isoformat(),
+                           "reason": reason}, f)
+            os.replace(tmp, _AU_FLAG)
+        except OSError as exc:
+            return 502, {"ok": False, "stage": "flag", "error": f"could not write {_AU_FLAG}: {exc}"}
+        _, err = _run(["systemctl", "disable", "--now", _AU_TIMER], timeout=30)
+        if err:
+            # The flag already holds, so this is degraded rather than failed.
+            state = autoupdate_state()
+            state["problems"].append(f"timer disable failed: {err[:200]}")
+            return 200, {"ok": True, "host": HOST, "state": state}
+
+    state = autoupdate_state()
+    running = state["last_run"]["active"] in ("active", "activating")
+    return 200, {"ok": True, "host": HOST, "state": state,
+                 "note": "an upgrade is running right now and was left to finish" if running else None}
 
 
 def service_restart(body):
@@ -953,6 +1118,10 @@ class Handler(BaseHTTPRequestHandler):
             # the same package facts to the dashboard.
             self._json(*apt_status())
             return
+        if path == "/autoupdate":
+            # Unauthenticated like /apt-status: read-only unit + flag state.
+            self._json(200, autoupdate_state())
+            return
         if path == "/monitor/capabilities":
             if not self._authorized():
                 self._json(401, {"error": "unauthorized"})
@@ -997,6 +1166,7 @@ class Handler(BaseHTTPRequestHandler):
             "/apt-upgrade": apt_upgrade,
             "/service-restart": service_restart,
             "/wake": wake_target,
+            "/autoupdate": set_autoupdate,
         }
         if path.startswith("/monitor/process/") and path.endswith("/signal"):
             if not TOKEN:

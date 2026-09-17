@@ -92,6 +92,7 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/incidents'),     { prefix: '/api/incidents' });
   await app.register(require('./routes/services'),      { prefix: '/api/services' });
   await app.register(require('./routes/rules'),         { prefix: '/api/rules' });
+  await app.register(require('./routes/maintenance'),   { prefix: '/api/maintenance' });
   // dashboard read-model sits at bare /api (containers, timers, activity, trends, linkcheck)
   await app.register(require('./routes/dashboard'),    { prefix: '/api' });
 
