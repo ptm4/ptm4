@@ -97,8 +97,13 @@ module.exports = async function streamsRoutes(app) {
     const rankingKnown = ranks.size > 0;
 
     // A feed we fetched long ago cannot be quoted for what is happening NOW.
+    // `day.stale` is the cache layer telling us this payload survived a failed
+    // refresh (see lib/hldb-cache.js); `day.data.stale` is hltv-api saying its own
+    // scrape fell back to last-good. Either one means: still worth showing, not
+    // worth quoting for the present tense.
     const fetchedMs = Number(day.data?.fetched_at) * 1000;
-    const stale = !!day.data?.stale || !Number.isFinite(fetchedMs) || Date.now() - fetchedMs > STALE_AFTER_MS;
+    const stale = !!day.stale || !!day.data?.stale
+      || !Number.isFinite(fetchedMs) || Date.now() - fetchedMs > STALE_AFTER_MS;
 
     const slots = status?.slots || [];
     const playing = new Map();   // "platform/channel" → slot we are playing it in
@@ -199,11 +204,15 @@ module.exports = async function streamsRoutes(app) {
         error: vrs.status === 200 ? null : (vrs.data?.error || `HTTP ${vrs.status}`),
       },
       hltv: {
-        ok: day.status === 200,
+        // `ok` means "there are matches to show", not "the last fetch succeeded" —
+        // a last-good payload served through a failed refresh is still usable, and
+        // the page hides the whole guide when this is false.
+        ok: day.status === 200 && Array.isArray(day.data?.matches),
         stale,
         fetched_at: day.data?.fetched_at || null,
         date: day.data?.date || null,
-        error: day.status === 200 ? null : (day.data?.error || `HTTP ${day.status}`),
+        error: day.stale ? `serving last good feed — ${day.error}`
+          : day.status === 200 ? null : (day.data?.error || `HTTP ${day.status}`),
       },
       coverage: "HLTV's cached day feed. It deep-scrapes a bounded number of match pages per run, so map scores and broadcast links exist only for those; matches without a listed stream cannot be started from here.",
       generated_at: new Date().toISOString(),

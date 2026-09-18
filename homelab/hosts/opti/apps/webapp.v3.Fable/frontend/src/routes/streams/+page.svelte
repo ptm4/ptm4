@@ -8,11 +8,12 @@
   // actually supplied a broadcast link, and "unknown" instead of "live" once the feed
   // is too old to speak for the present.
   import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import { Square, Grid2x2, Tv, Radio, Search, ExternalLink, Star, RefreshCw, Clock } from '@lucide/svelte';
   import Player from '$lib/features/streams/Player.svelte';
   import {
     useStationStatus, useGuide, useStreamActions, watchUrl,
-    type Slot, type GuideMatch, type GuideChannel, type WatchTarget,
+    type Slot, type Guide, type GuideMatch, type GuideChannel, type WatchTarget,
   } from '$lib/api/streams';
   import { streamPrefs, channelKey } from '$lib/stores/stream-prefs.svelte';
   import { toast } from '$lib/stores/toast.svelte';
@@ -21,6 +22,72 @@
   const status = useStationStatus(() => true);
   const guide = useGuide();
   const { watch, stop, keepalive } = useStreamActions();
+
+  // The last good guide payload for THIS browser. The server already rides out an
+  // upstream blip on its own (backend/lib/hldb-cache.js keeps a last-good copy), so
+  // this covers what that cannot: the dashboard itself being unreachable for a
+  // moment, a reload while opti restarts, a phone waking on a flaky link. Freshness
+  // always comes from the query — this only ever supplies a fallback, and whenever
+  // it is the thing on screen the page says so rather than passing it off as live.
+  const GUIDE_KEY = 'fable-guide-lastgood-v1';
+  const MAX_CACHED_MATCHES = 80;   // the feed is small; this is a seatbelt on quota
+
+  function readGuideCache(): Guide | null {
+    if (!browser) return null;
+    try {
+      const raw = JSON.parse(localStorage.getItem(GUIDE_KEY) || 'null');
+      return raw && Array.isArray(raw.matches) && Array.isArray(raw.channels) ? (raw as Guide) : null;
+    } catch { return null; }
+  }
+  function writeGuideCache(v: Guide) {
+    if (!browser) return;
+    try {
+      localStorage.setItem(GUIDE_KEY, JSON.stringify({ ...v, matches: v.matches.slice(0, MAX_CACHED_MATCHES) }));
+    } catch { /* private mode or quota — the in-memory copy still carries this session */ }
+  }
+
+  let cachedGuide = $state<Guide | null>(readGuideCache());
+  // Only ever remember a payload that actually carried matches. A successful fetch
+  // that came back empty means the feed upstream is having a moment, and caching it
+  // would overwrite the good copy with the very emptiness this exists to paper over.
+  $effect(() => {
+    if (guide.data?.matches?.length) { cachedGuide = guide.data; writeGuideCache(guide.data); }
+  });
+
+  const cachedCount = $derived(cachedGuide?.matches?.length ?? 0);
+  /** true when the match list on screen came from local storage, not from this fetch */
+  let showingCached = $derived(!guide.data || (guide.data.matches.length === 0 && cachedCount > 0));
+
+  /**
+   * What we render. The live payload wins, with one exception: a fetch that came back
+   * with no matches while we still hold some is a blip upstream, not an empty day, so
+   * we splice the remembered matches in rather than show an empty guide. Everything
+   * that does NOT depend on HLTV — the channel directory, the station's slots — still
+   * comes from the live payload, and the result is marked stale so the page says so.
+   */
+  let gd = $derived.by(() => {
+    const live = guide.data;
+    if (!live) return cachedGuide;
+    if (live.matches.length === 0 && cachedCount > 0) {
+      return { ...live, matches: cachedGuide!.matches, hltv: { ...live.hltv, ok: true, stale: true } };
+    }
+    return live;
+  });
+
+  // One row per tournament. The backend has already sorted by status, then top-20 /
+  // premier, then start time; grouping preserves that order and only collects each
+  // event's matches together, so the first tournament shown is still the best one.
+  function byEvent(list: GuideMatch[]) {
+    const out: { event: string; matches: GuideMatch[] }[] = [];
+    const at = new Map<string, number>();
+    for (const m of list) {
+      const k = m.event ?? 'Unknown event';
+      const i = at.get(k);
+      if (i == null) { at.set(k, out.length); out.push({ event: k, matches: [m] }); }
+      else out[i].matches.push(m);
+    }
+    return out;
+  }
 
   let current = $state(1);
   let multiview = $state(false);
@@ -35,10 +102,10 @@
   let customChannel = $state('');
   let customUrl = $state('');
 
-  let slots = $derived<Slot[]>(status.data?.slots ?? guide.data?.station.slots ?? [1, 2, 3, 4].map((n) => ({ slot: n, state: 'idle' } as Slot)));
+  let slots = $derived<Slot[]>(status.data?.slots ?? gd?.station.slots ?? [1, 2, 3, 4].map((n) => ({ slot: n, state: 'idle' } as Slot)));
   let liveSlots = $derived(slots.filter((s) => s.state === 'starting' || s.state === 'running'));
   let cur = $derived(slots.find((s) => s.slot === current) ?? null);
-  let stationOk = $derived(!!status.data || !!guide.data?.station.ok);
+  let stationOk = $derived(!!status.data || !!gd?.station.ok);
 
   // Follow a newly started slot, and keep the running ones alive while this page is open.
   $effect(() => {
@@ -81,7 +148,7 @@
   }
 
   // ── guide filtering ────────────────────────────────────────────────────────
-  let matches = $derived((guide.data?.matches ?? []).filter((m) => {
+  let matches = $derived((gd?.matches ?? []).filter((m) => {
     const pri = priority === 'all' ? true
       : priority === 'top20' ? m.top20
       : priority === 'premier' ? m.premier || m.tier === 'S'
@@ -97,14 +164,14 @@
   let liveMatches = $derived(matches.filter((m) => m.status === 'live' || m.status === 'unknown'));
   let upcoming = $derived(matches.filter((m) => m.status === 'upcoming'));
   let finished = $derived(matches.filter((m) => m.status === 'finished'));
-  let hiddenCount = $derived((guide.data?.matches?.length ?? 0) - matches.length);
+  let hiddenCount = $derived((gd?.matches?.length ?? 0) - matches.length);
 
-  let channels = $derived((guide.data?.channels ?? []).filter((c) => {
+  let channels = $derived((gd?.channels ?? []).filter((c) => {
     const q = search.trim().toLowerCase();
     const inGroup = group === 'all' ? true : group === 'favorites' ? streamPrefs.isFavorite(c) : c.group_label === group;
     return inGroup && (!q || `${c.label} ${c.channel} ${c.org ?? ''}`.toLowerCase().includes(q));
   }));
-  let groupNames = $derived([...new Set((guide.data?.channels ?? []).map((c) => c.group_label))]);
+  let groupNames = $derived([...new Set((gd?.channels ?? []).map((c) => c.group_label))]);
   let recent = $derived(streamPrefs.recent.filter((c) => {
     const q = search.trim().toLowerCase();
     return !q || `${c.label} ${c.channel}`.toLowerCase().includes(q);
@@ -212,56 +279,57 @@
         </select>
       </div>
 
-      {#if guide.isLoading}<div class="spin"></div>{/if}
-      {#if guide.isError}
+      {#if guide.isLoading && !gd}<div class="spin"></div>{/if}
+      {#if guide.isError && !gd}
         <div class="card"><p class="err">Guide unavailable — {(guide.error as Error).message}</p></div>
-      {:else if guide.data && !guide.data.hltv.ok}
-        <div class="card"><p class="dim" style="margin:0">HLTV feed unavailable ({guide.data.hltv.error}) — the channel directory still works.</p></div>
-      {:else if guide.data}
+      {:else if gd && !gd.hltv.ok}
+        <div class="card"><p class="dim" style="margin:0">HLTV feed unavailable ({gd.hltv.error}) — the channel directory still works.</p></div>
+      {:else if gd}
         <div class="feedline faint">
           <a href="https://www.hltv.org/matches" target="_blank" rel="noreferrer">HLTV feed <ExternalLink size={9} /></a>
-          <span>{guide.data.hltv.date ?? ''}{guide.data.hltv.fetched_at ? ` · ${relTime(new Date(guide.data.hltv.fetched_at * 1000).toISOString())}` : ''}</span>
-          {#if guide.data.hltv.stale}<span class="chip" data-s="warn">STALE</span>{/if}
+          <span>{gd.hltv.date ?? ''}{gd.hltv.fetched_at ? ` · ${relTime(new Date(gd.hltv.fetched_at * 1000).toISOString())}` : ''}</span>
+          {#if gd.hltv.stale}<span class="chip" data-s="warn">STALE</span>{/if}
+          {#if showingCached}<span class="chip" data-s="warn" title="The dashboard could not be reached just now — this is the last guide this browser saw">CACHED</span>{/if}
         </div>
-        {#if !guide.data.vrs.known}
-          <p class="warnline">Rankings unavailable{guide.data.vrs.error ? ` (${guide.data.vrs.error})` : ''} — top-20 status is unknown for every match below.</p>
+        {#if !gd.vrs.known}
+          <p class="warnline">Rankings unavailable{gd.vrs.error ? ` (${gd.vrs.error})` : ''} — top-20 status is unknown for every match below.</p>
         {/if}
       {/if}
 
       {#if liveMatches.length}
         <div class="divider">{matchStatus === 'live' ? 'Live' : 'Live now'}</div>
-        {#each liveMatches as m (m.id ?? m.url)}{@render matchRow(m)}{/each}
+        {#each byEvent(liveMatches) as grp (grp.event)}{@render eventGroup(grp)}{/each}
       {/if}
       {#if upcoming.length}
         <div class="divider">Upcoming</div>
-        {#each upcoming.slice(0, 20) as m (m.id ?? m.url)}{@render matchRow(m)}{/each}
+        {#each byEvent(upcoming.slice(0, 20)) as grp (grp.event)}{@render eventGroup(grp)}{/each}
       {/if}
       {#if finished.length}
         <div class="divider">Results</div>
-        {#each finished.slice(0, 20) as m (m.id ?? m.url)}{@render matchRow(m)}{/each}
+        {#each byEvent(finished.slice(0, 20)) as grp (grp.event)}{@render eventGroup(grp)}{/each}
       {/if}
-      {#if guide.data && matches.length === 0}
-        <p class="empty">{guide.data.matches.length ? 'No matches match these filters.' : 'No matches in the feed for today.'}</p>
+      {#if gd && matches.length === 0}
+        <p class="empty">{gd.matches.length ? 'No matches match these filters.' : 'No matches in the feed for today.'}</p>
       {/if}
       {#if hiddenCount > 0}
         <button class="linkish" onclick={() => { priority = 'all'; matchStatus = 'all'; }}>Show {hiddenCount} more the filters hide</button>
       {/if}
 
-      {#if guide.data}
+      {#if gd}
         <details class="provenance">
           <summary>Rankings, event labels &amp; coverage</summary>
-          <p>Ranks are {guide.data.vrs.system}{guide.data.vrs.as_of ? `, as of ${guide.data.vrs.as_of}` : ''}{guide.data.vrs.counted ? ` (${guide.data.vrs.counted} teams listed)` : ''}. A team with no rank shown is simply not in that list.</p>
+          <p>Ranks are {gd.vrs.system}{gd.vrs.as_of ? `, as of ${gd.vrs.as_of}` : ''}{gd.vrs.counted ? ` (${gd.vrs.counted} teams listed)` : ''}. A team with no rank shown is simply not in that list.</p>
           <p><b>HLTV stars are a match rating, not a tournament tier</b> — so no tier is invented here. “Premier series” reads the event name (Major, IEM, BLAST, PGL, FISSURE, ESL Pro League, excluding qualifiers) and is a label, not a ruling. “S-tier” appears only when the feed says so itself.</p>
-          <p>{guide.data.coverage} Only a broadcast HLTV attached to the match becomes a Watch button; directory channels are never assumed to be live.</p>
-          {#if guide.data.hltv.stale}<p class="t-warn">This feed is stale, so matches it called live are shown as “unknown” rather than live.</p>{/if}
-          <small>Feed retrieved {guide.data.hltv.fetched_at ? relTime(new Date(guide.data.hltv.fetched_at * 1000).toISOString()) : 'unknown'}.</small>
+          <p>{gd.coverage} Only a broadcast HLTV attached to the match becomes a Watch button; directory channels are never assumed to be live.</p>
+          {#if gd.hltv.stale}<p class="t-warn">This feed is stale, so matches it called live are shown as “unknown” rather than live.</p>{/if}
+          <small>Feed retrieved {gd.hltv.fetched_at ? relTime(new Date(gd.hltv.fetched_at * 1000).toISOString()) : 'unknown'}.</small>
         </details>
       {/if}
 
     {:else if tab === 'channels'}
       <div class="filters">
         <select class="input" bind:value={group} aria-label="Channel group">
-          <option value="all">All channels · {guide.data?.channels.length ?? 0}</option>
+          <option value="all">All channels · {gd?.channels.length ?? 0}</option>
           <option value="favorites">Favourites</option>
           {#each groupNames as g (g)}<option value={g}>{g}</option>{/each}
         </select>
@@ -273,8 +341,8 @@
           {#each channels.filter((c) => c.group_label === g) as c (channelKey(c))}{@render channelChip(c)}{/each}
         </div>
       {/each}
-      {#if guide.data && channels.length === 0}<p class="empty">No channels match.</p>{/if}
-      {#if guide.isError}<p class="err">Directory unavailable — {(guide.error as Error).message}</p>{/if}
+      {#if gd && channels.length === 0}<p class="empty">No channels match.</p>{/if}
+      {#if guide.isError && !gd}<p class="err">Directory unavailable — {(guide.error as Error).message}</p>{/if}
 
     {:else if tab === 'recent'}
       {#if recent.length === 0}
@@ -308,11 +376,27 @@
   </section>
 </div>
 
-{#snippet matchRow(m: GuideMatch)}
+{#snippet eventGroup(grp: { event: string; matches: GuideMatch[] })}
+  <section class="evgroup">
+    <header class="evhead">
+      <span class="evname" title={grp.event}>{grp.event}</span>
+      {#if grp.matches[0]?.premier}<span class="chip" data-s="info" title="The event name reads as a premier series — a label, not an official tier">PREMIER</span>{/if}
+      <span class="spacer"></span>
+      <span class="evcount faint">{grp.matches.length}</span>
+    </header>
+    {#each grp.matches as m (m.id ?? m.url)}{@render matchRow(m, false)}{/each}
+  </section>
+{/snippet}
+
+{#snippet matchRow(m: GuideMatch, showEvent = true)}
   <div class="match" data-status={m.status}>
     <div class="mhead">
-      <span class="ev">{m.event}</span>
-      {#if m.premier}<span class="chip" data-s="info" title="The event name reads as a premier series — a label, not an official tier">PREMIER</span>{/if}
+      {#if showEvent}
+        <span class="ev">{m.event}</span>
+        {#if m.premier}<span class="chip" data-s="info" title="The event name reads as a premier series — a label, not an official tier">PREMIER</span>{/if}
+      {:else}
+        <span class="ev"></span>
+      {/if}
       {#if m.tier === 'S'}<span class="chip" data-s="crit" title="HLTV's feed supplied this tier">S-TIER</span>{/if}
       {#if m.top20}<span class="chip" data-s="warn" title="A Valve Regional Standings top-20 team is playing">TOP 20</span>{/if}
       <span class="st" data-s={m.status}>
@@ -397,6 +481,13 @@
   .filters .input { flex: 1; min-width: 0; font-size: 12px; padding: 3px 6px; }
   .feedline { display: flex; gap: 8px; align-items: center; font-size: 11px; flex-wrap: wrap; }
   .warnline { color: var(--warn); font-size: 11.5px; margin: 0; }
+
+  /* One tournament, one block. The left rule ties a run of matches to its heading
+     without drawing a heavy box around every group. */
+  .evgroup { display: flex; flex-direction: column; gap: 5px; padding-left: 8px; border-left: 2px solid var(--border); margin-bottom: 4px; }
+  .evhead { display: flex; gap: 6px; align-items: center; min-width: 0; padding: 1px 0; }
+  .evhead .evname { font: 600 11.5px var(--sans); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .evhead .evcount { font: 600 10.5px var(--mono); }
 
   .match { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
   .match[data-status="live"] { border-color: var(--crit-dim); box-shadow: inset 0 0 0 1px var(--crit-dim); }

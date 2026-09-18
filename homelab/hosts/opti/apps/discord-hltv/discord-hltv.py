@@ -404,12 +404,19 @@ _feed_cache = {"at": 0, "feed": None}
 FEED_CACHE_SECONDS = 60
 
 
-def day_feed(cfg):
+def day_feed(cfg, max_age=None):
     """Structured version of the digest for the dashboard widget: the same
     notable-match filter, but fields instead of Discord markup. Two caches sit
     in front of HLTV — 60s here, 15 min in the sidecar — so a dashboard left
-    open all day costs a handful of scrapes."""
-    if _feed_cache["feed"] and time.time() - _feed_cache["at"] < FEED_CACHE_SECONDS:
+    open all day costs a handful of scrapes.
+
+    max_age lets a caller say how old a feed it is willing to take. The dashboard
+    asks for a generous one: it would much rather draw a slightly old guide than
+    block on a refresh, because a refresh that outruns its HTTP timeout shows up
+    to the user as an empty Streams page.
+    """
+    window = FEED_CACHE_SECONDS if max_age is None else max(0, max_age)
+    if _feed_cache["feed"] and time.time() - _feed_cache["at"] < window:
         return _feed_cache["feed"]
     top_norm = set()
     vrs = None
@@ -418,7 +425,16 @@ def day_feed(cfg):
         top_norm = {norm_team(t["name"]) for t in vrs["teams"][:cfg["vrs_top_n"]]}
     except Exception as e:
         log(f"feed: VRS unavailable ({e})")
-    day = get_day(cfg, max_age=DAY_MAX_AGE)
+    try:
+        day = get_day(cfg, max_age=DAY_MAX_AGE)
+    except Exception as e:
+        # A failed refresh must not take the whole feed down with it. This used to
+        # propagate, /day answered 502, and the webapp cached THAT for a minute — so
+        # one slow scrape blanked the dashboard's Streams guide for 60s at a time.
+        if _feed_cache["feed"]:
+            log(f"feed: serving last good feed ({e})")
+            return {**_feed_cache["feed"], "stale": True}
+        raise
     matches = [m for m in day["matches"] if notable(m, top_norm, cfg.get("min_stars", 0))]
     feed = {
         "date": day.get("date"),
@@ -614,7 +630,7 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(n)) if n else {}
 
     def do_GET(self):
-        path, _, _query = self.path.partition("?")
+        path, _, query = self.path.partition("?")
         cfg = load_config()
         if path == "/health":
             with _lock:
@@ -631,9 +647,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(502, {"error": str(e)})
         elif path == "/day":
             # the board widget's feed: same filter as the digest, but structured.
-            # Cached upstream so an open dashboard doesn't re-scrape HLTV.
+            # Cached upstream so an open dashboard doesn't re-scrape HLTV. The query
+            # string was discarded here until 2026-09-18, which quietly made the
+            # dashboard's ?max_age= a no-op and left every read racing a cold scrape.
             try:
-                self._send(200, day_feed(cfg))
+                raw = (urllib.parse.parse_qs(query).get("max_age") or [""])[0]
+                try:
+                    max_age = int(raw)
+                except ValueError:
+                    max_age = None
+                self._send(200, day_feed(cfg, max_age))
             except Exception as e:
                 self._send(502, {"error": str(e)})
         elif path == "/vrs":

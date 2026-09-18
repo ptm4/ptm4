@@ -604,6 +604,36 @@ def get_day(date_str, tzname, max_age=0):
     return payload
 
 
+_refresh_lock = threading.Lock()
+_refreshing = set()
+
+
+def _refresh_day_async(date_str, tzname):
+    """Kick off a scrape behind the caller's back, at most one per (date, tz).
+
+    The HTTP handler must never block on a scrape: a cold one takes ~60s, longer
+    than any sane client timeout, so blocking turns a slow refresh into a hard
+    failure for whoever asked (and, when the deploy smoke gate asked, into a failed
+    deploy). Answer from what we already have, and let this fill the cache.
+    """
+    key = (date_str, tzname)
+    with _refresh_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def run():
+        try:
+            in_browser(lambda: get_day(date_str, tzname, 0))
+        except Exception as e:
+            log(f"background day refresh failed: {e}")
+        finally:
+            with _refresh_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=run, daemon=True).start()
+
+
 def prune_lastgood(keep=5):
     try:
         files = sorted(f for f in os.listdir(DATA_DIR) if f.startswith("lastgood-"))
@@ -694,16 +724,42 @@ class Handler(BaseHTTPRequestHandler):
                     max_age = int(one("max_age", "0"))
                 except ValueError:
                     max_age = 0
-                # Answer a cache hit WITHOUT entering the browser queue. in_browser()
-                # funnels every job through one worker thread, so a reader that needs
-                # no browser at all would otherwise sit behind whoever is mid-scrape —
-                # up to a minute to hand back a payload already in memory.
-                if max_age:
-                    hit = _day_cache.get((date_str, tzname))
-                    if hit and time.time() - hit["at"] <= max_age:
-                        return self._send(200, hit["payload"])
-                return self._send(200, in_browser(
-                    lambda: get_day(date_str, tzname, max_age)))
+                # blocking=1 is the escape hatch for a caller that genuinely wants to
+                # wait for a fresh scrape (CLI, a deliberate manual refresh). Nothing
+                # on the request path should use it.
+                if one("blocking") in ("1", "true", "yes"):
+                    return self._send(200, in_browser(
+                        lambda: get_day(date_str, tzname, max_age)))
+
+                # Fresh enough in memory: answer WITHOUT entering the browser queue.
+                # in_browser() funnels every job through one worker thread, so a
+                # reader that needs no browser at all would otherwise sit behind
+                # whoever is mid-scrape — a minute to hand back a payload we already
+                # have in a dict.
+                hit = _day_cache.get((date_str, tzname))
+                if max_age and hit and time.time() - hit["at"] <= max_age:
+                    return self._send(200, hit["payload"])
+
+                # Not fresh. Refresh behind the response rather than making the caller
+                # wait ~60s for it, and answer from whatever we already know: the
+                # in-memory payload if there is one, else today's last good scrape off
+                # disk. Both are marked stale — readers decide what a stale feed may
+                # be quoted for (the dashboard downgrades "live" to "unknown").
+                _refresh_day_async(date_str, tzname)
+                if hit:
+                    old = dict(hit["payload"])
+                    old["stale"] = True
+                    return self._send(200, old)
+                try:
+                    with open(lastgood_path(date_str)) as f:
+                        old = json.load(f)
+                    old["stale"] = True
+                    return self._send(200, old)
+                except (OSError, ValueError):
+                    # Genuinely nothing for this date yet — the first request of a new
+                    # day. Say so quickly instead of holding the connection open.
+                    return self._send(503, {"error": "day feed is warming, no scrape for this date yet",
+                                            "warming": True, "date": date_str})
             if u.path == "/vrs":
                 return self._send(200, in_browser(get_vrs))
             if u.path == "/selftest":
