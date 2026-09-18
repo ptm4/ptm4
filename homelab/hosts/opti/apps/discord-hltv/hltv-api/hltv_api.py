@@ -694,6 +694,14 @@ class Handler(BaseHTTPRequestHandler):
                     max_age = int(one("max_age", "0"))
                 except ValueError:
                     max_age = 0
+                # Answer a cache hit WITHOUT entering the browser queue. in_browser()
+                # funnels every job through one worker thread, so a reader that needs
+                # no browser at all would otherwise sit behind whoever is mid-scrape —
+                # up to a minute to hand back a payload already in memory.
+                if max_age:
+                    hit = _day_cache.get((date_str, tzname))
+                    if hit and time.time() - hit["at"] <= max_age:
+                        return self._send(200, hit["payload"])
                 return self._send(200, in_browser(
                     lambda: get_day(date_str, tzname, max_age)))
             if u.path == "/vrs":
@@ -705,6 +713,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(503, {"error": str(e), "challenge": True})
         except Exception as e:
             return self._send(502, {"error": str(e)})
+
+
+# Keep today's feed warm on a timer. Nothing here used to refresh on its own: the
+# cache only ever filled when somebody asked, and get_day()'s max_age=0 default made
+# every such ask a cold ~60s scrape. The first reader after any quiet spell therefore
+# paid full price, usually timed out upstream, and got served the on-disk last-good
+# copy instead — so "stale" was the normal state rather than the exception. Scraping
+# on a schedule means readers hit a recent payload and the cold path is rare.
+# 0 disables it (the Discord bot's own schedule is then the only thing refreshing).
+WARM_SECS = int(os.environ.get("HLTV_WARM_SECS", "600"))
+WARM_TZ = os.environ.get("TZ", "America/New_York")
+
+
+def _warmer():
+    time.sleep(15)   # let the listener bind and the browser settle before the first one
+    while True:
+        try:
+            date_str = datetime.now(ZoneInfo(WARM_TZ)).strftime("%Y-%m-%d")
+            # max_age=0 on purpose: this IS the refresh, so it must not no-op on a
+            # cache that is merely recent.
+            in_browser(lambda: get_day(date_str, WARM_TZ, 0))
+            log(f"warmed day feed for {date_str}")
+        except Exception as e:
+            log(f"warm refresh failed: {e}")
+        time.sleep(WARM_SECS)
 
 
 def main():
@@ -733,6 +766,8 @@ def main():
             _browser.close()
 
     threading.Thread(target=_browser_worker, daemon=True).start()
+    if WARM_SECS > 0:
+        threading.Thread(target=_warmer, daemon=True).start()
     log(f"hltv-api listening on :{API_PORT}")
     ThreadingHTTPServer(("", API_PORT), Handler).serve_forever()
     return 0

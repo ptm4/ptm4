@@ -58,8 +58,10 @@
         // manifest advertises. Counting segments aimed the playhead less than one
         // segment from the live edge and the player re-buffered on every cut.
         // 10s of hold-back is ~2 segments of slack; 1.02x drifts back without an
-        // audible pitch change. lowLatencyMode is off — these playlists carry no
-        // EXT-X-PART, so it only tightens the hold-back maths for no gain.
+        // audible pitch change. lowLatencyMode is pinned off — hls.js DEFAULTS it to
+        // true, and these playlists carry no EXT-X-PART, so it only tightens the
+        // hold-back maths for no gain.
+        lowLatencyMode: false,
         liveSyncDuration: 10,
         liveMaxLatencyDuration: 30,
         maxLiveSyncPlaybackRate: 1.02,
@@ -85,13 +87,29 @@
     }
   }
 
+  // What the <video> is bound to right now, as a PLAIN let: it must not be reactive
+  // or the effect below would depend on its own writes.
+  //
+  // That effect re-runs every 5s even when nothing about this player changed. `slot`
+  // and `live` are prop getters reading the station-status query, and a refetch hands
+  // back a new object every poll — Svelte invalidates on the signal, not on the value of
+  // the expression, so identical values still fire. The old body destroyed the hls.js
+  // instance and the MediaSource on every one of those (`return () => detach()` runs
+  // before each re-run), which is a visible hitch every 5 seconds, forever.
+  //
+  // So compare what we WANT attached against what IS attached, and do nothing when
+  // they match. Reload is folded into the key so the button still forces a re-attach.
+  let attachedKey: string | null = null;
+
   $effect(() => {
-    reload;                       // re-run when the reload counter changes
-    const url = hlsUrl(slot);
-    if (live) attach(url); else detach();
-    return () => detach();
+    // Read all three unconditionally so each stays a dependency even when not live.
+    const s = slot, r = reload, on = live;
+    const key = on ? `${s}:${r}` : null;
+    if (key === attachedKey) return;
+    attachedKey = key;
+    if (key) attach(hlsUrl(s)); else detach();
   });
-  onDestroy(detach);
+  onDestroy(() => { attachedKey = null; detach(); });
 
   async function pip() {
     try {

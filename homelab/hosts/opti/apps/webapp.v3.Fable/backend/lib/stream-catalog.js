@@ -7,21 +7,30 @@
 // event name to a channel. HLTV attaching a stream to a match is evidence; an event
 // merely being called "BLAST Premier" is not evidence that twitch/blastpremier is
 // carrying THIS match right now. See routes/streams.js.
+// key (matched against our own directory entries) → the channels we host for it.
+// Channel names are matched without a platform, so an organizer's Kick slug belongs
+// here next to its Twitch handle. Every handle was resolved against the platform on
+// 2026-09-18 before being listed; see presets.json for what that pass threw out.
 const ORGANIZERS = [
-  // key (matched against our own directory entries) → twitch channels we host
-  { key: 'blast', label: 'BLAST', channels: ['blastpremier', 'blasttv'] },
+  { key: 'blast', label: 'BLAST', channels: ['blastpremier', 'blast'] },
   { key: 'esl', label: 'ESL / IEM', channels: ['eslcs', 'eslcsb'] },
   { key: 'iem', label: 'ESL / IEM', channels: ['eslcs', 'eslcsb'] },
   { key: 'pgl', label: 'PGL', channels: ['pgl'] },
   { key: 'hltv', label: 'HLTV', channels: ['hltvorg'] },
   { key: 'esea', label: 'ESEA', channels: ['esea'] },
-  { key: 'fissure', label: 'FISSURE', channels: ['fissure'] },
+  { key: 'fissure', label: 'FISSURE', channels: ['fissure_cs_a', 'fissure_cs_eng'] },
+  { key: 'starladder', label: 'StarLadder', channels: ['starladder5', 'starladder_cs_en', 'starladder'] },
+  { key: 'cct', label: 'CCT', channels: ['cct_cs'] },
+  { key: 'thunderpick', label: 'Thunderpick', channels: ['thunderpicktv', 'thunderpick'] },
+  { key: 'esports world cup', label: 'Esports World Cup', channels: ['ewc'] },
+  { key: 'ewc', label: 'Esports World Cup', channels: ['ewc'] },
+  { key: 'dust2', label: 'dust2', channels: ['dust2tv'] },
 ];
 
 // "Premier series" is a claim about the EVENT NAME, not a tier ruling. Qualifiers and
 // feeder tiers of the same series are excluded, because "IEM Fall Open Qualifier" is
 // not the thing people mean by an IEM match.
-const PREMIER_RE = /\b(major|iem|blast|pgl|fissure|esl pro league)\b/i;
+const PREMIER_RE = /\b(major|iem|blast|pgl|fissure|starladder|esports world cup|esl pro league)\b/i;
 const NOT_PREMIER_RE = /qualifier|challenger|regional|open cup|closed cup|relegation/i;
 const isPremier = (event) => PREMIER_RE.test(event || '') && !NOT_PREMIER_RE.test(event || '');
 
@@ -32,11 +41,24 @@ const FALLBACK_PRESETS = {
       { platform: 'twitch', channel: 'eslcs', label: 'ESL CS', org: 'ESL / IEM' },
       { platform: 'twitch', channel: 'eslcsb', label: 'ESL CS B', org: 'ESL / IEM' },
       { platform: 'twitch', channel: 'blastpremier', label: 'BLAST Premier', org: 'BLAST' },
-      { platform: 'twitch', channel: 'blasttv', label: 'BLAST.tv', org: 'BLAST' },
+      { platform: 'twitch', channel: 'blast', label: 'BLAST', org: 'BLAST' },
+      { platform: 'twitch', channel: 'starladder5', label: 'StarLadder', org: 'StarLadder' },
+      { platform: 'twitch', channel: 'starladder_cs_en', label: 'StarLadder EN', org: 'StarLadder' },
       { platform: 'twitch', channel: 'pgl', label: 'PGL', org: 'PGL' },
-      { platform: 'twitch', channel: 'hltvorg', label: 'HLTV.org', org: 'HLTV' },
+      { platform: 'twitch', channel: 'fissure_cs_a', label: 'FISSURE', org: 'FISSURE' },
+      { platform: 'twitch', channel: 'fissure_cs_eng', label: 'FISSURE EN', org: 'FISSURE' },
+      { platform: 'twitch', channel: 'cct_cs', label: 'CCT', org: 'CCT' },
+      { platform: 'twitch', channel: 'ewc', label: 'Esports World Cup', org: 'Esports World Cup' },
+      { platform: 'twitch', channel: 'thunderpicktv', label: 'Thunderpick', org: 'Thunderpick' },
       { platform: 'twitch', channel: 'esea', label: 'ESEA', org: 'ESL' },
-      { platform: 'twitch', channel: 'fissure', label: 'FISSURE', org: 'FISSURE' },
+      { platform: 'twitch', channel: 'dust2tv', label: 'dust2.tv', org: 'dust2' },
+      { platform: 'twitch', channel: 'hltvorg', label: 'HLTV.org', org: 'HLTV' },
+    ] },
+    { name: 'kick', label: 'Kick broadcasts', channels: [
+      { platform: 'kick', channel: 'starladder', label: 'StarLadder (Kick)', org: 'StarLadder' },
+      { platform: 'kick', channel: 'pgl', label: 'PGL (Kick)', org: 'PGL' },
+      { platform: 'kick', channel: 'ewc', label: 'Esports World Cup (Kick)', org: 'Esports World Cup' },
+      { platform: 'kick', channel: 'thunderpick', label: 'Thunderpick (Kick)', org: 'Thunderpick' },
     ] },
     { name: 'streamers', label: 'CS2 streamers', channels: [
       { platform: 'twitch', channel: 'fl0m', label: 'fl0m' },
@@ -54,6 +76,8 @@ const FALLBACK_PRESETS = {
       { platform: 'youtube', channel: 'BLASTPremier', label: 'BLAST Premier (YouTube)', org: 'BLAST' },
       { platform: 'youtube', channel: 'ESLCS', label: 'ESL CS (YouTube)', org: 'ESL / IEM' },
       { platform: 'youtube', channel: 'PGLesports', label: 'PGL (YouTube)', org: 'PGL' },
+      { platform: 'youtube', channel: 'StarLadder', label: 'StarLadder (YouTube)', org: 'StarLadder' },
+      { platform: 'youtube', channel: 'FISSURE', label: 'FISSURE (YouTube)', org: 'FISSURE' },
     ] },
   ],
 };

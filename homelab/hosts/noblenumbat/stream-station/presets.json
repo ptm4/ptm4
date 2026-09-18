@@ -1,5 +1,5 @@
 {
-  "_comment": "Channel presets for the dashboard Streams page. Bind-mounted read-only and re-read on every GET /presets, so edits apply without a container restart (a repo commit + deploy is what makes them durable). Groups: organizers = official tournament broadcasts (the ones HLTV links from match pages), streamers = popular CS2 personalities, youtube = channels that go live on YouTube (watch URL is https://www.youtube.com/@<channel>/live).",
+  "_comment": "Channel presets for the dashboard Streams page. Bind-mounted read-only and re-read on every GET /presets, so edits apply without a container restart (a repo commit + deploy is what makes them durable). Groups: organizers = official tournament broadcasts on Twitch (the ones HLTV links from match pages), kick = the same organizers' Kick channels, streamers = popular CS2 personalities, youtube = channels that go live on YouTube (watch URL is https://www.youtube.com/@<channel>/live). EVERY handle here was resolved against the platform before being added (Twitch GQL user lookup / Kick channel API, 2026-09-18) — a handle existing is not enough, it also has to be the organizer's real channel. Two entries were removed in that pass: 'blasttv' did not exist at all, and 'fissure' was a 346-follower placeholder that has never broadcast, not FISSURE the organizer. Name-matching is genuinely unsafe here: 'esltv' is ESL's Dota channel, and 'thunderpick', 'cct', 'nodwin', 'united21', 'esnation' and 'eslproleague' are all squatted handles with ~0 followers.",
   "quality_default": "best,1440p60,1440p,1080p60,1080p,720p60,720p,worst",
   "groups": [
     {
@@ -9,11 +9,28 @@
         { "platform": "twitch", "channel": "eslcs", "label": "ESL CS", "org": "ESL / IEM" },
         { "platform": "twitch", "channel": "eslcsb", "label": "ESL CS B", "org": "ESL / IEM" },
         { "platform": "twitch", "channel": "blastpremier", "label": "BLAST Premier", "org": "BLAST" },
-        { "platform": "twitch", "channel": "blasttv", "label": "BLAST.tv", "org": "BLAST" },
+        { "platform": "twitch", "channel": "blast", "label": "BLAST", "org": "BLAST" },
+        { "platform": "twitch", "channel": "starladder5", "label": "StarLadder", "org": "StarLadder" },
+        { "platform": "twitch", "channel": "starladder_cs_en", "label": "StarLadder EN", "org": "StarLadder" },
         { "platform": "twitch", "channel": "pgl", "label": "PGL", "org": "PGL" },
-        { "platform": "twitch", "channel": "hltvorg", "label": "HLTV.org", "org": "HLTV" },
+        { "platform": "twitch", "channel": "fissure_cs_a", "label": "FISSURE", "org": "FISSURE" },
+        { "platform": "twitch", "channel": "fissure_cs_eng", "label": "FISSURE EN", "org": "FISSURE" },
+        { "platform": "twitch", "channel": "cct_cs", "label": "CCT", "org": "CCT" },
+        { "platform": "twitch", "channel": "ewc", "label": "Esports World Cup", "org": "Esports World Cup" },
+        { "platform": "twitch", "channel": "thunderpicktv", "label": "Thunderpick", "org": "Thunderpick" },
         { "platform": "twitch", "channel": "esea", "label": "ESEA", "org": "ESL" },
-        { "platform": "twitch", "channel": "fissure", "label": "FISSURE", "org": "FISSURE" }
+        { "platform": "twitch", "channel": "dust2tv", "label": "dust2.tv", "org": "dust2" },
+        { "platform": "twitch", "channel": "hltvorg", "label": "HLTV.org", "org": "HLTV" }
+      ]
+    },
+    {
+      "name": "kick",
+      "label": "Kick broadcasts",
+      "channels": [
+        { "platform": "kick", "channel": "starladder", "label": "StarLadder (Kick)", "org": "StarLadder" },
+        { "platform": "kick", "channel": "pgl", "label": "PGL (Kick)", "org": "PGL" },
+        { "platform": "kick", "channel": "ewc", "label": "Esports World Cup (Kick)", "org": "Esports World Cup" },
+        { "platform": "kick", "channel": "thunderpick", "label": "Thunderpick (Kick)", "org": "Thunderpick" }
       ]
     },
     {
@@ -38,7 +55,9 @@
       "channels": [
         { "platform": "youtube", "channel": "BLASTPremier", "label": "BLAST Premier (YouTube)", "org": "BLAST" },
         { "platform": "youtube", "channel": "ESLCS", "label": "ESL CS (YouTube)", "org": "ESL / IEM" },
-        { "platform": "youtube", "channel": "PGLesports", "label": "PGL (YouTube)", "org": "PGL" }
+        { "platform": "youtube", "channel": "PGLesports", "label": "PGL (YouTube)", "org": "PGL" },
+        { "platform": "youtube", "channel": "StarLadder", "label": "StarLadder (YouTube)", "org": "StarLadder" },
+        { "platform": "youtube", "channel": "FISSURE", "label": "FISSURE (YouTube)", "org": "FISSURE" }
       ]
     }
   ]
