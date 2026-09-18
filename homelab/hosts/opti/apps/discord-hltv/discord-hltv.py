@@ -404,20 +404,12 @@ _feed_cache = {"at": 0, "feed": None}
 FEED_CACHE_SECONDS = 60
 
 
-def day_feed(cfg, max_age=None):
-    """Structured version of the digest for the dashboard widget: the same
-    notable-match filter, but fields instead of Discord markup. Two caches sit
-    in front of HLTV — 60s here, 15 min in the sidecar — so a dashboard left
-    open all day costs a handful of scrapes.
+_feed_rebuilding = threading.Lock()
 
-    max_age lets a caller say how old a feed it is willing to take. The dashboard
-    asks for a generous one: it would much rather draw a slightly old guide than
-    block on a refresh, because a refresh that outruns its HTTP timeout shows up
-    to the user as an empty Streams page.
-    """
-    window = FEED_CACHE_SECONDS if max_age is None else max(0, max_age)
-    if _feed_cache["feed"] and time.time() - _feed_cache["at"] < window:
-        return _feed_cache["feed"]
+
+def _build_feed(cfg):
+    """Actually assemble the feed. Blocks: get_vrs() and get_day() both reach the
+    sidecar, and a cold one of either is measured in tens of seconds."""
     top_norm = set()
     vrs = None
     try:
@@ -425,16 +417,7 @@ def day_feed(cfg, max_age=None):
         top_norm = {norm_team(t["name"]) for t in vrs["teams"][:cfg["vrs_top_n"]]}
     except Exception as e:
         log(f"feed: VRS unavailable ({e})")
-    try:
-        day = get_day(cfg, max_age=DAY_MAX_AGE)
-    except Exception as e:
-        # A failed refresh must not take the whole feed down with it. This used to
-        # propagate, /day answered 502, and the webapp cached THAT for a minute — so
-        # one slow scrape blanked the dashboard's Streams guide for 60s at a time.
-        if _feed_cache["feed"]:
-            log(f"feed: serving last good feed ({e})")
-            return {**_feed_cache["feed"], "stale": True}
-        raise
+    day = get_day(cfg, max_age=DAY_MAX_AGE)
     matches = [m for m in day["matches"] if notable(m, top_norm, cfg.get("min_stars", 0))]
     feed = {
         "date": day.get("date"),
@@ -445,6 +428,46 @@ def day_feed(cfg, max_age=None):
     }
     _feed_cache.update(at=time.time(), feed=feed)
     return feed
+
+
+def _rebuild_feed_async(cfg):
+    if not _feed_rebuilding.acquire(blocking=False):
+        return                      # one rebuild at a time is plenty
+    def run():
+        try:
+            _build_feed(cfg)
+        except Exception as e:
+            log(f"feed: background rebuild failed ({e})")
+        finally:
+            _feed_rebuilding.release()
+    threading.Thread(target=run, daemon=True).start()
+
+
+def day_feed(cfg, max_age=None):
+    """Structured version of the digest for the dashboard widget: the same
+    notable-match filter, but fields instead of Discord markup. Two caches sit
+    in front of HLTV — 60s here, 15 min in the sidecar — so a dashboard left
+    open all day costs a handful of scrapes.
+
+    max_age lets a caller say how old a feed it is willing to take. The dashboard
+    asks for a generous one: it would much rather draw a slightly old guide than
+    block on a refresh, because a refresh that outruns its HTTP timeout shows up
+    to the user as an empty Streams page.
+
+    Once anything has been built, this NEVER blocks again: a stale copy goes back
+    immediately and the rebuild happens on its own thread. Guarding only get_day()
+    was not enough — get_vrs() runs first and can spend two minutes of its own, so
+    the request could still outrun the dashboard's timeout while "succeeding".
+    """
+    window = FEED_CACHE_SECONDS if max_age is None else max(0, max_age)
+    cached = _feed_cache["feed"]
+    if cached and time.time() - _feed_cache["at"] < window:
+        return cached
+    if cached:
+        _rebuild_feed_async(cfg)
+        return {**cached, "stale": True}
+    # Nothing has ever been built — there is no honest fast answer, so block.
+    return _build_feed(cfg)
 
 
 def post_webhook(url, payload):

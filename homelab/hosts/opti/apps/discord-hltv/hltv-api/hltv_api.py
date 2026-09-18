@@ -606,21 +606,32 @@ def get_day(date_str, tzname, max_age=0):
 
 _refresh_lock = threading.Lock()
 _refreshing = set()
+_refresh_attempted = {}          # (date, tz) -> when we last STARTED a refresh
+# in_browser() gives up after JOB_TIMEOUT but cannot dequeue the job it abandoned, so
+# the _refreshing key is released while that scrape may still be queued. Without a
+# floor between attempts, a wedged browser would collect one more abandoned full
+# scrape every time anybody polled. One attempt per JOB_TIMEOUT bounds that queue.
+REFRESH_MIN_INTERVAL = JOB_TIMEOUT
 
 
 def _refresh_day_async(date_str, tzname):
     """Kick off a scrape behind the caller's back, at most one per (date, tz).
 
-    The HTTP handler must never block on a scrape: a cold one takes ~60s, longer
-    than any sane client timeout, so blocking turns a slow refresh into a hard
-    failure for whoever asked (and, when the deploy smoke gate asked, into a failed
-    deploy). Answer from what we already have, and let this fill the cache.
+    The HTTP handler must never block on a scrape *when the caller said a cached
+    answer is acceptable*: a cold one takes ~60s, longer than any sane client
+    timeout, so blocking turns a slow refresh into a hard failure for whoever asked
+    (and, when the deploy smoke gate asked, into a failed deploy). Answer from what
+    we already have, and let this fill the cache.
     """
     key = (date_str, tzname)
+    now = time.time()
     with _refresh_lock:
         if key in _refreshing:
             return
+        if now - _refresh_attempted.get(key, 0) < REFRESH_MIN_INTERVAL:
+            return
         _refreshing.add(key)
+        _refresh_attempted[key] = now
 
     def run():
         try:
@@ -724,10 +735,13 @@ class Handler(BaseHTTPRequestHandler):
                     max_age = int(one("max_age", "0"))
                 except ValueError:
                     max_age = 0
-                # blocking=1 is the escape hatch for a caller that genuinely wants to
-                # wait for a fresh scrape (CLI, a deliberate manual refresh). Nothing
-                # on the request path should use it.
-                if one("blocking") in ("1", "true", "yes"):
+                # max_age=0 means "I want a fresh scrape and I will wait for it",
+                # and it MUST keep meaning that: the Discord digest (discord-hltv.py
+                # build_payload -> get_day(cfg)) relies on it, with a 240s budget of
+                # its own. Serving that caller a cached-or-503 answer broke the
+                # midnight digest, which has no last-good file for the new date yet.
+                # Only a caller that named a tolerance gets the non-blocking path.
+                if max_age <= 0 or one("blocking") in ("1", "true", "yes"):
                     return self._send(200, in_browser(
                         lambda: get_day(date_str, tzname, max_age)))
 
@@ -737,7 +751,7 @@ class Handler(BaseHTTPRequestHandler):
                 # whoever is mid-scrape — a minute to hand back a payload we already
                 # have in a dict.
                 hit = _day_cache.get((date_str, tzname))
-                if max_age and hit and time.time() - hit["at"] <= max_age:
+                if hit and time.time() - hit["at"] <= max_age:
                     return self._send(200, hit["payload"])
 
                 # Not fresh. Refresh behind the response rather than making the caller
@@ -761,6 +775,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send(503, {"error": "day feed is warming, no scrape for this date yet",
                                             "warming": True, "date": date_str})
             if u.path == "/vrs":
+                # Same rule as /day: a cache hit needs no browser, so it must not wait
+                # behind one. get_vrs() reads a 24h on-disk cache first, but calling it
+                # inside in_browser() put even that read at the back of the single
+                # worker's queue — behind a ~60s day scrape — which is how a 20s client
+                # budget upstream got blown by a request that had nothing to scrape.
+                try:
+                    with open(VRS_CACHE_PATH) as f:
+                        cached = json.load(f)
+                    if (time.time() - cached["fetched_at"]) / 3600 < VRS_CACHE_HOURS:
+                        return self._send(200, cached["vrs"])
+                except (OSError, ValueError, KeyError):
+                    pass
                 return self._send(200, in_browser(get_vrs))
             if u.path == "/selftest":
                 return self._send(200, in_browser(selftest))
@@ -787,10 +813,12 @@ def _warmer():
     while True:
         try:
             date_str = datetime.now(ZoneInfo(WARM_TZ)).strftime("%Y-%m-%d")
-            # max_age=0 on purpose: this IS the refresh, so it must not no-op on a
-            # cache that is merely recent.
-            in_browser(lambda: get_day(date_str, WARM_TZ, 0))
-            log(f"warmed day feed for {date_str}")
+            # Goes through _refresh_day_async rather than calling in_browser itself, so
+            # the warm shares the one-in-flight dedup with handler-triggered refreshes.
+            # Calling in_browser directly made the warm invisible to `_refreshing`, and
+            # any poll landing mid-warm queued a second, guaranteed-redundant scrape of
+            # the same day — doubling load on HLTV exactly when HLTV was already slow.
+            _refresh_day_async(date_str, WARM_TZ)
         except Exception as e:
             log(f"warm refresh failed: {e}")
         time.sleep(WARM_SECS)

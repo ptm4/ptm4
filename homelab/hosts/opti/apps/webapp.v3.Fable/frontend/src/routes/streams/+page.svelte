@@ -42,9 +42,22 @@
   function writeGuideCache(v: Guide) {
     if (!browser) return;
     try {
-      localStorage.setItem(GUIDE_KEY, JSON.stringify({ ...v, matches: v.matches.slice(0, MAX_CACHED_MATCHES) }));
+      localStorage.setItem(GUIDE_KEY, JSON.stringify({
+        ...v, matches: v.matches.slice(0, MAX_CACHED_MATCHES), _savedAt: Date.now(),
+      }));
     } catch { /* private mode or quota — the in-memory copy still carries this session */ }
   }
+
+  // A remembered feed describes a moment that has passed, so two things are never
+  // replayed verbatim:
+  //   - 'live'. The backend already downgrades live -> unknown once ITS feed is too
+  //     old to speak for the present; a copy out of localStorage is older still, and
+  //     replaying LIVE would let this page assert a match is on air days later.
+  //   - the station. Slots are live hardware. Remembered 'running' slots would draw
+  //     players for streams that are not playing and hide 'station unreachable'.
+  const asRemembered = (ms: GuideMatch[]): GuideMatch[] =>
+    ms.map((m) => (m.status === 'live' ? { ...m, status: 'unknown' } : m));
+  const NO_STATION = { ok: false, slots: [] } as Guide['station'];
 
   let cachedGuide = $state<Guide | null>(readGuideCache());
   // Only ever remember a payload that actually carried matches. A successful fetch
@@ -55,21 +68,37 @@
   });
 
   const cachedCount = $derived(cachedGuide?.matches?.length ?? 0);
+
+  // Only reuse a remembered feed for the day it actually describes. Keying purely off
+  // "the live payload has no matches" would resurrect yesterday's fixtures and print
+  // them under today's date the first time HLTV genuinely has nothing on.
+  const CACHE_MAX_AGE_MS = 12 * 3_600_000;
+  const cacheUsable = $derived.by(() => {
+    if (!cachedGuide || cachedCount === 0) return false;
+    const savedAt = (cachedGuide as Guide & { _savedAt?: number })._savedAt;
+    if (typeof savedAt !== 'number' || Date.now() - savedAt > CACHE_MAX_AGE_MS) return false;
+    const liveDate = guide.data?.hltv?.date;
+    return !liveDate || !cachedGuide.hltv?.date || liveDate === cachedGuide.hltv.date;
+  });
+
   /** true when the match list on screen came from local storage, not from this fetch */
-  let showingCached = $derived(!guide.data || (guide.data.matches.length === 0 && cachedCount > 0));
+  let showingCached = $derived(!guide.data ? cacheUsable : guide.data.matches.length === 0 && cacheUsable);
 
   /**
    * What we render. The live payload wins, with one exception: a fetch that came back
-   * with no matches while we still hold some is a blip upstream, not an empty day, so
-   * we splice the remembered matches in rather than show an empty guide. Everything
-   * that does NOT depend on HLTV — the channel directory, the station's slots — still
-   * comes from the live payload, and the result is marked stale so the page says so.
+   * with no matches while we still hold some for the same day is a blip upstream, not
+   * an empty day, so we splice the remembered matches in rather than show an empty
+   * guide. Anything that does NOT depend on HLTV — the channel directory, the
+   * station's slots — still comes from the live payload, and the result is marked
+   * stale so the page says so.
    */
   let gd = $derived.by(() => {
     const live = guide.data;
-    if (!live) return cachedGuide;
-    if (live.matches.length === 0 && cachedCount > 0) {
-      return { ...live, matches: cachedGuide!.matches, hltv: { ...live.hltv, ok: true, stale: true } };
+    if (!live) {
+      return cacheUsable ? { ...cachedGuide!, matches: asRemembered(cachedGuide!.matches), station: NO_STATION } : null;
+    }
+    if (live.matches.length === 0 && cacheUsable) {
+      return { ...live, matches: asRemembered(cachedGuide!.matches), hltv: { ...live.hltv, ok: true, stale: true } };
     }
     return live;
   });
@@ -290,6 +319,7 @@
           <span>{gd.hltv.date ?? ''}{gd.hltv.fetched_at ? ` · ${relTime(new Date(gd.hltv.fetched_at * 1000).toISOString())}` : ''}</span>
           {#if gd.hltv.stale}<span class="chip" data-s="warn">STALE</span>{/if}
           {#if showingCached}<span class="chip" data-s="warn" title="The dashboard could not be reached just now — this is the last guide this browser saw">CACHED</span>{/if}
+          {#if guide.isError}<span class="chip" data-s="crit" title="The last refresh failed, so nothing here is updating: {(guide.error as Error)?.message}">NOT REFRESHING</span>{/if}
         </div>
         {#if !gd.vrs.known}
           <p class="warnline">Rankings unavailable{gd.vrs.error ? ` (${gd.vrs.error})` : ''} — top-20 status is unknown for every match below.</p>
