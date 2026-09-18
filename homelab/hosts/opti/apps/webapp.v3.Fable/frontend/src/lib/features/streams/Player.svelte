@@ -1,7 +1,7 @@
 <script lang="ts">
   // One HLS player bound to one stream-station slot. Video never touches the API:
   // /hls/slot<N>/index.m3u8 is nginx → noblenumbat, same-origin. hls.js runs in
-  // low-latency live mode; Safari gets the native src. A player only attaches while
+  // live mode with a fixed hold-back; Safari gets the native src. A player only attaches while
   // its slot is starting/running, so an idle slot costs nothing.
   import { onDestroy } from 'svelte';
   import Hls from 'hls.js';
@@ -51,10 +51,18 @@
     fatal = null;
     if (Hls.isSupported()) {
       hls = new Hls({
-        lowLatencyMode: true,
-        liveSyncDurationCount: 2,
-        liveMaxLatencyDurationCount: 5,
-        maxLiveSyncPlaybackRate: 1.05,
+        // Latency is pinned in SECONDS, deliberately not in segment counts: the
+        // *DurationCount options multiply EXT-X-TARGETDURATION, and stream-station's
+        // playlists are cut by VLC on source keyframes, so a segment is whatever the
+        // broadcaster's GOP happens to be (~4s on Twitch) regardless of what the
+        // manifest advertises. Counting segments aimed the playhead less than one
+        // segment from the live edge and the player re-buffered on every cut.
+        // 10s of hold-back is ~2 segments of slack; 1.02x drifts back without an
+        // audible pitch change. lowLatencyMode is off — these playlists carry no
+        // EXT-X-PART, so it only tightens the hold-back maths for no gain.
+        liveSyncDuration: 10,
+        liveMaxLatencyDuration: 30,
+        maxLiveSyncPlaybackRate: 1.02,
         enableWorker: true,
         manifestLoadingMaxRetry: 30,
         manifestLoadingRetryDelay: 2000,

@@ -50,6 +50,7 @@ SECURITY POSTURE
 
 import hmac
 import json
+import math
 import os
 import re
 import signal
@@ -92,6 +93,25 @@ CHANNEL_RE = re.compile(r"^[A-Za-z0-9_\-.]{1,64}$")
 QUALITY_RE = re.compile(r"^[A-Za-z0-9_,\-.]{1,128}$")
 HLS_FILE_RE = re.compile(r"^[A-Za-z0-9_-]+\.(ts|m3u8)$")
 ALLOWED_SCHEMES = ("http", "https", "rtsp", "rtmp")
+
+
+# VLC's livehttp muxer writes EXT-X-TARGETDURATION straight from seglen, but
+# mux=ts{use-key-frames} cuts on the SOURCE's keyframes: a Twitch stream with a 4s GOP
+# turns seglen=2 into ~4.2s segments while the playlist still advertises 2. That
+# understatement is not cosmetic — hls.js derives its live-edge target from
+# TARGETDURATION, so it parks the playhead less than one segment from the end of the
+# playlist and re-buffers every time a segment is cut. Restate the value from the
+# segments actually listed so the manifest describes the media it points at.
+_EXTINF_RE = re.compile(rb"^#EXTINF:([0-9.]+)", re.M)
+_TARGETDUR_RE = re.compile(rb"^#EXT-X-TARGETDURATION:\d+", re.M)
+
+
+def _fix_targetduration(data):
+    durs = [float(m.group(1)) for m in _EXTINF_RE.finditer(data)]
+    if not durs:
+        return data
+    want = max(1, int(math.ceil(max(durs))))
+    return _TARGETDUR_RE.sub(b"#EXT-X-TARGETDURATION:%d" % want, data, count=1)
 
 
 def _drain(pipe, tail):
@@ -449,6 +469,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(404, {"error": "not found"})
         if fname.endswith(".m3u8"):
             ctype, cache = "application/vnd.apple.mpegurl", "no-store"
+            data = _fix_targetduration(data)
             with slot.lock:
                 slot.last_index_fetch = time.time()
         else:
