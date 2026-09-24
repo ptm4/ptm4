@@ -14,7 +14,7 @@
 import type { Component } from 'svelte';
 import {
   LayoutDashboard, Activity, Waypoints, SlidersHorizontal, Radio, Rocket,
-  FileText, TrendingUp, Database, Bot, Crosshair, BrainCircuit, Settings, BookOpen, ScrollText,
+  FileText, TrendingUp, Database, Bot, BrainCircuit, Settings, BookOpen, ScrollText,
   Server, Smartphone, Gauge,
 } from '@lucide/svelte';
 
@@ -56,7 +56,6 @@ export const NAV: NavGroup[] = [
   ]},
   { title: 'Play', items: [
     { path: '/bots', label: 'Discord bots', icon: Bot },
-    { path: '/leetify', label: 'CS2 / Leetify', icon: Crosshair },
     { path: '/llm', label: 'Local LLM', icon: BrainCircuit },
   ]},
 ];

@@ -74,3 +74,17 @@ jobs:
         run: |
           sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-autoupdate.timer homelab-autoreboot.timer homelab-db-ingest.timer
           systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-db-ingest.timer --no-legend --no-pager
+
+      # Collectors run on systemd timers since 2026-09-24 (they were a GitHub cron in
+      # homelab-agents.yml, which fired ~5 of 48 runs a day). Keep these lists in sync
+      # with SCHEDULED_AGENTS in homelab/hosts/opti/agent-dispatcher.py.
+      - name: Enable collector timers
+        run: |
+          set -e
+          FREQUENT="homelab-doctor network-report"
+          DAILY="journald-hunter persistence-auditor hardware-report software-inventory"
+          units=""
+          for a in $FREQUENT; do units="$units hl-collector-frequent@$a.timer"; done
+          for a in $DAILY;    do units="$units hl-collector-daily@$a.timer"; done
+          sudo systemctl enable --now $units
+          systemctl list-timers 'hl-collector-*' --no-legend --no-pager

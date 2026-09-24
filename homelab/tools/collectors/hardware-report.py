@@ -380,9 +380,21 @@ def main():
         print(f"Report written: {latest} (status=critical, key missing)")
         return
 
-    for host in all_hosts:
+    def _per_host(host):
         ok, detail = probe(host)
         if not ok:
+            return ("unreachable", detail)
+        return ("ok",) + collect_host(host)
+
+    for host, res, err in collect_parallel(all_hosts, _per_host):
+        if err is not None:
+            findings.append({"severity": "warn",
+                             "message": f"[{host.name}] collector error: {err}"})
+            host_dicts.append({"host": host.name, "status": "unknown",
+                               "summary": f"collector error: {err}", "metrics": {}})
+            continue
+        if res[0] == "unreachable":
+            detail = res[1]
             # Expected-absent hosts report, but do not accuse. See INTERMITTENT_HOSTS.
             if host.name not in INTERMITTENT_HOSTS:
                 findings.append({"severity": "warn",
@@ -390,7 +402,7 @@ def main():
             host_dicts.append({"host": host.name, "status": "unknown",
                                "summary": f"unreachable ({detail})", "metrics": {}})
             continue
-        hd, hf, hr = collect_host(host)
+        _, hd, hf, hr = res
         host_dicts.append(hd)
         findings += hf
         recs += hr

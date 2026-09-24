@@ -116,10 +116,29 @@ Each ingest cycle writes findings you can read with `hl_status`:
 Every webapp read tries `webapp.lan` first, then opti's IP `192.168.1.11` (so a DNS outage on
 rpi does not also blind the ingest). Override with `HL_WEBAPP_API` / `HL_ARCH_DATA_URL`.
 
-Cadences are what the producer really does, not what it aims for: `collectors`/`agent-logs`
-are **4h** because GitHub throttles the `*/30` cron in `homelab-agents.yml` to one run every
-~3–6h (every run succeeds; the gaps are dropped schedule events). If 30-minute collectors
-matter, move that schedule to a systemd timer on opti and set the cadence back.
+Cadences are what the producer really does: `collectors`/`agent-logs` are **0.5h** since
+2026-09-24, when the collectors moved from a GitHub cron (which fired only every ~3–6h) to
+`hl-collector-frequent@.timer` / `hl-collector-daily@.timer` on opti. Those run at `:05/:35`,
+finishing before the ingest at `:12/:42`.
+
+## Phone alerts (ntfy)
+
+Pushes go to **ntfy on noblenumbat** (`http://192.168.1.6:2586`, topic `homelab`) via
+`homelab/tools/notify.py`. It's off opti so "opti is down" can still be delivered, and addressed
+by IP so "DNS is down" can too. Subscribe in the ntfy phone app with server
+`http://192.168.1.6:2586` and topic `homelab` (reachable on the LAN or the Archer WireGuard VPN).
+
+| Source | Pages when |
+|---|---|
+| `OnFailure=hl-notify-failure@%n` on every `hl-collector@`/ingest unit | a collector or the ingest fails or times out (same unit ≤ once per 6h) |
+| `push_alerts()` at the end of each ingest cycle | a **new** open problem appears: any critical finding; warnings only from homelab-doctor, freshness, drift, bots, new persistence entries. One "resolved" message when they clear |
+| Uptime Kuma on noblenumbat → ntfy notification | a monitored service is down, including **opti itself** |
+| Kuma Push monitor fed by `HL_KUMA_PUSH_URL` | the ingest (or opti) stops checking in — the dead-man's switch |
+
+The open-problem set lives in `ingest_state.alerts_open`; the set only advances once ntfy
+accepts the message, so an ntfy outage delays alerts rather than losing them. Tune what pages
+with `ALERT_WARN_*` in `ingest.py`. Test by hand:
+`ssh opti 'python3 /srv/red/fs/ptm/repo/ptm4/homelab/tools/notify.py --title test hello'`.
 
 ## Operating
 

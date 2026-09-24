@@ -18,7 +18,7 @@ from either side of the workstation.
 | `tux` / `ptm` | .3 | CachyOS / Windows 11 | **You are here.** One workstation, dual-booted: `tux` is the Linux side, `ptm` the Windows side (where the repo lives). Check which with `hostname`. No services; nothing depends on it. |
 | `opti` | .11 | Debian 12 | **Storage + control plane + app tier.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; **homelab-db `:9100`** (queryable index + MCP); x86 CI runner; xrdp `:3389`. **Since 2026-09-10 also the whole app tier** (13 containers in `/srv/docker/compose`): dashboard **`webapp.lan:8443`**, Vaultwarden `bitwarden.rpi.lan:443`, notes `:3002`, Dozzle `:9999`, 5 `discord-*` bots, hltv-api. 31 GB RAM. |
 | `rpi` | .10 | Ubuntu 24.04 (RPi 4) | **DNS only — a network appliance.** Pi-hole (DNS; **DHCP is the router's** since Sept 2026); Dozzle agent `:7007`; ARM64 CI runner. **2 containers, and it stays that way** — see runbook 10 for the four-part test before adding anything. Boots from a **USB SSD** (the microSD died 2026-09-08). |
-| `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. **Uptime Kuma `:3001`** (host network; moved off opti 2026-09-10 so it watches opti from outside). ~16 containers. YAMS compose at `/opt/yams/`. |
+| `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. **Uptime Kuma `:3001`** (host network; moved off opti 2026-09-10 so it watches opti from outside). **ntfy `:2586`** — the homelab's phone push server (2026-09-24; off opti for the same reason). ~17 containers. YAMS compose at `/opt/yams/`. |
 | `android` | .54 | Termux | Galaxy S10. llama.cpp `:8080` (local LLM). **Intermittent — often offline.** |
 
 Single points of failure worth knowing before you touch anything: **rpi** is the only DNS server
@@ -117,6 +117,16 @@ on `ptm` it's a Windows *user* environment variable (set 2026-09-24; the app mus
 to see it), on tux it must be exported in the shell. A missing token shows up as "400 Bad
 request syntax" in older server builds, 401 in newer ones. Falling back to SSH is fine — but
 check here first; it is faster and does not touch a live host. Details: `runbooks/09-homelab-db.md`.
+
+## Collectors and alerts
+
+The collectors (homelab-doctor, network-report every 30 min; hardware, software,
+journald-hunter, persistence-auditor daily) run on opti as `hl-collector@<name>.service`
+from systemd timers, not GitHub Actions (since 2026-09-24). Logs:
+`journalctl -u 'hl-collector@*'`. Alerts go to ntfy (`homelab/tools/notify.py`, topic
+`homelab`): a failed unit pages via `OnFailure=`, and each ingest cycle pages *new* critical
+findings and stale feeds, once, plus a "resolved" when they clear. To alert from new code,
+`from notify import notify` — never build a second channel.
 
 ## Working conventions
 

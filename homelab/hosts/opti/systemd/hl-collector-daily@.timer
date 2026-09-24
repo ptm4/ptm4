@@ -1,0 +1,15 @@
+[Unit]
+# Daily at 09:00 UTC (kept from the old GitHub cron, so homelab-docs.timer at 09:15 still
+# follows the sweep). Enabled for journald-hunter, persistence-auditor, hardware-report,
+# software-inventory. The random delay staggers the four so they don't all SSH at once.
+Description=Homelab collector %i daily
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 UTC
+# ≤5 min so all four finish before homelab-docs.timer at 09:15.
+RandomizedDelaySec=5min
+Persistent=true
+Unit=hl-collector@%i.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,14 @@
+[Unit]
+# OnFailure= target for opti's homelab units: pushes "<unit> failed" plus its last journal
+# lines to the ntfy phone app (homelab/tools/notify.py). %i is the failed unit's full name.
+# Repeats of the same unit are rate-limited inside notify.py (once per 6h).
+Description=Push a failure notification for %i
+
+[Service]
+Type=oneshot
+User=ptm
+# journal access, so the notification can carry the failed unit's last log lines
+SupplementaryGroups=systemd-journal
+EnvironmentFile=-/etc/hl-agents.env
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/tools/notify.py --unit-failed %i
+TimeoutStartSec=60

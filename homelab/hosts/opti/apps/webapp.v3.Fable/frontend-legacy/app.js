@@ -947,7 +947,6 @@ const routes = {
   security: renderSecurity,
   reports:  renderReports,
   bots:     renderBots,
-  leetify:  renderLeetify,
   llm:      renderLlm,
   links:    renderLinks,
 };
@@ -1208,11 +1207,6 @@ function renderHome(view) {
               <div class="tile-metric" id="m-bots">—</div>
               <div class="tile-sub" id="s-bots">discord fleet</div>
             </a>
-            <a class="tile link" href="#leetify">
-              <div class="tile-head">CS2 / Leetify</div>
-              <div class="tile-metric" id="m-leetify">—</div>
-              <div class="tile-sub" id="leetify-body">loading…</div>
-            </a>
           </div>
           <div class="tile" style="flex:1">
             <div class="tile-head">Quick links<span class="spacer"></span>
@@ -1239,7 +1233,6 @@ function renderHome(view) {
   loadUpkeep();
   loadActivity();
   loadHomeCounters();
-  loadLeetify();
 
   // Live layer: repaint the fast-moving numbers every 30s while Home is visible
   // (report loaders above stay fetch-on-render — their data doesn't move that fast).
@@ -2018,19 +2011,6 @@ function setText(id, txt) {
   if (el) el.textContent = txt;
 }
 
-async function loadLeetify() {
-  const el = document.getElementById('leetify-body');
-  if (!el) return;
-  try {
-    const res = await fetch('/api/runners/leetify-latest');
-    if (!res.ok) { el.textContent = 'Not configured yet — set LEETIFY_API_KEY + STEAM64_ID on opti.'; return; }
-    const d = await res.json();
-    el.textContent = d.summary || 'No data yet.';
-  } catch {
-    el.textContent = 'Unavailable.';
-  }
-}
-
 // Live FTL stats (/api/pihole/summary), falling back to the network report's snapshot.
 // The report's pihole block has gone null before (v6 API/session issues), which is what
 // left this tile reading "unavailable" — the live route is now the primary source.
@@ -2093,231 +2073,6 @@ async function loadPihole() {
 
   document.getElementById('ph-pause')?.addEventListener('click', () => toggleBlocking(false, 300));
   document.getElementById('ph-resume')?.addEventListener('click', () => toggleBlocking(true));
-}
-
-// ── Leetify page ────────────────────────────────────────────────────────────────
-async function renderLeetify(view) {
-  view.innerHTML = `
-    <div class="page-security">
-      <div class="sec-header">
-        <h1>CS2 / Leetify</h1>
-        <div class="sec-header-actions">
-          <button class="btn-view" onclick="openAgentHistory('leetify-latest','CS2 / Leetify')">History</button>
-          <button class="btn-refresh" onclick="renderLeetify(document.getElementById('view'))">↻ Refresh</button>
-        </div>
-      </div>
-      <div id="leetify-page"><div class="sec-loading">Loading analysis…</div></div>
-    </div>
-  `;
-
-  let d;
-  try {
-    const res = await fetch('/api/runners/leetify-latest');
-    if (!res.ok) {
-      // A 500 means the report file exists but won't parse (corrupt/truncated) —
-      // distinct from a 404 "no report yet". Show the real reason so it's fixable.
-      let detail = '';
-      try { const e = await res.json(); detail = e.detail || ''; } catch (_) {}
-      if (res.status === 500) {
-        document.getElementById('leetify-page').innerHTML =
-          `<div class="sec-empty"><p>Leetify report is corrupt and could not be read.</p>
-           ${detail ? `<p class="sec-empty-hint">${detail}</p>` : ''}
-           <p class="sec-empty-hint">Re-run the agent to regenerate it (↻ Refresh after).</p></div>`;
-        return;
-      }
-      throw new Error();
-    }
-    d = await res.json();
-  } catch {
-    document.getElementById('leetify-page').innerHTML =
-      `<div class="sec-empty"><p>No Leetify report yet.</p>
-       <p class="sec-empty-hint">Set LEETIFY_API_KEY + STEAM64_ID on opti and run the agent.</p></div>`;
-    return;
-  }
-
-  const dims = d.dimensions || {};
-  const dimChip = (k) => {
-    const v = dims[k];
-    if (v == null) return '';
-    const cls = v >= 60 ? 'dim-strong' : (v < 52 ? 'dim-focus' : 'dim-ok');
-    return `<div class="dim ${cls}"><span class="dim-name">${k}</span><span class="dim-val">${Math.round(v)}</span></div>`;
-  };
-
-  const maps = d.maps || [];
-  const mapRows = maps.map(m => {
-    const verdict = m.matches < 2 ? 'low sample'
-      : (m.win_rate >= 55 && m.avg_rating >= 0 ? 'strong'
-      : (m.win_rate <= 40 || m.avg_rating < -0.03 ? 'avoid / practice' : 'even'));
-    return `<tr><td>${escHtml(m.map)}</td><td>${m.matches}</td><td>${m.win_rate}%</td>
-            <td>${(m.ct_rating ?? 0).toFixed(3)}</td><td>${(m.t_rating ?? 0).toFixed(3)}</td>
-            <td>${verdict}</td></tr>`;
-  }).join('');
-
-  // Per-demo breakdown (only present when demo parsing ran on opti).
-  const demoSummaries = d.demo_summaries || [];
-  const demosHtml = demoSummaries.length ? `
-    <h3 class="detail-section-title">Recent demos</h3>
-    <div class="pos-grid">
-      ${demoSummaries.map(ds => {
-        const resultCls = ds.result === 'win' ? 'demo-win' : ds.result === 'loss' ? 'demo-loss' : '';
-        const hotRows = (ds.hotspots || []).map(h =>
-          `<tr><td>${escHtml(h.area)}</td><td>${escHtml(h.side)}</td><td>${h.count}</td><td>${h.pct}%</td></tr>`
-        ).join('');
-        const kdStr = (ds.kills != null && ds.deaths != null) ? `${ds.kills}/${ds.deaths} K/D` : '';
-        const ratingStr = ds.rating != null ? ` · ${ds.rating > 0 ? '+' : ''}${ds.rating.toFixed(3)} rating` : '';
-        const hsStr = ds.hs_pct != null ? ` · ${ds.hs_pct}% HS` : '';
-        return `<div class="pos-card">
-          <div class="pos-card-head">
-            <span class="demo-map">${escHtml(ds.map)}</span>
-            <span class="demo-date">${escHtml(ds.date)}</span>
-            <span class="demo-result ${resultCls}">${ds.result}${ds.score ? ' ' + ds.score : ''}</span>
-          </div>
-          <div class="demo-stats">${kdStr}${ratingStr}${hsStr}</div>
-          ${hotRows ? `<table class="detail-table"><thead><tr><th>Died at</th><th>Side</th><th>×</th><th>%</th></tr></thead>
-            <tbody>${hotRows}</tbody></table>` : ''}
-        </div>`;
-      }).join('')}
-    </div>
-  ` : '';
-
-  // Match deep-dive — collapsible round-by-round table per parsed demo.
-  const deepDives = demoSummaries.filter(ds => (ds.rounds || []).length);
-  const deepHtml = deepDives.length ? `
-    <h3 class="detail-section-title">Match deep-dive — round by round</h3>
-    <div class="deep-list">
-      ${deepDives.map(ds => {
-        const rounds = ds.rounds || [];
-        const won = rounds.filter(r => r.won === true).length;
-        const lost = rounds.filter(r => r.won === false).length;
-        const resultCls = ds.result === 'win' ? 'demo-win' : ds.result === 'loss' ? 'demo-loss' : '';
-        const kdStr = (ds.kills != null && ds.deaths != null) ? ` · ${ds.kills}/${ds.deaths} K/D` : '';
-        const rows = rounds.map(r => {
-          const rowCls = r.won === true ? 'round-won' : r.won === false ? 'round-lost' : '';
-          const kills = (r.kills || []).length;
-          const killStr = kills ? `${kills}K` : '—';
-          const dmgStr = r.damage ? `${r.damage}` : '—';
-          const obj = r.planted ? '💣 plant' : r.defused ? '🛡 defuse' : '';
-          const fate = r.died ? (r.killer ? `died → ${escHtml(r.killer)}` : 'died') : 'survived';
-          const wl = r.won === true ? 'W' : r.won === false ? 'L' : '?';
-          return `<tr class="${rowCls}">
-            <td>${r.round}</td><td>${escHtml(r.side || '?')}</td><td class="round-wl">${wl}</td>
-            <td>${killStr}</td><td>${dmgStr}</td><td>${escHtml(fate)}</td><td>${obj}</td></tr>`;
-        }).join('');
-        return `<details class="deep-card">
-          <summary>
-            <span class="demo-map">${escHtml(ds.map)}</span>
-            <span class="demo-date">${escHtml(ds.date)}</span>
-            <span class="demo-result ${resultCls}">${ds.result}${ds.score ? ' ' + ds.score : ''}</span>
-            <span class="deep-wl">${won}W / ${lost}L rounds${kdStr}</span>
-          </summary>
-          <table class="detail-table deep-table">
-            <thead><tr><th>R</th><th>Side</th><th>W/L</th><th>Kills</th><th>Dmg</th><th>Fate</th><th>Obj</th></tr></thead>
-            <tbody>${rows}</tbody>
-          </table>
-        </details>`;
-      }).join('')}
-    </div>
-    ${d.ai_review ? '<p class="sec-empty-hint">Per-match coaching & recurring-mistake analysis is in the AI review below.</p>' : ''}
-  ` : '';
-
-  // Aggregate positional breakdown across all parsed demos.
-  const positions = d.positions || {};
-  const posMaps = Object.keys(positions);
-  const posHtml = posMaps.length ? `
-    <h3 class="detail-section-title">Positional breakdown — where you die</h3>
-    <div class="pos-grid">
-      ${posMaps.map(mp => {
-        const p = positions[mp];
-        const rows = (p.hotspots || []).map(h =>
-          `<tr><td>${escHtml(h.area)}</td><td>${escHtml(h.side)}</td><td>${h.count}</td><td>${h.pct}%</td></tr>`
-        ).join('');
-        return `<div class="pos-card">
-          <div class="pos-card-head">${escHtml(mp)} — ${p.deaths} deaths
-            <span class="pos-split">CT ${p.ct_deaths} / T ${p.t_deaths}</span></div>
-          <table class="detail-table"><thead><tr><th>Area</th><th>Side</th><th>Deaths</th><th>%</th></tr></thead>
-            <tbody>${rows}</tbody></table>
-        </div>`;
-      }).join('')}
-    </div>
-    ${d.ai_review ? '<p class="sec-empty-hint">Reposition advice for each hotspot is in the AI coaching review below.</p>' : ''}
-  ` : '';
-
-  // Belt-and-suspenders: strip any positional breakdown section from the log (newer reports
-  // omit it server-side, but older cached JSON may still embed it) — it's rendered as cards above.
-  const logText = d.log ? d.log.replace(/\n+---\n+## Positional breakdown[\s\S]*$/, '') : '';
-  const logHtml = logText
-    ? (typeof marked !== 'undefined' ? marked.parse(logText) : `<pre>${escHtml(logText)}</pre>`)
-    : '';
-
-  // HLTV VRS "players to watch" — role-matched picks from the top-15 teams. Sits directly
-  // under the AI coaching review. Refreshed weekly server-side; absent if it's never run.
-  const wl = d.watchlist;
-  const watchlistHtml = (wl && Array.isArray(wl.teams) && wl.teams.length) ? `
-    <div class="watchlist-block">
-      <h3 class="detail-section-title">Players to watch — HLTV VRS top ${wl.teams.length}</h3>
-      <div class="wl-summary">
-        <div class="wl-summary-row">
-          <span class="wl-summary-label">Your roles</span>
-          <span class="wl-summary-val">${escHtml(wl.my_roles || '—')}</span>
-        </div>
-        <div class="wl-summary-row">
-          <span class="wl-summary-label">VRS as of</span>
-          <span class="wl-summary-val">${escHtml(wl.vrs_as_of || '—')}</span>
-        </div>
-      </div>
-      <div class="pos-grid">
-        ${wl.teams.map(t => {
-          const picks = (t.players || []).map(p => {
-            const conf = (p.confidence || '').toLowerCase();
-            const confTag = conf === 'low' ? ' <span class="wl-low">(role: low confidence)</span>' : '';
-            return `<li>
-              <span class="wl-player">${escHtml(p.player || '?')}</span>
-              <span class="wl-role">${escHtml(p.role || '')}</span>${confTag}
-              ${p.why_for_you ? `<div class="wl-why">${escHtml(p.why_for_you)}</div>` : ''}
-            </li>`;
-          }).join('');
-          return `<div class="pos-card">
-            <div class="pos-card-head">#${t.rank ?? '?'} · ${escHtml(t.team || '?')}</div>
-            <ul class="wl-players">${picks}</ul>
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-  ` : '';
-
-  // AI coaching is the headline — show it FIRST (right after the summary), data below.
-  // The notice keys off d.ai_review (the real flag), NOT off logHtml: build_log() always
-  // emits the deterministic report (per-map tables, findings) even when the AI call is
-  // skipped, so logHtml is almost never empty. Without this, a skipped review (e.g. out of
-  // API credits) silently drops the AI narrative with no explanation.
-  const missingNotice = `<div class="coaching-missing">
-       <strong>AI coaching unavailable for this run.</strong>
-       <span>The coaching call didn't complete — usually out of Anthropic API credits, or a
-       transient API error. Everything below is the full deterministic analysis; re-run the
-       agent once credits are restored to get the AI narrative back.</span>
-     </div>`;
-  const coachingHtml = logHtml
-    ? `<div class="coaching-block">${d.ai_review ? '' : missingNotice}<div class="agent-report-body">${logHtml}</div></div>`
-    : `<div class="coaching-block">${missingNotice}</div>`;
-
-  document.getElementById('leetify-page').innerHTML = `
-    <p class="report-summary">${escHtml(d.summary || '')}</p>
-    <div class="dim-strip">${dimChip('aim')}${dimChip('positioning')}${dimChip('utility')}</div>
-    ${coachingHtml}
-    ${watchlistHtml}
-    <details class="data-fold" open>
-      <summary class="data-fold-summary">Supporting data — stats, demos & death maps</summary>
-      ${maps.length ? `
-        <h3 class="detail-section-title">Per-map ${d.match_count ? `(last ${d.match_count})` : '(recent)'}</h3>
-        <table class="detail-table">
-          <thead><tr><th>Map</th><th>Matches</th><th>Win %</th><th>CT</th><th>T</th><th>Verdict</th></tr></thead>
-          <tbody>${mapRows}</tbody>
-        </table>` : ''}
-      ${demosHtml}
-      ${deepHtml}
-      ${posHtml}
-    </details>
-  `;
 }
 
 // ── Security page ─────────────────────────────────────────────────────────────
@@ -4267,7 +4022,6 @@ const CMDK_ITEMS = [
   { group: 'Go to', icon: '📜', label: 'Logs',               hint: 'Dozzle', action: () => (location.hash = '#logs') },
   { group: 'Go to', icon: '▤',  label: 'Reports',            action: () => (location.hash = '#reports') },
   { group: 'Go to', icon: '🔒', label: 'Security',           action: () => (location.hash = '#security') },
-  { group: 'Go to', icon: '🎯', label: 'CS2 / Leetify',      action: () => (location.hash = '#leetify') },
   { group: 'Go to', icon: '🧠', label: 'Local LLM',          action: () => (location.hash = '#llm') },
   { group: 'Go to', icon: '◈',  label: 'Architecture map',   action: () => (location.href = '/architecture/') },
   { group: 'Go to', icon: '🛰️', label: 'Agents',             action: () => (location.href = '/agents/') },

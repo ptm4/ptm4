@@ -1,5 +1,5 @@
 /* Page-specific shared styles: reports, cockpit, containers, pihole, trends, updates,
-   bots, llm, leetify, data-flow, query, logs. Page components add scoped <style> for
+   bots, llm, data-flow, query, logs. Page components add scoped <style> for
    anything only they use; what lives here is vocabulary two or more pages share. */
 
 /* ── reports / security ─────────────────────────────────────────────────── */
@@ -172,24 +172,6 @@
 .runbook-editor textarea { font-family: var(--mono); font-size: var(--fs-sm); }
 .llm-answer { margin-top: var(--s3); padding: var(--s3); background: var(--bg-inset); border: 1px solid var(--border); border-radius: var(--r); }
 .runbook-editor { margin-top: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-
-/* ── leetify ────────────────────────────────────────────────────────────── */
-.leetify-page { display: flex; flex-direction: column; gap: var(--s3); }
-.dim-strip { display: flex; gap: var(--s2); flex-wrap: wrap; }
-.dim-strip .dim { display: flex; flex-direction: column; gap: 2px; padding: var(--s2) var(--s3); border-radius: var(--r-sm); background: var(--surface-2); min-width: 90px; color: var(--ink); }
-.dim-strip .dim[data-s="strong"] { background: var(--ok-dim); }
-.dim-strip .dim[data-s="focus"] { background: var(--warn-dim); }
-.dim-name { font-size: var(--fs-xs); color: var(--ink-3); text-transform: capitalize; }
-.dim-val { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.demo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--s3); }
-.demo-card { padding: var(--s3); display: flex; flex-direction: column; gap: var(--s2); }
-.demo-head { display: flex; align-items: baseline; gap: var(--s2); flex-wrap: wrap; }
-.demo-map { font-weight: 600; }
-.demo-result { margin-left: auto; font-size: var(--fs-sm); }
-.demo-result[data-s="win"] { color: var(--ok); }
-.demo-result[data-s="loss"] { color: var(--crit); }
-.deep-dive { margin-top: var(--s3); }
-.deep-dive summary { cursor: pointer; display: flex; gap: var(--s2); align-items: baseline; }
 
 /* ── data-flow page ─────────────────────────────────────────────────────── */
 .dataflow-page { display: flex; flex-direction: column; gap: var(--s3); }

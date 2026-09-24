@@ -13,6 +13,7 @@ Description=Homelab DB ingest (reports + architecture + docs -> homelab.db)
 After=network-online.target zfs-mount.service
 Wants=network-online.target
 Requires=zfs-mount.service
+OnFailure=hl-notify-failure@%n.service
 
 [Service]
 ExecStartPre=/usr/bin/mountpoint -q /srv/red

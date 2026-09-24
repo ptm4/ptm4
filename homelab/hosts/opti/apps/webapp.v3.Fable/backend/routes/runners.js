@@ -15,7 +15,6 @@ const CATALOG = {
   'hardware-latest':       { label: 'Hardware Report',  agent: 'hardware-report',    cadence_h: 24, order: 1 },
   'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24, order: 2 },
   'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1,  order: 3 },
-  'leetify-latest':        { label: 'Leetify CS2 Stats',agent: 'leetify-stats',      cadence_h: 24, home: true, manual: true },
   // Weekly cold-copy refresh of the ZFS pool onto the retired sda+sdb mergerfs pool.
   // cadence_h 168 => the stale badge appears after two missed weeks.
   // Disabled 2026-09-10 — the attic disk is ~97% full and there is no room for the
@@ -73,7 +72,7 @@ function hasAlertFlag(raw) {
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 module.exports = async function runnersRoutes(app) {
-  // GET /api/runners — list homelab runners (excludes Home-only items like Leetify)
+  // GET /api/runners — list homelab runners (excludes Home-only items)
   app.get('/', async (req, reply) => {
     if (!fs.existsSync(AGENT_LOGS_DIR)) {
       return { runners: [], message: 'Agent logs directory not found' };
@@ -180,7 +179,7 @@ module.exports = async function runnersRoutes(app) {
     }
   });
 
-  // GET /api/runners/:name — full JSON report (also serves the Leetify data)
+  // GET /api/runners/:name — full JSON report
   app.get('/:name', async (req, reply) => {
     const filename = req.params.name.endsWith('.json')
       ? req.params.name

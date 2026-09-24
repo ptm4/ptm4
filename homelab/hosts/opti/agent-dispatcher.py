@@ -6,7 +6,7 @@ Stdlib-only HTTP daemon (no deps) that lets the webapp enable/disable agents and
 them on demand. It owns agents-state.json (in the agent-logs dir, so the webapp reads
 it through its existing read-only mount). Agents are run from an allowlist — never
 arbitrary commands. Child processes inherit this daemon's environment, so set the
-agent env (HL_REPORTS_DIR, HL_AGENT_LOGS_DIR, LEETIFY_API_KEY, …) via the systemd
+agent env (HL_REPORTS_DIR, HL_AGENT_LOGS_DIR, HL_SSH_KEY, …) via the systemd
 EnvironmentFile=/etc/hl-agents.env.
 
 Endpoints (optional bearer auth via $HL_DISPATCH_TOKEN):
@@ -14,8 +14,9 @@ Endpoints (optional bearer auth via $HL_DISPATCH_TOKEN):
   POST /agents/<name>/enabled       body {"enabled": bool}
   POST /agents/<name>/run           -> launches the agent (fire-and-forget)
 
-CLI helper (used by the GitHub Actions workflow to honor enable/disable):
-  agent-dispatcher.py --is-enabled <name>   # exit 0 if enabled, 1 if disabled
+CLI (used by the hl-collector@ systemd units, which replaced GitHub cron 2026-09-24):
+  agent-dispatcher.py --is-enabled <name>   # exit 0 if enabled, 1 if disabled (ExecCondition)
+  agent-dispatcher.py --run <name>          # run the collector in the foreground, record last_run
 
 Env: HL_BIND (default 0.0.0.0), HL_PORT (default 9099), HL_DISPATCH_TOKEN (optional),
      HL_AGENT_LOGS_DIR (state location).
@@ -56,8 +57,17 @@ AGENTS = {
     "homelab-doctor":      os.path.join(TOOLS_DIR, "collectors", "homelab-doctor.py"),
     "network-report":      os.path.join(TOOLS_DIR, "collectors", "network-report.py"),
     "docs-generator":      os.path.join(TOOLS_DIR, "collectors", "docs-generator.py"),
-    "leetify-stats":       os.path.join(TOOLS_DIR, "leetify", "leetify-stats.py"),
-    "refresh-cs2-knowledge": os.path.join(TOOLS_DIR, "leetify", "refresh-cs2-knowledge.py"),
+}
+
+# Collectors with a schedule. Their timers (homelab/hosts/opti/systemd/hl-collector-*@.timer)
+# start hl-collector@<name>.service, gated on the enable switch; Run-now starts the ungated
+# twin hl-collector-now@<name>.service. Either way the work runs under systemd — a hard
+# timeout, OnFailure= push notification, journald logs — not as a loose child of this
+# daemon. Keep in sync with the timer enable lists in .github/workflows/opti-deploy.yml.
+SCHEDULED_AGENTS = {
+    "homelab-doctor", "network-report",                       # every 30 min
+    "journald-hunter", "persistence-auditor",                 # daily
+    "hardware-report", "software-inventory",                  # daily
 }
 
 # Agents that are systemd units rather than python scripts. These need root (mount/remount,
@@ -134,6 +144,12 @@ def run_agent(name):
         # exact same path (and the work runs as root, which the dispatcher itself is not).
         subprocess.Popen(["sudo", "-n", "systemctl", "start", UNIT_AGENTS[name]],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    elif name in SCHEDULED_AGENTS:
+        # --no-block: queue it and return; the unit records last_run itself via --run.
+        subprocess.Popen(["sudo", "-n", "systemctl", "start", "--no-block",
+                          f"hl-collector-now@{name}.service"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return
     else:
         subprocess.Popen([sys.executable, AGENTS[name]],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -268,6 +284,14 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "--is-enabled":
         sys.exit(0 if is_enabled(sys.argv[2]) else 1)
+    if len(sys.argv) >= 3 and sys.argv[1] == "--run":
+        # Foreground run for the systemd units. Allowlist only — %i comes from a unit name.
+        name = sys.argv[2]
+        if name not in AGENTS:
+            print(f"unknown agent: {name}", file=sys.stderr)
+            sys.exit(2)
+        mark_run(name)
+        sys.exit(subprocess.run([sys.executable, AGENTS[name]]).returncode)
 
     bind = os.environ.get("HL_BIND", "0.0.0.0")
     port = int(os.environ.get("HL_PORT", "9099"))

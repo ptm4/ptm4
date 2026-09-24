@@ -45,6 +45,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -135,14 +136,14 @@ def backup_dir():
 DATASETS = [
     # ── producers ──
     {"id": "collectors", "label": "Homelab collectors", "producer": "homelab/tools/collectors/*.py",
-     "producer_host": "opti", "source": "GitHub Actions homelab-agents.yml", "format": "python",
-     "cadence_hours": 4, "stage": "producer", "consumers": "agent-logs",
-     "notes": "doctor + network on a `*/30` GitHub cron that GitHub throttles to roughly every "
-              "3-6h in practice (measured Sept 2026; every run succeeds — the gaps are GitHub "
-              "dropping schedule events, not failures). hardware + software daily 09:00 UTC. "
-              "SSH fan-out via hl_agents key. Cadence 4h = warn past 8h, critical past 24h."},
+     "producer_host": "opti", "source": "systemd hl-collector-{frequent,daily}@.timer", "format": "python",
+     "cadence_hours": 0.5, "stage": "producer", "consumers": "agent-logs",
+     "notes": "doctor + network every 30 min (:05/:35), hardware + software daily 09:00 UTC, as "
+              "hl-collector@<name>.service on opti since 2026-09-24. They were a GitHub cron that "
+              "fired only every 3-6h. A failed run pushes an ntfy alert (OnFailure). SSH fan-out "
+              "via the hl_agents key, one multiplexed connection per host."},
     {"id": "security-tools", "label": "Security auditors", "producer": "homelab/tools/security/*.py",
-     "producer_host": "opti", "source": "GitHub Actions homelab-agents.yml", "format": "python",
+     "producer_host": "opti", "source": "systemd hl-collector-daily@.timer", "format": "python",
      "cadence_hours": 24, "stage": "producer", "consumers": "security-reports",
      "notes": "journald-hunter + persistence-auditor, daily 09:00 UTC, local to opti (no fan-out)."},
     {"id": "arch-agents", "label": "hl-arch-agent fleet", "producer": "homelab/tools/arch-agent/hl-arch-agent.py",
@@ -157,7 +158,7 @@ DATASETS = [
     # ── stores ──
     {"id": "agent-logs", "label": "agent-logs reports", "producer": "collectors via _report.py",
      "producer_host": "opti", "source": "<agent-logs>/*-latest.json + dated dirs", "format": "json",
-     "cadence_hours": 4, "stage": "store", "consumers": "webapp, session hook, homelab-db",
+     "cadence_hours": 0.5, "stage": "store", "consumers": "webapp, session hook, homelab-db",
      "retention": "dated files kept indefinitely (~70d so far)",
      "notes": "Atomic tmp+fsync+rename. Still the transport; the DB indexes it rather than replacing it."},
     {"id": "security-reports", "label": "security-reports", "producer": "security auditors",
@@ -210,10 +211,6 @@ DATASETS = [
      "producer_host": "noblenumbat", "source": "localhost *arr APIs (queried over SSH)", "format": "http",
      "cadence_hours": 0.5, "stage": "store", "consumers": "media_counters",
      "notes": "The query runs on noblenumbat so each API key is read from its own config.xml and used against localhost — no key is copied to opti."},
-    {"id": "leetify", "label": "Leetify CS2 stats", "producer": "homelab/tools/leetify/leetify-stats.py",
-     "producer_host": "opti", "source": "<agent-logs>/leetify-latest.json", "format": "json",
-     "cadence_hours": None, "stage": "store", "consumers": "cs2_matches, cs2_ratings",
-     "notes": "Manual runs only (paid API). Broken out of the 135KB blob into columns so trends are queryable."},
     {"id": "pricewatch", "label": "PC-part price watch", "producer": "homelab/tools/pricewatch/pricewatch.py",
      "producer_host": "opti", "source": "<agent-logs>/pricewatch-latest.json", "format": "json",
      "cadence_hours": 6, "stage": "store", "consumers": "price_history, findings, webapp widget",
@@ -919,44 +916,75 @@ def check_smart(conn, run_id):
     """
     stamp = now_iso()
     flagged = 0
-    # Compare against the oldest reading, not just a month ago: these counters creep.
-    # A window that is shorter than the creep reports "stable" on a drive that has been
-    # steadily degrading all along, which is the exact failure this is meant to catch.
-    rows = conn.execute(
-        """SELECT host, metric,
-                  (SELECT value FROM collector_metrics m2
-                    WHERE m2.host = m.host AND m2.metric = m.metric
-                    ORDER BY at DESC LIMIT 1) AS latest,
-                  (SELECT value FROM collector_metrics m3
-                    WHERE m3.host = m.host AND m3.metric = m.metric
-                    ORDER BY at ASC LIMIT 1) AS earliest,
-                  (SELECT at FROM collector_metrics m4
-                    WHERE m4.host = m.host AND m4.metric = m.metric
-                    ORDER BY at ASC LIMIT 1) AS since
-           FROM collector_metrics m
+    # Metrics are keyed by device letter (smart_sdb_reallocated), and letters are NOT
+    # stable: on 2026-09-10 opti's Seagate boot disk moved sda -> sdb and the Hitachi
+    # sdb -> sda, so the naive "oldest vs newest" read as "grew from 3 to 272" and paged
+    # critical. The disk's own power-on hours identify it: they only ever rise, by at most
+    # the wall-clock time elapsed. A reading where they fall, or jump further than time
+    # allows, is a different physical disk — only readings since the last such break
+    # belong to today's disk. (A counter that falls is the same signal, as a backstop.)
+    #
+    # Severity: pending sectors, or reallocations that grew in the last 30 days, mean
+    # the drive is actively degrading (critical). Old, slow growth is a warn that still
+    # shows the full trend — 8 sectors every two months is not an emergency.
+    series, poh = {}, {}
+    for r in conn.execute(
+        """SELECT host, metric, at, value FROM collector_metrics
            WHERE metric LIKE 'smart%reallocated' OR metric LIKE 'smart%pending'
-           GROUP BY host, metric"""
-    ).fetchall()
+              OR metric LIKE 'smart%power_on_hours'
+           ORDER BY host, metric, at"""
+    ):
+        if r["metric"].endswith("power_on_hours"):
+            dev = r["metric"][len("smart_"):-len("_power_on_hours")]
+            poh.setdefault((r["host"], dev), {})[r["at"]] = r["value"]
+        else:
+            series.setdefault((r["host"], r["metric"]), []).append((r["at"], r["value"] or 0))
 
-    for row in rows:
-        latest = row["latest"] or 0
+    def _hours_between(a, b):
+        try:
+            return (datetime.fromisoformat(b) - datetime.fromisoformat(a)).total_seconds() / 3600
+        except ValueError:
+            return None
+
+    def _same_disk(hours, prev_at, at):
+        h0, h1 = hours.get(prev_at), hours.get(at)
+        if h0 is None or h1 is None:
+            return True
+        elapsed = _hours_between(prev_at, at)
+        return h1 >= h0 and (elapsed is None or h1 - h0 <= elapsed + 48)
+
+    recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    for (host, metric), points in series.items():
+        dev = metric[len("smart_"):].rsplit("_", 1)[0]
+        hours = poh.get((host, dev), {})
+        start = 0
+        for i in range(1, len(points)):
+            if (points[i][1] < points[i - 1][1]
+                    or not _same_disk(hours, points[i - 1][0], points[i][0])):
+                start = i
+        points = points[start:]
+        latest = points[-1][1]
         if latest <= 0:
             continue
-        earliest = row["earliest"]
-        disk = row["metric"].replace("smart_", "").rsplit("_", 1)[0]
-        kind = "reallocated" if row["metric"].endswith("reallocated") else "pending"
-        if earliest is not None and latest > earliest:
+        since, earliest = points[0]
+        disk = dev
+        kind = "reallocated" if metric.endswith("reallocated") else "pending"
+        grew_recently = any(points[i][1] > points[i - 1][1] and points[i][0] >= recent_cutoff
+                            for i in range(1, len(points)))
+        if kind == "pending" or grew_recently:
             severity = "critical"
-            detail = (f"grew from {earliest:.0f} to {latest:.0f} since "
-                      f"{str(row['since'])[:10]} — this drive is degrading")
         else:
             severity = "warn"
-            detail = f"{latest:.0f}, unchanged since {str(row['since'])[:10]}"
+        if latest > earliest:
+            detail = (f"{latest:.0f} (up from {earliest:.0f} since {str(since)[:10]}"
+                      + ("; grew in the last 30 days" if grew_recently else "") + ")")
+        else:
+            detail = f"{latest:.0f}, unchanged since {str(since)[:10]}"
         conn.execute(
             """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
                VALUES (?, 'homelab-db', ?, ?, ?, ?, 'expiry')""",
-            (run_id, stamp, severity, row["host"],
-             f"[{row['host']}] {disk} SMART {kind} sectors: {detail}"),
+            (run_id, stamp, severity, host,
+             f"[{host}] {disk} SMART {kind} sectors: {detail}"),
         )
         flagged += 1
     return flagged
@@ -1414,57 +1442,6 @@ def ingest_media_counters(conn):
     return count
 
 
-def ingest_leetify(conn):
-    """Break the Leetify blob out into real columns so CS2 trends are queryable.
-
-    It is already in raw_documents; a 135KB JSON blob is not something you can ask
-    questions of.
-    """
-    path = os.path.join(agent_logs_dir(), "leetify-latest.json")
-    try:
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, json.JSONDecodeError):
-        return 0
-
-    stamp = data.get("run_at") or now_iso()
-    count = 0
-    for dimension, value in (data.get("dimensions") or {}).items():
-        number = _to_number(value if not isinstance(value, dict) else value.get("value"))
-        if number is None:
-            continue
-        conn.execute(
-            """INSERT INTO cs2_ratings (at, dimension, value) VALUES (?, ?, ?)
-               ON CONFLICT (at, dimension) DO UPDATE SET value = excluded.value""",
-            (stamp, dimension, number),
-        )
-        count += 1
-
-    for match in (data.get("demo_summaries") or [])[:200]:
-        if not isinstance(match, dict):
-            continue
-        match_id = str(match.get("id") or match.get("match_id") or match.get("gameId") or "")
-        if not match_id:
-            continue
-        conn.execute(
-            """INSERT INTO cs2_matches (id, played_at, map, result, rating, kills, deaths, adr, raw_json)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT (id) DO UPDATE SET
-                 played_at = excluded.played_at, map = excluded.map, result = excluded.result,
-                 rating = excluded.rating, kills = excluded.kills, deaths = excluded.deaths,
-                 adr = excluded.adr, raw_json = excluded.raw_json""",
-            (match_id, match.get("date") or match.get("played_at"),
-             match.get("map") or match.get("map_name"), match.get("result"),
-             _to_number(match.get("rating")), match.get("kills"), match.get("deaths"),
-             _to_number(match.get("adr")), json.dumps(match)),
-        )
-        count += 1
-
-    if count:
-        mark_dataset(conn, "leetify", source_at=stamp, rows=count)
-    return count
-
-
 # ── freshness ───────────────────────────────────────────────────────────────────────
 
 def ingest_pricewatch(conn, run_id):
@@ -1779,6 +1756,110 @@ def maintenance_due(conn):
 
 # ── cycle ───────────────────────────────────────────────────────────────────────────
 
+# ── phone alerts (ntfy) ─────────────────────────────────────────────────────────────
+# Each cycle computes the set of OPEN problems — the warn/critical findings of every
+# tool's latest run — and pushes only the difference from last cycle: new problems in
+# one grouped message, cleared ones in one quiet "resolved" message. The open set lives
+# in ingest_state, so an unchanged problem never re-pages however many cycles it lasts.
+#
+# Everything critical pages. A warning pages only from the sources below; the rest
+# (pending apt updates, journald pattern counts, ...) stays visible in hl_status without
+# buzzing a phone every morning.
+ALERT_WARN_TOOLS = {"homelab-doctor"}
+ALERT_WARN_KINDS = {"freshness", "drift"}
+ALERT_WARN_PREFIXES = ("NEW persistence entry", "[bots]")
+ALERT_TOOL_MAX_AGE_DAYS = 3   # a tool that stopped running (leetify) can't hold alerts open
+
+OPEN_FINDINGS_SQL = """
+WITH latest AS (SELECT tool, MAX(julianday(run_at)) jd FROM agent_runs GROUP BY tool)
+SELECT f.tool, f.severity, COALESCE(f.host, '') host, f.message, f.kind
+FROM findings f JOIN latest l ON l.tool = f.tool
+WHERE f.severity IN ('warn', 'critical')
+  AND julianday(f.run_at) >= l.jd - (5.0 / 1440)
+  AND l.jd >= julianday('now') - ?
+"""
+
+
+def _alert_key(row):
+    # Digits collapse so "pool at 91%" -> "pool at 92%" is the same open problem, not a
+    # new one every cycle.
+    return "|".join((row["tool"], row["host"], re.sub(r"\d+", "#", row["message"])[:200]))
+
+
+def _should_page(row):
+    if row["severity"] == "critical":
+        return True
+    return (row["tool"] in ALERT_WARN_TOOLS or row["kind"] in ALERT_WARN_KINDS
+            or row["message"].startswith(ALERT_WARN_PREFIXES))
+
+
+def push_alerts(conn):
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from notify import notify  # homelab/tools/notify.py
+
+    rows = [dict(r) for r in conn.execute(OPEN_FINDINGS_SQL, (ALERT_TOOL_MAX_AGE_DAYS,))]
+    current = {_alert_key(r): r for r in rows if _should_page(r)}
+    prior_row = conn.execute("SELECT value FROM ingest_state WHERE key = 'alerts_open'").fetchone()
+    first_run = prior_row is None
+    prior = json.loads(prior_row[0]) if prior_row else {}
+
+    new = [current[k] for k in current if k not in prior]
+    resolved = [prior[k] for k in prior if k not in current]
+
+    def line(r):
+        return f"{'🔴' if r['severity'] == 'critical' else '🟡'} {r['message'][:180]}"
+
+    sent_ok = True
+    if first_run:
+        sent_ok = notify(
+            "homelab alerts online",
+            (f"{len(current)} open issue(s) right now:\n" + "\n".join(line(r) for r in current.values()))
+            if current else "Nothing open. You'll hear from this when something breaks.",
+            priority="low", tags=["bell"])
+    else:
+        if new:
+            crit = any(r["severity"] == "critical" for r in new)
+            title = (new[0]["message"][:120] if len(new) == 1
+                     else f"{len(new)} new homelab issues")
+            sent_ok = notify(title, "\n".join(line(r) for r in new),
+                             priority="high" if crit else "default",
+                             tags=["rotating_light" if crit else "warning"])
+        if resolved:
+            notify(f"{len(resolved)} homelab issue(s) resolved",
+                   "\n".join(f"✅ {r['message'][:180]}" for r in resolved),
+                   priority="low", tags=["white_check_mark"])
+
+    # Only advance the open set once the page actually went out — an ntfy outage must
+    # not swallow a new problem; it gets re-sent next cycle instead.
+    if sent_ok:
+        slim = {k: {"tool": r["tool"], "severity": r["severity"], "message": r["message"]}
+                for k, r in current.items()}
+        with db.writing(conn):
+            conn.execute(
+                "INSERT INTO ingest_state (key, value, updated_at) VALUES ('alerts_open', ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (json.dumps(slim), now_iso()),
+            )
+    return f"{len(current)} open, {len(new)} new, {len(resolved)} resolved" + ("" if sent_ok else " (ntfy unreachable)")
+
+
+def heartbeat(stats):
+    """Dead-man's switch: ping Uptime Kuma's Push monitor (HL_KUMA_PUSH_URL) each cycle.
+    Kuma runs on noblenumbat, so if this ingest — or opti itself — stops, Kuma notices the
+    missing heartbeat and alerts through ntfy from outside opti."""
+    url = os.environ.get("HL_KUMA_PUSH_URL")
+    if not url:
+        return
+    errors = stats.get("step_errors")
+    status = "down" if errors else "up"
+    msg = f"steps crashed: {', '.join(errors)}" if errors else "ok"
+    try:
+        sep = "&" if "?" in url else "?"
+        urllib.request.urlopen(f"{url}{sep}status={status}&msg={urllib.parse.quote(msg)}", timeout=10).read()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[ingest] kuma heartbeat failed: {exc}", flush=True)
+
+
 def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
     started = time.time()
     stats = {}
@@ -1866,7 +1947,6 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
             mark_dataset(conn, "mcp-server", source_at=last_query)
 
         stats["incidents"] = step("incidents", ingest_incidents, conn, dataset="incidents")
-        stats["cs2_rows"] = step("leetify", ingest_leetify, conn, dataset="leetify")
         stats["monitors"] = step("uptime-kuma", ingest_monitors, conn, dataset="uptime-kuma")
         r = step("net-devices", ingest_net_devices, conn, dataset="dhcp-leases")
         stats["devices"] = f"{r[0]} ({r[1]} new)" if r else None
@@ -1901,6 +1981,13 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
         _finalise_run_status(conn, run_id)
         if step_errors:
             stats["step_errors"] = step_errors
+
+    # Outside the write transaction: a slow ntfy must never hold the DB lock.
+    try:
+        stats["alerts"] = push_alerts(conn)
+    except Exception as exc:  # noqa: BLE001 — alerting is best-effort, never fatal
+        stats["alerts"] = f"error: {exc}"
+    heartbeat(stats)
 
     if force_maintenance or maintenance_due(conn):
         stats["maintenance"] = maintenance(conn)

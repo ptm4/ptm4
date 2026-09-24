@@ -1,0 +1,14 @@
+[Unit]
+# Every 30 min at :05/:35 — finishes (~60s) well before homelab-db-ingest at :12/:42, so
+# the ingest always reads a completed report. Enabled for homelab-doctor, network-report.
+Description=Homelab collector %i every 30 minutes
+
+[Timer]
+OnCalendar=*:05,35
+RandomizedDelaySec=60
+# A run missed while opti was down fires once at boot instead of silently skipping.
+Persistent=true
+Unit=hl-collector@%i.service
+
+[Install]
+WantedBy=timers.target

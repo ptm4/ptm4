@@ -1,0 +1,21 @@
+[Unit]
+# Run-now twin of hl-collector@.service: identical, minus the enable-switch gate, so the
+# webapp's Run button works on a collector whose schedule is switched off (as it always
+# has). Started by agent-dispatcher.py; never by a timer.
+Description=Homelab collector %i (run now)
+After=network-online.target zfs-mount.service
+Wants=network-online.target
+Requires=zfs-mount.service
+OnFailure=hl-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+User=ptm
+EnvironmentFile=-/etc/hl-agents.env
+ExecStartPre=/usr/bin/mountpoint -q /srv/red
+ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti/agent-dispatcher.py --run %i
+TimeoutStartSec=20min
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=true
+MemoryMax=512M
