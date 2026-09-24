@@ -30,7 +30,8 @@ Env:
     HL_DB_PATH          default /srv/red/opsdb/homelab.db
     HL_AGENT_LOGS_DIR   default: first of the known agent-logs locations that exists
     HL_REPORTS_DIR      default: likewise for security-reports
-    HL_ARCH_DATA_URL    default https://webapp.rpi.lan:8443/api/architecture/data
+    HL_ARCH_DATA_URL    default https://webapp.lan:8443/api/architecture/data
+    HL_WEBAPP_API       default https://webapp.lan:8443/api (falls back to opti's IP)
     HL_DB_BACKUP_DIR    default <agent-logs>/../homelab-db/backup
 """
 
@@ -53,14 +54,23 @@ import db  # noqa: E402  (sibling module, path set above)
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 
-ARCH_URL = os.environ.get("HL_ARCH_DATA_URL", "https://webapp.rpi.lan:8443/api/architecture/data")
-# When DNS is the thing that is broken, the hostname above is exactly what fails; the
-# webapp is still there on its IP.
-ARCH_URL_FALLBACK = "https://192.168.1.10:8443/api/architecture/data"
+# The webapp moved rpi -> opti on 2026-09-10 (rpi is DNS-only now). Everything the ingest
+# reads over HTTP goes through it: the bot control APIs are docker-internal on opti, Uptime
+# Kuma lives on noblenumbat, and Pi-hole v6 needs a session login — the webapp already
+# holds all of that, so reading through its read-only proxies needs no secret here.
+#
+# Hostname first, IP second: when DNS (rpi) is the thing that is broken, webapp.lan is
+# exactly what fails, and the webapp is still there on opti's IP.
+WEBAPP_HOST_URL = "https://webapp.lan:8443"
+WEBAPP_IP_URL = "https://192.168.1.11:8443"
 
-# The bot control APIs and Uptime Kuma are docker-internal on the rpi; the webapp already
-# proxies both, so read them through it rather than opening more paths into that host.
-WEBAPP_API = os.environ.get("HL_WEBAPP_API", "https://192.168.1.10:8443/api")
+WEBAPP_API = os.environ.get("HL_WEBAPP_API", WEBAPP_HOST_URL + "/api")
+WEBAPP_API_FALLBACK = WEBAPP_IP_URL + "/api"
+
+ARCH_URL = os.environ.get("HL_ARCH_DATA_URL", WEBAPP_HOST_URL + "/api/architecture/data")
+ARCH_URL_FALLBACK = WEBAPP_IP_URL + "/api/architecture/data"
+
+FETCH_ERRORS = (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError)
 
 MAINTENANCE_EVERY_HOURS = 20
 QUERY_AUDIT_KEEP_DAYS = 90
@@ -126,8 +136,11 @@ DATASETS = [
     # ── producers ──
     {"id": "collectors", "label": "Homelab collectors", "producer": "homelab/tools/collectors/*.py",
      "producer_host": "opti", "source": "GitHub Actions homelab-agents.yml", "format": "python",
-     "cadence_hours": 0.5, "stage": "producer", "consumers": "agent-logs",
-     "notes": "doctor + network every 30min; hardware + software daily 09:00 UTC. SSH fan-out via hl_agents key."},
+     "cadence_hours": 4, "stage": "producer", "consumers": "agent-logs",
+     "notes": "doctor + network on a `*/30` GitHub cron that GitHub throttles to roughly every "
+              "3-6h in practice (measured Sept 2026; every run succeeds — the gaps are GitHub "
+              "dropping schedule events, not failures). hardware + software daily 09:00 UTC. "
+              "SSH fan-out via hl_agents key. Cadence 4h = warn past 8h, critical past 24h."},
     {"id": "security-tools", "label": "Security auditors", "producer": "homelab/tools/security/*.py",
      "producer_host": "opti", "source": "GitHub Actions homelab-agents.yml", "format": "python",
      "cadence_hours": 24, "stage": "producer", "consumers": "security-reports",
@@ -144,14 +157,14 @@ DATASETS = [
     # ── stores ──
     {"id": "agent-logs", "label": "agent-logs reports", "producer": "collectors via _report.py",
      "producer_host": "opti", "source": "<agent-logs>/*-latest.json + dated dirs", "format": "json",
-     "cadence_hours": 0.5, "stage": "store", "consumers": "webapp, session hook, homelab-db",
+     "cadence_hours": 4, "stage": "store", "consumers": "webapp, session hook, homelab-db",
      "retention": "dated files kept indefinitely (~70d so far)",
      "notes": "Atomic tmp+fsync+rename. Still the transport; the DB indexes it rather than replacing it."},
     {"id": "security-reports", "label": "security-reports", "producer": "security auditors",
      "producer_host": "opti", "source": "<security-reports>/*-latest.json", "format": "json",
      "cadence_hours": 24, "stage": "store", "consumers": "webapp, homelab-db"},
     {"id": "arch-merged", "label": "Merged architecture data", "producer": "webapp lib/arch-data.js",
-     "producer_host": "rpi", "source": "GET /api/architecture/data", "format": "http",
+     "producer_host": "opti", "source": "GET webapp.lan:8443/api/architecture/data", "format": "http",
      "cadence_hours": 24, "stage": "store", "consumers": "gen-agentic-docs, homelab-db",
      "notes": "Curated graph ⊕ per-host fragments. Fragments overwrite in place and keep no history — "
               "which is exactly the gap live_state/change_events fills."},
@@ -165,25 +178,34 @@ DATASETS = [
      "cadence_hours": None, "stage": "producer", "consumers": "hl_incidents, Claude sessions",
      "notes": "Why a host went down and which choices are settled — the judgment no collector can observe."},
     {"id": "uptime-kuma", "label": "Uptime Kuma monitors", "producer": "uptime-kuma",
-     "producer_host": "rpi", "source": "GET /api/uptime (via webapp)", "format": "http",
+     "producer_host": "noblenumbat", "source": "GET /api/uptime (via webapp on opti)", "format": "http",
      "cadence_hours": 0.5, "stage": "store", "consumers": "monitor_history",
      "retention": "sampled every cycle, kept indefinitely",
-     "notes": "Kuma's own history is behind an admin login; sampling the read-only /metrics view is what makes availability queryable."},
-    {"id": "deploy-drift", "label": "Deployed-copy drift", "producer": "ingest.py over SSH",
-     "producer_host": "opti", "source": "hash of /srv/docker/compose/webapp vs repo", "format": "ssh",
+     "notes": "Kuma runs on noblenumbat :3001 since 2026-09-10 (so it watches opti from outside). "
+              "Its own history is behind an admin login; sampling the webapp's read-only proxy "
+              "each cycle is what makes availability queryable."},
+    {"id": "deploy-drift", "label": "Deployed-copy drift", "producer": "ingest.py",
+     "producer_host": "opti", "source": "hash of /srv/docker/compose/webapp/backend vs repo webapp.v3.Fable", "format": "sha256",
      "cadence_hours": 0.5, "stage": "producer", "consumers": "findings",
-     "notes": "A direct edit to a deploy target is reverted by the next CI run — this makes that silent loss loud."},
+     "notes": "A direct edit to a deploy target is reverted by the next CI run — this makes that silent loss loud. "
+              "On opti the repo is a .git-less CI snapshot of main, which counts as clean."},
     {"id": "bot-health", "label": "Discord bot post freshness", "producer": "bot control APIs",
-     "producer_host": "rpi", "source": "GET /api/<bot>/status (via webapp)", "format": "http",
+     "producer_host": "opti", "source": "GET /api/<bot>/status (via webapp)", "format": "http",
      "cadence_hours": 0.5, "stage": "producer", "consumers": "findings",
-     "notes": "A dead daily bot is silent, and silence looks exactly like a quiet day."},
-    {"id": "dhcp-leases", "label": "LAN device inventory", "producer": "Pi-hole DHCP",
-     "producer_host": "rpi", "source": "pihole:/etc/pihole/dhcp.leases (over SSH)", "format": "text",
+     "notes": "A dead daily bot is silent, and silence looks exactly like a quiet day. A bot whose "
+              "status route fails, or whose last attempt failed, is a finding too."},
+    {"id": "dhcp-leases", "label": "LAN device inventory", "producer": "Pi-hole FTL network table",
+     "producer_host": "rpi", "source": "pihole:/etc/pihole/pihole-FTL.db network tables (over SSH)", "format": "sqlite",
      "cadence_hours": 0.5, "stage": "store", "consumers": "net_devices, change_events",
-     "notes": "Pi-hole is the only DHCP server on this LAN, so its leases are the whole picture. A device never seen before becomes a change event."},
+     "notes": "The router has been the DHCP server since Sept 2026, so Pi-hole's dhcp.leases is frozen "
+              "(last written 2026-09-08). FTL's network table is fed from rpi's ARP cache and every "
+              "DNS client, so it still sees the whole LAN; a device seen in the last 24h is active. "
+              "A device never seen before becomes a change event. (id kept for history.)"},
     {"id": "pihole-stats", "label": "Pi-hole query stats", "producer": "Pi-hole FTL",
-     "producer_host": "rpi", "source": "GET /api/pihole/summary (via webapp)", "format": "http",
-     "cadence_hours": 0.5, "stage": "store", "consumers": "pihole_daily"},
+     "producer_host": "rpi", "source": "GET /api/pihole/summary (via webapp on opti)", "format": "http",
+     "cadence_hours": 0.5, "stage": "store", "consumers": "pihole_daily",
+     "notes": "Pi-hole v6 (session-auth /api). The webapp holds the login and proxies a summary, "
+              "so the ingest needs no Pi-hole secret."},
     {"id": "media-counters", "label": "Media library counters", "producer": "sonarr/radarr APIs",
      "producer_host": "noblenumbat", "source": "localhost *arr APIs (queried over SSH)", "format": "http",
      "cadence_hours": 0.5, "stage": "store", "consumers": "media_counters",
@@ -211,8 +233,8 @@ DATASETS = [
      "producer_host": "opti", "source": ":9100 (/api, /mcp)", "format": "http",
      "cadence_hours": None, "stage": "consumer", "consumers": "Claude Code, webapp",
      "notes": "Read-only. Bearer token + Host/Origin validation. MCP pinned to spec 2025-06-18."},
-    {"id": "webapp-data", "label": "Webapp widgets + Data page", "producer": "webapp routes/hldb.js",
-     "producer_host": "rpi", "source": "GET /api/hldb/*", "format": "http",
+    {"id": "webapp-data", "label": "Webapp widgets + Data page", "producer": "webapp.v3.Fable backend/routes/hldb.js",
+     "producer_host": "opti", "source": "GET webapp.lan:8443/api/hldb/*", "format": "http",
      "cadence_hours": None, "stage": "consumer", "consumers": "browser"},
     {"id": "generated-flows", "label": "92-data-flows.md", "producer": "ingest.py maintenance",
      "producer_host": "opti", "source": "homelab/agentic/generated/92-data-flows.md", "format": "markdown",
@@ -470,14 +492,24 @@ def fetch_json(url, timeout=20):
         return json.load(resp)
 
 
-def fetch_arch_data():
-    last_error = None
-    for url in (ARCH_URL, ARCH_URL_FALLBACK):
+def _first_ok(urls, timeout):
+    """Try each URL in turn; returns (data, None) or (None, error naming every attempt)."""
+    errors = []
+    for url in dict.fromkeys(urls):  # de-dupe, keep order
         try:
-            return fetch_json(url), None
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as exc:
-            last_error = f"{url}: {exc}"
-    return None, last_error
+            return fetch_json(url, timeout=timeout), None
+        except FETCH_ERRORS as exc:
+            errors.append(f"{url}: {exc}")
+    return None, "; ".join(errors)
+
+
+def fetch_webapp(path, timeout=12):
+    """GET <webapp>/api<path>, hostname first then opti's IP. Returns (data, error)."""
+    return _first_ok((WEBAPP_API + path, WEBAPP_API_FALLBACK + path), timeout)
+
+
+def fetch_arch_data():
+    return _first_ok((ARCH_URL, ARCH_URL_FALLBACK), 20)
 
 
 def ingest_arch(conn, data):
@@ -936,10 +968,9 @@ def ingest_monitors(conn):
     Kuma's own history lives behind an admin login; /api/uptime exposes the current state
     of every monitor, so sampling it each cycle is what turns it into a series.
     """
-    try:
-        data = fetch_json(WEBAPP_API + "/uptime", timeout=12)
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as exc:
-        mark_dataset(conn, "uptime-kuma", error=str(exc))
+    data, error = fetch_webapp("/uptime")
+    if error:
+        mark_dataset(conn, "uptime-kuma", error=error)
         return 0
 
     monitors = data.get("monitors") if isinstance(data, dict) else None
@@ -953,11 +984,13 @@ def ingest_monitors(conn):
         if not name:
             continue
         status = monitor.get("status")
+        # The webapp's proxy names response time `ms`; older builds used response_time.
+        resp = monitor.get("ms", monitor.get("response_time"))
         conn.execute(
             """INSERT INTO monitor_history (monitor, at, status, up, resp_ms)
                VALUES (?, ?, ?, ?, ?)
                ON CONFLICT (monitor, at) DO NOTHING""",
-            (name, stamp, status, 1 if status == "up" else 0, monitor.get("response_time")),
+            (name, stamp, status, 1 if status == "up" else 0, resp),
         )
     mark_dataset(conn, "uptime-kuma", source_at=stamp, rows=len(monitors))
     return len(monitors)
@@ -965,10 +998,15 @@ def ingest_monitors(conn):
 
 # Deployed copies that CI overwrites. Editing one of these directly is a known way to
 # lose work silently — the next deploy reverts it — so the drift is worth a finding.
+#
+# Since 2026-09-10 the app tier is on opti and the deployed webapp is webapp.v3.Fable
+# (.github/workflows/opti-apps-deploy.yml rsyncs it to /srv/docker/compose/webapp/).
 DEPLOY_TARGETS = [
-    {"host": "rpi", "remote": "/srv/docker/compose/webapp/backend",
-     "repo": "homelab/hosts/opti/apps/webapp.v2.legacy/backend", "label": "webapp backend"},
+    {"host": "opti", "remote": "/srv/docker/compose/webapp/backend",
+     "repo": "homelab/hosts/opti/apps/webapp.v3.Fable/backend", "label": "webapp backend",
+     "workflow": "opti-apps-deploy.yml"},
 ]
+LOCAL_HOST = "opti"  # where ingest.py runs; its own deploy targets are hashed without SSH
 
 
 def _tree_hash_remote(host, path):
@@ -995,7 +1033,7 @@ def _tree_hash_local(path):
             if name.endswith(".log"):
                 continue
             full = os.path.join(root, name)
-            rel = "./" + os.path.relpath(full, path)
+            rel = "./" + os.path.relpath(full, path).replace(os.sep, "/")
             try:
                 with open(full, "rb") as f:
                     digest = hashlib.sha256(f.read()).hexdigest()
@@ -1013,8 +1051,15 @@ def _repo_path_clean(rel_path):
     the deployed copy, which is *normal*, and a finding that fires during every editing
     session teaches you to ignore it. Drift is only meaningful when the repo is settled —
     then a difference means someone edited the deploy target, or a deploy silently failed.
+
+    On opti — where this normally runs — REPO_ROOT is not a git checkout at all: it is the
+    `.git`-less snapshot that opti-deploy.yml rsyncs from main on every push. Nobody edits
+    it, so it IS the committed state, and counts as clean. (Before this, `git status`
+    failing there made every cycle report "skipped: repo dirty" and the check never ran.)
     """
     import subprocess
+    if not os.path.exists(os.path.join(REPO_ROOT, ".git")):
+        return True
     try:
         result = subprocess.run(
             ["git", "-C", REPO_ROOT, "status", "--porcelain", "--", rel_path],
@@ -1061,7 +1106,10 @@ def ingest_deploy_drift(conn, run_id):
         if not _repo_path_clean(target["repo"]):
             skipped += 1
             continue
-        remote_hash = _tree_hash_remote(target["host"], target["remote"])
+        if target["host"] == LOCAL_HOST and os.path.isdir(target["remote"]):
+            remote_hash = _tree_hash_local(target["remote"])
+        else:
+            remote_hash = _tree_hash_remote(target["host"], target["remote"])
         if not remote_hash:
             continue  # host down or path absent — not drift, just unknown
         checked += 1
@@ -1073,7 +1121,8 @@ def ingest_deploy_drift(conn, run_id):
                 (run_id, stamp, target["host"],
                  f"[{target['host']}] deployed {target['label']} at {target['remote']} "
                  f"differs from the committed repo. Either it was edited in place (the next "
-                 f"deploy reverts that) or a deploy did not complete — check rpi-deploy.yml."),
+                 f"deploy reverts that) or a deploy did not complete — check "
+                 f"{target.get('workflow', 'the deploy workflow')}."),
             )
     mark_dataset(conn, "deploy-drift", source_at=stamp, rows=checked)
     return checked, drifted, skipped
@@ -1089,24 +1138,74 @@ BOT_ROUTES = {
 BOT_SILENT_HOURS = 30  # daily posters; a missed day should be loud, a late one should not
 
 
+def _bot_stopped_on_purpose(bot):
+    """True when discord-<bot> is `exited` under a restart policy that would have revived
+    a crash — i.e. someone ran `docker stop` (discord-hltv, 2026-09-23: it was spamming
+    HLTV). Docker only leaves an unless-stopped/always container down after a manual stop.
+    Any failure to ask docker returns False, so the finding still fires."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Status}} {{.HostConfig.RestartPolicy.Name}}",
+             f"discord-{bot}"],
+            capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if out.returncode != 0:
+        return False
+    state, _, policy = out.stdout.strip().partition(" ")
+    return state == "exited" and policy in ("unless-stopped", "always")
+
+
 def ingest_bot_health(conn, run_id):
     """Did each daily bot actually post?
 
     A dead bot is silent, and silence in Discord looks exactly like a quiet day. The bot
-    control APIs are docker-internal on the rpi, so this goes through the webapp's
+    control APIs are docker-internal on opti, so this goes through the webapp's
     existing proxy rather than trying to reach them directly.
+
+    Three things are findings: a status route that does not answer (the bot container is
+    down — nginx says 502), a last attempt that reported failure, and no post in
+    BOT_SILENT_HOURS. If *no* route answers, the webapp itself is unreachable and the
+    dataset records that as its error rather than looking fresh with zero rows.
     """
     stamp = now_iso()
     checked = stale = 0
+    unreachable = []
+    paused = []  # deliberately off: docker-stopped, or the bot reports enabled=false
+
+    def finding(message):
+        conn.execute(
+            """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
+               VALUES (?, 'homelab-db', ?, 'warn', 'opti', ?, 'freshness')""",
+            (run_id, stamp, message),
+        )
+
     for bot, route in BOT_ROUTES.items():
-        try:
-            status = fetch_json(WEBAPP_API + route, timeout=10)
-        except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError):
+        status, error = fetch_webapp(route, timeout=10)
+        if error:
+            if _bot_stopped_on_purpose(bot):
+                paused.append(bot)
+                continue
+            unreachable.append(bot)
+            stale += 1
+            finding(f"[bots] discord-{bot} status route unreachable: {error[:200]}")
+            continue
+        if isinstance(status, dict) and status.get("enabled") is False:
+            paused.append(bot)
             continue
         checked += 1
+        if not isinstance(status, dict):
+            continue
+        last_status = str(status.get("last_status") or "")
+        if last_status.lower().startswith(("fail", "error")):
+            stale += 1
+            finding(f"[bots] discord-{bot} last attempt {status.get('last_post_at') or ''}: "
+                    f"{last_status[:160]}")
         last_post = None
-        for key in ("last_post", "last_posted", "last_run", "last_sent"):
-            if isinstance(status, dict) and status.get(key):
+        for key in ("last_post_at", "last_post", "last_posted", "last_run", "last_sent"):
+            if status.get(key):
                 last_post = status[key]
                 break
         if not last_post:
@@ -1120,39 +1219,78 @@ def ingest_bot_health(conn, run_id):
         age = (datetime.now(timezone.utc) - when).total_seconds() / 3600
         if age > BOT_SILENT_HOURS:
             stale += 1
-            conn.execute(
-                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
-                   VALUES (?, 'homelab-db', ?, 'warn', 'rpi', ?, 'freshness')""",
-                (run_id, stamp,
-                 f"[bots] discord-{bot} has not posted in {age:.0f}h "
-                 f"(last {str(last_post)[:16]})"),
-            )
-    mark_dataset(conn, "bot-health", source_at=stamp, rows=checked)
+            finding(f"[bots] discord-{bot} has not posted in {age:.0f}h "
+                    f"(last {str(last_post)[:16]})")
+    if paused:
+        print(f"[ingest] bots deliberately off, not checked: {', '.join(paused)}", flush=True)
+    if checked == 0 and unreachable:
+        mark_dataset(conn, "bot-health",
+                     error=f"no bot status route answered ({', '.join(unreachable)})")
+    elif checked == 0:
+        mark_dataset(conn, "bot-health", source_at=stamp, rows=0)
+    else:
+        mark_dataset(conn, "bot-health", source_at=stamp, rows=checked)
     return checked, stale
 
 
-def ingest_net_devices(conn):
-    """LAN inventory from Pi-hole's DHCP leases; a new device becomes a change event.
+# Pi-hole FTL's device table: one row per MAC (network) with every address it has used
+# (network_addresses), each with the last time rpi's ARP cache / a DNS query saw it.
+# Newest address first, so the first IPv4 per MAC is its current one.
+NET_DEVICES_SQL = (
+    "SELECT n.hwaddr, a.ip, COALESCE(a.name, ''), a.lastSeen "
+    "FROM network n JOIN network_addresses a ON a.network_id = n.id "
+    "WHERE n.hwaddr LIKE '__:__:__:__:__:__' AND n.hwaddr <> '00:00:00:00:00:00' "
+    "AND a.ip LIKE '192.168.1.%' "
+    "ORDER BY a.lastSeen DESC"
+)
+NET_ACTIVE_HOURS = 24  # seen within this window = on the LAN now
 
-    Read over SSH rather than through Pi-hole's API because the leases file is the
-    authoritative record and needs no additional secret on opti — the collectors' key is
-    already here. Pi-hole is the only DHCP server on this LAN, so this is the whole
-    picture (see the incident registry for what happens when it is not).
+
+def parse_net_devices(raw, now_epoch):
+    """`mac|ip|name|lastSeen` lines -> {mac: (ip, hostname)} for devices seen recently."""
+    seen = {}
+    cutoff = now_epoch - NET_ACTIVE_HOURS * 3600
+    for line in raw.splitlines():
+        parts = line.strip().split("|")
+        if len(parts) != 4:
+            continue
+        mac, ip, name, last_seen = parts
+        mac = mac.lower()
+        if mac in seen or not last_seen.isdigit() or int(last_seen) < cutoff:
+            continue
+        hostname = name.strip() or None
+        if hostname and hostname.endswith(".lan"):
+            hostname = hostname[:-4]
+        seen[mac] = (ip, hostname)
+    return seen
+
+
+def ingest_net_devices(conn):
+    """LAN inventory from Pi-hole FTL's network table; a new device becomes a change event.
+
+    This used to read Pi-hole's dhcp.leases, but the router took over DHCP in Sept 2026
+    and that file has been frozen since 2026-09-08 — it kept "succeeding" with the same 9
+    stale leases every cycle (and ignored the expiry column), so the inventory looked
+    fresh while describing a LAN from two weeks earlier. FTL's network table is fed from
+    rpi's ARP cache and from every DNS client, which is still the whole LAN.
+
+    Read over SSH with the collectors' key (no Pi-hole API password needed on opti), with
+    FTL's bundled sqlite3 in read-only mode — the container has no other sqlite binary.
     """
-    raw = run_ssh("rpi", ["sudo", "-n", "docker", "exec", "pihole",
-                          "cat", "/etc/pihole/dhcp.leases"])
+    raw = run_ssh("rpi", ["sudo", "-n", "docker", "exec", "pihole", "pihole-FTL", "sqlite3",
+                          "-readonly", "-separator", "|", "/etc/pihole/pihole-FTL.db",
+                          NET_DEVICES_SQL])
     if not raw:
-        mark_dataset(conn, "dhcp-leases", error="could not read pihole dhcp.leases")
+        mark_dataset(conn, "dhcp-leases",
+                     error="could not read pihole-FTL.db network table on rpi over SSH")
         return 0, 0
 
     stamp = now_iso()
-    seen = {}
-    for line in raw.splitlines():
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        _expiry, mac, ip, hostname = parts[0], parts[1], parts[2], parts[3]
-        seen[mac] = (ip, None if hostname == "*" else hostname)
+    seen = parse_net_devices(raw, time.time())
+    if not seen:
+        mark_dataset(conn, "dhcp-leases",
+                     error=f"pihole network table had no device seen in {NET_ACTIVE_HOURS}h")
+        return 0, 0
 
     known = {row["mac"]: row for row in conn.execute(
         "SELECT mac, ip, hostname, active FROM net_devices").fetchall()}
@@ -1189,14 +1327,21 @@ def ingest_net_devices(conn):
 
 
 def ingest_pihole_daily(conn):
-    """Query/block totals per day, through the webapp's read-only Pi-hole proxy."""
-    try:
-        summary = fetch_json(WEBAPP_API + "/pihole/summary", timeout=12)
-    except (urllib.error.URLError, OSError, json.JSONDecodeError, ValueError) as exc:
-        mark_dataset(conn, "pihole-stats", error=str(exc))
+    """Query/block totals per day, through the webapp's read-only Pi-hole proxy.
+
+    rpi runs Pi-hole v6, whose /api needs a session login; the webapp (on opti) holds
+    that login and serves this summary, so nothing here needs a Pi-hole password.
+    """
+    summary, error = fetch_webapp("/pihole/summary")
+    if error:
+        mark_dataset(conn, "pihole-stats", error=error)
         return 0
 
     if not isinstance(summary, dict):
+        mark_dataset(conn, "pihole-stats", error="unexpected /api/pihole/summary shape")
+        return 0
+    if summary.get("error") and summary.get("dns_queries_today") is None:
+        mark_dataset(conn, "pihole-stats", error=f"webapp pihole proxy: {summary['error']}")
         return 0
     queries = summary.get("queries_today") or summary.get("dns_queries_today") or summary.get("queries")
     blocked = summary.get("blocked_today") or summary.get("ads_blocked_today") or summary.get("blocked")
@@ -1217,7 +1362,8 @@ def ingest_pihole_daily(conn):
              domains_blocked = excluded.domains_blocked""",
         (day, queries, blocked, percent,
          summary.get("unique_clients") or summary.get("clients"),
-         summary.get("domains_being_blocked") or summary.get("domains_blocked")),
+         summary.get("domains_being_blocked") or summary.get("gravity_domains")
+         or summary.get("domains_blocked")),
     )
     mark_dataset(conn, "pihole-stats", source_at=now_iso(), rows=1)
     return 1
@@ -1393,50 +1539,64 @@ def ingest_pricewatch(conn, run_id):
     return rows
 
 
-def freshness_findings(conn):
+def open_health_run(conn):
+    """The homelab-db agent_runs row every check of this cycle hangs its findings off,
+    so "what is wrong with the data plane right now" is one query."""
+    stamp = now_iso()
+    return upsert_run(conn, "homelab-db", stamp, stamp[:10], "ok",
+                      "data-plane freshness check", "ingest.py")
+
+
+def freshness_findings(conn, run_id):
     """Generalises the doctor's stale-report check to every registered dataset.
 
     A pipeline that silently stops feeding looks exactly like a quiet homelab, which is
-    the failure mode this exists to make loud.
+    the failure mode this exists to make loud. Runs LAST in the cycle, after every step
+    has marked its dataset, so this cycle's errors are reported this cycle.
+
+    A dataset that is erroring gets both findings: the error (why) and, once its last
+    good data is past budget, the age (how long) — so a feed that has been down for two
+    weeks escalates to critical instead of reading as one more "ingest error" warning.
     """
     stamp = now_iso()
-    run_id = upsert_run(conn, "homelab-db", stamp, stamp[:10], "ok",
-                        "data-plane freshness check", "ingest.py")
     now = datetime.now(timezone.utc)
     stale = 0
+
+    def finding(severity, message):
+        conn.execute(
+            """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
+               VALUES (?, 'homelab-db', ?, ?, NULL, ?, 'freshness')""",
+            (run_id, stamp, severity, message),
+        )
 
     for row in conn.execute(
         "SELECT id, label, cadence_hours, last_source_at, last_error FROM datasets "
         "WHERE cadence_hours IS NOT NULL"
     ).fetchall():
+        flagged = False
         if row["last_error"]:
-            conn.execute(
-                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
-                   VALUES (?, 'homelab-db', ?, 'warn', NULL, ?, 'freshness')""",
-                (run_id, stamp, f"[{row['id']}] ingest error: {row['last_error']}"),
-            )
-            stale += 1
-            continue
-        if not row["last_source_at"]:
-            continue
-        try:
-            when = datetime.fromisoformat(str(row["last_source_at"]).replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        age_hours = (now - when).total_seconds() / 3600
-        budget = row["cadence_hours"] * 2
-        if age_hours > budget:
-            severity = "critical" if age_hours > budget * 3 else "warn"
-            conn.execute(
-                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
-                   VALUES (?, 'homelab-db', ?, ?, NULL, ?, 'freshness')""",
-                (run_id, stamp, severity,
-                 f"[{row['id']}] {row['label']} is {age_hours:.1f}h old "
-                 f"(expected every {row['cadence_hours']}h)"),
-            )
-            stale += 1
+            finding("warn", f"[{row['id']}] ingest error: {row['last_error'][:500]}")
+            flagged = True
+        when = None
+        if row["last_source_at"]:
+            try:
+                when = datetime.fromisoformat(str(row["last_source_at"]).replace("Z", "+00:00"))
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+            except ValueError:
+                when = None
+        if when is not None:
+            age_hours = (now - when).total_seconds() / 3600
+            budget = row["cadence_hours"] * 2
+            if age_hours > budget:
+                severity = "critical" if age_hours > budget * 3 else "warn"
+                finding(severity, f"[{row['id']}] {row['label']} is {age_hours:.1f}h old "
+                                  f"(expected every {row['cadence_hours']}h)")
+                flagged = True
+        # never produced and never failed = not wired yet; nothing to say
+        stale += flagged
 
-    return stale, run_id
+    return stale
 
 
 def _finalise_run_status(conn, run_id):
@@ -1623,20 +1783,49 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
     started = time.time()
     stats = {}
 
+    step_errors = {}
+
+    def step(name, fn, *args, dataset=None):
+        """Run one ingest step inside a SAVEPOINT.
+
+        One feed failing must never cost the rest of the cycle: before this, any
+        exception (a changed JSON shape, a locked file) propagated out of the single
+        BEGIN IMMEDIATE block and rolled back *every* feed's writes for that cycle. Now
+        the failed step's partial writes roll back, its dataset records last_error (so
+        freshness_findings reports it), and the cycle carries on.
+        """
+        conn.execute("SAVEPOINT ingest_step")
+        try:
+            result = fn(*args)
+        except Exception as exc:  # noqa: BLE001 — isolation is the point
+            conn.execute("ROLLBACK TO ingest_step")
+            conn.execute("RELEASE ingest_step")
+            message = f"{type(exc).__name__}: {exc}"
+            step_errors[name] = message
+            if dataset:
+                mark_dataset(conn, dataset, error=f"ingest step '{name}' crashed — {message}")
+            return None
+        conn.execute("RELEASE ingest_step")
+        return result
+
     with db.writing(conn):
         sync_registry(conn)
+        run_id = open_health_run(conn)
 
-        reports, newest = ingest_reports_dir(conn, agent_logs_dir(), "agent-logs", backfill=backfill)
-        stats["reports"] = reports
+        r = step("agent-logs", ingest_reports_dir, conn, agent_logs_dir(), "agent-logs",
+                 backfill, dataset="agent-logs")
+        stats["reports"], newest = r if r else (None, None)
 
-        security, newest_security = ingest_reports_dir(
-            conn, reports_dir(), "security-reports", backfill=backfill
-        )
-        stats["security_reports"] = security
+        r = step("security-reports", ingest_reports_dir, conn, reports_dir(),
+                 "security-reports", backfill, dataset="security-reports")
+        stats["security_reports"], newest_security = r if r else (None, None)
 
-        newest_agent_sync = None
-        data, error = fetch_arch_data()
-        if data:
+        def arch():
+            data, error = fetch_arch_data()
+            if not data:
+                stats["arch_error"] = error
+                mark_dataset(conn, "arch-merged", error=error)
+                return None
             stats["change_events"] = ingest_arch(conn, data)
             merge = (data.get("live_merge") or {}).get("generated_at")
             mark_dataset(conn, "arch-merged", source_at=merge or now_iso(),
@@ -1647,23 +1836,28 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
             collected = [i.get("collected_at") for i in
                          ((data.get("live_merge") or {}).get("ingested") or {}).values()
                          if i.get("collected_at")]
-            newest_agent_sync = max(collected) if collected else None
-        else:
-            stats["arch_error"] = error
-            mark_dataset(conn, "arch-merged", error=error)
+            return max(collected) if collected else None
+        newest_agent_sync = step("arch", arch, dataset="arch-merged")
 
-        stats["docs"] = ingest_docs(conn)
-        newest_doc = conn.execute("SELECT MAX(mtime) FROM docs").fetchone()[0]
-        mark_dataset(conn, "docs-corpus", source_at=newest_doc or now_iso(), rows=stats["docs"])
-        stats["raw"] = ingest_workspace(conn)
+        def docs():
+            stats["docs"] = ingest_docs(conn)
+            newest_doc = conn.execute("SELECT MAX(mtime) FROM docs").fetchone()[0]
+            mark_dataset(conn, "docs-corpus", source_at=newest_doc or now_iso(), rows=stats["docs"])
+            return newest_doc
+        newest_doc = step("docs", docs, dataset="docs-corpus")
+        stats["raw"] = step("workspace", ingest_workspace, conn)
 
         # Producers are graded on the freshness of what they produced, so a stalled
         # collector or a silent agent shows up as a stale dataset rather than a blank.
-        mark_dataset(conn, "collectors", source_at=newest)
-        mark_dataset(conn, "security-tools", source_at=newest_security)
-        mark_dataset(conn, "arch-agents", source_at=newest_agent_sync)
-        mark_dataset(conn, "repo-curated", source_at=newest_doc)
-        mark_dataset(conn, "homelab-db", source_at=now_iso())
+        # (Skipped for a producer whose store step crashed: its error must stay visible.)
+        if "agent-logs" not in step_errors:
+            mark_dataset(conn, "collectors", source_at=newest)
+        if "security-reports" not in step_errors:
+            mark_dataset(conn, "security-tools", source_at=newest_security)
+        if "arch" not in step_errors:
+            mark_dataset(conn, "arch-agents", source_at=newest_agent_sync)
+        if "docs" not in step_errors:
+            mark_dataset(conn, "repo-curated", source_at=newest_doc)
 
         # The read side has no other way to report itself: every served query writes an
         # audit row, so the newest one is when the API/MCP surface was last actually used.
@@ -1671,28 +1865,42 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
         if last_query:
             mark_dataset(conn, "mcp-server", source_at=last_query)
 
-        stats["incidents"] = ingest_incidents(conn)
-        stats["cs2_rows"] = ingest_leetify(conn)
-        stats["monitors"] = ingest_monitors(conn)
-        devices, new_devices = ingest_net_devices(conn)
-        stats["devices"] = f"{devices} ({new_devices} new)"
-        stats["pihole_days"] = ingest_pihole_daily(conn)
-        stats["media"] = ingest_media_counters(conn)
+        stats["incidents"] = step("incidents", ingest_incidents, conn, dataset="incidents")
+        stats["cs2_rows"] = step("leetify", ingest_leetify, conn, dataset="leetify")
+        stats["monitors"] = step("uptime-kuma", ingest_monitors, conn, dataset="uptime-kuma")
+        r = step("net-devices", ingest_net_devices, conn, dataset="dhcp-leases")
+        stats["devices"] = f"{r[0]} ({r[1]} new)" if r else None
+        stats["pihole_days"] = step("pihole", ingest_pihole_daily, conn, dataset="pihole-stats")
+        stats["media"] = step("media", ingest_media_counters, conn, dataset="media-counters")
 
-        # freshness_findings owns the homelab-db run row; the bundle checks below hang
-        # their findings off the same run so "what is wrong right now" is one query.
-        stats["stale_datasets"], run_id = freshness_findings(conn)
-        certs, cert_warnings = ingest_certificates(conn, run_id)
-        stats["certificates"] = certs
-        stats["cert_warnings"] = cert_warnings
-        stats["smart_flags"] = check_smart(conn, run_id)
-        stats["prices"] = ingest_pricewatch(conn, run_id)
-        checked, drifted, skipped = ingest_deploy_drift(conn, run_id)
-        stats["deploy_drift"] = f"{drifted} drifted / {checked} checked" + (
-            f" ({skipped} skipped: repo dirty)" if skipped else "")
-        bots, silent = ingest_bot_health(conn, run_id)
-        stats["bots_silent"] = f"{silent}/{bots}"
+        r = step("certificates", ingest_certificates, conn, run_id)
+        stats["certificates"], stats["cert_warnings"] = r if r else (None, None)
+        stats["smart_flags"] = step("smart", check_smart, conn, run_id)
+        stats["prices"] = step("pricewatch", ingest_pricewatch, conn, run_id, dataset="pricewatch")
+        r = step("deploy-drift", ingest_deploy_drift, conn, run_id, dataset="deploy-drift")
+        if r:
+            checked, drifted, skipped = r
+            stats["deploy_drift"] = f"{drifted} drifted / {checked} checked" + (
+                f" ({skipped} skipped: repo dirty)" if skipped else "")
+        r = step("bot-health", ingest_bot_health, conn, run_id, dataset="bot-health")
+        if r:
+            stats["bots_silent"] = f"{r[1]}/{r[0]}"
+
+        mark_dataset(conn, "homelab-db", source_at=now_iso(),
+                     error=("steps crashed: " + ", ".join(sorted(step_errors)))
+                     if step_errors else None)
+        for name, message in step_errors.items():
+            conn.execute(
+                """INSERT INTO findings (run_id, tool, run_at, severity, host, message, kind)
+                   VALUES (?, 'homelab-db', ?, 'warn', 'opti', ?, 'freshness')""",
+                (run_id, now_iso(), f"[ingest] step '{name}' crashed: {message[:400]}"),
+            )
+
+        # Last, so every dataset this cycle touched is graded on this cycle's result.
+        stats["stale_datasets"] = freshness_findings(conn, run_id)
         _finalise_run_status(conn, run_id)
+        if step_errors:
+            stats["step_errors"] = step_errors
 
     if force_maintenance or maintenance_due(conn):
         stats["maintenance"] = maintenance(conn)

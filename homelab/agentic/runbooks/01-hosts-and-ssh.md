@@ -9,15 +9,16 @@
 
 ## Hosts
 
-LAN `192.168.1.0/24`, gateway `192.168.1.1` (Verizon router — its DHCP must stay **off**).
+LAN `192.168.1.0/24`, gateway `192.168.1.1` (TP-Link Archer — **the LAN's DHCP server since Sept 2026**; Pi-hole's DHCP must stay off).
 
-### tux — 192.168.1.3
-The workstation, and where Claude Code normally runs. CachyOS. Runs no homelab services and
-nothing depends on it. Mounts opti's Samba share at `~/opti` (CIFS 3.1.1), which is how the repo
-is reached. Also `ptm.lan` / `tux.lan` in Pi-hole.
+### tux / ptm — 192.168.1.3
+The workstation, where Claude Code runs. **Dual-boot:** `tux` is the CachyOS side, `ptm` the
+Windows 11 side — the ptm4 working copy is `E:\REPO\ptm4` on Windows (local NTFS). Runs no
+homelab services and nothing depends on it. tux mounts opti's Samba share at `~/opti` (CIFS
+3.1.1). Both `ptm.lan` and `tux.lan` resolve in Pi-hole.
 
 ### opti — 192.168.1.11
-Storage and control plane. Debian 12, Intel i5-3570, 5.7 GiB RAM.
+Storage, control plane and (since 2026-09-10) the app tier. Debian 12, Intel i5-3570, 31 GiB RAM.
 - **OpenMediaVault** web UI on `:80` — **UI/monitoring only since the ZFS migration**; it no
   longer owns the live share. Don't edit `/etc/samba/*` (OMV leftovers) *or*
   `/etc/homelab/samba-red.conf` in place — the repo copy `homelab/hosts/opti/samba/samba-red.conf`
@@ -35,22 +36,24 @@ Storage and control plane. Debian 12, Intel i5-3570, 5.7 GiB RAM.
   `red/opsdb` (**not** under `red/fs`, so it is unreachable over CIFS — SQLite WAL over a
   network filesystem is unsafe). See [`09-homelab-db.md`](09-homelab-db.md).
 - Self-hosted **x86 CI runner** (`actions.runner.ptm4-ptm4.opti`), xrdp on `:3389`.
-- SSH: `ssh opti` (user `ptm`, `~/.ssh/homelab`). Also reachable with `~/.claude/opti_key`.
+- **App tier** in `/srv/docker/compose` (moved from rpi 2026-09-10): dashboard webapp behind
+  nginx TLS on `:8443` (`webapp.lan`; source `homelab/hosts/opti/apps/webapp.v3.Fable/`, deployed
+  by `opti-apps-deploy.yml`), **Vaultwarden** on `:443` (`bitwarden.lan`), **notes** on `:3002`,
+  Dozzle `:9999`, hltv-api, and the **Discord bot fleet** (`discord-weather`, `-healthdigest`,
+  `-jellyfin`, `-sports`, `-hltv`) — control APIs on the internal Docker network only, so
+  **manage bots via the webapp, never by editing their files**.
+- SSH: `ssh opti` (user `ptm`; key `~/.ssh/homelab` on tux, `~/.ssh/optiplex_omv` on ptm). Also
+  reachable with `~/.claude/opti_key` from tux.
 
 ### rpi — 192.168.1.10
-DNS, DHCP and the web tier. Ubuntu 22.04 on a Raspberry Pi 4, 3.7 GiB RAM, **117 GB SD card** —
-the most fragile hardware here, carrying the most critical role.
-- **Pi-hole v6** in Docker: DNS *and* DHCP for the whole LAN, ~15 local A records, 6 MAC-pinned
-  reservations. Whitelist a domain with `pihole allow <domain>`.
-- **Dashboard webapp** behind nginx TLS on `:8443` (`webapp.lan`), **Vaultwarden** on `:443`
-  (`bitwarden.rpi.lan`), **notes** on `:3002`.
-- **Discord bot fleet** — 5 containers (`discord-weather`, `-healthdigest`, `-jellyfin`,
-  `-sports`, `-hltv`). Their control APIs bind `:8080` on the internal Docker network only, so
-  **manage them via the webapp, never by editing files on the rpi**.
-- Self-hosted **ARM64 CI runner** — this is what deploys the webapp.
-- Mounts opti at `/mnt/opti-fs`; the webapp container sees `/agent-logs`, `/reports` and
-  `/workspace` read-only through it.
-- SSH: `ssh rpi` (user `ptm`, `~/.ssh/homelab`).
+**DNS only — a network appliance** since the 2026-09-09 rebuild. Ubuntu 24.04 on a Raspberry Pi 4,
+3.7 GiB RAM, booting from a **USB SSD** (the SD card died 2026-09-08).
+- **Pi-hole v6** in Docker: the LAN's only DNS server, ~15 local A records. **DHCP is off** —
+  the router serves it. Whitelist a domain with `pihole allow <domain>`. systemd-resolved stays
+  disabled (its :53 TCP stub breaks Pi-hole's bind — runbook 10 addendum).
+- **Dozzle agent** `:7007`. Exactly two containers; runbook 10 has the test before adding any.
+- Self-hosted **ARM64 CI runner**.
+- SSH: `ssh rpi` (user `ptm`; key `~/.ssh/homelab` on tux, `~/.ssh/rpi` on ptm).
 
 ### noblenumbat — 192.168.1.6
 Media stack. Ubuntu 24.04, Intel i7-8665U, 16 GB. A Dell Latitude 7400 laptop with sleep masked;
@@ -65,13 +68,15 @@ cooling problem, not Jellyfin).
 - Compose at `/opt/yams/docker-compose.yaml` (repo source: `homelab/hosts/noblenumbat/`).
   Watchtower was removed 2026-07-25 — image updates are report-only via software-inventory,
   applied deliberately with `docker compose pull`.
-- SSH: `ssh noblenumbat` (user `ptm`, `~/.ssh/homelab`).
+- **Uptime Kuma** `:3001` (host network; moved off opti 2026-09-10 so it watches opti from outside).
+- SSH: `ssh noblenumbat` (user `ptm`; key `~/.ssh/homelab` on tux, `~/.ssh/noblenumbat` on ptm).
 
 ### android — 192.168.1.54
 Galaxy S10 (SM-G973U), unrooted, Termux. Runs the local llama.cpp server on `:8080` (Qwen2.5-3B)
 — see the local-LLM runbook. **Frequently offline**; treat it as intermittent and let callers
 degrade gracefully.
-- SSH: `ssh android` — **port 8022, user `u0_a204`**, `~/.ssh/homelab`.
+- SSH: `ssh android` — **port 8022, user `u0_a204`**, `~/.ssh/homelab`. **tux only** — ptm has no
+  android alias or key.
 - Unrooted, so privileged commands go through adb over localhost.
 - Wi-Fi MAC randomization makes the lease bounce (seen at `.54` and `.126`). Pi-hole has a
   record for `.54`; if it drifts, either pin a DHCP reservation (after disabling MAC
@@ -79,8 +84,10 @@ degrade gracefully.
 
 ## Keys — two regimes, don't mix them
 
-**1. Interactive** (from tux, i.e. you). Shared key `~/.ssh/homelab`, wired in `~/.ssh/config`
-for all four aliases, so `ssh <alias>` just works. Verify what an alias resolves to:
+**1. Interactive** (from the workstation, i.e. you). Both boots have `~/.ssh/config` aliases, so
+`ssh <alias>` just works: on **tux** the shared key `~/.ssh/homelab` for all four; on **ptm**
+(Windows, config added 2026-09-24) per-host `~/.ssh/optiplex_omv`, `~/.ssh/rpi`,
+`~/.ssh/noblenumbat`, no android. Verify what an alias resolves to:
 
 ```bash
 ssh -G <alias> | grep -iE '^(hostname|port|user|identityfile) '

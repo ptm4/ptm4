@@ -287,7 +287,7 @@ def _claude_wire():
             f.write(updated)
         changed.append("CLAUDE.md")
 
-    # ── .claude/skills + .claude/rules (copies — symlinks fail on the CIFS mount) ──
+    # ── .claude/skills + .claude/rules (copies — symlinks need admin on NTFS, fail on CIFS) ──
     src = os.path.join(REPO_ROOT, AGENTIC_REL, "skills")
     dst = os.path.join(REPO_ROOT, ".claude", "skills")
     os.makedirs(dst, exist_ok=True)
@@ -297,6 +297,12 @@ def _claude_wire():
             shutil.rmtree(d)
         shutil.copytree(s, d)
         changed.append(f".claude/skills/{name}")
+    # Prune copies whose source was removed or renamed — .claude/ holds only generated
+    # copies, so an orphan here is a stale skill still being offered every session.
+    for name in os.listdir(dst):
+        if os.path.isdir(os.path.join(dst, name)) and name not in skill_names():
+            shutil.rmtree(os.path.join(dst, name))
+            changed.append(f".claude/skills/{name} (pruned)")
 
     rsrc = os.path.join(REPO_ROOT, AGENTIC_REL, "rules")
     rdst = os.path.join(REPO_ROOT, ".claude", "rules")
@@ -305,6 +311,12 @@ def _claude_wire():
     for name in rule_names():
         shutil.copyfile(os.path.join(rsrc, name), os.path.join(rdst, name))
         changed.append(f".claude/rules/{name}")
+    # Same for rules: an orphaned rule keeps auto-loading into every session.
+    if os.path.isdir(rdst):
+        for name in os.listdir(rdst):
+            if name.endswith(".md") and name not in rule_names():
+                os.remove(os.path.join(rdst, name))
+                changed.append(f".claude/rules/{name} (pruned)")
 
     # ── hooks into .claude/settings.json ──────────────────────────────────────────
     # Merge, never replace: only our harness entries are managed here, so any hook or

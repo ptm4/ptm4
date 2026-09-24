@@ -1,4 +1,9 @@
-# Modding.md — standards for modding anything
+---
+name: modding-standards
+description: Standards for modding any PC game or app safely — backups and hash-guarded uninstaller before the first file lands, manifests, archiving mod binaries, version pinning, log-based verification, anti-cheat hard line. Use before installing, updating, fixing or removing any game mod, injector, ReShade/RenoDX addon, DLSS/upscaler swap, loose-file or plugin mod (Starfield, AC, etc.), or when un-modding an install.
+---
+
+# Modding standards
 
 Game-agnostic practices. Started 2026-09-01 after the DLSS 5 neural-rendering
 installs (Black Flag Resynced, Starfield); nothing here is specific to those.

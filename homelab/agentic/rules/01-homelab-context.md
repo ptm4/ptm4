@@ -10,11 +10,12 @@ probing a host yourself.
 ## Hosts
 
 LAN is `192.168.1.0/24`, gateway `.1` (a **TP-Link Archer** — earlier docs said "Verizon
-router"; that hardware doesn't exist, confirmed 2026-07-31). All four hosts are SSH-able by alias.
+router"; that hardware doesn't exist, confirmed 2026-07-31). The servers are SSH-able by alias
+from either side of the workstation.
 
 | Alias | IP | OS | Role — what it contains |
 |---|---|---|---|
-| `tux` | .3 | CachyOS | **You are usually here.** Workstation. No services; nothing depends on it. |
+| `tux` / `ptm` | .3 | CachyOS / Windows 11 | **You are here.** One workstation, dual-booted: `tux` is the Linux side, `ptm` the Windows side (where the repo lives). Check which with `hostname`. No services; nothing depends on it. |
 | `opti` | .11 | Debian 12 | **Storage + control plane + app tier.** ZFS pool `red` (4 TB WD Red Plus) exported as Samba `\\opti\red` = `/srv/red/fs` (share config: `/etc/homelab/samba-red.conf`, NOT OMV's smb.conf); old mergerfs pair = weekly cold copy at `/srv/attic`; OMV for UI/monitoring only; agent dispatcher `:9099`; **homelab-db `:9100`** (queryable index + MCP); x86 CI runner; xrdp `:3389`. **Since 2026-09-10 also the whole app tier** (13 containers in `/srv/docker/compose`): dashboard **`webapp.lan:8443`**, Vaultwarden `bitwarden.rpi.lan:443`, notes `:3002`, Dozzle `:9999`, 5 `discord-*` bots, hltv-api. 31 GB RAM. |
 | `rpi` | .10 | Ubuntu 24.04 (RPi 4) | **DNS only — a network appliance.** Pi-hole (DNS; **DHCP is the router's** since Sept 2026); Dozzle agent `:7007`; ARM64 CI runner. **2 containers, and it stays that way** — see runbook 10 for the four-part test before adding anything. Boots from a **USB SSD** (the microSD died 2026-09-08). |
 | `noblenumbat` | .6 | Ubuntu 24.04 | **Media.** Jellyfin `:8096`, Kavita `:5000`, *arr stack, qBittorrent/SABnzbd/Prowlarr behind Gluetun VPN, Portainer `:9000`. **Uptime Kuma `:3001`** (host network; moved off opti 2026-09-10 so it watches opti from outside). ~16 containers. YAMS compose at `/opt/yams/`. |
@@ -36,9 +37,13 @@ not resolve; single-label names need a DNS suffix most clients here don't set.
 
 Do not mix these up; it is the most common wasted-token rediscovery.
 
-1. **Interactive (you, from tux)** — `~/.ssh/homelab`, already wired in `~/.ssh/config` for all
-   four aliases. Just `ssh opti`. android is the odd one: **port 8022, user `u0_a204`**.
-   `~/.claude/opti_key` also reaches `ptm@192.168.1.11`.
+1. **Interactive (you, from the workstation)** — `~/.ssh/config` carries the aliases on both
+   boots, so just `ssh opti` either way. Keys differ per side:
+   - **tux (Linux):** `~/.ssh/homelab` for all four aliases. android is the odd one:
+     **port 8022, user `u0_a204`**. `~/.claude/opti_key` also reaches `ptm@192.168.1.11`.
+   - **ptm (Windows):** `~/.ssh/optiplex_omv`, `~/.ssh/rpi`, `~/.ssh/noblenumbat` (config
+     added 2026-09-24). **No android key on this side.** Use PowerShell or Git Bash's `ssh`;
+     Git Bash here has no coreutils (`ls`/`cat` missing).
 2. **Collectors/runners (on opti, fanning out)** — `~/.ssh/hl_agents`, selected via `HL_SSH_KEY`
    with targets in `HL_HOSTS`, both set in `/etc/hl-agents.env`. This key is *not* the
    interactive one.
@@ -48,8 +53,9 @@ privileged commands need adb over localhost.
 
 ## Where the repo lives
 
-As of 2026-09-08 the working copy is **`E:\REPO\ptm4` on the Windows side of this
-workstation** (local NTFS disk, not a network share). Edit there.
+As of 2026-09-08 the working copy is **`E:\REPO\ptm4` on the Windows side (`ptm`) of this
+workstation** (local NTFS disk, not a network share). Edit there. From a tux session the
+same disk may be mounted, but check `git status` before assuming it's the same checkout.
 
 The old `/home/ptm/opti/ptm/repo/ptm4` CIFS mount described in earlier revisions of this file
 is stale: it was backed by opti's pool checkout, which Peter moved to
@@ -58,14 +64,11 @@ files — never `rm -rf` or reset it**, Peter reconciles it by hand). Sessions t
 pool copy as the working copy, or the tux CIFS mount as an edit path, were both wrong — treat
 any clone reachable from `tux` or opti as a deploy/runtime copy only.
 
-opti's own services (`hl-agent-dispatcher`, `homelab-db`, the webapp `/workspace` mount) still
-hardcode the old `/srv/red/fs/ptm/repo/ptm4` path and are broken until it's restored (dispatcher
-crash-looping, homelab-db will fail on next restart). Fix is **not** a repoint to `E:\REPO\ptm4`
-(opti/Linux can't reach that as a local path) and deliberately **not** a second git checkout on
-opti either — `.github/workflows/opti-deploy.yml` now `rsync -a --delete`s its own ephemeral
-runner checkout into `/srv/red/fs/ptm/repo/ptm4/homelab/` on every push, a plain `.git`-less
-snapshot nobody edits. See `homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md`
-§0.1 / Phase 2.3 — that step still needs one push (or `workflow_dispatch`) to actually run.
+opti's own services (`hl-agent-dispatcher`, `homelab-db`, the webapp `/workspace` mount) run
+from `/srv/red/fs/ptm/repo/ptm4/homelab/`. That is **not** a git checkout:
+`.github/workflows/opti-deploy.yml` `rsync -a --delete`s its runner checkout there on every
+push — a `.git`-less deploy snapshot. Never edit it; a change to opti's services goes live
+only when Peter pushes. (Restored and running as of 2026-09-24; runbook 10 §0.1 has history.)
 
 The old `noblenumbat:~/code/ptm4` clone **no longer exists** (reverted 2026-07-22). Do not send
 edits there.
@@ -85,14 +88,16 @@ will get a hard denial rather than a warning.
   `git status` hides ignored *and* uncommitted content; this exact mistake destroyed skills and
   rules on 2026-07-22, back when `homelab/agentic/` was still ignored.
 - **Never hand-edit Samba or OMV config on opti.** OpenMediaVault regenerates it; edits vanish.
-- **Never edit `discord-*` files directly on rpi.** Bots are managed through the webapp.
-- **Never edit `/srv/docker/compose/webapp/` on rpi as the fix.** That is a deploy target, not
-  the source — the next CI run reverts it. Edit `homelab/hosts/opti/apps/webapp.v2.legacy/` in the
-  repo (the live v2 app; `webapp.v3.Fable/` and `webapp.v3.Astra/` are undeployed rewrites).
+- **Never edit `discord-*` bot files directly on opti.** Bots are managed through the webapp.
+- **Never edit `/srv/docker/compose/webapp/` on opti as the fix.** That is a deploy target, not
+  the source — the next CI run (`opti-apps-deploy.yml`) reverts it. Edit
+  `homelab/hosts/opti/apps/webapp.v3.Fable/` in the repo — the live app since 2026-09-10.
+  `webapp.v2.legacy/` and `webapp.v3.Astra/` are undeployed.
 - **Never `git commit`, `amend`, `reset`, or push.** Peter commits his own work. Make the change
-  and say what needs committing.
-- **Never enable DHCP on the router (TP-Link Archer).** It races Pi-hole and presents as "all
-  the servers are down".
+  and say what needs committing. (The `doc-builder` agent's post-commit docs commit is the one
+  sanctioned exception — Peter set it up and it only runs after *his* commits.)
+- **Never enable DHCP in Pi-hole.** Since Sept 2026 the router (TP-Link Archer) is the DHCP
+  server; two DHCP servers race and present as "all the servers are down".
 
 ## Ask the database before you probe
 
@@ -107,15 +112,18 @@ and full-text search over every runbook and rule. A session in this repo gets it
 - `hl_changes` — what containers/mounts changed, and when. `hl_metrics` — long-range trends.
 - `hl_query` + `hl_schema` — read-only SQL for anything else.
 
-If the tools aren't present, `HL_DB_TOKEN` is probably not exported in the shell that
-launched Claude Code. Falling back to SSH is fine — but check here first; it is faster and
-does not touch a live host. Details: `runbooks/09-homelab-db.md`.
+If the tools aren't present, `HL_DB_TOKEN` is probably not set where Claude Code was launched —
+on `ptm` it's a Windows *user* environment variable (set 2026-09-24; the app must be restarted
+to see it), on tux it must be exported in the shell. A missing token shows up as "400 Bad
+request syntax" in older server builds, 401 in newer ones. Falling back to SSH is fine — but
+check here first; it is faster and does not touch a live host. Details: `runbooks/09-homelab-db.md`.
 
 ## Working conventions
 
 - Read-only investigation (status, logs, `df`, `docker ps`) needs no approval — just run it.
   State-changing commands: say what you're about to do in one line, then do it.
 - Host access goes through the `homelab-ssh` skill rather than hand-rolled ssh invocations.
-- Adding anything to the dashboard goes through the `add-to-rpi-webapp` skill.
-- The webapp's `frontend/` is bind-mounted on rpi, so static files go live on copy — but a
-  change only *persists* once committed and pushed.
+- Adding anything to the dashboard goes through the `add-to-webapp` skill (board cards:
+  `add-webapp-widget`).
+- The webapp's frontend is a Vite build shipped by CI on opti — there is no live-on-copy path;
+  a change reaches `webapp.lan` only once Peter commits and pushes.

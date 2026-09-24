@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-09-10T06:30:40Z",
+  "generated_at": "2026-09-24T22:23:19Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.lan and referenceable by agents.",
   "workspace": {
@@ -64,16 +64,16 @@
   "inventory": {
     "skills": [
       {
-        "name": "add-to-rpi-webapp",
-        "description": "Add a page, tab, or API route to the homelab dashboard at webapp.lan (dashboards, reports, diagrams, tools). Use when the user asks to add/publish/put something on the rpi web app, or to change what the dashboard shows.",
-        "path": "homelab/agentic/skills/add-to-rpi-webapp",
+        "name": "add-to-webapp",
+        "description": "Add a page, route, tab, or API endpoint to the homelab dashboard at webapp.lan (\"Pert's Pocket\", v3.Fable on opti) — dashboards, reports, diagrams, tools. Use when the user asks to add/publish/put something on the web app, the dashboard, webapp.lan, or \"the rpi web app\" (old name — it runs on opti now), or to change what the dashboard shows.",
+        "path": "homelab/agentic/skills/add-to-webapp",
         "files": [
           "SKILL.md"
         ]
       },
       {
         "name": "add-webapp-widget",
-        "description": "Add a widget to the homelab dashboard's board (the card grid at webapp.lan) — a tile showing live data, status, or a small feed. Use when the user asks for something to appear on the dashboard/board/home screen as a card, or to add/change a dashboard widget.",
+        "description": "Add a widget, card, tile or panel to the homelab dashboard at webapp.lan (v3.Fable on opti) — something showing live data, status, or a small feed on Home, the Monitor, the Control center, a host page, or the Launchpad. Use when the user asks for something to appear on the dashboard/board/home screen as a card or tile, or to add/change a dashboard widget.",
         "path": "homelab/agentic/skills/add-webapp-widget",
         "files": [
           "SKILL.md"
@@ -83,6 +83,14 @@
         "name": "homelab-ssh",
         "description": "SSH into a homelab server (opti, rpi, noblenumbat, or android) to run commands, check status, or make changes on that box. Use whenever a query names one of these hosts and doing anything about it requires actually logging in (not just reading about it in docs).",
         "path": "homelab/agentic/skills/homelab-ssh",
+        "files": [
+          "SKILL.md"
+        ]
+      },
+      {
+        "name": "modding-standards",
+        "description": "Standards for modding any PC game or app safely — backups and hash-guarded uninstaller before the first file lands, manifests, archiving mod binaries, version pinning, log-based verification, anti-cheat hard line. Use before installing, updating, fixing or removing any game mod, injector, ReShade/RenoDX addon, DLSS/upscaler swap, loose-file or plugin mod (Starfield, AC, etc.), or when un-modding an install.",
+        "path": "homelab/agentic/skills/modding-standards",
         "files": [
           "SKILL.md"
         ]
@@ -124,11 +132,6 @@
         "file": "01-homelab-context.md",
         "path": "homelab/agentic/rules/01-homelab-context.md",
         "title": "Homelab context — read nothing else first"
-      },
-      {
-        "file": "Modding.md",
-        "path": "homelab/agentic/rules/Modding.md",
-        "title": "Modding.md — standards for modding anything"
       },
       {
         "file": "homelab-ssh-autotrigger.md",
@@ -186,6 +189,11 @@
         "file": "10-rpi-rebuild-and-app-tier-migration.md",
         "path": "homelab/agentic/runbooks/10-rpi-rebuild-and-app-tier-migration.md",
         "title": "rpi rebuild + app-tier migration to opti"
+      },
+      {
+        "file": "11-dungine-agent-collaboration.md",
+        "path": "homelab/agentic/runbooks/11-dungine-agent-collaboration.md",
+        "title": "11 — Dungine agent collaboration bridge (Astra ↔ Fable)"
       }
     ],
     "harness": [

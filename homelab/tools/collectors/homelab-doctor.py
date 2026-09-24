@@ -27,7 +27,8 @@ import urllib.request
 from datetime import datetime, timezone
 
 from _report import write_report, now_iso
-from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError, INTERMITTENT_HOSTS
+from _hosts import (hosts, ensure_key, run_on, probe, collect_parallel,
+                     MissingKeyError, INTERMITTENT_HOSTS)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AGENT_LOGS_DIR = os.environ.get(
@@ -506,13 +507,26 @@ def main():
             findings.append({"severity": "critical",
                              "message": f"{name} unreachable ({detail})"})
 
-    # ── Per-host: disk + docker over SSH ──
+    # ── Per-host: disk + docker over SSH (parallel fan-out; see _hosts.collect_parallel) ──
     host_dicts = []
+
+    def _per_host(host):
+        ok, detail = probe(host)
+        if not ok:
+            return ("unreachable", detail)
+        return ("ok",) + collect_host(host)
+
     try:
         ensure_key()
-        for host in hosts():
-            ok, detail = probe(host)
-            if not ok:
+        for host, res, err in collect_parallel(hosts(), _per_host):
+            if err is not None:
+                findings.append({"severity": "warn",
+                                 "message": f"[{host.name}] collector error: {err}"})
+                host_dicts.append({"host": host.name, "status": "unknown",
+                                   "summary": f"collector error: {err}", "metrics": {}})
+                continue
+            if res[0] == "unreachable":
+                detail = res[1]
                 # Expected-absent hosts report, but do not accuse. See INTERMITTENT_HOSTS.
                 if host.name not in INTERMITTENT_HOSTS:
                     findings.append({"severity": "warn",
@@ -520,7 +534,7 @@ def main():
                 host_dicts.append({"host": host.name, "status": "unknown",
                                    "summary": f"unreachable ({detail})", "metrics": {}})
                 continue
-            hd, hf = collect_host(host)
+            _, hd, hf = res
             host_dicts.append(hd)
             findings += hf
     except MissingKeyError as e:

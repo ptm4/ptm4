@@ -18,9 +18,10 @@ each. This tree is the **authoritative source**; everything Claude Code actually
 
 ## Materialization: copies, not symlinks
 
-`probe.py --wire claude` **copies** each rule and skill into `.claude/`. It deliberately does
-not symlink: the working copy is reached over a CIFS mount that does not support symlinks
-(`ln -s` → "Operation not supported"). So:
+`probe.py --wire claude` **copies** each rule and skill into `.claude/`, and prunes copies
+whose source was removed. It deliberately does not symlink: the working copy is on the
+Windows side (`E:\REPO\ptm4`, NTFS), where symlinks need admin or Developer Mode, and
+earlier CIFS-mounted copies couldn't hold them at all. Copies work everywhere. So:
 
 ```bash
 python3 homelab/agentic/probe.py --wire claude   # after editing any rule or skill

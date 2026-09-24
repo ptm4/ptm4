@@ -73,7 +73,8 @@ def _samba_or_omv(tool, cmd, path):
 
 
 def _discord_on_rpi(tool, cmd, path):
-    # The bot dirs as they exist *on the rpi* (the deploy target), not in the repo.
+    # The bot dirs as they exist on the deploy host (opti since 2026-09-10; the rpi before
+    # that — the name is historical), not in the repo.
     marker = "/srv/docker/compose/discord-"
     if tool in ("Edit", "Write", "NotebookEdit"):
         return marker in path
@@ -97,6 +98,11 @@ def _git_write(tool, cmd, path):
     # that blocks legitimate work gets switched off — false positives are the real bug.
     if tool != "Bash":
         return False
+    # The one sanctioned exception: doc-builder's follow-up commit after Peter's own
+    # commit (queued by .git/hooks/post-commit). Plain commit only — never amend/push.
+    if (re.search(r"\bgit\b[^|;&\n]*\scommit\b[^|;&\n]*-m\s*[\"']docs: auto-update for ", cmd)
+            and not re.search(r"--amend|\bpush\b|\breset\b", cmd)):
+        return False
     return bool(re.search(r"\bgit\b[^|;&\n]*\s(commit|push)\b", cmd)
                 or re.search(r"\bgit\b[^|;&\n]*\bcommit\b[^|;&\n]*--amend", cmd)
                 or re.search(r"\bgit\s+reset\b[^|;&\n]*--hard", cmd))
@@ -107,7 +113,7 @@ RULES = [
         "rm-repo-copy", "ask", _rm_repo_copy,
         "Deleting a ptm4 working copy. A clean `git status` does NOT mean this is safe — it "
         "hides both ignored and uncommitted files. That reasoning error destroyed the "
-        "add-to-rpi-webapp skill and the repo's own delete-safety rule on 2026-07-22, when "
+        "dashboard skill (then add-to-rpi-webapp, now add-to-webapp) and the repo's own delete-safety rule on 2026-07-22, when "
         "homelab/agentic/ was still gitignored. It is tracked now, but uncommitted rules/hooks "
         "and everything under .claude/ still are not. Run `git status --ignored --porcelain` "
         "and `git clean -ndx` first, preserve anything they list, then confirm.",
@@ -122,15 +128,17 @@ RULES = [
     ),
     (
         "discord-files-on-rpi", "deny", _discord_on_rpi,
-        "The Discord bots are managed through the webapp, not by editing files on the rpi. "
+        "The Discord bots are managed through the webapp, not by editing their deployed files "
+        "(on opti since 2026-09-10). "
         "Their control APIs are only reachable from the webapp container. Edit "
         "homelab/hosts/opti/apps/discord-*/ in the repo, or use the webapp's bot tab.",
     ),
     (
         "webapp-deploy-dir", "deny", _webapp_deploy_dir,
-        "/srv/docker/compose/webapp on the rpi is a deploy target, not source — the next CI "
-        "run overwrites it. Edit homelab/hosts/opti/apps/webapp.v2.legacy/ in the repo instead, then rsync it "
-        "over (copying into this dir is fine; editing in place is the trap).",
+        "/srv/docker/compose/webapp on opti is a deploy target, not source — the next CI run "
+        "(opti-apps-deploy.yml) overwrites it. Edit homelab/hosts/opti/apps/webapp.v3.Fable/ "
+        "in the repo instead (the live app since 2026-09-10; v2.legacy is undeployed) and "
+        "tell Peter to push. Copying into this dir is allowed; editing in place is the trap.",
     ),
     (
         "git-write", "deny", _git_write,
@@ -156,9 +164,9 @@ HINTS = [
     ),
     (
         lambda cmd: re.search(r"\bpihole\b|\bdnsmasq\b|\bdhcp\b", cmd, re.I),
-        "Pi-hole on the rpi is the LAN's only DNS *and* DHCP server. The Verizon router's "
-        "DHCP must stay disabled — two DHCP servers race and present as 'all the servers are "
-        "down'. Whitelist with `pihole allow <domain>`.",
+        "Pi-hole on the rpi is the LAN's only DNS server; since Sept 2026 DHCP is the TP-Link "
+        "Archer router's job. Pi-hole's DHCP must stay disabled — two DHCP servers race and "
+        "present as 'all the servers are down'. Whitelist with `pihole allow <domain>`.",
     ),
 ]
 

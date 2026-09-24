@@ -238,10 +238,19 @@ def hl_status(conn, args):
            ORDER BY CASE severity WHEN 'critical' THEN 0 ELSE 1 END, run_at DESC LIMIT 25"""
     ).fetchall()]
 
+    # Stale = past twice its cadence, OR its last ingest attempt errored. The second arm
+    # matters: a feed that fails every cycle keeps last_source_at at its last good value,
+    # and one that has never succeeded has none at all — both must still show here.
     stale = [dict(r) for r in conn.execute(
-        """SELECT id, label, cadence_hours, last_source_at, last_error FROM datasets
-           WHERE cadence_hours IS NOT NULL AND last_source_at IS NOT NULL
-             AND (julianday('now') - julianday(last_source_at)) * 24 > cadence_hours * 2"""
+        """SELECT id, label, producer_host, cadence_hours, last_source_at,
+                  ROUND((julianday('now') - julianday(last_source_at)) * 24, 1) AS age_hours,
+                  last_error
+           FROM datasets
+           WHERE cadence_hours IS NOT NULL
+             AND (last_error IS NOT NULL
+                  OR (last_source_at IS NOT NULL
+                      AND (julianday('now') - julianday(last_source_at)) * 24 > cadence_hours * 2))
+           ORDER BY last_error IS NULL, last_source_at"""
     ).fetchall()]
 
     services = []
@@ -407,7 +416,8 @@ def hl_dataplane(conn, args):
             age = round(row[0], 2) if row and row[0] is not None else None
         dataset["age_hours"] = age
         cadence = dataset["cadence_hours"]
-        dataset["stale"] = bool(cadence and age is not None and age > cadence * 2)
+        dataset["stale"] = bool(cadence and (
+            dataset["last_error"] or (age is not None and age > cadence * 2)))
     return {"datasets": datasets, "database": _database_facts(conn)}
 
 

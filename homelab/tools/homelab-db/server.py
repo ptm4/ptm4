@@ -104,6 +104,19 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass  # the audit trail is the log
 
+    def parse_request(self):
+        self._body_consumed = False  # one handler serves every request on a connection
+        return super().parse_request()
+
+    def _unread_body(self):
+        """A reply sent before _body() leaves the request body in the socket. On a
+        keep-alive connection the next request line would then be that JSON, which
+        http.server rejects as "400 Bad request syntax" — masking the real error
+        (a 401 from a missing HL_DB_TOKEN, 2026-09-24). Close instead of reusing."""
+        if getattr(self, "_body_consumed", False):
+            return False
+        return int(self.headers.get("Content-Length", 0) or 0) > 0
+
     def _send(self, code, payload, extra_headers=None):
         body = json.dumps(payload, default=str).encode()
         self.send_response(code)
@@ -111,15 +124,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         for key, value in (extra_headers or {}).items():
             self.send_header(key, value)
+        if self._unread_body():
+            self.send_header("Connection", "close")
+            self.close_connection = True
         self.end_headers()
         self.wfile.write(body)
 
     def _send_empty(self, code):
         self.send_response(code)
         self.send_header("Content-Length", "0")
+        if self._unread_body():
+            self.send_header("Connection", "close")
+            self.close_connection = True
         self.end_headers()
 
     def _body(self):
+        self._body_consumed = True
         length = int(self.headers.get("Content-Length", 0) or 0)
         if not length:
             return {}

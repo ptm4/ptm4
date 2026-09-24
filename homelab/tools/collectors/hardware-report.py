@@ -19,7 +19,8 @@ Read-only: never tunes, flashes, or power-cycles hardware. SMART is queried with
 import re
 
 from _report import write_report, now_iso
-from _hosts import hosts, ensure_key, run_on, probe, MissingKeyError, INTERMITTENT_HOSTS
+from _hosts import (hosts, ensure_key, run_on, probe, collect_parallel,
+                     MissingKeyError, INTERMITTENT_HOSTS)
 
 DISK_WARN_PCT = 90
 TEMP_WARN_C = 85.0

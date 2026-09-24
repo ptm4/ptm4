@@ -22,7 +22,7 @@ Refresh procedure when the homelab changes:
     2. Edit the relevant NODES/EDGES/HOSTS entries here.
     3. Bump PROBED_AT.
     4. python3 build-arch-data.py     # validates, then writes data.json
-    5. Deploy per the add-to-rpi-webapp skill.
+    5. Deploy per the add-to-webapp skill.
 
 Usage:
     python3 build-arch-data.py [--out PATH] [--check]
@@ -42,7 +42,7 @@ from pathlib import Path
 PROBED_AT = "2026-08-08T03:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_OUT = REPO_ROOT / "homelab/hosts/opti/apps/webapp.v2.legacy/frontend-legacy/architecture/data.json"
+DEFAULT_OUT = REPO_ROOT / "homelab/hosts/opti/apps/webapp.v3.Fable/frontend-legacy/architecture/data.json"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

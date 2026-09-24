@@ -55,8 +55,10 @@ Everything below is read, never rewritten — the producers keep writing exactly
   the one thing here that is hand-written, because no collector can observe that a host
   died of a cooling fault or that a token rotation was deliberately declined.
 - **Live checks each cycle**: TLS expiry, SMART degradation, deploy-target drift, Discord
-  bot silence, Uptime Kuma availability, Pi-hole DHCP leases and query stats, *arr library
-  and queue counters.
+  bot health, Uptime Kuma availability, LAN devices (Pi-hole FTL's network table — the
+  router does DHCP since Sept 2026) and Pi-hole query stats, *arr library and queue
+  counters. Each step runs in its own SAVEPOINT, so one failing feed records `last_error`
+  and never aborts the rest; see runbook 09 for where each feed is read from.
 - Anything else JSON-shaped lands in `raw_documents`, so nothing is un-queryable.
 
 ## Three rules that are load-bearing

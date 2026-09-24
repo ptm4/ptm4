@@ -6,14 +6,16 @@ hand-writing an `ssh` invocation.
 
 **Why:** connection details drift, and a hand-rolled command carrying a stale key path or port
 fails in a way that reads like "the host is down". android's port and user are non-standard
-(8022, `u0_a204`), and the interactive key (`~/.ssh/homelab`) is **not** the key the collectors
-use (`~/.ssh/hl_agents`). The skill points at `~/.ssh/config` and the hosts runbook — the
-things that actually get updated when something changes.
+(8022, `u0_a204`), and the interactive keys (`~/.ssh/homelab` on tux; per-host
+`optiplex_omv`/`rpi`/`noblenumbat` on the Windows side, `ptm`) are **not** the key the
+collectors use (`~/.ssh/hl_agents`). The skill points at `~/.ssh/config` and the hosts
+runbook — the things that actually get updated when something changes.
 
 **How to apply:**
 
-- Prefer the configured alias: `ssh opti '<cmd>'`. The alias already carries user, port and
-  identity file, so don't pass `-i` or `-p` without a specific reason.
+- Prefer the configured alias: `ssh opti '<cmd>'`. Both boots of the workstation (tux and
+  ptm) have `~/.ssh/config` aliases carrying user, port and identity file, so don't pass `-i`
+  or `-p` without a specific reason. Exception: ptm has no android alias or key.
 - Unsure what an alias resolves to? Ask, don't guess:
   `ssh -G <alias> | grep -iE '^(hostname|port|user|identityfile) '`
 - Read-only checks (`docker ps`, `df -h`, `systemctl status`, logs) need no approval — run

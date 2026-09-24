@@ -122,3 +122,35 @@ services:
     volumes:
       - ${INSTALL_DIRECTORY}/config/uptime-kuma:/app/data
     restart: unless-stopped
+
+  # ntfy: the homelab's push-notification server (added 2026-09-24). Anything publishes
+  # with a plain HTTP POST to http://192.168.1.6:2586/<topic>; the ntfy phone app
+  # subscribes over the LAN/VPN. It lives here, not on opti, for the same reason Kuma does:
+  # "opti is down" must be deliverable while opti is down. base-url is the IP, not a .lan
+  # name, so "DNS (rpi) is down" is deliverable too.
+  # Topics: homelab (collector/ingest alerts), homelab-kuma (Uptime Kuma).
+  # upstream-base-url: iOS can't hold a background connection to a self-hosted server, so
+  # ntfy sends ntfy.sh a content-free "poll" nudge (topic hash only) and the app then
+  # fetches the message from here. Harmless for Android, which connects directly.
+  # No auth: LAN/VPN-only like the rest of this stack (ufw admits 192.168.1.0/24).
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    command: serve
+    environment:
+      - TZ=America/New_York
+      - NTFY_BASE_URL=http://192.168.1.6:2586
+      - NTFY_CACHE_FILE=/var/cache/ntfy/cache.db
+      - NTFY_CACHE_DURATION=72h
+      - NTFY_UPSTREAM_BASE_URL=https://ntfy.sh
+    volumes:
+      - ${INSTALL_DIRECTORY}/config/ntfy:/var/cache/ntfy
+    ports:
+      - 2586:80
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O - | grep -q '\"healthy\":true' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    mem_limit: 256m
+    restart: unless-stopped

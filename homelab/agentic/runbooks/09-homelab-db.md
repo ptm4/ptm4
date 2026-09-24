@@ -91,12 +91,35 @@ Each ingest cycle writes findings you can read with `hl_status`:
 
 | Check | Fires when |
 |---|---|
-| Feed freshness | any registered dataset is older than twice its cadence |
+| Feed freshness | a registered dataset is older than twice its cadence (critical past 6x), **or its last ingest attempt recorded `last_error`** — an erroring feed gets both findings, so a long outage escalates |
+| Step crash | an ingest step raised; its writes roll back to a SAVEPOINT, its dataset gets `last_error`, and **the rest of the cycle still runs** |
 | TLS expiry | a certificate is inside 30 days (critical inside 7) |
 | SMART | reallocated/pending sectors are non-zero, **critical if they have grown** |
-| Deploy drift | a deployed copy differs from the committed repo (skipped while the repo is dirty) |
-| Bot silence | a daily Discord bot has not posted in 30h |
-| New device | a MAC never seen before appears in Pi-hole's DHCP leases |
+| Deploy drift | opti's `/srv/docker/compose/webapp/backend` differs from `webapp.v3.Fable/backend` (skipped only in a dirty git checkout; opti's `.git`-less CI snapshot counts as clean) |
+| Bot health | a bot's status route fails (e.g. 502 = container down), its last attempt reported failure, or it has not posted in 30h |
+| New device | a MAC never seen before appears in Pi-hole FTL's network table (seen in the last 24h = active) |
+
+`hl_status.stale_datasets` lists every dataset that is past budget **or** erroring (with
+`age_hours` and `last_error`); `hl_dataplane` marks the same ones `stale: true`.
+
+### Where each live feed comes from (since the 2026-09-10 app-tier move)
+
+| Dataset | Read from | Notes |
+|---|---|---|
+| `uptime-kuma` | `GET https://webapp.lan:8443/api/uptime` | Kuma itself is on noblenumbat `:3001`; the webapp on opti proxies it |
+| `pihole-stats` | `GET https://webapp.lan:8443/api/pihole/summary` | rpi runs **Pi-hole v6** (session-auth `/api`); the webapp holds the login, so the ingest needs **no Pi-hole secret** |
+| `bot-health` | `GET https://webapp.lan:8443/api/<bot>/status` | bots are docker-internal on opti |
+| `arch-merged` | `GET https://webapp.lan:8443/api/architecture/data` | |
+| `dhcp-leases` (LAN inventory) | `pihole-FTL sqlite3 -readonly /etc/pihole/pihole-FTL.db` on rpi, over SSH (hl_agents key) | **Not** `dhcp.leases` any more: the router does DHCP, that file is frozen at 2026-09-08 |
+| `media-counters` | *arr APIs on noblenumbat localhost, over SSH | |
+
+Every webapp read tries `webapp.lan` first, then opti's IP `192.168.1.11` (so a DNS outage on
+rpi does not also blind the ingest). Override with `HL_WEBAPP_API` / `HL_ARCH_DATA_URL`.
+
+Cadences are what the producer really does, not what it aims for: `collectors`/`agent-logs`
+are **4h** because GitHub throttles the `*/30` cron in `homelab-agents.yml` to one run every
+~3–6h (every run succeeds; the gaps are dropped schedule events). If 30-minute collectors
+matter, move that schedule to a systemd timer on opti and set the cadence back.
 
 ## Operating
 
@@ -120,7 +143,11 @@ curl -s -H "Authorization: Bearer $HL_DB_TOKEN" http://192.168.1.11:9100/api/sta
   which reports `claude_mcp` including whether the token is set and whether `:9100` answers.
 - **`hl_status` looks stale** — the ingest timer runs at `*:12,42`; check
   `systemctl list-timers homelab-db-ingest.timer`. `hl_dataplane` names which feed is stale
-  and how old it is.
+  and how old it is; `SELECT id, last_error FROM datasets WHERE last_error IS NOT NULL`
+  says why. The journal line `[ingest] {...}` carries a `step_errors` key when a step crashed.
+- **A feed says "Connection refused"** — check the URL in `last_error` against the table
+  above. The 2026-09-10 → 09-24 `pihole-stats`/`uptime-kuma` outage was the ingest still
+  pointing at the webapp's old rpi address (`192.168.1.10:8443`).
 - **Service will not start** — it refuses to run without `HL_DB_TOKEN` rather than exposing
   the database anonymously. Check `journalctl -u homelab-db -n 20`.
 - **Data looks wrong, not missing** — nothing here is primary data. Delete the database and
