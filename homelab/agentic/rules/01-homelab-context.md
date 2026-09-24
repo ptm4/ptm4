@@ -26,8 +26,11 @@ Single points of failure worth knowing before you touch anything: **rpi** is the
 app tier — so an opti outage costs the dashboard, the vault and the bots at once, while the LAN
 keeps resolving names. That split is deliberate: DNS lives on the cheap always-on box precisely
 so rebooting opti is routine. opti's pool is a **single disk with no redundancy**, and its boot
-disk is a 40k-hour drive with 264 reallocated sectors (pending/uncorrectable both still 0 — watch
-those two, not the reallocated count; runbook 10 has the thresholds).
+disk is a 40k-hour Seagate ST500DM002 (`sdb` since 2026-09-10 — device letters on opti are NOT
+stable) with 272 reallocated sectors, creeping ~8 every two months (256 Jun → 264 Jul 15 → 272
+Sep 14); pending/uncorrectable both still 0 — watch those two, not the reallocated count;
+runbook 10 has the thresholds. It holds only the OS: app data (`/srv/docker` = `red/docker-apps`)
+and homelab.db live on the pool, so its death costs a reinstall, not data.
 
 **Canonical hostnames** (2026-09-10): the dashboard is **`webapp.lan`** — `webapp.rpi.lan` still
 resolves as a SAN/alias but is misleading and should not be used in new work. Bare `webapp` does
