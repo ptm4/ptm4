@@ -102,6 +102,47 @@ test('resource model: reachability, findings and grouping', async () => {
   await app.close();
 });
 
+test('acks: a known issue goes quiet, and comes back only when it gets worse or new', async () => {
+  const { subject } = require('../lib/acks');
+  assert.strictEqual(
+    subject('sdb SMART reallocated sectors: 272 (up from 264 since 2026-09-10; grew in the last 30 days)'),
+    subject('sdb SMART reallocated sectors: 280, unchanged since 2026-10-01'),
+    'numbers, dates and trailing detail are not part of the subject');
+  assert.notStrictEqual(subject('sdb SMART reallocated sectors: 272'), subject('sdb SMART pending sectors: 1'));
+
+  const app = await appWith(fakeSnapshots());
+  const wait = () => new Promise((r) => setTimeout(r, 50));
+  const smart = app.pertal.state.summary.issues.find((i) => /reallocated/.test(i.text));
+  assert.strictEqual(app.pertal.resource('opti').status, 'crit');
+
+  assert.strictEqual((await app.inject({ method: 'POST', url: '/api/acks', payload: { key: 'nope' } })).statusCode, 404);
+  const res = await app.inject({ method: 'POST', url: '/api/acks', payload: { key: smart.key } });
+  assert.strictEqual(res.statusCode, 202);
+  await wait();
+  const s = app.pertal.state.summary;
+  assert.ok(!s.issues.some((i) => i.key === smart.key), 'leaves Needs attention');
+  assert.ok(s.acknowledged.some((i) => i.key === smart.key), '…and is listed as acknowledged');
+  const opti = app.pertal.resource('opti');
+  assert.strictEqual(opti.status, 'ok', 'no longer colours its host');
+  assert.ok(opti.reasons.find((w) => w.key === smart.key).acked, 'still visible on the resource, marked acked');
+
+  // Matching rules.
+  assert.ok(app.acks.match({ ...smart, text: 'sdb SMART reallocated sectors: 290 (grew)' }), 'a bigger number stays quiet');
+  const jf = s.issues.find((i) => i.resource === 'discord-jellyfin');
+  app.acks.add(jf);
+  assert.strictEqual(app.acks.match({ ...jf, severity: 'crit' }), null, 'warn → crit comes back');
+  const group = s.issues.find((i) => i.resource === 'persistence-auditor');
+  app.acks.add(group);
+  assert.ok(app.acks.match(group));
+  assert.strictEqual(app.acks.match({ ...group, details: [...group.details, 'NEW persistence entry: c'] }), null, 'a new detail comes back');
+
+  const undo = await app.inject({ method: 'POST', url: '/api/acks/remove', payload: { key: smart.key } });
+  assert.strictEqual(undo.statusCode, 202);
+  await wait();
+  assert.strictEqual(app.pertal.resource('opti').status, 'crit');
+  await app.close();
+});
+
 test('actions: applicability, confirmation and job lifecycle', async () => {
   const app = await appWith(fakeSnapshots());
   const opti = app.pertal.resource('opti');

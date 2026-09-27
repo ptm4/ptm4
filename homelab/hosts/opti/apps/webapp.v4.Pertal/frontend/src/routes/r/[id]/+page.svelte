@@ -3,7 +3,7 @@
   // then tabs. Live fields come from the store; history (jobs, audit, activity) is fetched
   // and refetched when a job for this resource finishes.
   import { page } from '$app/state';
-  import { Server, Container, Bot, Smartphone, ChevronRight } from '@lucide/svelte';
+  import { Server, Container, Bot, Smartphone, ChevronRight, BellOff, Bell } from '@lucide/svelte';
   import StatusDot from '$lib/components/StatusDot.svelte';
   import Age from '$lib/components/Age.svelte';
   import CommandBar from '$lib/components/CommandBar.svelte';
@@ -12,6 +12,7 @@
   import MetricsPanel from '$lib/components/MetricsPanel.svelte';
   import { live } from '$lib/live.svelte';
   import { api } from '$lib/api';
+  import { actions } from '$lib/actions.svelte';
   import { pct, uptime, rate, bytes, tone, ago, clock } from '$lib/format';
   import type { ActivityEntry, Job } from '$lib/types';
 
@@ -100,7 +101,14 @@
     {#if r.reasons.length}
       <section class="panel reasons">
         {#each r.reasons as why}
-          <div class="row reason"><span class="badge {why.severity}">{why.severity === 'crit' ? 'critical' : why.severity}</span><span>{why.text}</span><span class="faint src">{why.source}</span></div>
+          <div class="row reason" class:acked={why.acked}>
+            <span class="badge {why.acked ? '' : why.severity}">{why.severity === 'crit' ? 'critical' : why.severity}</span>
+            <span>{why.text}{#if why.acked}<span class="faint"> · acknowledged {ago(why.acked.at, live.now)}</span>{/if}</span>
+            <span class="faint src">{why.source}</span>
+            <button class="btn ghost icon ackbtn" onclick={() => actions.ack(why.key, `${r.name}: ${why.text}`, !why.acked)}
+              title={why.acked ? 'Un-acknowledge — count it again' : 'Acknowledge — I know. Hidden until it gets more severe or changes kind.'}
+              aria-label="{why.acked ? 'Un-acknowledge' : 'Acknowledge'} {why.text}">{#if why.acked}<Bell size={14} />{:else}<BellOff size={14} />{/if}</button>
+          </div>
         {/each}
       </section>
     {/if}
@@ -177,7 +185,10 @@
   .tabs button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--accent); }
   .tabs button:disabled { color: var(--ink-3); cursor: default; opacity: .6; }
   .reasons { margin-bottom: var(--s3); }
-  .reason { grid-template-columns: auto minmax(0, 1fr) auto; font-size: var(--fs-sm); }
+  .reason { grid-template-columns: auto minmax(0, 1fr) auto auto; font-size: var(--fs-sm); align-items: center; }
+  .reason.acked { opacity: .65; }
+  .ackbtn { margin: -4px -6px -4px 0; color: var(--ink-3); }
+  .ackbtn:hover { color: var(--ink); }
   .src { font: var(--fs-xs) var(--mono); }
   .essentials { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px var(--s5); margin-bottom: var(--s4); }
   .fact { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; font-size: var(--fs-sm); padding: 3px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }

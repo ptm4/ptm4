@@ -2,7 +2,8 @@
 export type Status = 'ok' | 'warn' | 'crit' | 'unknown' | 'offline';
 export type Severity = 'ok' | 'warn' | 'crit';
 
-export interface Reason { severity: Severity; text: string; source: string; at?: string | null }
+export interface Ack { at: string; by: string; note: string | null }
+export interface Reason { key: string; severity: Severity; text: string; source: string; at?: string | null; acked?: Ack }
 export interface Fact { label: string; value: string | null; tone?: 'warn' | 'crit' }
 export interface ActionRef { kind: string; label: string; icon: string; risky: boolean }
 
@@ -33,8 +34,8 @@ export interface Resource {
 }
 
 export interface Issue {
-  severity: Severity; resource_id: string | null; resource: string; host: string | null;
-  text: string; details?: string[]; source: string; at: string | null;
+  key: string; severity: Severity; resource_id: string | null; resource: string; host: string | null;
+  text: string; details?: string[]; source: string; at: string | null; acked?: Ack;
 }
 
 export interface Summary {
@@ -42,6 +43,7 @@ export interface Summary {
   hosts: { total: number; up: number; down: number; offline: number };
   containers: { total: number; running: number };
   issues: Issue[];
+  acknowledged: Issue[];
   counts: { crit: number; warn: number };
 }
 

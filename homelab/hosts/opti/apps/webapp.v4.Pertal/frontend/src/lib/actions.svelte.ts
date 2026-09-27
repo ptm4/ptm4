@@ -42,11 +42,25 @@ class Actions {
     this.question = q;
   }
 
-  // Put a job started elsewhere (Downloads, …) into the tray.
-  track(job: Job) {
+  // Put a job started elsewhere (Downloads, …) into the tray. `open: false` for jobs whose
+  // effect is visible where you clicked (acks) — the tray still has them.
+  track(job: Job, { open = true } = {}) {
     live.upsertJob(job);
     this.mine = [job.id, ...this.mine].slice(0, 20);
-    this.trayOpen = true;
+    if (open) this.trayOpen = true;
+  }
+
+  // Acknowledge / un-acknowledge an issue (backend/lib/acks.js). The row moves between
+  // "Needs attention" and "Acknowledged" as soon as the job's rebuild lands over SSE.
+  async ack(key: string, label: string, on: boolean): Promise<boolean> {
+    try {
+      const { job } = on ? await api.acks.add(key) : await api.acks.remove(key);
+      this.track(job, { open: false });
+      return true;
+    } catch (e) {
+      this.fail(`${on ? 'Acknowledge' : 'Un-acknowledge'} ${label}`, e);
+      return false;
+    }
   }
 
   fail(title: string, e: unknown) {

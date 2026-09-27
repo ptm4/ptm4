@@ -23,6 +23,7 @@ const { registerStreamSources } = require('./sources/streams');
 const { registerDownloadSources } = require('./sources/downloads');
 const { registerSeerrSource } = require('./sources/seerr');
 const { createHistory } = require('./lib/history');
+const { createAcks } = require('./lib/acks');
 
 const VERSION = require('./package.json').version;
 
@@ -46,7 +47,7 @@ async function buildApp(opts = {}) {
   let rebuildTimer = null;
   const rebuild = () => {
     rebuildTimer = null;
-    const { resources, summary } = buildResources(app.snapshots);
+    const { resources, summary } = buildResources(app.snapshots, acks);
     for (const r of resources) r.actions = actionsFor(r, app.snapshots);
     state.resources = resources;
     state.summary = summary;
@@ -64,6 +65,9 @@ async function buildApp(opts = {}) {
 
   const history = createHistory();
   app.decorate('history', history);
+
+  const acks = createAcks({ persist: opts.persist ?? true, log: app.log });
+  app.decorate('acks', acks);
 
   const snapshots = opts.snapshots ?? createSnapshots({
     onChange: (key, snap) => {
@@ -98,6 +102,7 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/streams'), { prefix: '/api/streams' });
   await app.register(require('./routes/downloads'), { prefix: '/api/downloads' });
   await app.register(require('./routes/requests'), { prefix: '/api/requests' });
+  await app.register(require('./routes/acks'), { prefix: '/api/acks' });
   await app.register(require('./routes/events'), { prefix: '/api/events' });
   await app.register(require('./routes/ingest'), { prefix: '/api/architecture' });
   await app.register(require('./plugins/static'));

@@ -65,6 +65,11 @@ export const api = {
   links: () => request<{ groups: LinkGroup[]; checked_at: string | null }>('/api/links'),
   reports: () => request<any>('/api/reports'),
   topology: () => request<any>('/api/topology'),
+  acks: {
+    // Both answer 202 + a job; the resource model updates over SSE when it finishes.
+    add: (key: string) => request<{ job: Job }>('/api/acks', { method: 'POST', body: JSON.stringify({ key }) }),
+    remove: (key: string) => request<{ job: Job }>('/api/acks/remove', { method: 'POST', body: JSON.stringify({ key }) }),
+  },
   downloads: {
     get: () => request<any>('/api/downloads'),
     // multipart: .torrent files and/or magnet links. No JSON header — the browser sets the boundary.

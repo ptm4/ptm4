@@ -2,7 +2,9 @@
   import StatusDot from '$lib/components/StatusDot.svelte';
   import Age from '$lib/components/Age.svelte';
   import TodayStrip from '$lib/components/TodayStrip.svelte';
+  import { BellOff, Bell } from '@lucide/svelte';
   import { live } from '$lib/live.svelte';
+  import { actions } from '$lib/actions.svelte';
   import { pct, uptime, tone, ago } from '$lib/format';
   import type { Issue, Resource } from '$lib/types';
 
@@ -20,7 +22,12 @@
   const recent = $derived(live.activity.slice(0, 8));
 
   let open = $state<Record<string, boolean>>({});
-  const issueKey = (i: Issue) => `${i.source}|${i.resource}|${i.text}`;
+  // Clicked, waiting for the rebuild to move the row. Cleared if the job couldn't start.
+  let busy = $state<Record<string, boolean>>({});
+  async function ack(i: Issue, on: boolean) {
+    busy[i.key] = true;
+    if (!(await actions.ack(i.key, `${i.resource}: ${i.text}`, on))) busy[i.key] = false;
+  }
   const childCount = (h: Resource) => h.counts ? `${h.counts.running}/${h.counts.containers}` : '—';
 </script>
 
@@ -71,7 +78,7 @@
   <section class="panel">
     <div class="panel-head"><h2>Needs attention</h2><span class="faint">{s?.issues.length ?? 0}</span></div>
     <div class="rows">
-      {#each s?.issues ?? [] as i (issueKey(i))}
+      {#each s?.issues ?? [] as i (i.key)}
         <div class="row issue">
           <span class="badge {i.severity}">{i.severity === 'crit' ? 'critical' : 'warn'}</span>
           <div class="issue-main">
@@ -80,20 +87,45 @@
               <span class="issue-text">{i.text}</span>
             </div>
             {#if i.details}
-              <button class="linkish" onclick={() => (open[issueKey(i)] = !open[issueKey(i)])}>
-                {open[issueKey(i)] ? 'hide' : 'show'} {i.details.length}
+              <button class="linkish" onclick={() => (open[i.key] = !open[i.key])}>
+                {open[i.key] ? 'hide' : 'show'} {i.details.length}
               </button>
-              {#if open[issueKey(i)]}
+              {#if open[i.key]}
                 <ul class="details">{#each i.details as d}<li>{d}</li>{/each}</ul>
               {/if}
             {/if}
           </div>
           <span class="faint when">{i.at ? ago(i.at, live.now) : ''}</span>
+          <button class="btn ghost icon ackbtn" disabled={busy[i.key]} onclick={() => ack(i, true)}
+            title="Acknowledge — I know. Hidden until it gets more severe or something new appears; numbers changing won't bring it back."
+            aria-label="Acknowledge {i.resource}: {i.text}"><BellOff size={14} /></button>
         </div>
       {:else}
         <div class="empty">{live.loaded ? 'Nothing needs you.' : 'Loading…'}</div>
       {/each}
     </div>
+    {#if s?.acknowledged?.length}
+      <details class="acked">
+        <summary><BellOff size={13} /> {s.acknowledged.length} acknowledged</summary>
+        <div class="rows">
+          {#each s.acknowledged as i (i.key)}
+            <div class="row issue">
+              <span class="badge">{i.severity === 'crit' ? 'critical' : 'warn'}</span>
+              <div class="issue-main">
+                <div>
+                  {#if i.resource_id}<a href="/r/{i.resource_id}">{i.resource}</a>{:else}<span class="muted">{i.resource}</span>{/if}
+                  <span class="issue-text">{i.text}</span>
+                </div>
+                <div class="faint small">acknowledged {ago(i.acked?.at, live.now)}{#if i.acked?.note} · {i.acked.note}{/if}</div>
+              </div>
+              <span></span>
+              <button class="btn ghost icon ackbtn" disabled={busy[i.key]} onclick={() => ack(i, false)}
+                title="Un-acknowledge — show it in Needs attention again" aria-label="Un-acknowledge {i.resource}: {i.text}"><Bell size={14} /></button>
+            </div>
+          {/each}
+        </div>
+      </details>
+    {/if}
   </section>
 
   <div class="side">
@@ -146,7 +178,15 @@
 
   .cols { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: var(--s3); align-items: start; }
   .side { display: flex; flex-direction: column; gap: var(--s3); }
-  .issue { grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; }
+  .issue { grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: start; }
+  .ackbtn { margin: -4px -6px -4px 0; color: var(--ink-3); }
+  .ackbtn:hover { color: var(--ink); }
+  .acked { border-top: 1px solid var(--border); }
+  .acked summary { display: flex; align-items: center; gap: 6px; padding: 8px var(--s4); cursor: pointer; color: var(--ink-3); font-size: var(--fs-xs); list-style: none; }
+  .acked summary::-webkit-details-marker { display: none; }
+  .acked summary:hover { color: var(--ink-2); }
+  .acked .issue { opacity: .7; }
+  .small { font-size: var(--fs-xs); margin-top: 2px; }
   .issue-main { min-width: 0; font-size: var(--fs-sm); }
   .issue-text { margin-left: 6px; color: var(--ink-2); }
   .when { font-size: var(--fs-xs); white-space: nowrap; }

@@ -9,8 +9,12 @@
 //   crit     wants attention now
 //   unknown  we don't have fresh enough data to say — never shown as ok
 //   offline  expected to be off sometimes (android) — not an issue
+//
+// An acknowledged reason (lib/acks.js) is still listed, marked `acked`, but no longer
+// raises its resource's status or counts as an issue.
 'use strict';
 const { HOSTS } = require('./hosts');
+const { issueKey } = require('./acks');
 
 const RANK = { ok: 0, offline: 0, unknown: 1, warn: 2, crit: 3 };
 const worse = (a, b) => (RANK[b] > RANK[a] ? b : a);
@@ -42,11 +46,21 @@ function containerStatus(c) {
   return ['crit', st || 'unknown state'];
 }
 
-function buildResources(snapshots) {
+function buildResources(snapshots, acks = null) {
   const resources = [];
   const hldb = snapshots.get('hldb:status');
   const findings = hldb?.data?.findings || [];
   const claimed = new Set();
+
+  // Every reason goes through here: it gets its stable key, its ack if there is one, and
+  // raises the resource's status only when it isn't acknowledged.
+  const addReason = (r, why, escalate = true) => {
+    why.key = issueKey({ resource_id: r.id, source: why.source, text: why.text });
+    const ack = acks?.match(why) ?? null;
+    if (ack) why.acked = { at: ack.at, by: ack.by, note: ack.note };
+    r.reasons.push(why);
+    if (escalate && !ack) r.status = worse(r.status, why.severity);
+  };
 
   for (const host of HOSTS) {
     const r = {
@@ -76,8 +90,8 @@ function buildResources(snapshots) {
       if (!vitals || vitals.meta.ok === null) {
         r.status = 'unknown'; r.state_text = 'waiting for first reading';
       } else if (!vitals.meta.ok && (vitals.meta.failures >= 2 || !vitals.data)) {
-        r.status = 'crit'; r.state_text = 'not answering'; r.online = false;
-        r.reasons.push({ severity: 'crit', text: `agent not answering: ${vitals.meta.error}`, source: vitals.meta.key });
+        r.state_text = 'not answering'; r.online = false;
+        addReason(r, { severity: 'crit', text: `agent not answering: ${vitals.meta.error}`, source: vitals.meta.key });
       } else if (vitals.meta.stale) {
         r.status = 'unknown'; r.state_text = 'data is stale';
       } else {
@@ -124,9 +138,9 @@ function buildResources(snapshots) {
       const [status, text] = containerStatus(c);
       const cr = {
         id: `${host.id}:${c.name}`, type: 'container', kind: kindOf(c.name), name: c.name, host: host.id,
-        status: cont.meta.stale ? 'unknown' : status,
+        status: cont.meta.stale ? 'unknown' : 'ok',
         state_text: cont.meta.stale ? `last seen ${text}` : text,
-        reasons: status === 'ok' ? [] : [{ severity: status, text: `${c.name} is ${text}`, source: cont.meta.key }],
+        reasons: [],
         facts: [
           { label: 'Image', value: c.image?.startsWith('sha256:') ? `${c.image.slice(0, 19)}…` : c.image },
           { label: 'Status', value: c.status },
@@ -136,6 +150,7 @@ function buildResources(snapshots) {
         state: c.state, health: c.health,
         metrics: null, counts: null, links: {}, sources: [cont.meta.key], updated_at: cont.meta.fetched_at,
       };
+      if (status !== 'ok') addReason(cr, { severity: status, text: `${c.name} is ${text}`, source: cont.meta.key }, !cont.meta.stale);
       resources.push(cr);
     }
   }
@@ -150,27 +165,27 @@ function buildResources(snapshots) {
       resources.find((r) => r.type === 'host' && r.id === f.host);
     if (!target) continue;
     claimed.add(f);
-    target.reasons.push({ severity: sev, text: f.message.replace(/^\[[^\]]+\]\s*/, ''), source: `hldb:${f.tool}`, at: f.run_at });
-    target.status = worse(target.status, sev);
+    addReason(target, { severity: sev, text: f.message.replace(/^\[[^\]]+\]\s*/, ''), source: `hldb:${f.tool}`, at: f.run_at });
   }
 
   // status_text: what the list shows. The top reason when something is wrong, else the
   // plain state ("up 17 d", "healthy").
   for (const r of resources) {
-    r.reasons.sort((a, b) => RANK[b.severity] - RANK[a.severity]);
-    r.status_text = (r.status === 'warn' || r.status === 'crit') && r.reasons.length ? r.reasons[0].text : r.state_text;
+    r.reasons.sort((a, b) => !!a.acked - !!b.acked || RANK[b.severity] - RANK[a.severity]);
+    const top = r.reasons.find((why) => !why.acked);
+    r.status_text = (r.status === 'warn' || r.status === 'crit') && top ? top.text : r.state_text;
   }
 
-  return { resources, summary: summarize(resources, findings.filter((f) => !claimed.has(f)), snapshots) };
+  return { resources, summary: summarize(resources, findings.filter((f) => !claimed.has(f)), snapshots, acks) };
 }
 
-function summarize(resources, unclaimed, snapshots) {
+function summarize(resources, unclaimed, snapshots, acks) {
   const hosts = resources.filter((r) => r.type === 'host');
   const containers = resources.filter((r) => r.type === 'container');
   const issues = [];
   for (const r of resources) {
     for (const why of r.reasons) {
-      issues.push({ severity: why.severity, resource_id: r.id, resource: r.name, host: r.host, text: why.text, source: why.source, at: why.at ?? null });
+      issues.push({ key: why.key, severity: why.severity, resource_id: r.id, resource: r.name, host: r.host, text: why.text, source: why.source, at: why.at ?? null, acked: why.acked });
     }
   }
   // Findings that name no resource, grouped per tool: 13 "NEW persistence entry" lines
@@ -204,8 +219,17 @@ function summarize(resources, unclaimed, snapshots) {
       issues.push({ severity: 'warn', resource_id: null, resource: m.label, host: m.group, text: `data source failing: ${m.error}`, source: key, at: null });
     }
   }
+  // Keys and acks for the issues that didn't come from a resource's reasons.
+  for (const i of issues) {
+    if (i.key) continue;
+    i.key = issueKey(i);
+    const ack = acks?.match(i);
+    if (ack) i.acked = { at: ack.at, by: ack.by, note: ack.note };
+  }
   issues.sort((a, b) => RANK[b.severity] - RANK[a.severity] || String(b.at).localeCompare(String(a.at)));
-  const overall = issues.reduce((acc, i) => worse(acc, i.severity), 'ok');
+  const acknowledged = issues.filter((i) => i.acked);
+  const active = issues.filter((i) => !i.acked);
+  const overall = active.reduce((acc, i) => worse(acc, i.severity), 'ok');
   return {
     overall,
     hosts: {
@@ -215,8 +239,9 @@ function summarize(resources, unclaimed, snapshots) {
       offline: hosts.filter((h) => h.status === 'offline').length,
     },
     containers: { total: containers.length, running: containers.filter((c) => c.state === 'running').length },
-    issues,
-    counts: { crit: issues.filter((i) => i.severity === 'crit').length, warn: issues.filter((i) => i.severity === 'warn').length },
+    issues: active,
+    acknowledged,
+    counts: { crit: active.filter((i) => i.severity === 'crit').length, warn: active.filter((i) => i.severity === 'warn').length },
   };
 }
 
