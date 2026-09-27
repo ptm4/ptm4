@@ -105,10 +105,11 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlsplit
 
 import monitor
 
-AGENT_VERSION = "0.7.0"
+AGENT_VERSION = "0.8.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -419,6 +420,50 @@ def live_containers():
         })
     rows.sort(key=lambda r: r["name"] or "")
     return 200, {"host": HOST, "measured_at": time.time(), "docker": True, "containers": rows}
+
+
+_SINCE_RE = re.compile(r"^\d{1,4}[smh]$")
+_LOGS_MAX_BYTES = 512 * 1024
+
+
+def container_logs(query):
+    """GET /logs?container=NAME&tail=300&since=1h (v0.8.0) — recent log lines, stdout and
+    stderr merged in order (docker writes a container's stderr to ours, which `_run`
+    would drop). Token-gated: logs can carry secrets. Name validated by existence and
+    passed as its own argv element, like restart_container."""
+    name = (query.get("container") or [""])[0].strip()
+    if not name:
+        return 400, {"ok": False, "error": "container is required"}
+    try:
+        tail = max(1, min(2000, int((query.get("tail") or ["300"])[0])))
+    except ValueError:
+        return 400, {"ok": False, "error": "tail must be an integer"}
+    since = (query.get("since") or [""])[0].strip()
+    if since and not _SINCE_RE.match(since):
+        return 400, {"ok": False, "error": "since must look like 30m, 2h or 90s"}
+
+    out, err = _run(["docker", "ps", "-a", "--format", "{{.Names}}"], timeout=15)
+    if err:
+        return 502, {"ok": False, "error": f"cannot list containers: {err}"}
+    if name not in out.split():
+        return 404, {"ok": False, "error": f"no container named {name!r} on {HOST}"}
+
+    argv = ["docker", "logs", "--timestamps", "--tail", str(tail)]
+    if since:
+        argv += ["--since", since]
+    try:
+        p = subprocess.run(argv + [name], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=15)
+    except subprocess.TimeoutExpired:
+        return 504, {"ok": False, "error": "docker logs timed out"}
+    raw = p.stdout[-_LOGS_MAX_BYTES:]
+    lines = []
+    for line in raw.decode("utf-8", "replace").splitlines():
+        ts, _, text = line.partition(" ")
+        if not ts[:4].isdigit():
+            ts, text = None, line
+        lines.append({"ts": ts, "text": text})
+    return 200, {"host": HOST, "container": name, "tail": tail, "since": since or None,
+                 "truncated": len(p.stdout) > _LOGS_MAX_BYTES, "lines": lines}
 
 
 def collect_docker():
@@ -1157,6 +1202,20 @@ class Handler(BaseHTTPRequestHandler):
             # Unauthenticated like /status: read-only names/states the dashboard already
             # shows the whole LAN; restart/update stay token-gated POSTs.
             self._json(*live_containers())
+            return
+        if path.startswith("/logs"):
+            # Always token-gated (like the mutators): log lines can contain secrets.
+            if not TOKEN:
+                self._json(403, {"error": "logs require HL_ARCH_AGENT_TOKEN to be set"})
+                return
+            if not self._authorized():
+                self._json(401, {"error": "unauthorized"})
+                return
+            parts = urlsplit(self.path)
+            if parts.path.rstrip("/") != "/logs":
+                self._json(404, {"error": "not found"})
+                return
+            self._json(*container_logs(parse_qs(parts.query)))
             return
         if path == "/monitor/capabilities":
             if not self._authorized():

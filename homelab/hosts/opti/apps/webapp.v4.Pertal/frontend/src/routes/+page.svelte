@@ -10,7 +10,7 @@
   const servers = $derived(hosts.filter((h) => h.id !== 'android'));
   const serversUp = $derived(servers.filter((h) => h.online === true).length);
   const headline = $derived(
-    !live.loaded ? 'Loading…'
+    !live.loaded ? (live.error ? 'No data — opti is unreachable' : 'Loading…')
       : serversUp === servers.length ? `All ${servers.length} servers up`
       : `${serversUp} of ${servers.length} servers up`,
   );

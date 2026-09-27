@@ -150,3 +150,31 @@ test('health answers without touching any upstream', async () => {
   assert.strictEqual(res.json().app, 'pertal');
   await app.close();
 });
+
+test('topology: a finding does not break an edge, a dead host does', async () => {
+  const app = await appWith(fakeSnapshots());
+  const topo = (await app.inject('/api/topology')).json();
+  const edge = (from, to) => topo.edges.find((e) => e.from === from && e.to === to);
+  assert.strictEqual(edge('rpi', 'opti').status, 'ok', 'opti has a critical finding but is up');
+  assert.strictEqual(edge('opti', 'noblenumbat').status, 'crit', 'noblenumbat is not answering');
+  await app.close();
+});
+
+test('metrics: last hour comes from the in-memory ring; bad input is a 4xx', async () => {
+  const app = await appWith(fakeSnapshots());
+  app.history.observe('opti', { t: 100, cpu_pct: 5, mem_pct: 40 });
+  app.history.observe('opti', { t: 115, cpu_pct: 7, mem_pct: 41 });
+  const ok = (await app.inject('/api/metrics/opti?metric=cpu_pct&range=1h')).json();
+  assert.deepStrictEqual(ok.points, [[100, 5], [115, 7]]);
+  assert.strictEqual((await app.inject('/api/metrics/opti?metric=nope&range=1h')).statusCode, 400);
+  assert.strictEqual((await app.inject('/api/metrics/opti?metric=cpu_pct&range=5y')).statusCode, 400);
+  assert.strictEqual((await app.inject('/api/metrics/android?metric=cpu_pct')).statusCode, 404);
+  await app.close();
+});
+
+test('logs: names are validated before anything is sent to an agent', async () => {
+  const app = await appWith(fakeSnapshots());
+  assert.strictEqual((await app.inject('/api/logs/opti/..%2Fetc')).statusCode, 400);
+  assert.strictEqual((await app.inject('/api/logs/android/x')).statusCode, 404);
+  await app.close();
+});

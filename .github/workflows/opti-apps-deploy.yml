@@ -21,6 +21,7 @@ on:
     paths:
       - "homelab/hosts/opti/docker-compose.apps.yml"
       - "homelab/hosts/opti/apps/webapp.v3.Fable/**"
+      - "homelab/hosts/opti/apps/webapp.v4.Pertal/**"
       - "homelab/hosts/opti/apps/nginx-wg.conf"
       - "homelab/hosts/opti/apps/notes-app/**"
       - "homelab/hosts/opti/apps/discord-weather/**"
@@ -143,3 +144,31 @@ jobs:
         run: |
           docker compose restart nginx-webapp
           docker compose restart nginx-proxy
+
+      # ── Pertal (webapp v4), side by side at https://webapp.lan:8444 ──────────────
+      # Deliberately LAST: everything above (v3, bots, nginx) is already deployed, so a
+      # failed Pertal build fails this run without having touched v3. The image builds
+      # here on opti from the synced folder (frontend + backend baked in, no npm at start).
+      - name: Sync Pertal source
+        run: |
+          mkdir -p /srv/docker/compose/pertal
+          rsync -a --delete --exclude 'node_modules' --exclude 'frontend/dist' \
+            --exclude 'frontend/.svelte-kit' --exclude '.dev-data' \
+            "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/webapp.v4.Pertal/" /srv/docker/compose/pertal/
+
+      - name: Build and start Pertal
+        working-directory: /srv/docker/compose
+        run: |
+          docker compose --profile pertal build pertal
+          docker compose --profile pertal up -d pertal
+
+      - name: Pertal health (waits for the image's own healthcheck)
+        working-directory: /srv/docker/compose
+        run: |
+          for i in $(seq 1 30); do
+            state=$(docker inspect -f '{{.State.Health.Status}}' pertal 2>/dev/null || echo missing)
+            [ "$state" = healthy ] && { echo "pertal healthy"; exit 0; }
+            sleep 2
+          done
+          docker compose --profile pertal logs --tail 50 pertal
+          echo "::error::pertal did not become healthy"; exit 1

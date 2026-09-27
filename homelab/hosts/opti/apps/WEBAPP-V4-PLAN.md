@@ -101,10 +101,19 @@ actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check
    "stale or wrong data".
 2. ✅ Resource pages + action pipeline + Activity + Ctrl K search + job tray + confirm dialog.
    v3's job audit is read from the shared `arch_data` volume, so it carries over.
-3. Logs, Topology, Reports, Streams, Launchpad, Settings.
-4. Downloads, Jellyseerr deploy + Requests, Status extras.
-5. Bot consolidation (`bot_common.py`, real `/health`, bots as resources).
-6. PWA + Kuma fallback.
+3. ✅ Logs (tab + page; **hl-arch-agent v0.8.0** `GET /logs`, token-gated, installed on all 3
+   hosts 2026-09-27), Metrics tab (last hour from Pertal, 24h–90d from homelab-db), Topology,
+   Reports, Launchpad (live reachability), Settings. ⬜ Streams (port v3's stream-station page).
+   ✅ **Side-by-side deploy wired**: compose service `pertal` (profile, built on opti),
+   nginx-webapp serves it at **https://webapp.lan:8444**, deployed LAST by
+   `opti-apps-deploy.yml` so a failed Pertal build can't block v3. Image trial-built and
+   health-checked on opti.
+4. ⬜ Downloads (needs qBittorrent creds as host-side env), Jellyseerr deploy + Requests (needs
+   Peter to run its setup wizard + an API key), Status extras.
+5. ⬜ Bot consolidation (`bot_common.py`, real `/health`, bots as resources).
+6. ✅ Offline shell: service worker caches the app shell only; with opti gone the installed
+   app opens and says "Can't reach opti" with a Kuma link. SSE self-heals: reconnects after a
+   502 (deploys) and a 15s ping + 45s watchdog catches a proxy holding a dead stream open.
 7. Cutover: CI path filter → v4, nginx → v4; tag `webapp-v3-fable-final`; delete Fable after two
    quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy. Update the
    `add-to-webapp` / `add-webapp-widget` skills in the same change.

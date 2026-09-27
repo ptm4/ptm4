@@ -36,6 +36,32 @@ function registerHldbSource(snapshots) {
       };
     },
   });
+
+  // Latest collector report per host (doctor, hardware, software, network) for Reports.
+  snapshots.register({
+    key: 'hldb:reports', group: 'hldb', label: 'collector reports',
+    intervalMs: 5 * 60_000, timeoutMs: 10_000, staleAfterMs: 20 * 60_000,
+    fetch: async ({ signal }) => {
+      const hosts = ['opti', 'rpi', 'noblenumbat', 'android'];
+      const rows = await Promise.all(hosts.map(async (host) => {
+        try {
+          const res = await fetch(`${URL_BASE}/api/host/${host}`, {
+            headers: TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {},
+            signal,
+          });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const d = await res.json();
+          return [host, { reports: (d.latest_reports || []).map((r) => ({
+            tool: r.tool, run_at: r.run_at, status: r.status, summary: r.summary,
+          })) }];
+        } catch (err) {
+          return [host, { reports: [], error: err.message }];
+        }
+      }));
+      if (rows.every(([, v]) => v.error)) throw new Error(rows[0][1].error);
+      return Object.fromEntries(rows);
+    },
+  });
   return true;
 }
 

@@ -17,6 +17,8 @@ const { createActivity } = require('./lib/activity');
 const { registerAgentSources } = require('./sources/agents');
 const { registerHldbSource } = require('./sources/hldb');
 const { registerProbeSources } = require('./sources/probe');
+const { registerLinkSources } = require('./sources/links');
+const { createHistory } = require('./lib/history');
 
 const VERSION = require('./package.json').version;
 
@@ -56,9 +58,13 @@ async function buildApp(opts = {}) {
   });
   app.decorate('activity', activity);
 
+  const history = createHistory();
+  app.decorate('history', history);
+
   const snapshots = opts.snapshots ?? createSnapshots({
     onChange: (key, snap) => {
       activity.observe(key, snap);
+      if (key.startsWith('vitals:') && snap.meta.ok) history.observe(key.slice(7), snap.data);
       app.events.emit('snapshot', snap.meta);
       scheduleRebuild();
     },
@@ -67,6 +73,7 @@ async function buildApp(opts = {}) {
   if (!opts.snapshots) {
     registerAgentSources(snapshots);
     registerProbeSources(snapshots);
+    registerLinkSources(snapshots);
     if (!registerHldbSource(snapshots)) app.log.warn('HOMELAB_DB_URL not set — no collector findings');
   }
 
@@ -79,6 +86,7 @@ async function buildApp(opts = {}) {
   });
 
   await app.register(require('./routes/api'), { prefix: '/api' });
+  await app.register(require('./routes/views'), { prefix: '/api' });
   await app.register(require('./routes/events'), { prefix: '/api/events' });
   await app.register(require('./routes/ingest'), { prefix: '/api/architecture' });
   await app.register(require('./plugins/static'));

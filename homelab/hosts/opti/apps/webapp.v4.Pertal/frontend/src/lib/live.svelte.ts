@@ -27,7 +27,16 @@ class Live {
   start() {
     if (this.#started) return;
     this.#started = true;
-    setInterval(() => (this.now = Date.now()), 1000);
+    setInterval(() => {
+      this.now = Date.now();
+      // Watchdog: the server pings every 15s. Silence for 45s means the stream is dead
+      // even if the socket looks open (a proxy can hold it after Pertal went away).
+      if (this.connected && this.lastMessageAt && this.now - this.lastMessageAt > 45_000) {
+        this.connected = false;
+        if (!this.#poll) this.#poll = setInterval(() => this.#load(), 15_000);
+        this.#connect();
+      }
+    }, 1000);
     this.#load();
     this.#connect();
   }
@@ -65,7 +74,19 @@ class Live {
     this.#mergeJobs([job]);
   }
 
+  #retryMs = 2000;
+
+  // Browsers only auto-retry an EventSource after a *network* drop. A non-200 answer
+  // (nginx's 502 while Pertal restarts during a deploy) closes it for good — so a
+  // closed stream is reopened here, with backoff, instead of leaving the page polling.
+  #reconnectLater() {
+    const wait = this.#retryMs;
+    this.#retryMs = Math.min(this.#retryMs * 2, 30_000);
+    setTimeout(() => this.#connect(), wait);
+  }
+
   #connect() {
+    this.#es?.close();
     const es = new EventSource('/api/events');
     this.#es = es;
     const on = (name: string, fn: (d: any) => void) =>
@@ -76,15 +97,19 @@ class Live {
 
     es.onopen = () => {
       this.connected = true;
+      this.lastMessageAt = Date.now();
       this.error = null;
+      this.#retryMs = 2000;
       if (this.#poll) { clearInterval(this.#poll); this.#poll = null; }
     };
     es.onerror = () => {
       this.connected = false;
-      // EventSource reconnects on its own; meanwhile keep the page honest by polling.
+      // Meanwhile keep the page honest by polling.
       if (!this.#poll) this.#poll = setInterval(() => this.#load(), 15_000);
+      if (es.readyState === EventSource.CLOSED && this.#es === es) this.#reconnectLater();
     };
     on('hello', (s) => this.#applyState(s));
+    on('ping', () => {});
     on('resources', (d) => {
       this.resources = d.resources;
       this.summary = d.summary;

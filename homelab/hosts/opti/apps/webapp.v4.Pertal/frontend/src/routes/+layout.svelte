@@ -10,6 +10,7 @@
   import { live } from '$lib/live.svelte';
   import { theme } from '$lib/theme.svelte';
   import { NAV } from '$lib/nav';
+  import { ago } from '$lib/format';
 
   let { children } = $props();
   let drawer = $state(false);
@@ -63,7 +64,17 @@
 
   <main>
     {#if live.error && !live.connected}
-      <div class="banner"><WifiOff size={16} /> {live.error}. Showing the last data received.</div>
+      <div class="banner">
+        <WifiOff size={18} />
+        <div>
+          <strong>Can't reach opti.</strong>
+          {#if live.loaded}Showing what Pertal last knew{#if live.lastMessageAt}, from {ago(new Date(live.lastMessageAt).toISOString(), live.now)}{/if}.{/if}
+          If this device has network, opti or its app tier is down —
+          <a href="http://noblenumbat.lan:3001/" target="_blank" rel="noreferrer">Uptime Kuma</a>
+          runs on noblenumbat and sees it from outside.
+          <span class="faint">({live.error})</span>
+        </div>
+      </div>
     {/if}
     {@render children()}
   </main>
@@ -122,9 +133,11 @@
 
   main { grid-area: main; min-width: 0; padding: var(--s4) var(--s5) 96px; }
   .banner {
-    display: flex; align-items: center; gap: 8px; margin-bottom: var(--s4); padding: 8px 12px;
-    border: 1px solid var(--warn); border-radius: var(--r); background: var(--warn-dim); color: var(--warn); font-size: var(--fs-sm);
+    display: flex; align-items: flex-start; gap: 10px; margin-bottom: var(--s4); padding: 10px 14px;
+    border: 1px solid var(--crit); border-radius: var(--r); background: var(--crit-dim); color: var(--ink); font-size: var(--fs-sm);
   }
+  .banner :global(svg) { color: var(--crit); flex: none; margin-top: 1px; }
+  .banner strong { color: var(--crit); }
 
   @media (max-width: 900px) {
     .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'top' 'main'; }

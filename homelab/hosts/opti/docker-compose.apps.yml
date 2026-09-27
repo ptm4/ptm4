@@ -138,6 +138,31 @@ services:
     networks:
       - internal
 
+  # Pertal — webapp v4 (apps/WEBAPP-V4-PLAN.md), served at https://webapp.lan:8444 by
+  # nginx-webapp while v3 keeps :8443. A baked image: dependencies are installed at
+  # build time, never at container start. The "pertal" profile keeps it out of the
+  # plain `up`/`pull` steps, so a failed Pertal build can never block a v3 deploy —
+  # the workflow starts it explicitly, last.
+  pertal:
+    build: ./pertal
+    container_name: pertal
+    profiles: ["pertal"]
+    restart: unless-stopped
+    logging: *default-logging
+    # Root ONLY while v3 still writes arch_data as root (new audit months, vitals).
+    # At cutover: chown the volume to 1000:1000 and delete this line (image runs as node).
+    user: "0:0"
+    environment:
+      HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
+      HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
+      HL_DB_TOKEN: ${HL_DB_TOKEN:-}
+    volumes:
+      - arch_data:/arch-data
+    expose:
+      - "3000"
+    networks:
+      - internal
+
   nginx-webapp:
     image: nginx:stable-alpine
     container_name: nginx-webapp
@@ -145,6 +170,7 @@ services:
     logging: *default-logging
     ports:
       - "${OPTI_IP}:8443:443"
+      - "${OPTI_IP}:8444:8444"   # Pertal (v4), side by side until cutover
     volumes:
       - /srv/red/fs/ptm/certs/webapp.rpi.lan.pem:/etc/ssl/certs/webapp.crt:ro
       - /srv/red/fs/ptm/certs/webapp.rpi.lan-key.pem:/etc/ssl/private/webapp.key:ro

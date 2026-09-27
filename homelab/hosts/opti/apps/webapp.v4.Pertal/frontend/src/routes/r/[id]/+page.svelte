@@ -8,6 +8,8 @@
   import Age from '$lib/components/Age.svelte';
   import CommandBar from '$lib/components/CommandBar.svelte';
   import JobSteps from '$lib/components/JobSteps.svelte';
+  import LogViewer from '$lib/components/LogViewer.svelte';
+  import MetricsPanel from '$lib/components/MetricsPanel.svelte';
   import { live } from '$lib/live.svelte';
   import { api } from '$lib/api';
   import { pct, uptime, rate, bytes, tone, ago, clock } from '$lib/format';
@@ -16,7 +18,18 @@
   const id = $derived(decodeURIComponent(page.params.id ?? ''));
   const r = $derived(live.byId(id));
   const children = $derived(r?.type === 'host' ? live.resources.filter((x) => x.type === 'container' && x.host === r.id) : []);
-  let tab = $state<'overview' | 'activity'>('overview');
+  type Tab = 'overview' | 'metrics' | 'logs' | 'activity';
+  let tab = $state<Tab>('overview');
+  // Hosts with an agent have metrics; containers have logs.
+  const tabs = $derived.by((): { id: Tab; label: string }[] => {
+    if (!r) return [];
+    const t: { id: Tab; label: string }[] = [{ id: 'overview', label: 'Overview' }];
+    if (r.type === 'host' && r.metrics) t.push({ id: 'metrics', label: 'Metrics' });
+    if (r.type === 'container') t.push({ id: 'logs', label: 'Logs' });
+    t.push({ id: 'activity', label: 'Activity' });
+    return t;
+  });
+  $effect(() => { void id; tab = 'overview'; });
 
   let history = $state<{ jobs: Job[]; audit: Job[]; activity: ActivityEntry[] } | null>(null);
   let histErr = $state<string | null>(null);
@@ -74,13 +87,16 @@
   <CommandBar resource={r} />
 
   <div class="tabs" role="tablist">
-    <button role="tab" aria-selected={tab === 'overview'} onclick={() => (tab = 'overview')}>Overview</button>
-    <button role="tab" aria-selected={tab === 'activity'} onclick={() => (tab = 'activity')}>Activity</button>
-    <button role="tab" disabled title="Coming in the v4 build">Logs</button>
-    <button role="tab" disabled title="Coming in the v4 build">Metrics</button>
+    {#each tabs as t (t.id)}
+      <button role="tab" aria-selected={tab === t.id} onclick={() => (tab = t.id)}>{t.label}</button>
+    {/each}
   </div>
 
-  {#if tab === 'overview'}
+  {#if tab === 'metrics'}
+    <MetricsPanel host={r.id} />
+  {:else if tab === 'logs'}
+    <LogViewer host={r.host} container={r.name} />
+  {:else if tab === 'overview'}
     {#if r.reasons.length}
       <section class="panel reasons">
         {#each r.reasons as why}
