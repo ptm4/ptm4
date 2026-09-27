@@ -24,11 +24,10 @@ Legend — effort **S** <30 min · **M** an afternoon · **L** a project. 👤 =
 
 ## P0 — security, this week
 
-- [ ] 👤 **Rotate the leaked WireGuard key** (S). Repo `ptm4/ptm4` is **public**;
-      `homelab/hosts/noblenumbat/docker-compose.yaml` has carried a live ProtonVPN
-      `WIREGUARD_PRIVATE_KEY` since `391c359` (2026-07-26). New config in Proton (NL, NAT-PMP
-      on), delete the old one, put the key in `/opt/yams/.env` (`chmod 600` — it's 664), then
-      compose line → `${WIREGUARD_PRIVATE_KEY}`. Rewriting history is optional once rotated.
+- [ ] 👤 **Rotate the leaked WireGuard key** (S) — in progress. Order matters: new Proton config
+      (NAT-PMP on) → key into `/opt/yams/.env` + `chmod 600` → *then* compose line →
+      `${WIREGUARD_PRIVATE_KEY}` and push → verify forwarded port → delete the old Proton config.
+      Pushing the compose change before `.env` has the key takes the VPN stack down.
 - [ ] 👤 **Change the qBittorrent admin password** (S) — `yams_qbt` is public in
       `vpn-stack-heal.sh:59`. Script should read it from a root-only file on the host.
 - [ ] **opti sshd** (S): `PermitRootLogin yes` + `PasswordAuthentication yes`, reachable from the
