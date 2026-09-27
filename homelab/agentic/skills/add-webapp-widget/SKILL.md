@@ -1,9 +1,14 @@
 ---
 name: add-webapp-widget
-description: Add a widget, card, tile or panel to the homelab dashboard at webapp.lan (v3.Fable on opti) — something showing live data, status, or a small feed on Home, the Monitor, the Control center, a host page, or the Launchpad. Use when the user asks for something to appear on the dashboard/board/home screen as a card or tile, or to add/change a dashboard widget.
+description: Add a widget, card, tile or panel to the homelab dashboard — in Pertal (webapp v4, webapp.lan:8444) follow add-to-webapp's recipes; this file covers v3.Fable (webapp.lan:8443) fixes only — something showing live data, status, or a small feed on Home, the Monitor, the Control center, a host page, or the Launchpad. Use when the user asks for something to appear on the dashboard/board/home screen as a card or tile, or to add/change a dashboard widget.
 ---
 
 # Add a widget to the dashboard
+
+> **New work goes into Pertal (webapp v4).** There a "widget" is a component on a page —
+> a Status card (`TodayStrip.svelte`), a resource-page section, or a topology node — and
+> the [`add-to-webapp`](../add-to-webapp/SKILL.md) skill has the recipes. The rest of this
+> file describes v3.Fable, which only gets fixes until cutover.
 
 **Read this first: v3.Fable has no user-editable widget board.** The v2 app's Homarr-style
 board (a widget registry, "Edit board → Add widget", gridstack layouts) was deleted in the

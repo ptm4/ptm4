@@ -30,6 +30,9 @@ Legend — effort **S** <30 min · **M** an afternoon · **L** a project. 👤 =
       Pushing the compose change before `.env` has the key takes the VPN stack down.
 - [ ] 👤 **Change the qBittorrent admin password** (S) — `yams_qbt` is public in
       `vpn-stack-heal.sh:59`. Script should read it from a root-only file on the host.
+- [ ] **Radarr API key in git** (S) — `homelab/hosts/noblenumbat/media-import.sh:11` hardcodes
+      it in a public repo. Regenerate the key in Radarr, have the script read it from
+      `/opt/yams/config/radarr/config.xml` (or a root-only env file) instead.
 - [ ] **opti sshd** (S): `PermitRootLogin yes` + `PasswordAuthentication yes`, reachable from the
       LAN and every Archer WireGuard client (ufw allows `10.213.87.0/24` to the whole host). Set
       `PermitRootLogin prohibit-password`, `PasswordAuthentication no`; keep a session open while
@@ -95,6 +98,9 @@ Source: `homelab/hosts/opti/apps/discord-*/`, one copy, in sync with opti. All s
 
 - [ ] noblenumbat: `disable --now rpcbind cups cups-browsed ModemManager bluetooth` (rpcbind is
       listening on 0.0.0.0:111). Old kernel 6.8 is held by the GA metapackage — pick GA or HWE.
+- [ ] noblenumbat: **~154 GB orphaned** in `/srv/media/downloads/torrents` — qBittorrent has 0
+      torrents, so nothing is seeding it. Check whether any of it is already imported by the
+      *arrs (hardlinks) before deleting; `du` counts hardlinked files twice-looking.
 - [ ] opti: podman-auto-update timer + dead filebrowser pod units (no podman containers);
       `/srv/sda-pool` (only `.Trash`); Hitachi NTFS disk mounted ro and unused — unmount or wipe
       and reuse it as a backup target for the P1 small-data backup.

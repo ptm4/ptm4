@@ -161,6 +161,8 @@ services:
       # Optional: Google Calendar's "secret address in iCal format" (comma-separate
       # several). Unset = the Status page's calendar card says "not connected".
       PERTAL_CALENDAR_ICS: ${PERTAL_CALENDAR_ICS:-}
+      # Seerr's API key (Settings → General in Seerr). Unset = Requests page shows setup steps.
+      SEERR_API_KEY: ${SEERR_API_KEY:-}
     volumes:
       - arch_data:/arch-data
     expose:
@@ -297,6 +299,31 @@ services:
       timeout: 5s
       retries: 3
 
+  # Seerr (Jellyseerr's successor, merged 2025) — media requests. http://opti.lan:5055
+  # One-time setup in its own UI: sign in with Jellyfin (http://192.168.1.6:8096), add
+  # Sonarr (:8989) and Radarr (:7878) on noblenumbat, then copy Settings → General → API
+  # key into SEERR_API_KEY in .env so Pertal's Requests page can read and approve.
+  # Pinned: the audit flagged floating :latest tags; bump deliberately.
+  seerr:
+    image: seerr/seerr:v3.4.1
+    container_name: seerr
+    init: true
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      TZ: "America/New_York"
+    ports:
+      - "${OPTI_IP}:5055:5055"
+    volumes:
+      - seerr_config:/app/config
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5055/api/v1/settings/public"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+
   # Drives a real Chromium to scrape HLTV. On the Pi this sat pinned at its 768m
   # cap burning ~1.5 cores; raised here because opti has the headroom.
   hltv-api:
@@ -355,3 +382,4 @@ volumes:
   hltvbot_data:
   hltvapi_data:
   arch_data:
+  seerr_config:

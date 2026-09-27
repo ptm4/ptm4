@@ -198,7 +198,7 @@ function summarize(resources, unclaimed, snapshots) {
   // themselves, and a public API hiccup is not a homelab problem.
   // hltv:/streams: too — hltv-api and stream-station are containers, so if they die
   // their own resource says so; a feed warming up is not an incident.
-  const quiet = /^(vitals:|probe:|extras:|hltv:|streams:|links$)/;
+  const quiet = /^(vitals:|probe:|extras:|hltv:|streams:|qbt:|vpn:|seerr:|links$)/;
   for (const [key, m] of Object.entries(snapshots.metas())) {
     if (m.ok === false && !quiet.test(key)) {
       issues.push({ severity: 'warn', resource_id: null, resource: m.label, host: m.group, text: `data source failing: ${m.error}`, source: key, at: null });

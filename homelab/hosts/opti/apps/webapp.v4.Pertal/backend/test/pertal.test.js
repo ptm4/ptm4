@@ -155,8 +155,13 @@ test('topology: a finding does not break an edge, a dead host does', async () =>
   const app = await appWith(fakeSnapshots());
   const topo = (await app.inject('/api/topology')).json();
   const edge = (from, to) => topo.edges.find((e) => e.from === from && e.to === to);
-  assert.strictEqual(edge('rpi', 'opti').status, 'ok', 'opti has a critical finding but is up');
-  assert.strictEqual(edge('opti', 'noblenumbat').status, 'crit', 'noblenumbat is not answering');
+  assert.strictEqual(edge('host:rpi', 'host:opti').status, 'ok', 'opti has a critical finding but is up');
+  assert.strictEqual(edge('host:rpi', 'host:noblenumbat').status, 'crit', 'noblenumbat is not answering');
+  const svc = (id) => topo.services.find((s) => s.id === id);
+  assert.strictEqual(svc('bots').status, 'warn', 'a service is as healthy as its worst container');
+  assert.strictEqual(svc('samba').status, 'ok', 'host-level service follows its host');
+  assert.strictEqual(svc('seerr'), undefined, 'services with no deployed container are left out');
+  assert.ok(!topo.edges.some((e) => e.from === 'seerr'), 'and so are their edges');
   await app.close();
 });
 
@@ -227,4 +232,19 @@ test('streams guide: stale feed never claims live; only HLTV-listed streams are 
 
   const card = cs2Summary(day);
   assert.deepStrictEqual(card.matches.map((m) => m.id), ['1', '2'], 'unstarred upcoming match is left off the card');
+});
+
+test('downloads and requests: input is validated before anything leaves Pertal', async () => {
+  const app = await appWith(fakeSnapshots());
+  const post = (url, payload) => app.inject({ method: 'POST', url, payload });
+  assert.strictEqual((await post('/api/downloads/add', { urls: 'file:///etc/passwd' })).statusCode, 400);
+  assert.strictEqual((await post('/api/downloads/add', {})).statusCode, 400);
+  assert.strictEqual((await post('/api/downloads/NOTAHASH/pause', {})).statusCode, 400);
+  assert.strictEqual((await post(`/api/downloads/${'a'.repeat(40)}/format`, {})).statusCode, 404);
+  const add = await post('/api/downloads/add', { urls: 'magnet:?xt=urn:btih:' + 'b'.repeat(40) + '&dn=test.iso' });
+  assert.strictEqual(add.statusCode, 202, 'dry-run add starts a job');
+  const reqs = (await app.inject('/api/requests')).json();
+  assert.strictEqual(reqs.configured, false, 'no SEERR_API_KEY → setup state, not an error');
+  assert.strictEqual((await post('/api/requests/0/approve', {})).statusCode, 400);
+  await app.close();
 });

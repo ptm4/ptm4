@@ -7,6 +7,7 @@
   import JobTray from '$lib/components/JobTray.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
   import SearchPalette from '$lib/components/SearchPalette.svelte';
+  import AppsMenu from '$lib/components/AppsMenu.svelte';
   import { live } from '$lib/live.svelte';
   import { theme } from '$lib/theme.svelte';
   import { NAV } from '$lib/nav';
@@ -39,6 +40,7 @@
     <button class="search" onclick={() => (search = true)}>
       <Search size={14} /><span>Search resources…</span><kbd>Ctrl K</kbd>
     </button>
+    <AppsMenu />
     <span class="live" class:off={!live.connected} title={live.connected ? 'Live: receiving updates' : 'Not connected — showing last known data'}>
       <span class="pulse"></span>{live.connected ? 'live' : 'offline'}
     </span>

@@ -65,6 +65,21 @@ export const api = {
   links: () => request<{ groups: LinkGroup[]; checked_at: string | null }>('/api/links'),
   reports: () => request<any>('/api/reports'),
   topology: () => request<any>('/api/topology'),
+  downloads: {
+    get: () => request<any>('/api/downloads'),
+    // multipart: .torrent files and/or magnet links. No JSON header — the browser sets the boundary.
+    add: async (files: File[], urls: string) => {
+      const form = new FormData();
+      for (const f of files) form.append('torrents', f, f.name);
+      if (urls.trim()) form.append('urls', urls.trim());
+      const res = await fetch('/api/downloads/add', { method: 'POST', body: form, signal: AbortSignal.timeout(30_000) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new ApiError(res.status, body?.error || `HTTP ${res.status}`);
+      return body as { job: Job };
+    },
+    op: (hash: string, op: 'pause' | 'resume' | 'delete', opts: { confirm?: boolean; deleteFiles?: boolean } = {}) =>
+      request<{ job: Job }>(`/api/downloads/${hash}/${op}`, { method: 'POST', body: JSON.stringify(opts) }),
+  },
   streams: {
     guide: () => request<StreamGuide>('/api/streams/guide'),
     watch: (body: { platform?: string; channel?: string; url?: string; slot?: number }) =>

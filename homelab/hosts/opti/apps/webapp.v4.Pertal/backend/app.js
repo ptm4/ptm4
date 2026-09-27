@@ -20,6 +20,8 @@ const { registerProbeSources } = require('./sources/probe');
 const { registerLinkSources } = require('./sources/links');
 const { registerExtrasSources } = require('./sources/extras');
 const { registerStreamSources } = require('./sources/streams');
+const { registerDownloadSources } = require('./sources/downloads');
+const { registerSeerrSource } = require('./sources/seerr');
 const { createHistory } = require('./lib/history');
 
 const VERSION = require('./package.json').version;
@@ -78,6 +80,8 @@ async function buildApp(opts = {}) {
     registerLinkSources(snapshots);
     registerExtrasSources(snapshots);
     registerStreamSources(snapshots);
+    registerDownloadSources(snapshots);
+    if (process.env.SEERR_API_KEY) registerSeerrSource(snapshots); // before setup there is nothing to poll
     if (!registerHldbSource(snapshots)) app.log.warn('HOMELAB_DB_URL not set — no collector findings');
   }
 
@@ -92,6 +96,8 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/api'), { prefix: '/api' });
   await app.register(require('./routes/views'), { prefix: '/api' });
   await app.register(require('./routes/streams'), { prefix: '/api/streams' });
+  await app.register(require('./routes/downloads'), { prefix: '/api/downloads' });
+  await app.register(require('./routes/requests'), { prefix: '/api/requests' });
   await app.register(require('./routes/events'), { prefix: '/api/events' });
   await app.register(require('./routes/ingest'), { prefix: '/api/architecture' });
   await app.register(require('./plugins/static'));

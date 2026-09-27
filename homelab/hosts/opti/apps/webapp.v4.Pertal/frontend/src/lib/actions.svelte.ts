@@ -3,7 +3,7 @@
 // starting (428, 400, network) land in the tray too — nothing fails silently.
 import { api, ApiError } from './api';
 import { live } from './live.svelte';
-import type { ActionRef, Resource } from './types';
+import type { ActionRef, Job, Resource } from './types';
 
 interface StartError { id: string; title: string; text: string; at: number }
 
@@ -33,6 +33,26 @@ class Actions {
 
   dismissError(id: string) {
     this.errors = this.errors.filter((e) => e.id !== id);
+  }
+
+  // A generic confirm question for pages whose buttons are not resource actions
+  // (e.g. deleting a torrent). ConfirmDialog renders it.
+  question = $state<{ title: string; body: string; label: string; run: () => void } | null>(null);
+  ask(q: { title: string; body: string; label: string; run: () => void }) {
+    this.question = q;
+  }
+
+  // Put a job started elsewhere (Downloads, …) into the tray.
+  track(job: Job) {
+    live.upsertJob(job);
+    this.mine = [job.id, ...this.mine].slice(0, 20);
+    this.trayOpen = true;
+  }
+
+  fail(title: string, e: unknown) {
+    const text = e instanceof ApiError ? e.message : `could not reach Pertal: ${(e as Error).message}`;
+    this.errors = [{ id: crypto.randomUUID(), title, text, at: Date.now() }, ...this.errors].slice(0, 5);
+    this.trayOpen = true;
   }
 
   async #start(action: ActionRef, resource: Resource, confirm: boolean) {

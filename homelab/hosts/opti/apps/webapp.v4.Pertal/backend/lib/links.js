@@ -28,6 +28,7 @@ const LINK_GROUPS = [
   { group: 'Media', links: [
     { label: 'Jellyfin', url: 'http://jellyfin.lan:8096/', icon: 'jellyfin.svg', check: 'http://jellyfin.lan:8096' },
     { label: 'Kavita (comics)', url: 'http://comics.lan:5000/', icon: 'kavita.svg', check: 'http://comics.lan:5000' },
+    { label: 'Seerr (requests)', url: 'http://opti.lan:5055/', icon: 'generic.svg', check: ['http://opti.lan:5055', 'http://seerr:5055'] },
   ]},
   { group: 'Library management', links: [
     { label: 'Sonarr (TV)', url: 'http://noblenumbat.lan:8989/', icon: 'sonarr.svg', check: 'http://noblenumbat.lan:8989' },

@@ -89,9 +89,9 @@ cannot serve. Decide before building an assistant.
 
 ## Build order (big-bang, but in this sequence)
 
-Progress 2026-09-27: steps 0–2 built and verified against the live homelab in dev (dry-run
-actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check clean, CI
-(`checks.yml`) builds and tests it on every push. Not deployed.
+Progress 2026-09-27: steps 0–4 and 6 built; live side by side at https://webapp.lan:8444.
+Code: `webapp.v4.Pertal/` — backend 12/12 tests, svelte-check 0/0, CI (`checks.yml`) builds and
+tests it on every push. The `add-to-webapp` skill now documents Pertal (v3 = fixes only).
 
 0. ✅ Skeleton, Dockerfile (baked image + healthcheck), CI checks. ⬜ prettier/eslint.
 1. ✅ Resource registry + snapshot cache + Status page. Needed **hl-arch-agent v0.7.0**
@@ -115,15 +115,26 @@ actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check
    (ESPN, teams from the discord-sports config), CS2 today (hltv-api), Google Calendar via
    `PERTAL_CALENDAR_ICS` (secret iCal URL; own small ICS parser with recurrence). ⬜ Google
    Home devices and package tracking — need research (no official local API / a paid API).
-   ⬜ Downloads (needs qBittorrent creds as host-side env), Jellyseerr deploy + Requests (needs
-   Peter to run its setup wizard + an API key).
+   ✅ Downloads page: drop .torrent files / magnets → qBittorrent (category `pertal`, VPN'd),
+   queue with pause/resume/remove, gluetun VPN card. qBittorrent needs no creds from Pertal
+   (its WebUI whitelists the LAN — call `192.168.1.6:8081`). Finished `pertal` torrents are
+   moved by `noblenumbat/media-import.sh` into **opti `/srv/red/fs/ptm/Downloads`**
+   (`\\opti\red\ptm\Downloads`), mounted on noblenumbat at `/mnt/opti-downloads` (fstab CIFS
+   automount, added 2026-09-27).
+   ✅ Seerr (Jellyseerr's successor, `seerr/seerr:v3.4.1`) in compose at `opti.lan:5055` +
+   Requests page (approve/decline as jobs). ⬜ Peter: run Seerr's setup wizard, then
+   `SEERR_API_KEY` in `/srv/docker/compose/.env`.
+   ✅ Topology is a flowing diagram (`TopologyDiagram.svelte` + `topology-layout.ts`): hosts
+   as lanes, services as cards, typed edges (network/DNS/storage/media/VPN/apps/monitor),
+   broken edges go red. ✅ Launchpad moved from the rail to a top-bar Apps button.
 5. ⬜ Bot consolidation (`bot_common.py`, real `/health`, bots as resources).
 6. ✅ Offline shell: service worker caches the app shell only; with opti gone the installed
    app opens and says "Can't reach opti" with a Kuma link. SSE self-heals: reconnects after a
    502 (deploys) and a 15s ping + 45s watchdog catches a proxy holding a dead stream open.
 7. Cutover: CI path filter → v4, nginx → v4; tag `webapp-v3-fable-final`; delete Fable after two
-   quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy. Update the
-   `add-to-webapp` / `add-webapp-widget` skills in the same change.
+   quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy. The skills already
+   describe Pertal (2026-09-27) — at cutover just change `:8444` → `:8443` there and drop the
+   v3 section / fold `add-webapp-widget` into `add-to-webapp`.
    Cutover gotchas already known:
    - v3 ran as root, so `arch_data` files are root-owned; Pertal runs as `node` (uid 1000).
      `chown -R 1000:1000` the volume's `_data` once, or appends to the audit trail fail.
@@ -135,5 +146,5 @@ actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check
 
 ## Open questions
 
-- Palette: real gruvbox, or the current GitHub Dark look?
+- ~~Palette~~ — answered: gruvbox default, GitHub Dark kept as the switchable alternate.
 - Where does the local model live (see above) — only matters once an assistant is back in scope.

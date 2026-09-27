@@ -3,7 +3,7 @@
   import { goto } from '$app/navigation';
   import StatusDot from './StatusDot.svelte';
   import { live } from '$lib/live.svelte';
-  import { NAV } from '$lib/nav';
+  import { NAV, EXTRA_PAGES } from '$lib/nav';
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
   let q = $state('');
@@ -13,7 +13,7 @@
   type Hit = { href: string; label: string; sub: string; status?: string };
   const hits = $derived.by((): Hit[] => {
     const needle = q.trim().toLowerCase();
-    const pages: Hit[] = NAV.filter((n) => n.ready).map((n) => ({ href: n.href, label: n.label, sub: 'page' }));
+    const pages: Hit[] = [...NAV.filter((n) => n.ready), ...EXTRA_PAGES].map((n) => ({ href: n.href, label: n.label, sub: 'page' }));
     const res: Hit[] = live.resources.map((r) => ({
       href: `/r/${r.id}`, label: r.name, sub: r.type === 'host' ? 'host' : `${r.kind} on ${r.host}`, status: r.status,
     }));

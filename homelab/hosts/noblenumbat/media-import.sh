@@ -29,6 +29,46 @@ while IFS= read -r -d '' t; do
   mv "$t" "$BLACKHOLE/"
 done < <(find "$INBOX" -maxdepth 2 -type f -iname '*.torrent' -print0)
 
+# ── Pertal drop-offs: finished torrents in category "pertal" → opti (ptm/Downloads) ──
+# Torrents added from Pertal's Downloads page land in qBittorrent's "pertal" category,
+# which can only write to this box (/data = /srv/media in the container). Each finished
+# one is copied to opti, then removed here and from the queue. Copy-then-delete rather
+# than mv: mv across to CIFS tries to preserve ownership and can fail half-way.
+DROP=/mnt/opti-downloads
+# The LAN IP, not localhost: qBittorrent sits in gluetun's netns, so localhost reaches it
+# from the Docker bridge — outside its WebUI whitelist (403). The LAN IP is whitelisted.
+QBT_API=http://192.168.1.6:8081/api/v2
+if mountpoint -q "$DROP"; then
+  while IFS=$'\t' read -r hash src name; do
+    if [ "$hash" = "ERR" ]; then log "WARN: pertal drop-offs: qBittorrent unreachable ($src)"; continue; fi
+    if [ ! -e "$src" ]; then log "WARN: pertal drop-off missing on disk: $src"; continue; fi
+    log "PERTAL: copying '$name' -> $DROP/"
+    if cp -r --no-preserve=all "$src" "$DROP/"; then
+      rm -rf "$src"
+      curl -s -X POST "$QBT_API/torrents/delete" \
+        --data-urlencode "hashes=$hash" --data "deleteFiles=false" >/dev/null || true
+      log "PERTAL: '$name' is on opti; removed from qBittorrent"
+    else
+      log "ERROR: copying '$name' to opti failed; left in place for the next run"
+    fi
+  done < <(QBT_API="$QBT_API" python3 - <<'PY'
+import json, os, urllib.request
+try:
+    ts = json.load(urllib.request.urlopen(
+        os.environ["QBT_API"] + "/torrents/info?category=pertal&filter=completed", timeout=10))
+except Exception as e:
+    print(f"ERR\t{e}\t")
+    raise SystemExit(0)
+for t in ts:
+    path = t.get("content_path") or ""
+    if t.get("progress", 0) >= 1 and path.startswith("/data/"):
+        print(f"{t['hash']}\t/srv/media/{path[len('/data/'):]}\t{t['name']}")
+PY
+)
+else
+  log "WARN: $DROP not mounted, pertal drop-offs wait for the next run"
+fi
+
 moved=0
 while IFS= read -r -d '' f; do
   age=$(( $(date +%s) - $(stat -c %Y "$f") ))

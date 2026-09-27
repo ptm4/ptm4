@@ -1,20 +1,47 @@
 <script lang="ts">
-  // The confirm tap for risky actions (reboot, update). No login in Pertal, so this is
-  // the guard against a stray tap — the backend refuses risky kinds without it (428).
+  // The confirm tap for risky things. Two sources: a risky resource action (reboot,
+  // update) and a page's own question (actions.ask — e.g. deleting a torrent). No login
+  // in Pertal, so this is the guard against a stray tap; the backend refuses risky
+  // requests without it (428).
   import { TriangleAlert } from '@lucide/svelte';
   import { actions } from '$lib/actions.svelte';
 
   let dialog = $state<HTMLDialogElement>();
+  const open = $derived(!!actions.pending || !!actions.question);
 
   $effect(() => {
     if (!dialog) return;
-    if (actions.pending && !dialog.open) dialog.showModal();
-    if (!actions.pending && dialog.open) dialog.close();
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
   });
+
+  function cancel() {
+    actions.cancel();
+    actions.question = null;
+  }
+  function confirm() {
+    if (actions.question) {
+      const q = actions.question;
+      actions.question = null;
+      q.run();
+    } else {
+      actions.confirm();
+    }
+  }
 </script>
 
-<dialog bind:this={dialog} onclose={() => actions.cancel()} aria-labelledby="confirm-title">
-  {#if actions.pending}
+<dialog bind:this={dialog} onclose={cancel} aria-labelledby="confirm-title">
+  {#if actions.question}
+    {@const q = actions.question}
+    <div class="body">
+      <TriangleAlert size={22} color="var(--warn)" />
+      <div><h2 id="confirm-title">{q.title}</h2><p class="muted">{q.body}</p></div>
+    </div>
+    <div class="foot">
+      <button class="btn" onclick={cancel}>Cancel</button>
+      <button class="btn danger" onclick={confirm}>{q.label}</button>
+    </div>
+  {:else if actions.pending}
     {@const p = actions.pending}
     <div class="body">
       <TriangleAlert size={22} color="var(--warn)" />
@@ -32,8 +59,8 @@
       </div>
     </div>
     <div class="foot">
-      <button class="btn" onclick={() => actions.cancel()}>Cancel</button>
-      <button class="btn danger" onclick={() => actions.confirm()}>{p.action.label}</button>
+      <button class="btn" onclick={cancel}>Cancel</button>
+      <button class="btn danger" onclick={confirm}>{p.action.label}</button>
     </div>
   {/if}
 </dialog>
