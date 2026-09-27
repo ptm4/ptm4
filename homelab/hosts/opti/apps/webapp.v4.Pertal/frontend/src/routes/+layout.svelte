@@ -2,7 +2,7 @@
   import '$lib/theme/app.css';
   import { page } from '$app/state';
   import { onMount } from 'svelte';
-  import { Menu, Search, Hexagon, WifiOff } from '@lucide/svelte';
+  import { Menu, Search, WifiOff } from '@lucide/svelte';
   import Icon from '$lib/components/Icon.svelte';
   import JobTray from '$lib/components/JobTray.svelte';
   import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -36,7 +36,7 @@
 <div class="app" class:drawer>
   <header class="topbar">
     <button class="btn ghost icon menu" aria-label="Open navigation" onclick={() => (drawer = !drawer)}><Menu size={18} /></button>
-    <a class="brand" href="/"><Hexagon size={18} /> Pertal</a>
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" width="22" height="22" /> Pertal</a>
     <button class="search" onclick={() => (search = true)}>
       <Search size={14} /><span>Search resources…</span><kbd>Ctrl K</kbd>
     </button>

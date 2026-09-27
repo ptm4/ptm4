@@ -30,7 +30,9 @@ are in `homelab/hosts/opti/apps/WEBAPP-V4-PLAN.md`; the folder README has the ar
 
 Also: **healthy is quiet** — `--ok` is grey; colour only for things that want attention.
 Both theme families (gruvbox default, github alt) define the same tokens in
-`frontend/src/lib/theme/tokens.css`; never hardcode a hex in a component.
+`frontend/src/lib/theme/tokens.css`; never hardcode a hex in a component. The logo is the
+raspberry pie slice carried over from v3 (`frontend/static/favicon.svg` — tab icon, top bar,
+Pertal's topology card). Peter loves it: don't replace it with a generic icon.
 
 ## Recipes
 

@@ -3,7 +3,7 @@
   // Links flow from source to target; a link turns red and stops when one end is down.
   // Hover (or focus) anything to light up what it connects to; click a card to open it.
   import {
-    ShieldCheck, Send, HardDrive, Hexagon, LayoutDashboard, KeyRound, Inbox, Bot, Crosshair,
+    ShieldCheck, Send, HardDrive, LayoutDashboard, KeyRound, Inbox, Bot, Crosshair,
     NotebookPen, ScrollText, Clapperboard, Library, Download, Shield, BookOpen, Radio, Activity,
     BellRing, Container, Cpu, Globe, MessageSquare, Lock, Router, Server, Smartphone, Tags,
   } from '@lucide/svelte';
@@ -17,7 +17,7 @@
   let showLabels = $state(false);
 
   const ICON: Record<string, any> = {
-    pihole: ShieldCheck, 'dozzle-agent-rpi': Send, samba: HardDrive, pertal: Hexagon, webapp: LayoutDashboard,
+    pihole: ShieldCheck, 'dozzle-agent-rpi': Send, samba: HardDrive, webapp: LayoutDashboard,
     vault: KeyRound, seerr: Inbox, bots: Bot, hltv: Crosshair, notes: NotebookPen, dozzle: ScrollText,
     jellyfin: Clapperboard, arr: Library, downloaders: Download, gluetun: Shield, kavita: BookOpen,
     streams: Radio, kuma: Activity, ntfy: BellRing, portainer: Container, llama: Cpu,
@@ -151,7 +151,11 @@
           onmouseenter={() => (hover = n.id)} onmouseleave={() => (hover = null)} onfocus={() => (hover = n.id)} onblur={() => (hover = null)}>
           <rect x={n.x} y={n.y} width={n.w} height={n.h} rx="9" class="card" />
           <rect x={n.x} y={n.y + 9} width="3" height={n.h - 18} rx="1.5" fill={ACCENT[n.kind] ?? 'var(--ink-3)'} />
-          <Ic x={n.x + 12} y={n.y + 13} size={18} class="sico" />
+          {#if n.id === 'pertal'}
+            <image href="/favicon.svg" x={n.x + 11} y={n.y + 11} width="21" height="21" />
+          {:else}
+            <Ic x={n.x + 12} y={n.y + 13} size={18} class="sico" />
+          {/if}
           <text x={n.x + 40} y={n.y + 19} class="nlabel">{n.label}</text>
           <text x={n.x + 40} y={n.y + 34} class="nsub">{fit(n.detail ?? n.sub, n.w - 40 - ((n.count ?? 0) > 1 ? 44 : 26))}</text>
           {#if (n.count ?? 0) > 1}
