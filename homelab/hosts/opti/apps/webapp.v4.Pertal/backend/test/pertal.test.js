@@ -1,0 +1,152 @@
+// Offline tests: fake sources, no network, no disk writes outside a temp dir.
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
+
+process.env.ARCH_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'pertal-test-'));
+process.env.PERTAL_ACTIONS = 'dry';
+
+const buildApp = require('../app');
+const { createSnapshots } = require('../lib/snapshots');
+
+const containers = (list) => ({ docker: true, containers: list, error: null });
+const running = (name, health = null) => ({ name, image: `img/${name}`, state: 'running', status: 'Up 2 days', health });
+
+function fakeSnapshots(overrides = {}) {
+  const snaps = createSnapshots();
+  const data = {
+    'vitals:opti': { t: 1, cpu_pct: 4, mem_pct: 38, uptime_s: 90000, cores: 4 },
+    'containers:opti': containers([running('webapp', 'healthy'), running('discord-jellyfin', 'healthy'), { ...running('notes-api'), state: 'exited', status: 'Exited (1)' }]),
+    'agent:opti': { agent_version: '0.7.0', autoupdate: { mode: 'disabled', held_at: '2026-09-17' } },
+    'vitals:rpi': { t: 1, cpu_pct: 1, mem_pct: 17, uptime_s: 3600 },
+    'containers:rpi': containers([running('pihole', 'healthy')]),
+    'agent:rpi': { agent_version: '0.7.0', autoupdate: { mode: 'enabled' } },
+    'vitals:noblenumbat': null, // set below to fail
+    'containers:noblenumbat': containers([]),
+    'agent:noblenumbat': { agent_version: '0.7.0' },
+    'probe:android': { reachable: false, rtt_ms: null },
+    'hldb:status': {
+      findings: [
+        { tool: 'homelab-db', severity: 'critical', host: 'opti', message: '[opti] sdb SMART reallocated sectors: 272', run_at: '2026-09-27T10:00:00Z' },
+        { tool: 'homelab-db', severity: 'warn', host: 'opti', message: '[bots] discord-jellyfin last attempt: failed: 401', run_at: '2026-09-27T10:00:00Z' },
+        { tool: 'persistence-auditor', severity: 'warn', host: null, message: 'NEW persistence entry: a', run_at: '2026-09-27T09:00:00Z' },
+        { tool: 'persistence-auditor', severity: 'warn', host: null, message: 'NEW persistence entry: b', run_at: '2026-09-27T09:00:00Z' },
+      ],
+    },
+    ...overrides,
+  };
+  for (const [key, value] of Object.entries(data)) {
+    const [kind, host] = key.split(':');
+    snaps.register({
+      key, group: host, label: key, intervalMs: 60_000,
+      fetch: async () => {
+        if (key === 'vitals:noblenumbat') throw new Error('connect ECONNREFUSED');
+        return value;
+      },
+    });
+    void kind;
+  }
+  return snaps;
+}
+
+async function appWith(snaps) {
+  const app = await buildApp({ logger: false, snapshots: snaps, startSources: false, persist: false });
+  await app.ready();
+  await Promise.all(snaps.keys().map((k) => snaps.refresh(k)));
+  await Promise.all(snaps.keys().filter((k) => k === 'vitals:noblenumbat').map((k) => snaps.refresh(k)));
+  app.pertal.rebuild();
+  return app;
+}
+
+test('snapshot cache keeps last good data when a refresh fails', async () => {
+  let fail = false;
+  const snaps = createSnapshots();
+  snaps.register({ key: 'x', intervalMs: 1000, fetch: async () => { if (fail) throw new Error('boom'); return { v: 1 }; } });
+  await snaps.refresh('x');
+  fail = true;
+  const after = await snaps.refresh('x');
+  assert.deepStrictEqual(after.data, { v: 1 });
+  assert.strictEqual(after.meta.ok, false);
+  assert.strictEqual(after.meta.error, 'boom');
+});
+
+test('snapshot cache enforces its deadline even if fetch ignores the signal', async () => {
+  const snaps = createSnapshots();
+  snaps.register({ key: 'slow', intervalMs: 1000, timeoutMs: 50, fetch: () => new Promise(() => {}) });
+  const s = await snaps.refresh('slow');
+  assert.strictEqual(s.meta.ok, false);
+  assert.match(s.meta.error, /timed out/);
+});
+
+test('resource model: reachability, findings and grouping', async () => {
+  const app = await appWith(fakeSnapshots());
+  const { resources, summary } = (await app.inject('/api/resources')).json();
+  const byId = Object.fromEntries(resources.map((r) => [r.id, r]));
+
+  assert.strictEqual(byId.opti.online, true, 'a critical finding does not make a host offline');
+  assert.strictEqual(byId.opti.status, 'crit');
+  assert.strictEqual(byId.noblenumbat.online, false);
+  assert.strictEqual(byId.android.status, 'offline', 'intermittent host is offline, not critical');
+  assert.strictEqual(byId['opti:notes-api'].status, 'crit');
+  assert.strictEqual(byId['opti:discord-jellyfin'].status, 'warn', 'finding naming a container attaches to it');
+  assert.match(byId['opti:discord-jellyfin'].status_text, /401/);
+  assert.strictEqual(byId['opti:webapp'].status, 'ok');
+  assert.strictEqual(summary.hosts.up, 2);
+
+  const persistence = summary.issues.filter((i) => i.resource === 'persistence-auditor');
+  assert.strictEqual(persistence.length, 1, 'unattached findings are grouped per tool');
+  assert.strictEqual(persistence[0].details.length, 2);
+  await app.close();
+});
+
+test('actions: applicability, confirmation and job lifecycle', async () => {
+  const app = await appWith(fakeSnapshots());
+  const opti = app.pertal.resource('opti');
+  const kinds = opti.actions.map((a) => a.kind);
+  assert.ok(kinds.includes('host.updates-resume'), 'held host offers resume');
+  assert.ok(!kinds.includes('host.updates-hold'));
+
+  const risky = await app.inject({ method: 'POST', url: '/api/actions/host.reboot', payload: { resource: 'opti' } });
+  assert.strictEqual(risky.statusCode, 428);
+
+  const bad = await app.inject({ method: 'POST', url: '/api/actions/container.restart', payload: { resource: 'opti' } });
+  assert.strictEqual(bad.statusCode, 400);
+
+  const missing = await app.inject({ method: 'POST', url: '/api/actions/nope', payload: { resource: 'opti' } });
+  assert.strictEqual(missing.statusCode, 404);
+
+  const ok = await app.inject({ method: 'POST', url: '/api/actions/resource.refresh', payload: { resource: 'opti:webapp' } });
+  assert.strictEqual(ok.statusCode, 202);
+  const { job } = ok.json();
+  assert.strictEqual(job.steps[0].status === 'pending' || job.steps[0].status === 'running', true);
+
+  // Let the detached job finish, then read it back.
+  await new Promise((r) => setTimeout(r, 100));
+  const done = (await app.inject(`/api/jobs/${job.id}`)).json().job;
+  assert.strictEqual(done.status, 'ok');
+  assert.strictEqual(done.resource, 'opti:webapp');
+  await app.close();
+});
+
+test('a failing action is a failed job with a reason, never a silent no-op', async () => {
+  const app = await appWith(fakeSnapshots());
+  // noblenumbat's vitals source always throws, so refreshing it must fail the job.
+  const res = await app.inject({ method: 'POST', url: '/api/actions/resource.refresh', payload: { resource: 'noblenumbat' } });
+  const { job } = res.json();
+  await new Promise((r) => setTimeout(r, 100));
+  const done = (await app.inject(`/api/jobs/${job.id}`)).json().job;
+  assert.strictEqual(done.status, 'failed');
+  assert.match(done.error, /source\(s\) failed/);
+  await app.close();
+});
+
+test('health answers without touching any upstream', async () => {
+  const app = await buildApp({ logger: false, snapshots: createSnapshots(), startSources: false, persist: false });
+  const res = await app.inject('/api/health');
+  assert.strictEqual(res.statusCode, 200);
+  assert.strictEqual(res.json().app, 'pertal');
+  await app.close();
+});

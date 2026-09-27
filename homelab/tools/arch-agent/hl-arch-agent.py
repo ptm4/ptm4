@@ -108,7 +108,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import monitor
 
-AGENT_VERSION = "0.6.0"
+AGENT_VERSION = "0.7.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -388,6 +388,37 @@ def collect_listening():
         seen.add(key)
         out_list.append(item)
     return sorted(out_list, key=lambda x: x["port"])
+
+
+_HEALTH_RE = re.compile(r"\((healthy|unhealthy|health: starting)\)")
+
+
+def live_containers():
+    """GET /containers (v0.7.0) — current container state, cheap enough to poll every
+    few seconds. The fragment push is daily, so before this the dashboard's idea of
+    "is it running" could be up to 24h old. One `docker ps` call, no inspect."""
+    out, err = _run(["docker", "ps", "-a", "--no-trunc", "--format", "{{json .}}"], timeout=10)
+    if err and not out:
+        return 200, {"host": HOST, "measured_at": time.time(), "docker": False,
+                     "containers": [], "error": err[:300]}
+    rows = []
+    for line in out.splitlines():
+        try:
+            c = json.loads(line)
+        except ValueError:
+            continue
+        labels = dict(kv.split("=", 1) for kv in (c.get("Labels") or "").split(",") if "=" in kv)
+        health = _HEALTH_RE.search(c.get("Status") or "")
+        rows.append({
+            "name": c.get("Names"), "image": c.get("Image"), "state": c.get("State"),
+            "status": c.get("Status"), "running_for": c.get("RunningFor"),
+            "created_at": c.get("CreatedAt"), "ports": c.get("Ports") or "",
+            "health": health.group(1).replace("health: ", "") if health else None,
+            "compose_project": labels.get("com.docker.compose.project"),
+            "compose_service": labels.get("com.docker.compose.service"),
+        })
+    rows.sort(key=lambda r: r["name"] or "")
+    return 200, {"host": HOST, "measured_at": time.time(), "docker": True, "containers": rows}
 
 
 def collect_docker():
@@ -1121,6 +1152,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/autoupdate":
             # Unauthenticated like /apt-status: read-only unit + flag state.
             self._json(200, autoupdate_state())
+            return
+        if path == "/containers":
+            # Unauthenticated like /status: read-only names/states the dashboard already
+            # shows the whole LAN; restart/update stay token-gated POSTs.
+            self._json(*live_containers())
             return
         if path == "/monitor/capabilities":
             if not self._authorized():

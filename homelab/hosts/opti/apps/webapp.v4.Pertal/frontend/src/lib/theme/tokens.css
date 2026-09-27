@@ -1,0 +1,139 @@
+/* Pertal design tokens.
+   Two families, each with dark + light, switchable in Settings:
+     gruvbox  (default) — morhetz/gruvbox, hard-contrast backgrounds
+     github             — v3.Fable's GitHub Dark/Light look, kept as the alternate
+   Every family defines the SAME variable names, so components never branch on theme.
+
+   The rule both families obey: healthy is quiet. --ok is a neutral grey, not green;
+   colour is reserved for things that want something from you. */
+
+:root {
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --fs-xs: 11px; --fs-sm: 12px; --fs-base: 13px; --fs-md: 14px; --fs-lg: 16px; --fs-xl: 20px; --fs-2xl: 26px;
+  --r-sm: 4px; --r: 6px; --r-lg: 10px;
+  --rail-w: 208px;
+  --topbar-h: 48px;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+/* ── gruvbox dark (default) ─────────────────────────────────────────────── */
+:root,
+:root[data-family="gruvbox"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #1d2021;         /* bg0_h */
+  --bg-inset: #171a1a;
+  --surface: #282828;    /* bg0 */
+  --surface-2: #32302f;  /* bg0_s */
+  --surface-3: #3c3836;  /* bg1 */
+  --border: #3c3836;
+  --border-2: #504945;   /* bg2 */
+  --ink: #ebdbb2;        /* fg */
+  --ink-2: #bdae93;      /* fg3 */
+  --ink-3: #928374;      /* gray */
+  --accent: #83a598;     /* blue: links, focus, selection */
+  --accent-dim: rgba(131, 165, 152, .16);
+  --brand: #fabd2f;      /* yellow: identity */
+  --brand-dim: rgba(250, 189, 47, .14);
+  --ok: #928374;         /* grey BY DESIGN */
+  --ok-dim: rgba(146, 131, 116, .16);
+  --info: #8ec07c;       /* aqua */
+  --info-dim: rgba(142, 192, 124, .15);
+  --warn: #fe8019;       /* orange */
+  --warn-dim: rgba(254, 128, 25, .15);
+  --crit: #fb4934;       /* red */
+  --crit-dim: rgba(251, 73, 52, .15);
+  --purple: #d3869b;
+  --chart-1: #83a598; --chart-2: #d3869b; --chart-3: #fabd2f; --chart-4: #8ec07c;
+  --shadow: 0 12px 32px rgba(0, 0, 0, .55);
+}
+
+/* ── gruvbox light ──────────────────────────────────────────────────────── */
+:root[data-family="gruvbox"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #f2e5bc;         /* bg0_s */
+  --bg-inset: #ebdbb2;
+  --surface: #fbf1c7;    /* bg0 */
+  --surface-2: #f9f5d7;  /* bg0_h */
+  --surface-3: #ebdbb2;  /* bg1 */
+  --border: #d5c4a1;     /* bg2 */
+  --border-2: #bdae93;   /* bg3 */
+  --ink: #3c3836;        /* fg */
+  --ink-2: #504945;      /* fg2 */
+  --ink-3: #7c6f64;      /* fg4 */
+  --accent: #076678;
+  --accent-dim: rgba(7, 102, 120, .12);
+  --brand: #b57614;
+  --brand-dim: rgba(181, 118, 20, .14);
+  --ok: #7c6f64;
+  --ok-dim: rgba(124, 111, 100, .14);
+  --info: #427b58;
+  --info-dim: rgba(66, 123, 88, .13);
+  --warn: #af3a03;
+  --warn-dim: rgba(175, 58, 3, .12);
+  --crit: #9d0006;
+  --crit-dim: rgba(157, 0, 6, .11);
+  --purple: #8f3f71;
+  --chart-1: #076678; --chart-2: #8f3f71; --chart-3: #b57614; --chart-4: #427b58;
+  --shadow: 0 10px 28px rgba(60, 56, 54, .22);
+}
+
+/* ── github dark (v3.Fable's look) ──────────────────────────────────────── */
+:root[data-family="github"][data-mode="dark"] {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --bg-inset: #010409;
+  --surface: #161b22;
+  --surface-2: #1c2128;
+  --surface-3: #21262d;
+  --border: rgba(230, 237, 243, .09);
+  --border-2: rgba(230, 237, 243, .18);
+  --ink: #e6edf3;
+  --ink-2: #9198a1;
+  --ink-3: #6e7681;
+  --accent: #79c0ff;
+  --accent-dim: rgba(121, 192, 255, .13);
+  --brand: #d2a8ff;
+  --brand-dim: rgba(210, 168, 255, .14);
+  --ok: #7d8590;
+  --ok-dim: rgba(125, 133, 144, .13);
+  --info: #39c5cf;
+  --info-dim: rgba(57, 197, 207, .13);
+  --warn: #ffa657;
+  --warn-dim: rgba(255, 166, 87, .13);
+  --crit: #ff7b72;
+  --crit-dim: rgba(255, 123, 114, .13);
+  --purple: #d2a8ff;
+  --chart-1: #79c0ff; --chart-2: #d2a8ff; --chart-3: #ffa657; --chart-4: #39c5cf;
+  --shadow: 0 16px 40px rgba(1, 4, 9, .7);
+}
+
+/* ── github light ───────────────────────────────────────────────────────── */
+:root[data-family="github"][data-mode="light"] {
+  color-scheme: light;
+  --bg: #f6f8fa;
+  --bg-inset: #eaeef2;
+  --surface: #ffffff;
+  --surface-2: #f6f8fa;
+  --surface-3: #eaeef2;
+  --border: rgba(31, 35, 40, .15);
+  --border-2: rgba(31, 35, 40, .28);
+  --ink: #1f2328;
+  --ink-2: #59636e;
+  --ink-3: #6e7781;
+  --accent: #0969da;
+  --accent-dim: rgba(9, 105, 218, .1);
+  --brand: #8250df;
+  --brand-dim: rgba(130, 80, 223, .1);
+  --ok: #59636e;
+  --ok-dim: rgba(89, 99, 110, .1);
+  --info: #1b7c83;
+  --info-dim: rgba(27, 124, 131, .1);
+  --warn: #bc4c00;
+  --warn-dim: rgba(188, 76, 0, .1);
+  --crit: #cf222e;
+  --crit-dim: rgba(207, 34, 46, .1);
+  --purple: #8250df;
+  --chart-1: #0969da; --chart-2: #8250df; --chart-3: #bc4c00; --chart-4: #1b7c83;
+  --shadow: 0 8px 24px rgba(31, 35, 40, .16);
+}

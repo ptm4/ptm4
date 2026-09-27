@@ -1,100 +1,123 @@
-# Webapp v4 — consolidation plan
+# Pertal — webapp v4 plan
 
-Status: **draft slate, 2026-09-27.** Written during the homelab audit as the brief for a future
-redesign session. Goal in Peter's words: *simplify, and make the webapp strong & reliable again
-like v1* — then finalize as v4.
+Status: **discovery done 2026-09-27** (two rounds with Peter, mockups in that session).
+Rollout: **big-bang rebuild** into a new `webapp.v4.Pertal/`, v3.Fable stays live until cutover.
+Goal in Peter's words: *simple and effective like v1, with a better design — strong and reliable.*
 
-## Where we are
+## Decisions
 
-| Version | Path | State | Size (tracked, excl. lockfiles/JSON) |
-|---|---|---|---|
-| v1 | git history only — `homelab/RPI-srv/webapp/` (last at `1918d97`) | gone | Express 4 + vanilla JS, no build step |
-| v2.legacy | `webapp.v2.legacy/` | frozen, documented rollback target | ~28k lines |
-| v3.Astra | `webapp.v3.Astra/` | undeployed fork of v2 (React/Radix/Zustand) | ~29k lines |
-| **v3.Fable** | `webapp.v3.Fable/` | **live since 2026-09-10** (Fastify 5 + SvelteKit static) | ~36k lines |
+| Topic | Decision |
+|---|---|
+| Name | **Pertal** (Pert + portal) |
+| Audience | Peter at desk, on phone, remote over WireGuard; AI agents building on it |
+| Primary device | **Phone first**; desktop gets the dense version of the same pages |
+| Look | Dense ops console. Borrow Azure-portal *ideas* (resources, blades, command bar, breadcrumbs, Ctrl K) — not its looks |
+| Palette | **Pure gruvbox** (dark + light) by default; Fable's GitHub Dark/Light kept as a switchable alternate (Settings → Appearance). Rule kept: *healthy is quiet, colour means something wants you* |
+| Navigation | Side drawer on phone (Azure-style), left rail on desktop, Ctrl K everywhere |
+| Control | **Full control**; confirm tap for risky actions only (reboot, stop, update, delete) |
+| Auth | None — LAN + WireGuard only. Every action still lands in the audit trail |
+| opti down | Installed PWA caches its shell; if opti stops answering it reads Uptime Kuma on noblenumbat directly and says so. No extra server; rpi stays DNS-only |
+| Stack | Fastify + SvelteKit (Fable's), shipped as a **baked image** — no `npm install` at start |
+| Claude assistant | **Out of v4 scope.** Peter plans a local-model host; revisit when it exists (see "Local model" below) |
+| Downloads | Drop a `.torrent` / magnet → qBittorrent (via gluetun) → **one drop folder on opti** |
+| Requests | **Deploy Jellyseerr** (opti app tier — it has a DB) and show its queue in Pertal |
+| Status extras | Weather, Google Calendar, Google Home devices, package tracking, CS2 matches today, NBA scores |
+| Show-off | Screenshot-worthy is enough — no public page |
+| Discord bots | **Consolidated as part of v4**: shared `bot_common.py`, real health, each bot is a resource |
+| Old versions | Harvest from Astra (`backend/astra/snapshot.js`, fixture/demo mode, `guide.js`), then `git tag` and **delete both `webapp.v3.Astra/` and `webapp.v2.legacy/`** |
 
-~94k lines for one dashboard, two thirds of it undeployed. `frontend-legacy/` (the v1 static
-pages) is vendored **three times**, as are the 78 KB `architecture/data.json`/`index.html` and a
-543 KB `hls.js`. Astra's README and `ASTRA_UPSTREAM` still point at the pre-migration rpi
-endpoint. No version has prettier or eslint.
+## Pain → design answer
 
-### What makes Fable fragile today
-1. **`npm install` on every container start** (`docker-compose.apps.yml` webapp `command:`),
-   against a bind-mounted source tree. Every restart depends on npm cache health before serving.
-2. **No container healthcheck** on `webapp` (every other app-tier service has one), so Docker
-   never notices a wedged process; nginx just shows the holding page.
-3. **No global request timeout** — each route must remember its own upstream timeout.
-4. **Six+ live upstreams** for one page set: hl-arch-agent :8787 ×3 hosts, homelab-db :9100,
-   dispatcher :9099, llama on android (often offline), Kuma, Pi-hole, stream-station.
-5. `/api/agents` and `/api/llama` pass raw upstream status codes through, and the frontend keys
-   retry logic off them — tight coupling.
-6. Dead surface: `lib/board-presets.js` + `/api/ui/boards` (board UI deleted 2026-09-10).
-7. 18 frontend routes (`/`, bots, cockpit, dashboard→monitor, data, docs, feed, host/[name],
-   launchpad, links, llm, logs, monitor, reports, settings, settings/maintenance, streams,
-   topology, trends) — more pages than the homelab has distinct questions.
+| v3 pain | v4 answer |
+|---|---|
+| Goes down after deploys | Baked image + container healthcheck; deploy starts the new container and swaps only when healthy; PWA keeps showing the last snapshot during any restart |
+| Stale or wrong data | Pages read **only** from a server-side snapshot cache. Every snapshot carries its age; past its refresh window it greys out instead of pretending |
+| Buttons don't work | The 2026-09-27 audit trail had 19 jobs, all ok — failing buttons never became jobs. v4: **every** button goes through one action pipeline (queued → running → ok/failed + reason), failures included, visible in Activity. A route smoke test clicks every action against fixtures |
+| Not as reliable as it should be | Global request timeout; no page ever awaits an upstream; one source dying greys one card |
 
-### What v1 got right
-One process, one static folder, no build step, each card fetched its own data and failed on
-its own. Nothing could take the whole page down except the server itself.
+## Information architecture
 
-## Phase 0 — cleanup now (no redesign yet)
+Drawer / rail, top to bottom:
 
-Small, independently shippable, each keeps Fable live:
+1. **Status** — the landing page: hosts up/down, open issues, then the home strip (weather,
+   calendar, CS2, NBA, packages, Google Home).
+2. **Resources** — hosts, containers, bots, timers, streams. Every resource gets the same page:
+   header + status, **command bar**, tabs *Overview · Activity · Logs · Metrics · Settings*.
+3. **Topology** — live map; click a node → its resource page.
+4. **Activity** — one feed: actions, alerts, deploys, container changes, failures.
+5. **Logs** — global view (per-resource logs live in the Logs tab).
+6. **Downloads** — drop zone, queue, VPN/port state.
+7. **Requests** — Jellyseerr queue.
+8. **Streams**, **Launchpad**, **Reports**, **Settings** (maintenance holds, jobs).
 
-- [ ] **Bake the image**: multi-stage `Dockerfile` for the webapp (deps installed at build),
-      compose uses `build:`/image instead of `npm install && node server.js`. Keep the bind
-      mount only for `frontend/dist` if CI still rsyncs it.
-- [ ] **Add a healthcheck** on `webapp` hitting a cheap `/api/health` that does *no* upstream I/O.
-- [ ] **Global `requestTimeout`** on Fastify (e.g. 15s) with explicit longer overrides only on
-      the SSE, llama and agents routes that already have long nginx timeouts.
-- [ ] **Delete `board-presets.js` / `/api/ui/boards`** (confirm no saved docs in `arch_data`).
-- [ ] **Prettier + eslint** at `webapp.v3.Fable/` root (one config), one mechanical format commit,
-      then enforce in `opti-apps-deploy.yml`.
-- [ ] **Harvest from Astra, then retire it**: worth porting — `backend/astra/snapshot.js`
-      (one-call live aggregation), the demo/fixture mode for offline dev, `guide.js` (VRS match
-      guide). Then `git tag webapp-v3-astra-final` and remove `webapp.v3.Astra/`.
-- [ ] **Retire v2.legacy** the same way (`git tag webapp-v2-final`) once Fable has run a few weeks
-      with the Phase 0 changes — rollback becomes `git checkout <tag>` instead of a live folder.
-- [ ] Fix Fable's stale README (says v2 is live, references `rpi-deploy.yml`) — or delete it and
-      point at the `add-to-webapp` skill, which is already accurate.
+Gone as pages: Home, Monitor, Control center (→ Status + command bar), Metrics (→ tab),
+Docs/Database (→ Ctrl K search over homelab-db), Discord bots (→ resources), Local LLM.
 
-## Phase 1 — v4 redesign session (Opus 5.5)
+## Architecture
 
-Start a fresh `webapp.v4/` from Fable's backend, not from scratch. Design brief:
+- **Snapshot cache** — one poller per source (hl-arch-agent ×3, homelab-db, Kuma, Pi-hole,
+  qBittorrent, Jellyfin/Jellyseerr, bots, weather/calendar/etc.), each with its own interval +
+  timeout, each stored as `{data, fetched_at, ok, error}`. SSE pushes "snapshot X changed".
+- **Action pipeline** — single `POST /api/actions/:kind` → job with steps, audit, SSE progress.
+  Risky kinds require a `confirm: true` the UI only sends after the confirm tap.
+- **Resource model** — one registry (id, type, host, links, actions, snapshot keys) drives the
+  drawer, search, topology and resource pages; adding a resource is data, not a new page.
+- **PWA fallback** — service worker caches the shell; on API failure it probes Kuma's status API
+  on noblenumbat (CORS / small proxy to confirm) and renders an "opti unreachable" screen.
+- **Deploy** — `opti-apps-deploy.yml` builds the image, runs lint + svelte-check + smoke, starts
+  the new container, waits for healthy, then swaps nginx upstream.
 
-**Information architecture — ~6 pages, each answering one question:**
-1. **Home** — is anything wrong right now? (one status strip per host + open findings + ntfy feed)
-2. **Hosts** — one page per host (replaces cockpit / monitor / trends / host/[name])
-3. **Media** — Jellyfin/*arr/streams/VPN state (replaces streams + parts of launchpad)
-4. **Bots** — the five Discord bots, their last post and failures
-5. **Docs** — homelab-db search + incidents (replaces docs / data / topology / reports)
-6. **Settings** — maintenance holds, jobs audit trail
+## Integration notes / research needed
 
-Launchpad/links collapse into Home; LLM page only if android is ever reliably online.
+- **Downloads drop folder**: qBittorrent category `pertal-drop` with its own save path; decide
+  whether it lands via the existing `media-import` timer into `//opti/red/ptm/…` or a direct CIFS
+  path. Upload through qBittorrent's API from Pertal (qbt creds → host-side secret, not repo).
+- **Google Calendar**: simplest is the calendar's private ICS URL (read-only, no OAuth).
+- **Google Home devices**: no official local API — needs research (Home Assistant bridge?).
+- **Package tracking**: needs a tracking API (e.g. 17TRACK/AfterShip) or mail parsing — research.
+- **CS2 / NBA / weather**: reuse the bots' sources (hltv-api, ESPN, Open-Meteo) via `bot_common`.
 
-**Data contract — the v1 lesson, made explicit:**
-- One server-side **snapshot cache** per source (arch-agent per host, homelab-db, Kuma, Pi-hole,
-  jellyfin, bots), each refreshed on its own interval with its own timeout, each carrying
-  `{ok, stale_since, error}`.
-- The UI reads cached snapshots only — **a request never waits on an upstream**. A dead source
-  greys out its own card; nothing else notices.
-- SSE stays, but only pushes "snapshot X changed".
-- Writes (restart container, hold updates) stay as audited jobs.
+## Local model (for a later assistant)
 
-**Visual:** keep the GitHub-pastel palette and couch-friendly Home from Fable; one design-token
-file; no component library.
+Peter is considering turning **rpi** into a local-AI box, possibly dropping Pi-hole. Runbook 10's
+four-part test rejects an LLM on the DNS box (user-facing app, far over 500 MB / a fraction of a
+core, and an OOM there is a LAN-wide DNS outage). Options when this comes up: keep rpi as DNS and
+put the model on a separate box (opti has 31 GB RAM but an Ivy Bridge CPU; the gaming PC's 4070 Ti
+is fastest but not always on; the S10 already runs llama.cpp); or move DNS off rpi first —
+dropping Pi-hole entirely also drops the `*.lan` records (webapp.lan, jellyfin.lan, …) the router
+cannot serve. Decide before building an assistant.
 
-## Phase 2 — hardening & cutover
+## Build order (big-bang, but in this sequence)
 
-- Route smoke test (`scripts/smoke-api.mjs`) grows a "every page renders with all upstreams
-  down" test using the fixture mode.
-- `opti-apps-deploy.yml` builds the image, runs lint + svelte-check + smoke, then swaps.
-- Cutover: CI path filter moves to `webapp.v4/**`; Fable tagged `webapp-v3-fable-final` and
-  removed after two quiet weeks. `add-to-webapp` / `add-webapp-widget` skills updated in the
-  same change.
+Progress 2026-09-27: steps 0–2 built and verified against the live homelab in dev (dry-run
+actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check clean, CI
+(`checks.yml`) builds and tests it on every push. Not deployed.
 
-## Open decisions for Peter
-- Keep SvelteKit (smallest dep footprint, only version with a type-check gate) — or go back to
-  v1-style no-build vanilla JS for maximum boringness?
-- Which of the 18 current routes do you actually open weekly? Anything not on that list is cut.
-- Retire v2.legacy now, or keep it as the rollback until v4 ships?
+0. ✅ Skeleton, Dockerfile (baked image + healthcheck), CI checks. ⬜ prettier/eslint.
+1. ✅ Resource registry + snapshot cache + Status page. Needed **hl-arch-agent v0.7.0**
+   (`GET /containers`, live `docker ps`) — installed on opti/rpi/noblenumbat 2026-09-27
+   (backups at `/usr/local/bin/hl-arch-agent.py.bak-0.6.0`). Before it, container state came
+   only from the agents' *daily* fragment push — up to 24h stale, a root cause of v3's
+   "stale or wrong data".
+2. ✅ Resource pages + action pipeline + Activity + Ctrl K search + job tray + confirm dialog.
+   v3's job audit is read from the shared `arch_data` volume, so it carries over.
+3. Logs, Topology, Reports, Streams, Launchpad, Settings.
+4. Downloads, Jellyseerr deploy + Requests, Status extras.
+5. Bot consolidation (`bot_common.py`, real `/health`, bots as resources).
+6. PWA + Kuma fallback.
+7. Cutover: CI path filter → v4, nginx → v4; tag `webapp-v3-fable-final`; delete Fable after two
+   quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy. Update the
+   `add-to-webapp` / `add-webapp-widget` skills in the same change.
+   Cutover gotchas already known:
+   - v3 ran as root, so `arch_data` files are root-owned; Pertal runs as `node` (uid 1000).
+     `chown -R 1000:1000` the volume's `_data` once, or appends to the audit trail fail.
+   - Pertal env: `HL_ARCH_INGEST_TOKEN` (agent actions + ingest), `HOMELAB_DB_URL`,
+     `HL_DB_TOKEN`; do NOT set `PERTAL_ACTIONS=dry` in prod.
+   - nginx: `/api/events` needs `proxy_buffering off` + long read timeout (it's SSE).
+   - The agents' ingest URL stays `https://webapp.lan:8443/api/architecture/ingest` —
+     Pertal serves the same route.
+
+## Open questions
+
+- Palette: real gruvbox, or the current GitHub Dark look?
+- Where does the local model live (see above) — only matters once an assistant is back in scope.

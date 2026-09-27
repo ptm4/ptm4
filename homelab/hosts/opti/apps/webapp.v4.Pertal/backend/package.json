@@ -1,0 +1,20 @@
+{
+  "name": "pertal-backend",
+  "version": "4.0.0",
+  "private": true,
+  "description": "Pertal (webapp v4) backend — Fastify, snapshot cache, resource model, action pipeline",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch --env-file-if-exists=dev.env server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@fastify/static": "^8.2.0",
+    "fastify": "^5.11.3",
+    "fastify-plugin": "^5.0.1"
+  }
+}

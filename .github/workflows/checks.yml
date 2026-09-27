@@ -75,6 +75,21 @@ jobs:
           npx svelte-check --threshold warning
           npm run build
 
+      # Pertal (webapp v4) — built and tested on every push while it is developed next to
+      # Fable; not deployed until cutover (see apps/WEBAPP-V4-PLAN.md).
+      - name: Pertal backend tests
+        working-directory: homelab/hosts/opti/apps/webapp.v4.Pertal/backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+
+      - name: Pertal frontend typecheck + build
+        working-directory: homelab/hosts/opti/apps/webapp.v4.Pertal/frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx svelte-check --threshold warning
+          npm run build
+
       - name: Workflows reference no pre-restructure paths
         # The 2026-07-26 restructure moved everything; a merge that resurrects an old
         # path (stale branch, cherry-pick) should fail loudly here. This file excludes

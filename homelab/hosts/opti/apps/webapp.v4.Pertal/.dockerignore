@@ -1,0 +1,6 @@
+**/node_modules
+frontend/dist
+frontend/.svelte-kit
+.dev-data
+backend/dev.env
+backend/test

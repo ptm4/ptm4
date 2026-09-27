@@ -1,0 +1,10 @@
+{
+  "name": "Pertal",
+  "short_name": "Pertal",
+  "description": "Homelab portal",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1d2021",
+  "theme_color": "#1d2021",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
