@@ -17,16 +17,18 @@ re-check it if a name or role doesn't match what's below:
 
 | Alias | Role |
 |---|---|
-| `opti` | Storage/NAS (ZFS pool `red` → Samba `\\opti\red`; OMV UI-only), CI runner, control plane |
-| `rpi` | DNS & DHCP (Pi-hole), Discord bot fleet, management webapp |
+| `opti` | Storage/NAS (ZFS pool `red` → Samba `\\opti\red`; OMV UI-only), CI runner, control plane, and (since 2026-09-10) the app tier — dashboard, vault, notes, bots |
+| `rpi` | DNS only (Pi-hole) — a network appliance; DHCP is the router's |
 | `noblenumbat` | Media stack (Jellyfin/*arr apps) — the repo clone there was deleted 2026-07-22 |
 | `android` | Phone (Termux), SSH on a **non-default port** — check the runbook for the current port and connect string, it changes across reboots |
 
 ## 2. Find the key
 
-All aliases are pre-configured in `~/.ssh/config` and default to a shared key at
-`~/.ssh/homelab`. Check the config first — it's the source of truth for user, port, and
-identity file per host:
+All aliases are pre-configured in `~/.ssh/config`, but the key differs per side of the
+workstation: on **tux** (Linux) it's the shared key `~/.ssh/homelab` for all aliases; on
+**ptm** (Windows) it's per-host — `~/.ssh/optiplex_omv`, `~/.ssh/rpi`, `~/.ssh/noblenumbat`,
+and **no android alias or key** (android is `port 8022`, user `u0_a204`, tux-only). Check the
+config first — it's the source of truth for user, port, and identity file per host:
 
 ```bash
 ssh -G <alias> | grep -i "identityfile\|hostname\|port\|user"

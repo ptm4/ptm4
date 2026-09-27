@@ -22,6 +22,8 @@ Env: HL_BIND (default 0.0.0.0), HL_PORT (default 9099), HL_DISPATCH_TOKEN (optio
      HL_AGENT_LOGS_DIR (state location).
 """
 
+import contextlib
+import fcntl
 import json
 import os
 import re
@@ -108,10 +110,22 @@ def load_state():
 
 def save_state(state):
     os.makedirs(AGENT_LOGS_DIR, exist_ok=True)
-    tmp = STATE_PATH + ".tmp"
+    # Per-process tmp name: collector units run as separate processes (--run) and the
+    # frequent timers fire together, so a shared ".tmp" let one writer's os.replace steal
+    # the other's file -> FileNotFoundError -> unit failed -> a false ntfy page.
+    tmp = f"{STATE_PATH}.{os.getpid()}.tmp"
     with open(tmp, "w") as f:
         json.dump(state, f, indent=2)
     os.replace(tmp, STATE_PATH)
+
+
+@contextlib.contextmanager
+def state_lock():
+    """Serialize load-modify-save across threads AND processes (_lock alone is per-process)."""
+    os.makedirs(AGENT_LOGS_DIR, exist_ok=True)
+    with _lock, open(STATE_PATH + ".lock", "w") as lf:
+        fcntl.flock(lf, fcntl.LOCK_EX)
+        yield
 
 
 def is_enabled(name):
@@ -120,7 +134,7 @@ def is_enabled(name):
 
 
 def set_enabled(name, enabled):
-    with _lock:
+    with state_lock():
         state = load_state()
         entry = state.get(name, {})
         entry["enabled"] = bool(enabled)
@@ -129,7 +143,7 @@ def set_enabled(name, enabled):
 
 
 def mark_run(name):
-    with _lock:
+    with state_lock():
         state = load_state()
         entry = state.get(name, {})
         entry["last_run"] = datetime.now(timezone.utc).isoformat()

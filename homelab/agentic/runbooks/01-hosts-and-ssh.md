@@ -26,8 +26,12 @@ Storage, control plane and (since 2026-09-10) the app tier. Debian 12, Intel i5-
 - **ZFS pool `red`** (single 4 TB WD Red Plus vdev, migrated from mergerfs 2026-07-25):
   share root `red/fs` → `/srv/red/fs`, exported as `\\opti\red` via
   `/etc/homelab/samba-red.conf` (hand-managed — **not** OMV's smb.conf; OMV is UI/monitoring
-  only now). Everything else in the homelab mounts this. The old sda+sdb pair is a `noauto`
-  cold copy ("attic"), refreshed weekly by `homelab-coldcopy.timer` (Sun 04:00).
+  only now). Everything else in the homelab mounts this. The old sda+sdb pair's weekly
+  "attic" cold copy and `homelab-coldcopy.timer` were **retired 2026-09-24** (moved to
+  `homelab/hosts/opti/retired/`) — pool `red` currently has **no second copy**. `sdb`
+  (ST500DM002) is now the boot disk (ext4 root, ~5% used, 272 reallocated sectors); `sda`
+  (Hitachi HTS5475, NTFS) is unused and mounted read-only. Device letters on opti are
+  **not stable** — don't assume last session's mapping still holds.
 - **Agent dispatcher** on `:9099` (`hl-agent-dispatcher.service`) — enable/disable + run-now for
   the runners, driven by the webapp.
 - **homelab-db** on `:9100` (`homelab-db.service`) — read-only JSON API + MCP over
@@ -38,7 +42,7 @@ Storage, control plane and (since 2026-09-10) the app tier. Debian 12, Intel i5-
 - Self-hosted **x86 CI runner** (`actions.runner.ptm4-ptm4.opti`), xrdp on `:3389`.
 - **App tier** in `/srv/docker/compose` (moved from rpi 2026-09-10): dashboard webapp behind
   nginx TLS on `:8443` (`webapp.lan`; source `homelab/hosts/opti/apps/webapp.v3.Fable/`, deployed
-  by `opti-apps-deploy.yml`), **Vaultwarden** on `:443` (`bitwarden.lan`), **notes** on `:3002`,
+  by `opti-apps-deploy.yml`), **Vaultwarden** on `:443` (`bitwarden.rpi.lan`), **notes** on `:3002`,
   Dozzle `:9999`, hltv-api, and the **Discord bot fleet** (`discord-weather`, `-healthdigest`,
   `-jellyfin`, `-sports`, `-hltv`) — control APIs on the internal Docker network only, so
   **manage bots via the webapp, never by editing their files**.
@@ -69,6 +73,8 @@ cooling problem, not Jellyfin).
   Watchtower was removed 2026-07-25 — image updates are report-only via software-inventory,
   applied deliberately with `docker compose pull`.
 - **Uptime Kuma** `:3001` (host network; moved off opti 2026-09-10 so it watches opti from outside).
+- **ntfy** `:2586` — the homelab's phone push server (added 2026-09-24/25, off opti for the
+  same reason as Uptime Kuma). 17 containers total.
 - SSH: `ssh noblenumbat` (user `ptm`; key `~/.ssh/homelab` on tux, `~/.ssh/noblenumbat` on ptm).
 
 ### android — 192.168.1.54
@@ -114,8 +120,14 @@ If a runner reports every host unreachable at once, suspect this key rather than
 
 ## The repo
 
-`/home/ptm/opti/ptm/repo/ptm4` on tux is a CIFS mount of opti's pool — a save writes to opti's
-disk directly. There is no second copy to keep in sync.
+The working copy is **`E:\REPO\ptm4`** on the Windows (`ptm`) side of the workstation — local
+NTFS, not a network share (see the `tux / ptm` entry above). opti's
+`/srv/red/fs/ptm/repo/ptm4/homelab` is a **CI rsync deploy snapshot**
+(`.github/workflows/opti-deploy.yml` `rsync -a --delete`s the runner checkout there on every
+push), not a git checkout — never edit it directly; a change to opti's services goes live only
+when Peter pushes. Earlier revisions of this runbook described `/home/ptm/opti/ptm/repo/ptm4`
+on tux (a CIFS mount of opti's pool) as the primary working copy — that's stale, from before the
+repo moved to the Windows-side NTFS disk (2026-09-08).
 
 **The `noblenumbat:~/code/ptm4` clone was deleted (2026-07-22).** Revisions of this runbook
 before 2026-07-25 called it the primary copy and told you to edit there instead of the "stale

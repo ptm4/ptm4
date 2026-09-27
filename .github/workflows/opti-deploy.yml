@@ -45,8 +45,7 @@ jobs:
         run: |
           sudo cp "$GITHUB_WORKSPACE/homelab/tools/automation/homelab-autoupdate.sh" /usr/local/bin/
           sudo cp "$GITHUB_WORKSPACE/homelab/tools/automation/homelab-autoreboot.sh" /usr/local/bin/
-          sudo cp "$GITHUB_WORKSPACE/homelab/hosts/opti/homelab-coldcopy.sh" /usr/local/bin/
-          sudo chmod +x /usr/local/bin/homelab-autoupdate.sh /usr/local/bin/homelab-autoreboot.sh /usr/local/bin/homelab-coldcopy.sh
+          sudo chmod +x /usr/local/bin/homelab-autoupdate.sh /usr/local/bin/homelab-autoreboot.sh
 
       - name: Install systemd units
         run: |
@@ -72,8 +71,11 @@ jobs:
 
       - name: Verify timers
         run: |
-          sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-autoupdate.timer homelab-autoreboot.timer homelab-db-ingest.timer
-          systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-coldcopy.timer homelab-db-ingest.timer --no-legend --no-pager
+          sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-autoupdate.timer homelab-autoreboot.timer homelab-db-ingest.timer
+          # Cold copy retired 2026-09-24 (attic disks removed); this deploy used to re-enable it,
+          # so it failed every Sunday with a critical page. Keep it off until a new second disk exists.
+          sudo systemctl disable --now homelab-coldcopy.timer 2>/dev/null || true
+          systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-db-ingest.timer --no-legend --no-pager
 
       # Collectors run on systemd timers since 2026-09-24 (they were a GitHub cron in
       # homelab-agents.yml, which fired ~5 of 48 runs a day). Keep these lists in sync

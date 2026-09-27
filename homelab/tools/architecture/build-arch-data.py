@@ -2,7 +2,7 @@
 """
 Build the homelab architecture map's data.json.
 
-The map at webapp.rpi.lan/architecture/ is fully data-driven: index.html contains
+The map at webapp.lan/architecture/ is fully data-driven: index.html contains
 no facts about the homelab, only rendering logic. Everything the page draws comes
 from the JSON this script emits.
 
@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # When the facts below were last confirmed against the live hosts over SSH.
-PROBED_AT = "2026-08-08T03:00:00Z"
+PROBED_AT = "2026-09-27T00:00:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = REPO_ROOT / "homelab/hosts/opti/apps/webapp.v3.Fable/frontend-legacy/architecture/data.json"
@@ -78,7 +78,7 @@ CATEGORIES = [
         "glyph": "▤",
         "light": "#1baf7a",
         "dark": "#1bab7d",
-        "description": "Physical disks, the ZFS pool, the attic cold copy, the Samba export and every CIFS mount that consumes it.",
+        "description": "Physical disks, the ZFS pool, the Samba export and every CIFS mount that consumes it.",
     },
     {
         "key": "media",
@@ -152,9 +152,10 @@ HOSTS = [
         "ip": "192.168.1.1",
         "zone": "edge",
         "role": "Internet gateway",
-        "os": "Verizon-supplied firmware",
-        "notes": "Upstream DNS target for Pi-hole. Its DHCP server must stay OFF — "
-                 "two DHCP servers on this LAN causes the 'servers down' race.",
+        "os": "TP-Link Archer firmware",
+        "notes": "Upstream DNS target for Pi-hole. Since Sept 2026 it is also the LAN's "
+                 "DHCP server — Pi-hole's own DHCP must stay OFF, or the two servers race "
+                 "and present as 'all the servers are down'.",
         "facts": [],
     },
     {
@@ -164,21 +165,23 @@ HOSTS = [
         "ip": "192.168.1.10",
         "mac": "e4:5f:01:89:b6:4d",
         "zone": "servers",
-        "role": "DNS, DHCP & web services",
+        "role": "DNS only — network appliance",
         "model": "Raspberry Pi 4",
-        "os": "Ubuntu 22.04.5 LTS",
-        "kernel": "5.15.0-1105-raspi",
+        "os": "Ubuntu 24.04.5 LTS",
+        "kernel": "6.8.0-1065-raspi",
         "arch": "aarch64",
         "facts": [
             {"label": "CPU", "value": "Cortex-A72 · 4 cores"},
             {"label": "RAM", "value": "3.7 GiB · no swap"},
-            {"label": "Root disk", "value": "117 GB SD card · 16% used"},
+            {"label": "Root disk", "value": "220 GB USB SSD (/dev/sda2) · ~4% used"},
             {"label": "Network", "value": "eth0 wired · static lease"},
-            {"label": "Containers", "value": "12"},
+            {"label": "Containers", "value": "2"},
         ],
-        "notes": "Lowest-powered host but the most load-bearing: it is the LAN's sole "
-                 "DNS and DHCP server. If it goes down, name resolution goes with it. "
-                 "Runs on an SD card — the single biggest hardware risk in the homelab.",
+        "notes": "Lowest-powered host, and deliberately kept to just DNS (Pi-hole) plus a "
+                 "Dozzle log-shipping agent since the app tier moved to opti 2026-09-10 and "
+                 "DHCP moved to the router in Sept 2026. It is still the LAN's sole DNS "
+                 "server, so losing it still takes name resolution down. Boots from a 220 GB "
+                 "USB SSD since the microSD card it used to run on died 2026-09-08.",
     },
     {
         "id": "opti",
@@ -187,23 +190,30 @@ HOSTS = [
         "ip": "192.168.1.11",
         "mac": "34:17:eb:d1:eb:f8",
         "zone": "servers",
-        "role": "Storage / NAS & control plane",
+        "role": "Storage, control plane & app tier",
         "model": "Custom x86 tower",
         "os": "Debian 12 (Bookworm)",
         "kernel": "6.12.94+deb12-amd64",
         "arch": "x86_64",
         "facts": [
             {"label": "CPU", "value": "Intel i5-3570 · 4 cores"},
-            {"label": "RAM", "value": "5.7 GiB"},
-            {"label": "Root disk", "value": "457 GB ext4 · 66% used"},
-            {"label": "Pool", "value": "3.6 TB ZFS (red) · 16% used"},
+            {"label": "RAM", "value": "31.3 GiB"},
+            {"label": "Root disk", "value": "500 GB ext4 (sdb, ST500DM002) · ~5% used"},
+            {"label": "Pool", "value": "3.6 TB ZFS (red) · 951 GB used (26%)"},
             {"label": "Share config", "value": "/etc/homelab/samba-red.conf"},
+            {"label": "Containers", "value": "13 (app tier) + CI/control services"},
         ],
         "notes": "Every other host mounts its Samba export, so it is the storage "
                  "single point of failure. Since the 2026-07-25 ZFS migration the live "
                  "share [red] is configured in /etc/homelab/samba-red.conf — OMV is "
                  "UI/monitoring only and no longer owns the share. Also hosts the agent "
-                 "control plane and the x86 CI runner.",
+                 "control plane and the x86 CI runner. Since 2026-09-10 it also runs the "
+                 "whole app tier (dashboard, Vaultwarden, notes, Dozzle hub, 5 Discord "
+                 "bots) — so an opti outage now costs those services too, not just "
+                 "storage and control. Boot disk (sdb) has 272 reallocated sectors, "
+                 "creeping ~8 every two months; pending/uncorrectable both still 0. The "
+                 "weekly attic cold copy was retired 2026-09-24, so pool red currently "
+                 "has no second copy.",
     },
     {
         "id": "noblenumbat",
@@ -222,12 +232,15 @@ HOSTS = [
             {"label": "RAM", "value": "15 GiB"},
             {"label": "Root disk", "value": "468 GB NVMe · 15% used"},
             {"label": "GPU", "value": "UHD 620 · QuickSync VAAPI"},
-            {"label": "Network", "value": "USB ethernet (enx207bd262…)"},
-            {"label": "Containers", "value": "15"},
+            {"label": "Network", "value": "USB3 GbE adapter · wired (never Wi-Fi)"},
+            {"label": "Containers", "value": "17"},
         ],
         "notes": "A laptop with sleep masked. Hardware-transcodes for Jellyfin via "
                  "/dev/dri/renderD128. Suffered a whole-host outage from a cooling "
-                 "problem on 2026-07-16 — thermals are the thing to watch here.",
+                 "problem on 2026-07-16 — thermals are the thing to watch here. Also "
+                 "hosts Uptime Kuma (:3001, moved off opti 2026-09-10 so it watches opti "
+                 "from outside) and ntfy (:2586, the homelab's push server, added "
+                 "2026-09-24) — both deliberately off opti for the same reason.",
     },
     {
         "id": "tux",
@@ -312,75 +325,94 @@ NODES = [
 
     # ── rpi · network plane ──────────────────────────────────────────────────
     N("pihole", "Pi-hole", "rpi", "network", "net",
-      sublabel="DNS :53 · DHCP · admin :80", container="pihole",
+      sublabel="DNS :53 · admin :80", container="pihole",
       image="pihole/pihole:latest", ports=["53/tcp", "53/udp", "80/tcp"],
       kind="container", critical=True,
-      notes="v6 (FTL v6.7). Serves DNS *and* DHCP for the whole 192.168.1.0/24. "
-            "15 local A records, 6 static MAC reservations, scope .2–.250. "
-            "Whitelist with `pihole allow`."),
-    N("nginx-webapp", "nginx (webapp)", "rpi", "network", "net",
+      notes="v6 (FTL v6.7). DNS only for the whole 192.168.1.0/24 — DHCP moved to the "
+            "router (TP-Link Archer) in Sept 2026. 15 local A records, 6 static MAC "
+            "reservations. Whitelist with `pihole allow`."),
+
+    # ── opti · network plane (app tier, since 2026-09-10) ────────────────────
+    N("nginx-webapp", "nginx (webapp)", "opti", "network", "net",
       sublabel="TLS :8443 → webapp / notes", container="nginx-webapp",
-      image="nginx:stable-alpine", ports=["192.168.1.10:8443→443"], kind="container",
-      notes="Terminates TLS for webapp.rpi.lan using a cert read off opti's pool. "
-            "Raises proxy_read_timeout to 240s for /api/llama/ only — cold LLM prompts "
+      image="nginx:stable-alpine", ports=["192.168.1.11:8443→443"], kind="container",
+      notes="Terminates TLS for webapp.lan using a cert read directly off opti's local "
+            "pool (bind mount, no CIFS now that it runs on opti). Raises "
+            "proxy_read_timeout to 240s for /api/llama/ only — cold LLM prompts "
             "legitimately exceed nginx's 60s default."),
-    N("nginx-bitwarden", "nginx (vault)", "rpi", "network", "net",
+    N("nginx-bitwarden", "nginx (vault)", "opti", "network", "net",
       sublabel="TLS :443 → Vaultwarden", container="nginx-bitwarden",
       image="nginx:stable-alpine", ports=["443/tcp"], kind="container"),
-    N("rpi-internal-net", "docker net · internal", "rpi", "network", "net",
-      sublabel="172.18.0.0/16 — all rpi containers", kind="network",
-      notes="Every rpi service shares this bridge. Bot control APIs bind :8080 on it and "
-            "are NOT published to the host, so only the webapp can reach them."),
+    N("opti-internal-net", "docker net · internal", "opti", "network", "net",
+      sublabel="172.18.0.0/16 — all opti app-tier containers", kind="network",
+      notes="Every opti app-tier service shares this bridge. Bot control APIs bind :8080 "
+            "on it and are NOT published to the host, so only the webapp can reach them."),
 
-    # ── rpi · apps plane ─────────────────────────────────────────────────────
-    N("webapp", "Dashboard webapp", "rpi", "apps", "apps",
+    # ── opti · apps plane ─────────────────────────────────────────────────────
+    N("webapp", "Dashboard webapp", "opti", "apps", "apps",
       sublabel="Node/Express :3000 · this page's server", container="webapp",
-      image="node:lts-alpine", ports=["3000 (internal)"], url="https://webapp.rpi.lan:8443/",
+      image="node:lts-alpine", ports=["3000 (internal)"], url="https://webapp.lan:8443/",
       kind="container",
-      notes="Bind-mounts the repo's webapp/ directory, so deploying frontend files is a "
-            "file copy — no rebuild. Reads opti's agent-logs and security-reports read-only "
-            "and proxies the bot control APIs, the opti dispatcher and the phone's LLM."),
-    N("notes-api", "Notes app", "rpi", "apps", "apps",
+      notes="webapp.v3.Fable: a Vite-built frontend behind a Node/Express backend, "
+            "deployed by CI on opti — there is no live-on-copy path, a change reaches "
+            "webapp.lan only once it is committed, pushed and opti-apps-deploy.yml runs. "
+            "Reads agent-logs and security-reports directly off the local pool (bind "
+            "mount, no CIFS since it moved here 2026-09-10) and proxies the bot control "
+            "APIs, the opti dispatcher and the phone's LLM."),
+    N("notes-api", "Notes app", "opti", "apps", "apps",
       sublabel="Express + JSON store :3002", container="notes-api",
-      image="compose-notes-api", ports=["192.168.1.10:3002"], kind="container",
+      image="compose-notes-api", ports=["192.168.1.11:3002"], kind="container",
       notes="Published directly on the host as well as proxied, so phones can skip the "
             "self-signed-cert prompt."),
-    N("bitwarden", "Vaultwarden", "rpi", "apps", "apps",
+    N("bitwarden", "Vaultwarden", "opti", "apps", "apps",
       sublabel="Password manager", container="bitwarden",
       image="vaultwarden/server:latest", url="https://bitwarden.rpi.lan/", kind="container",
       critical=True),
-    N("bitwarden-db", "MariaDB", "rpi", "apps", "apps",
+    N("bitwarden-db", "MariaDB", "opti", "apps", "apps",
       sublabel="Vaultwarden datastore :3306", container="bitwarden-db",
       image="mariadb:11", kind="container", critical=True,
       notes="Holds the password vault. The single most backup-critical dataset here."),
-    N("bot-weather", "discord-weather", "rpi", "apps", "bots",
+    N("bot-weather", "discord-weather", "opti", "apps", "bots",
       sublabel="Daily 7AM ET forecast", container="discord-weather", kind="container",
-      notes="Manage via the webapp's #weather tab — never by editing files on the rpi."),
-    N("bot-health", "discord-healthdigest", "rpi", "apps", "bots",
+      notes="Manage via the webapp's #weather tab — never by editing files on opti."),
+    N("bot-health", "discord-healthdigest", "opti", "apps", "bots",
       sublabel="Homelab health summary", container="discord-healthdigest", kind="container"),
-    N("bot-jellyfin", "discord-jellyfin", "rpi", "apps", "bots",
+    N("bot-jellyfin", "discord-jellyfin", "opti", "apps", "bots",
       sublabel="New-media announcements", container="discord-jellyfin", kind="container"),
-    N("bot-sports", "discord-sports", "rpi", "apps", "bots",
+    N("bot-sports", "discord-sports", "opti", "apps", "bots",
       sublabel="Scores & fixtures", container="discord-sports", kind="container"),
-    N("bot-hltv", "discord-hltv", "rpi", "apps", "bots",
+    N("bot-hltv", "discord-hltv", "opti", "apps", "bots",
       sublabel="CS2 news & match results", container="discord-hltv", kind="container",
       notes="The container is `discord-hltv`, not `discord-cs2` — the compose service and "
             "the container name differ from what the CS2 naming elsewhere suggests."),
+    N("hltv-api", "hltv-api", "opti", "apps", "bots",
+      sublabel="Cached HLTV data API", container="hltv-api", kind="container",
+      notes="Backs discord-hltv (and other consumers) with cached HLTV match data."),
 
     # ── rpi · platform ───────────────────────────────────────────────────────
     N("rpi-docker", "Docker engine", "rpi", "infra", "platform",
-      sublabel="12 containers · compose at /srv/docker/compose", kind="daemon"),
+      sublabel="2 containers (pihole, dozzle-agent)", kind="daemon"),
     N("rpi-runner", "Actions runner (ARM64)", "rpi", "infra", "platform",
       sublabel="self-hosted · deploys the rpi stack", kind="service",
       notes="Pinned to [self-hosted, ARM64] because a bare 'self-hosted' label also "
-            "matched opti's x86 runner."),
+            "matched opti's x86 runner. Only deploys rpi's own small stack now that the "
+            "app tier lives on opti."),
     N("rpi-mount", "/mnt/opti-fs", "rpi", "storage", "platform",
       sublabel="CIFS 3.0 ← //opti/red", kind="mount",
-      notes="How the rpi reads agent logs, security reports, TLS certs and the repo. "
-            "If opti is down this mount hangs and the webapp's data tabs empty out."),
+      notes="How the rpi used to read agent logs, security reports, TLS certs and the "
+            "repo back when the webapp ran here. Since the app tier moved to opti "
+            "(2026-09-10) nothing uses this mount — docker-stack-logs.service, its last "
+            "consumer, was disabled 2026-09-27. Left mounted but idle."),
     N("rpi-sshd", "sshd :22", "rpi", "infra", "platform", kind="service"),
     N("rpi-timers", "systemd timers", "rpi", "infra", "platform",
-      sublabel="autoreboot 03:00 · autoupdate", kind="timer"),
+      sublabel="autoreboot 03:00 · autoupdate 02:00 (held since 2026-09-17)", kind="timer"),
+    N("dozzle-agent-rpi", "Dozzle agent", "rpi", "infra", "platform",
+      sublabel="Log stream for opti's Dozzle :7007", container="dozzle-agent",
+      image="amir20/dozzle:latest", ports=["7007/tcp"], kind="container"),
+
+    # ── opti · platform (app-tier docker engine) ─────────────────────────────
+    N("opti-docker", "Docker engine", "opti", "infra", "control",
+      sublabel="13 containers · compose at /srv/docker/compose", kind="daemon"),
     N("uptime-kuma", "Uptime Kuma", "noblenumbat", "infra", "platform",
       sublabel="Synthetic monitors :3001", container="uptime-kuma",
       image="louislam/uptime-kuma:1", ports=["192.168.1.6:3001"],
@@ -388,12 +420,13 @@ NODES = [
       notes="Part of the 2026-08-02 control-hub work: probes every service on its own "
             "schedule, independent of the collector cadence. On noblenumbat (host "
             "network) since 2026-09-10, so it watches opti from outside."),
-    N("dozzle", "Dozzle", "rpi", "infra", "platform",
+    N("dozzle", "Dozzle", "opti", "infra", "control",
       sublabel="Live container logs :9999", container="dozzle",
-      image="amir20/dozzle:latest", ports=["192.168.1.10:9999"],
-      url="http://rpi.lan:9999/", kind="container",
-      notes="Streams local containers directly and noblenumbat's via the dozzle-agent "
-            "on :7007. as of 2026-09-10 opti runs the app tier and has a Dozzle hub of its own."),
+      image="amir20/dozzle:latest", ports=["192.168.1.11:9999"],
+      url="http://opti.lan:9999/", kind="container",
+      notes="The Dozzle hub itself, since 2026-09-10 (moved off rpi along with the rest "
+            "of the app tier). Streams opti's own containers directly over the local "
+            "docker socket, plus rpi's and noblenumbat's via their dozzle-agents on :7007."),
 
     # ── opti · storage plane (ZFS since 2026-07-25; replaced the mergerfs pool) ──
     N("opti-sdc", "sdc · 4 TB WD Red Plus", "opti", "storage", "disks",
@@ -401,27 +434,27 @@ NODES = [
       notes="The single vdev backing pool red. One disk = no redundancy; the attic cold "
             "copy is the only second copy of this data."),
     N("zfs-red", "ZFS pool · red", "opti", "storage", "disks",
-      sublabel="/srv/red · 3.6 TB · 16% used", kind="volume", critical=True,
+      sublabel="/srv/red · 3.6 TB · 26% used", kind="volume", critical=True,
       notes="Replaced the mergerfs pool on 2026-07-25. Datasets: red/fs (the Samba share "
             "root) and red/media. This is the homelab's primary dataset — media, repo, "
             "certs, agent logs, security reports all live here. Single-vdev: a scrub "
-            "(clean 2026-07-25) verifies integrity but nothing self-heals without a mirror."),
+            "verifies integrity but nothing self-heals without a mirror. The weekly attic "
+            "cold copy was retired 2026-09-24, so this pool currently has NO second copy."),
     N("samba", "Samba · share [red]", "opti", "storage", "disks",
       sublabel=":445 → /srv/red/fs", kind="service", critical=True,
       notes="Exports red/fs as \\\\opti\\red. Config lives in /etc/homelab/samba-red.conf "
             "— hand-managed since the ZFS migration; OMV no longer owns the live share."),
-    N("attic", "attic · cold copy", "opti", "storage", "disks",
-      sublabel="old sda+sdb pair · noauto · weekly", kind="volume",
-      notes="The retired mergerfs disks, repurposed as a cold second copy. Mounted only "
-            "during the weekly homelab-coldcopy run (rsync --delete red→attic, with an "
-            "empty-source interlock so a failed pool import can't erase the last copy), "
-            "so /srv/attic doesn't exist between runs and nothing can write into it."),
-    N("opti-sda", "sda · 466 GB HDD", "opti", "storage", "disks",
-      sublabel="ST500DM002 · ext4 root + attic branch", kind="disk"),
-    N("opti-sdb", "sdb · 596 GB HDD", "opti", "storage", "disks",
-      sublabel="Hitachi HTS5475 · NTFS · attic branch (ro)", kind="disk",
-      notes="Held the mergerfs data before the migration; now an attic branch kept ro "
-            "in steady state and flipped rw only during the coldcopy window."),
+    N("opti-sdb", "sdb · 500 GB HDD", "opti", "storage", "disks",
+      sublabel="ST500DM002 · ext4 root · boot disk", kind="disk",
+      notes="opti's boot disk — device letters on opti are NOT stable, this was sda "
+            "before 2026-09-10. 272 reallocated sectors, creeping ~8 every two months; "
+            "pending/uncorrectable both still 0. Holds only the OS — app data and "
+            "homelab.db live on pool red, so its death costs a reinstall, not data."),
+    N("opti-sda", "sda · 596 GB HDD", "opti", "storage", "disks",
+      sublabel="Hitachi HTS5475 · NTFS · unused, mounted ro", kind="disk",
+      notes="Formerly an attic cold-copy branch; unused since the attic/coldcopy "
+            "retirement 2026-09-24. Mounted read-only at "
+            "/srv/dev-disk-by-uuid-C682C2DE82C2D1DB."),
     N("omv", "OpenMediaVault", "opti", "infra", "platform",
       sublabel="NAS UI/monitoring · web UI :80", kind="service",
       notes="Demoted at the ZFS migration: disk/SMART monitoring and UI only. The live "
@@ -552,6 +585,12 @@ NODES = [
       sublabel="timer · hourly", kind="timer"),
     N("nn-remote", "Remote access", "noblenumbat", "infra", "nn-platform",
       sublabel="sshd :22 · RDP :3389", kind="service"),
+    N("ntfy", "ntfy", "noblenumbat", "infra", "nn-platform",
+      sublabel="Push notifications :2586", container="ntfy",
+      ports=["192.168.1.6:2586"], url="http://noblenumbat.lan:2586/", kind="container",
+      notes="The homelab's phone push server, added 2026-09-24/25 — off opti for the "
+            "same reason as Uptime Kuma, so it still works if opti is down. "
+            "homelab/tools/notify.py posts alerts here on topic 'homelab'."),
 
     # ── clients ──────────────────────────────────────────────────────────────
     N("workstation", "tux workstation", "tux", "client", "clients",
@@ -586,20 +625,20 @@ EDGES = [
     E("e-wg-samba", "gateway", "samba", "tunnel SMB → opti :445", "vpn"),
     E("e-clients-dns", "browser", "pihole", "DNS :53 — every LAN lookup", "dns"),
     E("e-ws-dns", "workstation", "pihole", "DNS :53", "dns"),
-    E("e-others-dns", "other-clients", "pihole", "DNS :53 + DHCP lease", "dns"),
+    E("e-others-dns", "other-clients", "pihole", "DNS :53", "dns"),
     E("e-pihole-gw", "pihole", "gateway", "upstream DNS :53", "dns"),
     E("e-pihole-cf", "pihole", "cloudflare", "fallback upstream 1.1.1.1", "dns"),
-    E("e-pihole-dhcp", "pihole", "gateway", "DHCP offers router .1 as gateway", "dns"),
+    E("e-gw-dhcp", "gateway", "other-clients", "DHCP lease · scope .2–.250 (router-served since Sept 2026)", "dns"),
 
-    # rpi web edge
-    E("e-browser-nginx", "browser", "nginx-webapp", "HTTPS :8443 webapp.rpi.lan", "http"),
+    # opti web edge (app tier since 2026-09-10)
+    E("e-browser-nginx", "browser", "nginx-webapp", "HTTPS :8443 webapp.lan", "http"),
     E("e-nginx-webapp", "nginx-webapp", "webapp", "proxy → :3000", "http"),
     E("e-nginx-notes", "nginx-webapp", "notes-api", "proxy /notes → :3002", "http"),
     E("e-browser-notes", "browser", "notes-api", "direct :3002 (no cert prompt)", "http"),
     E("e-browser-vault", "browser", "nginx-bitwarden", "HTTPS :443 bitwarden.rpi.lan", "http"),
     E("e-vaultnginx-vault", "nginx-bitwarden", "bitwarden", "proxy → :80", "http"),
     E("e-vault-db", "bitwarden", "bitwarden-db", "MySQL :3306", "http"),
-    E("e-rpinet", "rpi-internal-net", "webapp", "shared docker bridge", "control"),
+    E("e-optinet", "opti-internal-net", "webapp", "shared docker bridge", "control"),
 
     # webapp fan-out
     E("e-webapp-bots", "webapp", "bot-weather", "control API :8080", "control"),
@@ -609,7 +648,7 @@ EDGES = [
     E("e-webapp-hltv", "webapp", "bot-hltv", "control API :8080", "control"),
     E("e-webapp-dispatch", "webapp", "dispatcher", "enable/disable + run-now :9099", "control"),
     E("e-webapp-llama", "webapp", "llama", "chat + runbook Q&A :8080", "http"),
-    E("e-webapp-mount", "webapp", "rpi-mount", "reads /agent-logs, /reports, /workspace", "storage"),
+    E("e-webapp-agentlogs", "webapp", "agent-logs", "reads /agent-logs, /reports directly off the pool", "storage"),
 
     # bots outbound
     E("e-bots-discord", "bot-weather", "discord", "bot gateway", "http"),
@@ -620,21 +659,24 @@ EDGES = [
     E("e-weather-api", "bot-weather", "content-apis", "forecast fetch", "http"),
     E("e-sports-api", "bot-sports", "content-apis", "scores fetch", "http"),
     E("e-hltv-api", "bot-hltv", "content-apis", "HLTV scrape", "http"),
+    E("e-hltvbot-hltvapi", "bot-hltv", "hltv-api", "reads cached match data", "http"),
     E("e-jfbot-jellyfin", "bot-jellyfin", "jellyfin", "library poll :8096", "http"),
-    E("e-health-logs", "bot-health", "rpi-mount", "reads agent-logs", "storage"),
+    E("e-health-logs", "bot-health", "agent-logs", "reads agent-logs directly off the pool", "storage"),
 
     # rpi platform
-    E("e-rpidocker", "rpi-docker", "rpi-internal-net", "manages the bridge", "control"),
-    E("e-rpimount-samba", "rpi-mount", "samba", "CIFS 3.0 :445", "storage"),
-    E("e-nginx-certs", "nginx-webapp", "rpi-mount", "TLS cert from the pool", "storage"),
+    E("e-rpimount-samba", "rpi-mount", "samba", "CIFS 3.0 :445 (unused since 2026-09-27)", "storage"),
+    E("e-dozzleagentrpi-docker", "dozzle-agent-rpi", "rpi-docker", "docker socket", "control"),
+
+    # opti platform (app-tier docker engine)
+    E("e-optidocker", "opti-docker", "opti-internal-net", "manages the bridge", "control"),
+    E("e-nginx-certs", "nginx-webapp", "zfs-red", "TLS cert read directly off the pool (local bind mount)", "storage"),
 
     # opti storage
     E("e-sdc-pool", "opti-sdc", "zfs-red", "single vdev", "storage"),
     E("e-pool-samba", "zfs-red", "samba", "red/fs exported as \\\\opti\\red", "storage"),
-    E("e-pool-attic", "zfs-red", "attic", "weekly cold copy · Sun 04:00", "storage"),
-    E("e-sda-attic", "opti-sda", "attic", "attic branch", "storage"),
-    E("e-sdb-attic", "opti-sdb", "attic", "attic branch (ro)", "storage"),
     E("e-omv-monitor", "omv", "opti-sdc", "SMART / disk monitoring only", "control"),
+    E("e-omv-monitor-sda", "omv", "opti-sda", "SMART / disk monitoring only", "control"),
+    E("e-omv-monitor-sdb", "omv", "opti-sdb", "SMART / disk monitoring only", "control"),
     E("e-logs-pool", "agent-logs", "zfs-red", "stored on the pool", "storage"),
 
     # opti control plane
@@ -647,14 +689,16 @@ EDGES = [
     E("e-agents-nn", "agents", "nn-remote", "SSH probe", "control"),
     E("e-timers-agents", "opti-timers", "agents", "scheduled runs", "control"),
     E("e-optirunner-agents", "opti-runner", "agents", "workflow-triggered run", "ci"),
+    E("e-agents-ntfy", "agents", "ntfy", "critical findings + resolved, via notify.py", "http"),
 
     # CI / deploy
     E("e-ws-repo", "workstation", "samba", "edits the repo over CIFS", "storage"),
     E("e-ws-github", "workstation", "github", "git push main", "ci"),
     E("e-github-rpirunner", "github", "rpi-runner", "outbound poll → job", "ci"),
     E("e-github-optirunner", "github", "opti-runner", "outbound poll → job", "ci"),
-    E("e-rpirunner-docker", "rpi-runner", "rpi-docker", "compose pull + up -d", "ci"),
-    E("e-rpirunner-webapp", "rpi-runner", "webapp", "copies webapp/ then restarts", "ci"),
+    E("e-rpirunner-docker", "rpi-runner", "rpi-docker", "compose pull + up -d (rpi's own 2-container stack)", "ci"),
+    E("e-optirunner-docker", "opti-runner", "opti-docker", "compose pull + up -d (13-container app tier)", "ci"),
+    E("e-optirunner-webapp", "opti-runner", "webapp", "builds the Vite frontend and restarts the container", "ci"),
 
     # noblenumbat media
     E("e-prowlarr-sonarr", "prowlarr", "sonarr", "indexer feed", "http"),
@@ -710,8 +754,9 @@ EDGES = [
     E("e-browser-portainer", "browser", "portainer", "container UI :9000", "http"),
     E("e-browser-kuma", "browser", "uptime-kuma", "monitors UI :3001", "http"),
     E("e-browser-dozzle", "browser", "dozzle", "logs UI :9999", "http"),
-    E("e-dozzle-docker", "dozzle", "rpi-docker", "docker socket", "control"),
+    E("e-dozzle-docker", "dozzle", "opti-docker", "docker socket", "control"),
     E("e-dozzle-agent", "dozzle", "dozzle-agent", "remote agent :7007", "control"),
+    E("e-dozzle-agent-rpi", "dozzle", "dozzle-agent-rpi", "remote agent :7007", "control"),
     E("e-dozzleagent-docker", "dozzle-agent", "nn-docker", "docker socket", "control"),
     E("e-nndocker-yams", "nn-docker", "nn-yams-net", "manages the bridge", "control"),
     E("e-portainer-docker", "portainer", "nn-docker", "docker socket", "control"),
@@ -771,35 +816,35 @@ FLOWS = [
     {
         "id": "flow-deploy",
         "name": "Shipping a change to this dashboard",
-        "summary": "How code on the workstation becomes a running container on the rpi — with no inbound port ever opened.",
+        "summary": "How code on the workstation becomes a running container on opti — with no inbound port ever opened.",
         "steps": [
             ("e-ws-repo", "Edit the repo on tux, over CIFS",
              "The working copy at ~/opti/ptm/repo/ptm4 is a CIFS mount of opti's pool, so saving a file writes straight to opti's disk."),
             ("e-ws-github", "git push to main",
-             "Pushing paths under homelab/hosts/opti/apps/** is what triggers the deploy workflow."),
-            ("e-github-rpirunner", "The rpi's runner picks up the job",
-             "The runner polls GitHub outbound over HTTPS. Nothing is exposed inbound — this is the only way external code enters the LAN. Pinned to [self-hosted, ARM64] so it can't land on opti."),
-            ("e-rpirunner-webapp", "Files are copied into the bind mount",
-             "webapp/ is copied to /srv/docker/compose/webapp, which the container bind-mounts at /app. Frontend files are live immediately; backend changes need the restart that follows."),
-            ("e-rpirunner-docker", "compose pull + up -d, then restart webapp",
-             "Images are refreshed and the stack reconciled, then the webapp container restarts to re-exec the Node process."),
+             "Pushing paths under homelab/hosts/opti/apps/webapp.v3.Fable/** is what triggers the deploy workflow for the live dashboard."),
+            ("e-github-optirunner", "opti's own runner picks up the job",
+             "The runner polls GitHub outbound over HTTPS, on opti itself. Nothing is exposed inbound — this is the only way external code enters the LAN."),
+            ("e-optirunner-webapp", "The Vite frontend is built and shipped",
+             "webapp.v3.Fable is built by CI and deployed straight into opti's compose stack — there is no live-on-copy path. A change reaches webapp.lan only once this workflow (opti-apps-deploy.yml) runs."),
+            ("e-optirunner-docker", "compose pull + up -d reconciles the stack",
+             "Images are refreshed for the 13-container app tier and the stack reconciled, then the webapp container restarts to re-exec the Node process."),
         ],
     },
     {
         "id": "flow-dns",
         "name": "Resolving a name on the LAN",
-        "summary": "Why the rpi is the most load-bearing host despite being the weakest.",
+        "summary": "Why the rpi stays load-bearing for DNS even though DHCP moved off it.",
         "steps": [
-            ("e-others-dns", "A device gets its lease from Pi-hole",
-             "Pi-hole — not the router — is the DHCP server for 192.168.1.0/24, scope .2–.250, with six MAC-pinned reservations for the servers."),
+            ("e-gw-dhcp", "A device gets its DHCP lease from the router",
+             "The TP-Link Archer has served DHCP for 192.168.1.0/24 since Sept 2026 — Pi-hole's own DHCP was turned off to stop the two servers racing. Scope .2–.250, with six MAC-pinned reservations for the servers."),
             ("e-clients-dns", "Every lookup goes to 192.168.1.10:53",
-             "Ad-blocking plus the 15 local A records (webapp.rpi.lan, jellyfin.lan, comics.lan, opti.lan…) that make the homelab addressable by name."),
+             "Ad-blocking plus the 15 local A records (webapp.lan, jellyfin.lan, comics.lan, opti.lan…) that make the homelab addressable by name."),
             ("e-pihole-gw", "Unknown names go upstream to the router",
              "192.168.1.1 is the primary upstream."),
             ("e-pihole-cf", "Cloudflare is the fallback",
              "1.1.1.1 covers the case where the router's resolver is unhappy."),
         ],
-        "risk": "Both DNS and DHCP live in one container on an SD card. If the gateway's own DHCP is ever switched back on it races Pi-hole and hands out leases with the wrong DNS — which presents as 'all the servers are down'.",
+        "risk": "DNS lives in one container on rpi, which now boots from a USB SSD (the microSD it used to run on died 2026-09-08). If Pi-hole's DHCP is ever turned back on it will race the router's and hand out leases with the wrong DNS — which presents as 'all the servers are down'.",
     },
     {
         "id": "flow-agents",
@@ -812,8 +857,8 @@ FLOWS = [
              "It collects containers, disks, packages and pool state first-hand."),
             ("e-agents-logs", "Results are written as JSON onto the pool",
              "homelab-doctor-latest.json and friends land in /srv/red/fs/ptm/agent-logs/."),
-            ("e-webapp-mount", "The webapp reads them read-only",
-             "The pool is mounted at /agent-logs inside the container."),
+            ("e-webapp-agentlogs", "The webapp reads them read-only",
+             "Since the webapp moved to opti (2026-09-10) this is a local bind mount of the pool at /agent-logs inside the container — no CIFS involved."),
             ("e-nginx-webapp", "Sync fetches /api/architecture/live",
              "The route reshapes the newest doctor/hardware/software reports per host — no fresh SSH round trip, so the button is cheap."),
         ],
@@ -883,15 +928,16 @@ NETWORK = {
         "upstreams": ["192.168.1.1 (router)", "1.1.1.1 (Cloudflare)"],
     },
     "dhcp": {
-        "server": "Pi-hole (the router's DHCP must stay disabled)",
+        "server": "Router (TP-Link Archer), since Sept 2026 — Pi-hole's own DHCP must stay disabled",
         "scope": "192.168.1.2 – 192.168.1.250",
         "router": "192.168.1.1",
         "ipv6": False,
     },
     "records": [
         {"name": "rpi.lan / rpi", "ip": "192.168.1.10"},
-        {"name": "webapp.rpi.lan / webapp.rpi", "ip": "192.168.1.10"},
-        {"name": "bitwarden.rpi.lan / bitwarden.rpi", "ip": "192.168.1.10"},
+        {"name": "webapp.lan", "ip": "192.168.1.11", "note": "canonical dashboard hostname since 2026-09-10, when the app tier moved to opti"},
+        {"name": "webapp.rpi.lan / webapp.rpi", "ip": "192.168.1.11", "note": "legacy alias/SAN — still resolves but should not be used in new work"},
+        {"name": "bitwarden.rpi.lan / bitwarden.rpi", "ip": "192.168.1.11"},
         {"name": "vpn.rpi.lan", "ip": "192.168.1.10", "note": "orphaned — WireGuard is decommissioned"},
         {"name": "opti.lan / opti", "ip": "192.168.1.11"},
         {"name": "noblenumbat.lan / noblenumbat", "ip": "192.168.1.6"},
@@ -921,32 +967,30 @@ NETWORK = {
 
 STORAGE = {
     "summary": "One ZFS pool on opti backs essentially everything. Every other host is a CIFS "
-               "client of it. Migrated from mergerfs 2026-07-25; the old disks survive as a "
-               "weekly cold copy ('attic').",
+               "client of it. Migrated from mergerfs 2026-07-25; the old disks (the "
+               "'attic' cold copy) were retired 2026-09-24 and no longer hold a second copy.",
     "pool": {
         "name": "zpool red → /srv/red (share root: red/fs → /srv/red/fs)",
         "size": "3.6 TB",
-        "used": "602 GB (16%)",
-        "free": "2.92 TB",
+        "used": "951 GB (26%)",
+        "free": "2.58 TB",
         "branches": [
             {"dev": "/dev/sdc (WD40EFZZ, 4 TB WD Red Plus)", "size": "3.6 TB", "fs": "ZFS",
-             "note": "single vdev — no redundancy; scrub clean 2026-07-25"},
-            {"dev": "attic: sda1 (ext4) + sdb2 (NTFS)", "size": "~1 TB", "fs": "mixed",
-             "note": "retired mergerfs pair · noauto cold copy, refreshed Sun 04:00"},
+             "note": "single vdev — no redundancy, and no second copy since the attic cold copy was retired 2026-09-24"},
         ],
     },
     "layout": [
         {"path": "ptm/Media/Movies", "purpose": "Jellyfin movie library → noblenumbat /mnt/opti-library"},
         {"path": "ptm/Media/Shows", "purpose": "Jellyfin TV library → noblenumbat /mnt/opti-shows"},
         {"path": "ptm/Media-Import", "purpose": "Drop inbox, swept every 2 min → /mnt/opti-media"},
-        {"path": "ptm/agent-logs", "purpose": "Agent JSON reports → rpi webapp /agent-logs"},
-        {"path": "ptm/security-reports", "purpose": "Security agent output → rpi webapp /reports"},
-        {"path": "ptm/certs", "purpose": "TLS certs for webapp.rpi.lan"},
+        {"path": "ptm/agent-logs", "purpose": "Agent JSON reports → webapp /agent-logs (local bind mount on opti)"},
+        {"path": "ptm/security-reports", "purpose": "Security agent output → webapp /reports (local bind mount on opti)"},
+        {"path": "ptm/certs", "purpose": "TLS certs for webapp.lan"},
         {"path": "ptm/repo/ptm4", "purpose": "The repo itself — edited from tux, read by the webapp"},
-        {"path": "ptm/logging", "purpose": "Deploy logs written by the rpi runner"},
+        {"path": "ptm/logging", "purpose": "Deploy logs written by the CI runners"},
     ],
     "consumers": [
-        {"host": "rpi", "mount": "/mnt/opti-fs", "proto": "CIFS 3.0", "what": "agent logs, reports, certs, repo"},
+        {"host": "rpi", "mount": "/mnt/opti-fs", "proto": "CIFS 3.0", "what": "unused since 2026-09-27 — kept mounted, nothing reads it"},
         {"host": "noblenumbat", "mount": "/mnt/opti-library", "proto": "CIFS 3.1.1", "what": "movies"},
         {"host": "noblenumbat", "mount": "/mnt/opti-shows", "proto": "CIFS 3.1.1", "what": "TV"},
         {"host": "noblenumbat", "mount": "/mnt/opti-media", "proto": "CIFS 3.1.1", "what": "import inbox"},
@@ -956,8 +1000,12 @@ STORAGE = {
         "The live share [red] is configured in /etc/homelab/samba-red.conf, hand-managed. "
         "OMV no longer owns it — its smb.conf is not where the share lives.",
         "The pool is a single vdev: ZFS checksums detect corruption but cannot self-heal it "
-        "without a mirror. The attic cold copy (weekly, rsync --delete with an empty-source "
-        "interlock) is the recovery path, so worst-case loss is up to a week of changes.",
+        "without a mirror. The weekly attic cold copy (rsync --delete to the old mergerfs "
+        "pair) was retired 2026-09-24, so pool red currently has no second copy at all — "
+        "a mirror disk is the structural fix (see the opti-drive-onboard skill).",
+        "Since 2026-09-10 the app tier (dashboard, Vaultwarden, notes, Dozzle, 5 Discord "
+        "bots) runs on opti itself and reads/writes the pool via local bind mounts, not "
+        "CIFS — only the other hosts (rpi, noblenumbat, tux) are CIFS clients now.",
     ],
 }
 
@@ -967,7 +1015,6 @@ AUTOMATION = [
     {"host": "opti", "unit": "hl-agent-dispatcher.service", "when": "always on", "what": "Agent control API on :9099"},
     {"host": "opti", "unit": "homelab-db.service", "when": "always on", "what": "homelab.db read-only API + MCP on :9100"},
     {"host": "opti", "unit": "homelab-db-ingest.timer", "when": "*:12,42", "what": "Folds reports, architecture data and docs into homelab.db"},
-    {"host": "opti", "unit": "homelab-coldcopy.timer", "when": "Sun 04:00", "what": "Refreshes the cold copy (ZFS red → old mergerfs pair)"},
     {"host": "opti", "unit": "zfs-scrub-monthly@red.timer", "when": "monthly", "what": "ZFS scrub of the red pool"},
     {"host": "noblenumbat", "unit": "vpn-stack-heal.timer", "when": "every 2 min", "what": "Repairs Gluetun's forwarded port"},
     {"host": "noblenumbat", "unit": "media-import.timer", "when": "every 2 min", "what": "Sweeps the import inbox"},
@@ -990,17 +1037,21 @@ AGENTS = [
 OBSERVATIONS = [
     {
         "severity": "warning",
-        "title": "DNS and DHCP are a single point of failure on an SD card",
-        "detail": "Pi-hole on the rpi is the only DNS and DHCP server for the LAN, and the rpi "
-                  "boots from a 117 GB SD card. Losing that card takes name resolution and "
-                  "lease renewal down with it.",
+        "title": "DNS is a single point of failure, now on a USB SSD",
+        "detail": "Pi-hole on the rpi is the LAN's only DNS server — DHCP moved to the router "
+                  "in Sept 2026, so it's no longer a second job stacked on the same box. The "
+                  "rpi boots from a 220 GB USB SSD since the microSD card it used to run on "
+                  "died 2026-09-08. Losing that drive still takes name resolution down with it, "
+                  "though the USB SSD is far more durable than the SD card was.",
     },
     {
         "severity": "warning",
-        "title": "opti is the storage single point of failure",
+        "title": "opti is the storage AND app-tier single point of failure",
         "detail": "The rpi, noblenumbat and tux all mount //opti/red. Jellyfin's libraries, the "
-                  "webapp's data tabs, the TLS certs and the repo all live there. opti going "
-                  "down degrades all three other hosts at once.",
+                  "TLS certs and the repo all live there. Since 2026-09-10 opti also runs the "
+                  "whole app tier (dashboard, vault, notes, bots), so an opti outage now costs "
+                  "storage, control plane and all of those services at once — while DNS (on "
+                  "rpi) keeps the LAN resolving names.",
     },
     {
         "severity": "good",
@@ -1016,11 +1067,12 @@ OBSERVATIONS = [
     },
     {
         "severity": "warning",
-        "title": "The live pool has no redundancy",
+        "title": "The live pool has no redundancy — and no second copy at all",
         "detail": "Pool red is a single 4 TB vdev. ZFS checksums catch corruption, but with no "
-                  "mirror nothing self-heals — the weekly attic cold copy is the only second "
-                  "copy, so a disk failure can cost up to a week of changes. A mirror disk is "
-                  "the structural fix (see the opti-drive-onboard skill).",
+                  "mirror nothing self-heals. The weekly attic cold copy was retired "
+                  "2026-09-24, so there is currently no second copy of the pool whatsoever — "
+                  "a disk failure now costs everything since the last good state, not just a "
+                  "week. A mirror disk is the structural fix (see the opti-drive-onboard skill).",
     },
     {
         "severity": "info",
@@ -1128,7 +1180,7 @@ def build():
     return {
         "meta": {
             "title": "Homelab architecture",
-            "subtitle": "Four hosts, 25 containers, one storage pool — and how they actually depend on each other.",
+            "subtitle": "Four hosts, 32 containers, one storage pool — and how they actually depend on each other.",
             "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "probedAt": PROBED_AT,
             "generator": "homelab/tools/architecture/build-arch-data.py",

@@ -27,6 +27,10 @@ QBT=http://localhost:8081
 CTRL=${CTRL:-http://localhost:8003}
 DRY_RUN=${DRY_RUN:-0}
 RESTART_COOLDOWN_MIN=30
+# Only go critical (-> ntfy page) once forwarding has been dead this long, continuously.
+# Proton's NAT-PMP drops several times a night and the 30-min restart cycle usually
+# recovers it; paging at the first failed restart meant a critical+resolved pair each time.
+PAGE_AFTER_MIN=60
 DEPENDENTS="qbittorrent sabnzbd prowlarr flaresolverr mylar3"
 
 mkdir -p "$STATE_DIR"
@@ -116,9 +120,13 @@ fi
 if ! [[ "$PF" =~ ^[0-9]+$ ]] || [ "$PF" = 0 ] || [ -z "$PUBIP" ]; then
   LAST_RESTART=$(cat "$STATE_DIR/last_restart" 2>/dev/null || echo 0)
   NOW=$(date +%s)
+  [ -f "$STATE_DIR/dead_since" ] || echo "$NOW" > "$STATE_DIR/dead_since"
+  DEAD_MIN=$(( (NOW - $(cat "$STATE_DIR/dead_since")) / 60 ))
+  # critical only after PAGE_AFTER_MIN of continuous failure; before that it's a warn
+  escalate() { if (( DEAD_MIN >= PAGE_AFTER_MIN )); then STATUS_LEVEL=critical; else degrade warn; fi; }
   if (( NOW - LAST_RESTART < RESTART_COOLDOWN_MIN * 60 )); then
-    STATUS_LEVEL=critical
-    note "port forwarding still dead after restart $(( (NOW - LAST_RESTART) / 60 ))min ago (pf='$PF' ip='$PUBIP') — needs a human"
+    escalate
+    note "port forwarding dead ${DEAD_MIN}min, still dead after restart $(( (NOW - LAST_RESTART) / 60 ))min ago (pf='$PF' ip='$PUBIP')$( (( DEAD_MIN >= PAGE_AFTER_MIN )) && echo ' — needs a human')"
   else
     degrade warn
     note "port forwarding dead (pf='$PF' ip='$PUBIP') — restarting gluetun"
@@ -136,8 +144,8 @@ if ! [[ "$PF" =~ ^[0-9]+$ ]] || [ "$PF" = 0 ] || [ -z "$PUBIP" ]; then
       if [[ "$PF" =~ ^[0-9]+$ ]] && [ "$PF" != 0 ]; then
         note "gluetun restart restored forwarded port $PF"
       else
-        STATUS_LEVEL=critical
-        note "gluetun restart did NOT restore port forwarding — needs a human"
+        escalate
+        note "gluetun restart did NOT restore port forwarding (dead ${DEAD_MIN}min) — retrying after ${RESTART_COOLDOWN_MIN}min cooldown"
       fi
     fi
   fi
@@ -146,6 +154,7 @@ fi
 # --- sync gluetun's forwarded port into qbittorrent (heals the startup race too) ---
 QBT_PORT=""
 if [[ "$PF" =~ ^[0-9]+$ ]] && [ "$PF" != 0 ]; then
+  rm -f "$STATE_DIR/dead_since"   # forwarding is alive again: reset the page clock
   qbt_login
   QBT_PORT=$(qbt_port)
   if [[ "$QBT_PORT" =~ ^[0-9]+$ ]] && [ "$QBT_PORT" != "$PF" ]; then
