@@ -11,6 +11,7 @@
     "prepare": "svelte-kit sync || echo ''"
   },
   "dependencies": {
+    "@google/model-viewer": "4.1.0",
     "@lucide/svelte": "^1.41.0",
     "hls.js": "^1.7.3"
   },

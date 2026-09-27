@@ -30,6 +30,19 @@ export interface StreamGuide {
   hltv: { ok: boolean; stale: boolean; fetched_at: number | null; error: string | null };
 }
 
+// Asset Library: E:\Assets on ptm, read live (see $lib/assets.ts for file URLs).
+export interface AssetDir { name: string; mtime: number; dirs: number | null; files: number | null; cover: string | null }
+export interface AssetFile { name: string; size: number; mtime: number; preview?: string | null }
+export interface AssetListing { path: string; name: string; mtime: number; dirs: AssetDir[]; files: AssetFile[] }
+export interface AssetHit { path: string; name: string; dir: boolean; size: number | null; mtime: number | null }
+export interface AssetStatus {
+  online: boolean | null; checked_at: string | null; last_seen_at: string | null; error: string | null;
+  server: null | {
+    version: string; root: string; roots: string[]; thumbnails: boolean;
+    index: { files: number; dirs: number; bytes: number; built_at: string | null; building: boolean };
+  };
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -63,6 +76,15 @@ export const api = {
       { signal: AbortSignal.timeout(15_000) },
     ),
   links: () => request<{ groups: LinkGroup[]; checked_at: string | null }>('/api/links'),
+  assets: {
+    status: () => request<AssetStatus>('/api/assets/status'),
+    // ptm reads folders live off a spinning disk: a cold listing can take a few seconds.
+    list: (path: string) => request<AssetListing>(`/api/assets/list?path=${encodeURIComponent(path)}`, { signal: AbortSignal.timeout(20_000) }),
+    search: (q: string) =>
+      request<{ q: string; total: number; results: AssetHit[]; indexed_at: string | null; building: boolean }>(
+        `/api/assets/search?q=${encodeURIComponent(q)}`, { signal: AbortSignal.timeout(15_000) },
+      ),
+  },
   reports: () => request<any>('/api/reports'),
   topology: () => request<any>('/api/topology'),
   acks: {

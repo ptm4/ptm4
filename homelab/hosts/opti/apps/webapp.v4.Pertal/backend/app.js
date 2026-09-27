@@ -22,6 +22,7 @@ const { registerExtrasSources } = require('./sources/extras');
 const { registerStreamSources } = require('./sources/streams');
 const { registerDownloadSources } = require('./sources/downloads');
 const { registerSeerrSource } = require('./sources/seerr');
+const { registerAssetSources } = require('./sources/assets');
 const { createHistory } = require('./lib/history');
 const { createAcks } = require('./lib/acks');
 
@@ -86,6 +87,7 @@ async function buildApp(opts = {}) {
     registerStreamSources(snapshots);
     registerDownloadSources(snapshots);
     if (process.env.SEERR_API_KEY) registerSeerrSource(snapshots); // before setup there is nothing to poll
+    registerAssetSources(snapshots);
     if (!registerHldbSource(snapshots)) app.log.warn('HOMELAB_DB_URL not set — no collector findings');
   }
 
@@ -103,6 +105,7 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/downloads'), { prefix: '/api/downloads' });
   await app.register(require('./routes/requests'), { prefix: '/api/requests' });
   await app.register(require('./routes/acks'), { prefix: '/api/acks' });
+  await app.register(require('./routes/assets'), { prefix: '/api/assets' });
   await app.register(require('./routes/events'), { prefix: '/api/events' });
   await app.register(require('./routes/ingest'), { prefix: '/api/architecture' });
   await app.register(require('./plugins/static'));

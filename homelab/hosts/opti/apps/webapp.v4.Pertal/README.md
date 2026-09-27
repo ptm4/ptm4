@@ -26,6 +26,9 @@ Dockerfile one baked image, healthcheck on /api/health
 Adding a data source = register it in `backend/sources/`. Adding a button = one entry in
 `ACTIONS` (`backend/lib/actions.js`). Adding a kind of resource = `backend/lib/resources.js`.
 
+The **Asset Library** page is the one part that lives off opti: it reads `E:\Assets` on the
+workstation through `homelab/hosts/ptm/asset-server` (its README has the whole path).
+
 ## Develop
 
 Two launch configs in `.claude/launch.json`: `pertal-api` (backend on :3100, reads the live

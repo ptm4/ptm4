@@ -163,6 +163,8 @@ services:
       PERTAL_CALENDAR_ICS: ${PERTAL_CALENDAR_ICS:-}
       # Seerr's API key (Settings → General in Seerr). Unset = Requests page shows setup steps.
       SEERR_API_KEY: ${SEERR_API_KEY:-}
+      # Asset Library: the read-only asset server on the workstation (homelab/hosts/ptm/asset-server).
+      ASSET_SERVER_URL: ${ASSET_SERVER_URL:-http://192.168.1.3:8767}
     volumes:
       - arch_data:/arch-data
     expose:

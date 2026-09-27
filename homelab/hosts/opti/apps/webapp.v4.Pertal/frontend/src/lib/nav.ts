@@ -12,6 +12,7 @@ export const NAV: NavItem[] = [
   { href: '/streams', label: 'Streams', icon: 'radio', ready: true },
   { href: '/downloads', label: 'Downloads', icon: 'download', ready: true },
   { href: '/requests', label: 'Requests', icon: 'inbox', ready: true },
+  { href: '/assets', label: 'Asset Library', icon: 'library', ready: true },
   { href: '/reports', label: 'Reports', icon: 'file-chart-column', ready: true },
   { href: '/settings', label: 'Settings', icon: 'settings', ready: true },
 ];

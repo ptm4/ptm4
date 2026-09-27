@@ -140,6 +140,10 @@ Then check the feature for real on :8444 (the container has the tokens dev lacks
   `live.svelte.ts` reconnects itself and the server pings every 15s — keep both.
 - **Bot configs** are read from each bot's `GET /config` on the internal network; change them
   through the dashboard, never by editing files on opti.
+- **Asset Library** (`/assets`) reads `E:\Assets` live from the workstation (ptm `:8767`,
+  `homelab/hosts/ptm/asset-server`): folders and search via `/api/assets/*`, file bytes via
+  nginx `/asset-files/` + `/asset-thumbs/` straight to ptm. ptm off/in Linux is normal — the
+  `assets:server` source records it as data (`online: false`), never as a failing source.
 - Working copy is CRLF (`core.autocrlf=true`): strip `\r` before copying scripts to hosts.
 
 ## v3.Fable (until cutover) — fixes only

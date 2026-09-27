@@ -48,7 +48,9 @@ Drawer / rail, top to bottom:
 5. **Logs** — global view (per-resource logs live in the Logs tab).
 6. **Downloads** — drop zone, queue, VPN/port state.
 7. **Requests** — Jellyseerr queue.
-8. **Streams**, **Launchpad**, **Reports**, **Settings** (maintenance holds, jobs).
+8. **Asset Library** — `E:\Assets` on the workstation, browsed live: folder tree, thumbnails,
+   search, models in the library's own 3D inspector (`homelab/hosts/ptm/asset-server`).
+9. **Streams**, **Launchpad**, **Reports**, **Settings** (maintenance holds, jobs).
 
 Gone as pages: Home, Monitor, Control center (→ Status + command bar), Metrics (→ tab),
 Docs/Database (→ Ctrl K search over homelab-db), Discord bots (→ resources), Local LLM.
