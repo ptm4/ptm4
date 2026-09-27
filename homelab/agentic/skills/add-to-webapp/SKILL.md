@@ -82,7 +82,9 @@ Resources: `backend/lib/resources.js` (status vocabulary ok/warn/crit/unknown/of
 is reachability, separate from findings). Topology: `SERVICES` / `EDGES` in
 `backend/lib/topology.js`; the diagram layout is `frontend/src/lib/topology-layout.ts`
 (hosts are lanes; add icon in `TopologyDiagram.svelte` `ICON`). An edge is broken only when an
-end is **down**, never because of findings.
+end is **down**, never because of findings. Add reasons through `addReason()` in
+`buildResources` so **acknowledgements** (`lib/acks.js`, `/api/acks`, the bell buttons) apply: an
+acked reason stays listed but stops raising status and counts until it gets more severe.
 
 ### A Status-page card
 `frontend/src/lib/components/TodayStrip.svelte` (weather / calendar / CS2 / NBA) — each card

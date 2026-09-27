@@ -30,7 +30,10 @@ disk is a 40k-hour Seagate ST500DM002 (`sdb` since 2026-09-10 — device letters
 stable) with 272 reallocated sectors, creeping ~8 every two months (256 Jun → 264 Jul 15 → 272
 Sep 14); pending/uncorrectable both still 0 — watch those two, not the reallocated count;
 runbook 10 has the thresholds. It holds only the OS: app data (`/srv/docker` = `red/docker-apps`)
-and homelab.db live on the pool, so its death costs a reinstall, not data.
+and homelab.db live on the pool, so its death costs a reinstall, not data. **Peter knows and has
+accepted this risk** (acknowledged in Pertal 2026-09-27): don't raise the reallocated count or the
+sda one in reports, reminders or audits. Mention the boot disk only if pending/uncorrectable go
+non-zero, reallocated jumps by 20+ at once, or SMART overall-health fails.
 
 **Canonical hostnames** (2026-09-10): the dashboard is **`webapp.lan`** — `webapp.rpi.lan` still
 resolves as a SAN/alias but is misleading and should not be used in new work. Bare `webapp` does
