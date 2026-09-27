@@ -15,6 +15,8 @@ each. This tree is the **authoritative source**; everything Claude Code actually
 - `harness/` — how the *agent* runs (hooks, permissions, settings), as opposed to how the
   homelab runs. See `harness/README.md`.
 - `proposed/` — draft skills/rules awaiting promotion via `propose.py`.
+- `plans/` — dated audit / cleanup plans with checklists (e.g. `2026-09-27-homelab-audit.md`).
+  Work items, not reference — delete a plan once it's done or superseded.
 
 ## Materialization: copies, not symlinks
 

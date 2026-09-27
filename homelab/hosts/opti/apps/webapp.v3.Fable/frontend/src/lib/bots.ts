@@ -54,7 +54,7 @@ export const BOTS: BotDef[] = [
     fields: [
       ...COMMON,
       { key: 'post_mode', label: 'Post mode', type: 'select', choices: [
-        { value: 'embed', label: 'Embed' }, { value: 'text', label: 'Plain text' },
+        { value: 'always', label: 'Always' }, { value: 'alerts_only', label: 'Only when there are alerts' },
       ] },
       { key: 'top_blocked_count', label: 'Top blocked domains', type: 'number' },
       { key: 'request_fresh_report', label: 'Request a fresh doctor run', type: 'boolean',

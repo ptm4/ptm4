@@ -295,18 +295,49 @@ def host_autoupdate(host):
             "reboot_required": reboot, "detail": detail}
 
 
+def host_autoupdate_hold(host):
+    """Deliberate maintenance hold on `host`, if any.
+
+    /etc/homelab/autoupdate.disabled is written by the webapp's Settings ->
+    Maintenance toggle (JSON like {"by": "webapp · settings", "at": "...",
+    "reason": null}) and means the host is skipping autoupdate on purpose — a
+    stale/no-run timer there is not a dead timer. A separate SSH round trip
+    rather than folding into host_autoupdate()'s grep, so that command's
+    already-fragile rc handling (see its docstring) stays untouched.
+    """
+    out, rc = run_on(host, ["cat", "/etc/homelab/autoupdate.disabled"], timeout=10)
+    if rc != 0 or not out.strip():
+        return None
+    try:
+        return json.loads(out)
+    except ValueError:
+        return {"by": None, "at": None, "reason": None}
+
+
 def autoupdate_findings(name, au):
-    """Findings for a host's autoupdate state (failed run, or timer gone silent)."""
+    """Findings for a host's autoupdate state (failed run, or timer gone silent).
+
+    A deliberate hold (au["hold"], from host_autoupdate_hold) explains a stale or
+    absent run on purpose, so it suppresses the stale-timer finding below instead
+    of firing one alongside it. This file only has warn/critical severities — no
+    "info" tier to downgrade a hold into — so a held host is surfaced via
+    collect_host()'s summary line ("autoupdate held") rather than a finding here.
+    """
+    hold = au.get("hold")
     if au.get("result") == "error":
         return [{"severity": "warn", "message": f"[{name}] autoupdate failed: {au.get('detail')}"}]
     try:
         ts = datetime.strptime(au["last_run"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         age_h = (datetime.now(timezone.utc) - ts).total_seconds() / 3600
         if age_h > AUTOUPDATE_STALE_HOURS:
+            if hold:
+                return []
             return [{"severity": "warn",
                      "message": f"[{name}] autoupdate hasn't run for {age_h:.0f}h "
                                 f"(runs daily) — timer dead?"}]
     except (KeyError, TypeError, ValueError):
+        if hold:
+            return []
         return [{"severity": "warn",
                  "message": f"[{name}] autoupdate log has no parseable last run"}]
     return []
@@ -399,6 +430,7 @@ def collect_host(host):
                                      f"underlying disk, invisible to the share and to backups")})
     autoupdate = host_autoupdate(host)
     if autoupdate is not None:
+        autoupdate["hold"] = host_autoupdate_hold(host)
         findings += autoupdate_findings(host.name, autoupdate)
     containers = host_containers(host)
     down = [c for c in (containers or []) if "Up" not in (c.get("status") or "")]
@@ -419,7 +451,10 @@ def collect_host(host):
     if vpn is not None:
         parts.append(f"vpn {vpn.get('status', '?')}")
     if autoupdate is not None:
-        parts.append(f"autoupdate {autoupdate['result']}")
+        if autoupdate.get("hold"):
+            parts.append("autoupdate held")
+        else:
+            parts.append(f"autoupdate {autoupdate['result']}")
     summary = ", ".join(parts) or "no disk/docker data"
     status = "warn" if findings else "ok"
     return ({"host": host.name, "status": status, "summary": summary,
