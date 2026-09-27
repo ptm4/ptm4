@@ -52,8 +52,11 @@ Needs Python 3.10+ on PATH (python.org build) and, for thumbnails, Pillow
   streams, DOS device names, trailing dots/spaces, dot-files, OS clutter, a Unity project's
   `Library`/`Temp`/`Logs`/`obj`/`UserSettings`) and then resolved, junctions included; it must
   still be under `E:\Assets`. Hidden and system files are never listed or served.
-- **Two locks on who connects.** The firewall admits only opti, and the server itself refuses
-  every client except opti and this PC (`--allow`).
+- **Who connects.** The server refuses every client except opti and this PC (`--allow`):
+  any other LAN machine gets 403 (checked from noblenumbat, 2026-09-27). The installer's
+  firewall rule admits only opti, but it adds nothing today: this PC already has broad rules
+  ("Allow LAN 192.168.1.0/24", "Any Internal NetIP") that admit the whole LAN on every port,
+  so `--allow` is the lock that holds.
 - **No login**, like Pertal itself (LAN + WireGuard): anyone who can open Pertal can browse
   and download the library. The library's own HTML galleries run on Pertal's origin.
 

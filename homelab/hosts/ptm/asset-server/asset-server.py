@@ -13,8 +13,10 @@ WHO TALKS TO IT
   Pertal's backend (container on opti)  GET /health every 30 s, /api/list, /api/search
   nginx-webapp on opti                  /asset-files/*, /asset-thumbs/* passed through to
                                         browsers on https://webapp.lan:8444, path unchanged
-  Nothing else. --allow admits opti (192.168.1.11) plus this machine, and the Windows
-  firewall rule that Install-AssetServer.ps1 creates admits only opti: two locks.
+  Nothing else: --allow refuses every client but opti (192.168.1.11) and this machine.
+  That is the lock that holds. Install-AssetServer.ps1 also adds a firewall rule for opti
+  alone, but this PC already has broad "Allow LAN 192.168.1.0/24" rules that admit the
+  whole LAN on every port (checked 2026-09-27: noblenumbat reaches :8767 and gets 403).
 
 ENDPOINTS (GET and HEAD only; <rel> is a '/'-separated, percent-encoded path under --root)
   GET /health                        version, root, top-level folders, search-index size
