@@ -51,7 +51,8 @@ DEFAULT_CONFIG = {
     "message": "",  # plain-text content sent above the embed
     "webhook_url": "",  # seeded from DISCORD_WEBHOOK_URL_SPORTS env on first boot
     "teams": [
-        {"league": "nba", "sport": "basketball", "id": "20",
+        # ESPN team id 18 = Knicks (20 is the 76ers — the old default had that wrong).
+        {"league": "nba", "sport": "basketball", "id": "18",
          "abbrev": "NY", "name": "New York Knicks"},
     ],
 }

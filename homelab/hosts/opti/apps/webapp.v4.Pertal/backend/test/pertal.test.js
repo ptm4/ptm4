@@ -178,3 +178,53 @@ test('logs: names are validated before anything is sent to an agent', async () =
   assert.strictEqual((await app.inject('/api/logs/android/x')).statusCode, 404);
   await app.close();
 });
+
+test('ics: time zones, all-day events, weekly recurrence and EXDATE', () => {
+  const { eventsBetween } = require('../lib/ics');
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'BEGIN:VEVENT', 'DTSTART;TZID=America/New_York:20260928T090000', 'DTEND;TZID=America/New_York:20260928T093000',
+    'SUMMARY:Standup', 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE', 'EXDATE;TZID=America/New_York:20260930T090000', 'END:VEVENT',
+    'BEGIN:VEVENT', 'DTSTART;VALUE=DATE:20260929', 'DTEND;VALUE=DATE:20260930', 'SUMMARY:Trash day', 'END:VEVENT',
+    'BEGIN:VEVENT', 'DTSTART:20260929T230000Z', 'SUMMARY:Cancelled thing', 'STATUS:CANCELLED', 'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  const from = Date.parse('2026-09-28T00:00:00-04:00');
+  const to = Date.parse('2026-10-06T00:00:00-04:00');
+  const got = eventsBetween(ics, from, to).map((e) => `${e.title}@${e.start}`);
+  assert.deepStrictEqual(got, [
+    'Standup@2026-09-28T13:00:00.000Z',   // 09:00 EDT
+    'Trash day@2026-09-29T00:00:00.000Z', // all-day
+    'Standup@2026-10-05T13:00:00.000Z',   // Wed 30th excluded; next Monday
+  ]);
+});
+
+test('streams guide: stale feed never claims live; only HLTV-listed streams are watchable', () => {
+  const { buildGuide, cs2Summary } = require('../lib/streams-guide');
+  const now = Math.floor(Date.now() / 1000);
+  const day = {
+    date: '2026-09-27', fetched_at: now, stale: false,
+    matches: [
+      { id: '1', event: 'IEM Chengdu', team1: 'Vitality', team2: 'MOUZ', status: 'live', stars: 3, stream: { url: 'https://www.twitch.tv/eslcs', name: 'ESL CS' } },
+      { id: '2', event: 'BLAST Premier Fall', team1: 'NAVI', team2: 'G2', status: 'live', stars: 2 }, // no stream listed
+      { id: '3', event: 'Some Cup Qualifier', team1: 'A', team2: 'B', status: 'upcoming', stars: 0 },
+    ],
+  };
+  const status = { version: '0.1.0', slots: [{ slot: 1, state: 'running', platform: 'twitch', channel: 'eslcs' }, { slot: 2, state: 'idle' }] };
+  const vrs = { teams: ['Vitality', 'MOUZ', 'NAVI'] };
+
+  const fresh = buildGuide({ status, presets: null, day, dayMeta: { ok: true }, vrs });
+  const m1 = fresh.matches.find((m) => m.id === '1');
+  const m2 = fresh.matches.find((m) => m.id === '2');
+  assert.strictEqual(m1.status, 'live');
+  assert.deepStrictEqual([m1.rank1, m1.rank2], [1, 2]);
+  assert.strictEqual(m1.watching_slot, 1, 'already playing in slot 1');
+  assert.strictEqual(m2.channel, null, 'no organizer fallback: BLAST event without a listed stream is not watchable');
+  assert.ok(m1.premier && !fresh.matches.find((m) => m.id === '3').premier);
+
+  const stale = buildGuide({ status, presets: null, day: { ...day, fetched_at: now - 3600 }, dayMeta: { ok: true }, vrs });
+  assert.ok(stale.matches.every((m) => m.status !== 'live'), 'a stale feed degrades live to unknown');
+
+  const card = cs2Summary(day);
+  assert.deepStrictEqual(card.matches.map((m) => m.id), ['1', '2'], 'unstarred upcoming match is left off the card');
+});

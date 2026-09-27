@@ -9,7 +9,11 @@ export default defineConfig({
   plugins: [sveltekit()],
   server: {
     host: true,
-    proxy: { '/api': { target, changeOrigin: true } },
+    proxy: {
+      '/api': { target, changeOrigin: true },
+      // Stream video goes straight to stream-station on noblenumbat (nginx does the same in prod).
+      '/hls': { target: process.env.STREAM_URL ?? 'http://192.168.1.6:8098', changeOrigin: true },
+    },
   },
   build: { sourcemap: false },
 });

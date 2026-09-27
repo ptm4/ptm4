@@ -194,8 +194,13 @@ function summarize(resources, unclaimed, snapshots) {
     });
   }
   // A failing data source is itself an issue — otherwise its cards just quietly age.
+  // Not for the Status extras (weather, NBA…) or link probes: their cards say so
+  // themselves, and a public API hiccup is not a homelab problem.
+  // hltv:/streams: too — hltv-api and stream-station are containers, so if they die
+  // their own resource says so; a feed warming up is not an incident.
+  const quiet = /^(vitals:|probe:|extras:|hltv:|streams:|links$)/;
   for (const [key, m] of Object.entries(snapshots.metas())) {
-    if (m.ok === false && !key.startsWith('vitals:') && !key.startsWith('probe:')) {
+    if (m.ok === false && !quiet.test(key)) {
       issues.push({ severity: 'warn', resource_id: null, resource: m.label, host: m.group, text: `data source failing: ${m.error}`, source: key, at: null });
     }
   }

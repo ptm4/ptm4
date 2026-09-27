@@ -23,7 +23,7 @@ function probe(origin, timeoutMs = 4000) {
 }
 
 function registerLinkSources(snapshots) {
-  const origins = [...new Set(LINK_GROUPS.flatMap((g) => g.links.map((l) => l.check).filter(Boolean)))];
+  const origins = [...new Set(LINK_GROUPS.flatMap((g) => g.links.flatMap((l) => [].concat(l.check || []))))];
   snapshots.register({
     key: 'links', group: 'links', label: 'launchpad reachability',
     intervalMs: 2 * 60_000, timeoutMs: 8000, staleAfterMs: 10 * 60_000,

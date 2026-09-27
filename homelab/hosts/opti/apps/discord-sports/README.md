@@ -31,7 +31,7 @@ Teams render as a 2-per-row grid (same spacer-field trick as discord-weather).
 after first boot the volume config is authoritative; rotate from the tab).
 
 ```json
-{"teams": [{"league": "nba", "sport": "basketball", "id": "20",
+{"teams": [{"league": "nba", "sport": "basketball", "id": "18",
             "abbrev": "NY", "name": "New York Knicks"}]}
 ```
 

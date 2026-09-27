@@ -6,6 +6,30 @@ export interface AppLink {
 }
 export interface LinkGroup { group: string; links: AppLink[] }
 
+// Video is same-origin: nginx (prod) / vite (dev) proxy /hls to stream-station.
+export const hlsUrl = (slot: number) => `/hls/slot${slot}/index.m3u8`;
+
+export interface StreamSlot {
+  slot: number; state: 'idle' | 'starting' | 'running' | 'ended' | 'error' | string;
+  platform: string | null; channel: string | null; url: string | null; error?: string | null; uptime_s?: number | null;
+}
+export interface StreamChannel {
+  platform: string; channel: string; label?: string; group: string; group_label: string;
+  org: string | null; watching_slot: number | null; listed_matches: number;
+}
+export interface StreamMatch {
+  id: string; url: string; event: string; stars: number; team1: string; team2: string;
+  score1: number | null; score2: number | null; start_unix: number | null; status: string;
+  rank1: number | null; rank2: number | null; top20: boolean; premier: boolean;
+  channel: { platform: string; channel: string; label: string } | null; watching_slot: number | null;
+}
+export interface StreamGuide {
+  station: { ok: boolean; version?: string; slots: StreamSlot[] };
+  channels: StreamChannel[]; matches: StreamMatch[];
+  vrs: { known: boolean; counted: number };
+  hltv: { ok: boolean; stale: boolean; fetched_at: number | null; error: string | null };
+}
+
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -41,6 +65,13 @@ export const api = {
   links: () => request<{ groups: LinkGroup[]; checked_at: string | null }>('/api/links'),
   reports: () => request<any>('/api/reports'),
   topology: () => request<any>('/api/topology'),
+  streams: {
+    guide: () => request<StreamGuide>('/api/streams/guide'),
+    watch: (body: { platform?: string; channel?: string; url?: string; slot?: number }) =>
+      request<{ ok: boolean; slot: number; reused?: boolean }>('/api/streams/watch', { method: 'POST', body: JSON.stringify(body), signal: AbortSignal.timeout(20_000) }),
+    stop: (slot: number) => request('/api/streams/stop', { method: 'POST', body: JSON.stringify({ slot }) }),
+    keepalive: (slots: number[]) => request('/api/streams/keepalive', { method: 'POST', body: JSON.stringify({ slots }) }).catch(() => {}),
+  },
   // Starts a job and returns it immediately; progress arrives over SSE.
   action: (kind: string, resource: string, opts: { confirm?: boolean; params?: Record<string, unknown> } = {}) =>
     request<{ job: Job }>(`/api/actions/${encodeURIComponent(kind)}`, {

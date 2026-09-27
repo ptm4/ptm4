@@ -103,13 +103,20 @@ actions). Code: `webapp.v4.Pertal/` — backend 6/6 tests, frontend svelte-check
    v3's job audit is read from the shared `arch_data` volume, so it carries over.
 3. ✅ Logs (tab + page; **hl-arch-agent v0.8.0** `GET /logs`, token-gated, installed on all 3
    hosts 2026-09-27), Metrics tab (last hour from Pertal, 24h–90d from homelab-db), Topology,
-   Reports, Launchpad (live reachability), Settings. ⬜ Streams (port v3's stream-station page).
+   Reports, Launchpad (live reachability), Settings. ✅ Streams (v3's guide rules ported
+   unchanged — VRS ranks, no organizer fallback, stale feed can't claim live; hls.js player,
+   multiview, keep-alive).
    ✅ **Side-by-side deploy wired**: compose service `pertal` (profile, built on opti),
    nginx-webapp serves it at **https://webapp.lan:8444**, deployed LAST by
    `opti-apps-deploy.yml` so a failed Pertal build can't block v3. Image trial-built and
    health-checked on opti.
-4. ⬜ Downloads (needs qBittorrent creds as host-side env), Jellyseerr deploy + Requests (needs
-   Peter to run its setup wizard + an API key), Status extras.
+   **Live since 2026-09-27 at https://webapp.lan:8444** (first deploy green).
+4. ✅ Status extras: weather (Open-Meteo, location from the discord-weather config), NBA
+   (ESPN, teams from the discord-sports config), CS2 today (hltv-api), Google Calendar via
+   `PERTAL_CALENDAR_ICS` (secret iCal URL; own small ICS parser with recurrence). ⬜ Google
+   Home devices and package tracking — need research (no official local API / a paid API).
+   ⬜ Downloads (needs qBittorrent creds as host-side env), Jellyseerr deploy + Requests (needs
+   Peter to run its setup wizard + an API key).
 5. ⬜ Bot consolidation (`bot_common.py`, real `/health`, bots as resources).
 6. ✅ Offline shell: service worker caches the app shell only; with opti gone the installed
    app opens and says "Can't reach opti" with a Kuma link. SSE self-heals: reconnects after a

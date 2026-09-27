@@ -8,6 +8,7 @@ const { AGENT_HOSTS } = require('../lib/hosts');
 const { agentFetch } = require('../lib/agent-client');
 const { LINK_GROUPS } = require('../lib/links');
 const { buildTopology } = require('../lib/topology');
+const { cs2Summary } = require('../lib/streams-guide');
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const SINCE_RE = /^\d{1,4}[smh]$/;
@@ -47,10 +48,15 @@ module.exports = async function viewRoutes(app) {
 
   app.get('/links', async () => {
     const probe = app.snapshots.get('links');
+    // A link is up if ANY of its probe targets answered (see lib/links.js).
+    const reach = (check) => {
+      const results = [].concat(check || []).map((c) => probe?.data?.[c]).filter(Boolean);
+      return results.find((r) => r.up) ?? results[0] ?? null;
+    };
     return {
       groups: LINK_GROUPS.map((g) => ({
         group: g.group,
-        links: g.links.map((l) => ({ ...l, reach: l.check ? probe?.data?.[l.check] ?? null : null })),
+        links: g.links.map((l) => ({ ...l, check: undefined, reach: l.check ? reach(l.check) : null })),
       })),
       checked_at: probe?.meta?.fetched_at ?? null,
     };
@@ -69,4 +75,19 @@ module.exports = async function viewRoutes(app) {
   });
 
   app.get('/topology', async () => buildTopology(app.pertal.state.resources));
+
+  // Status-page extras. Each is its own snapshot, so one dead feed greys one card.
+  app.get('/extras', async () => {
+    const pick = (key) => {
+      const s = app.snapshots.get(key);
+      return s ? { data: s.data, ok: s.meta.ok, error: s.meta.error, fetched_at: s.meta.fetched_at, stale: s.meta.stale } : null;
+    };
+    const day = pick('hltv:day');
+    return {
+      weather: pick('extras:weather'),
+      nba: pick('extras:nba'),
+      cs2: day && { ...day, data: cs2Summary(day.data) },
+      calendar: pick('extras:calendar'), // null = not configured (PERTAL_CALENDAR_ICS)
+    };
+  });
 };

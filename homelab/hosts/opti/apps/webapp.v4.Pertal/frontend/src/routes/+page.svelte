@@ -1,6 +1,7 @@
 <script lang="ts">
   import StatusDot from '$lib/components/StatusDot.svelte';
   import Age from '$lib/components/Age.svelte';
+  import TodayStrip from '$lib/components/TodayStrip.svelte';
   import { live } from '$lib/live.svelte';
   import { pct, uptime, tone, ago } from '$lib/format';
   import type { Issue, Resource } from '$lib/types';
@@ -63,6 +64,8 @@
     </a>
   {/each}
 </section>
+
+<TodayStrip />
 
 <div class="cols">
   <section class="panel">

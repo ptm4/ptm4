@@ -11,7 +11,8 @@
     "prepare": "svelte-kit sync || echo ''"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.41.0"
+    "@lucide/svelte": "^1.41.0",
+    "hls.js": "^1.7.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",

@@ -156,6 +156,11 @@ services:
       HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
       HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
       HL_DB_TOKEN: ${HL_DB_TOKEN:-}
+      STREAM_URL: ${STREAM_URL:-http://192.168.1.6:8098}
+      HL_STREAM_TOKEN: ${HL_STREAM_TOKEN:-}
+      # Optional: Google Calendar's "secret address in iCal format" (comma-separate
+      # several). Unset = the Status page's calendar card says "not connected".
+      PERTAL_CALENDAR_ICS: ${PERTAL_CALENDAR_ICS:-}
     volumes:
       - arch_data:/arch-data
     expose:
