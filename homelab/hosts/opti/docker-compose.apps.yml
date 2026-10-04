@@ -153,6 +153,7 @@ services:
     # At cutover: chown the volume to 1000:1000 and delete this line (image runs as node).
     user: "0:0"
     environment:
+      PERTAL_COCKPIT: "1"
       HL_ARCH_INGEST_TOKEN: ${HL_ARCH_INGEST_TOKEN:-}
       HOMELAB_DB_URL: ${HOMELAB_DB_URL:-http://192.168.1.11:9100}
       HL_DB_TOKEN: ${HL_DB_TOKEN:-}
@@ -163,6 +164,8 @@ services:
       PERTAL_CALENDAR_ICS: ${PERTAL_CALENDAR_ICS:-}
       # Seerr's API key (Settings → General in Seerr). Unset = Requests page shows setup steps.
       SEERR_API_KEY: ${SEERR_API_KEY:-}
+      # Readarr's API key (Settings → General in Readarr on noblenumbat:8788). Unset = no Books panel.
+      READARR_API_KEY: ${READARR_API_KEY:-}
       # Asset Library: the read-only asset server on the workstation (homelab/hosts/ptm/asset-server).
       ASSET_SERVER_URL: ${ASSET_SERVER_URL:-http://192.168.1.3:8767}
     volumes:
@@ -171,6 +174,7 @@ services:
       - "3000"
     networks:
       - internal
+      - cockpit_gw
 
   nginx-webapp:
     image: nginx:stable-alpine
@@ -190,6 +194,7 @@ services:
       - dozzle
     networks:
       - internal
+      - cockpit_gw
 
   # ── Discord bot fleet ────────────────────────────────────────────────────────
   discord-weather:
@@ -371,7 +376,67 @@ services:
     networks:
       - internal
 
+  # Root Cockpit sessions: private gateways, never publish port 9090.
+  cockpit-opti:
+    build: ./cockpit-gw
+    container_name: cockpit-opti
+    profiles: ["cockpit"]
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      TARGET: "ptm@192.168.1.11"
+      URL_ROOT: "/cp-opti"
+      ORIGINS: "https://webapp.lan:8443 https://webapp.lan:8444 https://webapp.rpi.lan:8443 https://webapp.rpi.lan:8444 https://192.168.1.11:8443 https://192.168.1.11:8444"
+    volumes:
+      - /etc/pertal-cockpit:/keys:ro
+    networks:
+      - cockpit_gw
+
+  cockpit-rpi:
+    build: ./cockpit-gw
+    container_name: cockpit-rpi
+    profiles: ["cockpit"]
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      TARGET: "ptm@192.168.1.10"
+      URL_ROOT: "/cp-rpi"
+      ORIGINS: "https://webapp.lan:8443 https://webapp.lan:8444 https://webapp.rpi.lan:8443 https://webapp.rpi.lan:8444 https://192.168.1.11:8443 https://192.168.1.11:8444"
+    volumes:
+      - /etc/pertal-cockpit:/keys:ro
+    networks:
+      - cockpit_gw
+
+  cockpit-noblenumbat:
+    build: ./cockpit-gw
+    container_name: cockpit-noblenumbat
+    profiles: ["cockpit"]
+    restart: unless-stopped
+    init: true
+    logging: *default-logging
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      TARGET: "ptm@192.168.1.6"
+      URL_ROOT: "/cp-noblenumbat"
+      ORIGINS: "https://webapp.lan:8443 https://webapp.lan:8444 https://webapp.rpi.lan:8443 https://webapp.rpi.lan:8444 https://192.168.1.11:8443 https://192.168.1.11:8444"
+    volumes:
+      - /etc/pertal-cockpit:/keys:ro
+    networks:
+      - cockpit_gw
+
 networks:
+  cockpit_gw:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.90.0/24
   internal:
     driver: bridge
 

@@ -16,7 +16,7 @@ are in `homelab/hosts/opti/apps/WEBAPP-V4-PLAN.md`; the folder README has the ar
 | **Image** | `Dockerfile` in the folder: deps + frontend build baked in; healthcheck on `/api/health`. No `npm install` at start, no bind mount |
 | **Proxy** | `nginx-webapp` `server { listen 8444 }` in `homelab/hosts/opti/apps/nginx-wg.conf` (lazy `resolver 127.0.0.11` + `set $pertal`, so a missing container never stops nginx) |
 | **Data volume** | `arch_data` → `/arch-data`, shared with v3 (job audit, fragments, `pertal/activity/`) |
-| **Deploy** | `.github/workflows/opti-apps-deploy.yml`, **last** steps (sync → `--profile pertal build/up` → wait for healthy) |
+| **Deploy** | `.github/workflows/opti-apps-deploy.yml`, **last** steps (sync → `--profile pertal build/up` → wait for healthy → build/start `--profile cockpit` gateways) |
 
 ## The two rules — every change must keep them
 
@@ -26,7 +26,9 @@ are in `homelab/hosts/opti/apps/WEBAPP-V4-PLAN.md`; the folder README has the ar
    long-range metrics — hard timeout, plain error body.
 2. **Every button is a job.** Anything that changes something goes through a job with
    declared steps (`backend/lib/jobs.js`): live progress over SSE, the tray, the audit trail,
-   failures included. Risky kinds require `confirm: true` (428 otherwise) and the UI asks first.
+   failures included. Risky kinds require `confirm: true` (428 otherwise) and the UI asks first. **Approved exception:** embedded Cockpit Console runs full root
+   operations outside Pertal jobs/audit/holds; do not wrap or claim them as Pertal jobs.
+   See `apps/cockpit-gw/README.md` for the trust boundary and rollback.
 
 Also: **healthy is quiet** — `--ok` is grey; colour only for things that want attention.
 Both theme families (gruvbox default, github alt) define the same tokens in
@@ -109,7 +111,7 @@ Stop the backend **by port** (`Get-NetTCPConnection -LocalPort 3100`), not by pr
 `node --watch` leaves its child running as plain `node server.js`.
 
 **Deploy changes to compose/nginx/Dockerfile:** validate on opti before Peter pushes —
-`docker compose --env-file /srv/docker/compose/.env --profile pertal config --quiet` on a temp
+`docker compose --env-file /srv/docker/compose/.env --profile pertal --profile cockpit config --quiet` on a temp
 copy, `nginx -t` inside the running `nginx-webapp` with the new conf, and a trial
 `docker build` of the folder (remove the image after).
 
@@ -152,3 +154,24 @@ Then check the feature for real on :8444 (the container has the tokens dev lacks
 (`node:lts-alpine`, bind-mounted, `npm install` at start). Same deploy workflow (earlier
 steps; its API smoke must pass). Only fix bugs there — anything new goes into Pertal. Its
 detailed conventions are in this file's git history (before 2026-09-27).
+
+## Console changes
+
+Only `opti`, `rpi`, `noblenumbat`; internal `/console/<host>/<validated relative path>`
+links use SvelteKit navigation, never external-window links. Ignore user URL query/hash;
+internal deep-link hashes use navigation state only. Disabled/loading/failed/stale
+snapshots render no iframe. Keep authenticated `https://<host>.lan:9090/` fallback,
+age/recovery information, host cautions and the full-height mobile layout.
+`cockpit:<host>` polls manifests at 60s/5s timeout/5min stale; `/api/console` reads only
+memory and registration requires `PERTAL_COCKPIT=1`. Keep every `/cp-` request outside
+the service worker. Cockpit actions have no Pertal audit/precheck; host reboot is no
+longer a Pertal action. Keep maintenance holds, history and Docker jobs.
+
+Host page packages must be patched before enabling the restricted SSH root bridge.
+Gateway network is `172.30.90.0/24`, no published ports, no nginx gateway dependency.
+Never relax LAN/WireGuard access to accommodate translated addresses or trust supplied
+forwarding headers. Preserve exact Origin/cross-site guards and port-bearing Host.
+Sync gateway context, validate both profiles, syntax-test a staged nginx candidate,
+then publish/recreate. Build/start gateways after Pertal; an offline host is not a CI
+failure, but bad configuration/build/start is. Stop on a failed loopback root/recovery
+spike. Read `homelab/hosts/opti/apps/cockpit-gw/README.md` before changing this boundary.

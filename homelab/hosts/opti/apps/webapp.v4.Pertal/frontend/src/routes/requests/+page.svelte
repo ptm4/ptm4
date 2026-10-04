@@ -1,7 +1,7 @@
 <script lang="ts">
   // Requests: Seerr's queue with approve / decline (both jobs). Asking for something new
   // happens in Seerr itself — it owns search, seasons and quotas.
-  import { ExternalLink, Check, X, Film, Tv } from '@lucide/svelte';
+  import { ExternalLink, Check, X, Film, Tv, BookOpen } from '@lucide/svelte';
   import Age from '$lib/components/Age.svelte';
   import { ApiError } from '$lib/api';
   import { actions } from '$lib/actions.svelte';
@@ -17,7 +17,7 @@
       d = await res.json(); err = null;
     } catch (e) { err = (e as Error).message; }
   }
-  const stamp = $derived(live.snapshots['seerr:requests']?.fetched_at);
+  const stamp = $derived(`${live.snapshots['seerr:requests']?.fetched_at}|${live.snapshots['readarr:books']?.fetched_at}`);
   $effect(() => { void stamp; void load(); });
 
   async function decide(r: any, op: 'approve' | 'decline') {
@@ -31,6 +31,9 @@
 
   const counts = $derived(d?.data?.counts ?? {});
   const tone = (s: string) => (s === 'pending' ? 'warn' : s === 'declined' || s === 'failed' ? 'crit' : s === 'available' ? 'info' : '');
+
+  const bookCounts = $derived(d?.books?.counts ?? {});
+  const bookTone = (s: string) => (s === 'wanted' ? 'warn' : s === 'available' ? 'info' : '');
 </script>
 
 <svelte:head><title>Requests · Pertal</title></svelte:head>
@@ -93,12 +96,50 @@
   <p class="empty">Loading…</p>
 {/if}
 
+{#if d?.books_configured}
+  <div class="head books-head">
+    <h2>Books</h2>
+    <a class="btn" href={d.readarr_url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Add an author in Readarr</a>
+  </div>
+  {#if d.books_meta?.ok === false && !d.books}
+    <p class="banner">Readarr is not answering: {d.books_meta.error}</p>
+  {:else if d.books}
+    <section class="counts three">
+      {#each [['wanted', 'Wanted'], ['downloading', 'Downloading'], ['available', 'In library']] as [k, label]}
+        <div class="panel count"><span class="faint">{label}</span><strong class="num">{bookCounts[k] ?? 0}</strong></div>
+      {/each}
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Requested books</h2><span class="faint"><Age at={d.books_meta?.fetched_at} staleAfterMs={5 * 60_000} /></span></div>
+      <div class="rows">
+        {#each d.books.books as b (b.id)}
+          <div class="row req book">
+            <div class="noposter"><BookOpen size={18} /></div>
+            <div class="main">
+              <div class="title">{b.title}{#if b.year} <span class="faint">({b.year})</span>{/if}</div>
+              <div class="faint small">Book · {b.author ?? 'unknown author'}{#if b.series} · {b.series}{/if}</div>
+              <div class="badges">
+                <span class="badge {bookTone(b.status)}">{b.status === 'available' ? 'in library' : b.status}{#if b.progress != null} · {b.progress}%{/if}</span>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <div class="empty">No books requested yet.</div>
+        {/each}
+      </div>
+    </section>
+  {/if}
+{/if}
+
 <style>
   .head { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); flex-wrap: wrap; margin-bottom: var(--s3); }
   .banner { padding: 8px 12px; border: 1px solid var(--warn); border-radius: var(--r); background: var(--warn-dim); color: var(--warn); font-size: var(--fs-sm); }
   .setup ol { margin: 0; padding: var(--s3) var(--s5); display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sm); }
   code { font: var(--fs-xs) var(--mono); background: var(--surface-2); padding: 1px 5px; border-radius: 3px; }
   .counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); margin-bottom: var(--s3); }
+  .counts.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .books-head { margin-top: var(--s5); }
+  .books-head h2 { margin: 0; font-size: var(--fs-lg, 1.1rem); }
   .count { padding: var(--s3) var(--s4); display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); }
   .count strong { font-size: var(--fs-2xl); font-weight: 600; }
   .req { grid-template-columns: 40px minmax(0, 1fr) auto; align-items: start; }

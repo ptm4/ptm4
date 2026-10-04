@@ -8,10 +8,14 @@ const DRY = process.env.PERTAL_ACTIONS === 'dry';
 module.exports = async function requestRoutes(app) {
   app.get('/', async () => {
     const s = app.snapshots.get('seerr:requests');
+    const b = app.snapshots.get('readarr:books');
     return {
       data: s?.data ?? null, meta: s?.meta ?? null,
       configured: !!process.env.SEERR_API_KEY,
       seerr_url: 'http://opti.lan:5055',
+      books: b?.data ?? null, books_meta: b?.meta ?? null,
+      books_configured: !!process.env.READARR_API_KEY,
+      readarr_url: 'http://noblenumbat.lan:8788',
     };
   });
 

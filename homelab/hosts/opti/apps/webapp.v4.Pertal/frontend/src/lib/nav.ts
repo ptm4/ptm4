@@ -9,6 +9,7 @@ export const NAV: NavItem[] = [
   { href: '/topology', label: 'Topology', icon: 'network', ready: true },
   { href: '/activity', label: 'Activity', icon: 'activity', ready: true },
   { href: '/logs', label: 'Logs', icon: 'scroll-text', ready: true },
+  { href: '/console', label: 'Console', icon: 'terminal', ready: true },
   { href: '/streams', label: 'Streams', icon: 'radio', ready: true },
   { href: '/downloads', label: 'Downloads', icon: 'download', ready: true },
   { href: '/requests', label: 'Requests', icon: 'inbox', ready: true },
@@ -18,4 +19,7 @@ export const NAV: NavItem[] = [
 ];
 
 // Pages reachable by search but not listed in the rail.
-export const EXTRA_PAGES = [{ href: '/launchpad', label: 'Launchpad (all apps)' }];
+export const EXTRA_PAGES = [
+  { href: '/launchpad', label: 'Launchpad (all apps)' },
+  ...['opti', 'rpi', 'noblenumbat'].map((host) => ({ href: `/console/${host}/system/terminal`, label: `Terminal · ${host}` })),
+];

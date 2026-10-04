@@ -48,9 +48,7 @@
       <div>
         <h2 id="confirm-title">{p.action.label} {p.resource.name}?</h2>
         <p class="muted">
-          {#if p.action.kind === 'host.reboot'}
-            {p.resource.name} goes offline for a few minutes{#if p.resource.id === 'opti'}, taking the vault, the bots, Samba and Pertal itself with it{/if}. Pertal will watch it come back.
-          {:else if p.action.kind === 'container.update'}
+          {#if p.action.kind === 'container.update'}
             Pulls the newest image and recreates {p.resource.name}. It is briefly down while it restarts.
           {:else}
             This changes a live system.

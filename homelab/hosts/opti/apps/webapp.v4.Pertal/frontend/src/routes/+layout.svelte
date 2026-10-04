@@ -64,7 +64,7 @@
   </nav>
   <div class="scrim" role="presentation" onclick={() => (drawer = false)}></div>
 
-  <main>
+  <main class:console-page={page.url.pathname === "/console" || page.url.pathname.startsWith("/console/")}>
     {#if live.error && !live.connected}
       <div class="banner">
         <WifiOff size={18} />
@@ -134,6 +134,7 @@
   .scrim { display: none; }
 
   main { grid-area: main; min-width: 0; padding: var(--s4) var(--s5) 96px; }
+  main.console-page { padding: 0; height: calc(100dvh - var(--topbar-h)); min-height: 0; overflow: hidden; }
   .banner {
     display: flex; align-items: flex-start; gap: 10px; margin-bottom: var(--s4); padding: 10px 14px;
     border: 1px solid var(--crit); border-radius: var(--r); background: var(--crit-dim); color: var(--ink); font-size: var(--fs-sm);

@@ -23,6 +23,7 @@ on:
       - "homelab/hosts/opti/apps/webapp.v3.Fable/**"
       - "homelab/hosts/opti/apps/webapp.v4.Pertal/**"
       - "homelab/hosts/opti/apps/nginx-wg.conf"
+      - "homelab/hosts/opti/apps/cockpit-gw/**"
       - "homelab/hosts/opti/apps/notes-app/**"
       - "homelab/hosts/opti/apps/discord-weather/**"
       - "homelab/hosts/opti/apps/discord-healthdigest/**"
@@ -73,7 +74,7 @@ jobs:
           path: homelab/hosts/opti/apps/webapp.v3.Fable/frontend/dist
 
       - name: Copy compose file
-        run: cp "$GITHUB_WORKSPACE/homelab/hosts/opti/docker-compose.apps.yml" /srv/docker/compose/docker-compose.yml
+        run: cp "$GITHUB_WORKSPACE/homelab/hosts/opti/docker-compose.apps.yml" /srv/docker/compose/docker-compose.yml.candidate
 
       - name: Sync webapp and nginx configs
         # --delete so removed/renamed files disappear here too; node_modules excluded
@@ -82,7 +83,13 @@ jobs:
           mkdir -p /srv/docker/compose/webapp
           rsync -a --delete --exclude 'node_modules' \
             "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/webapp.v3.Fable/" /srv/docker/compose/webapp/
-          cp "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf
+          cp "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf.candidate
+
+      - name: Sync Cockpit gateway context
+        run: |
+          mkdir -p /srv/docker/compose/cockpit-gw
+          rsync -a --delete --exclude '__pycache__' \
+            "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/cockpit-gw/" /srv/docker/compose/cockpit-gw/
 
       - name: Copy notes-app
         run: |
@@ -100,7 +107,18 @@ jobs:
 
       - name: Validate compose before touching containers
         working-directory: /srv/docker/compose
-        run: docker compose config --quiet
+        run: |
+          docker compose -f docker-compose.yml.candidate --profile pertal --profile cockpit config --quiet
+          bash cockpit-gw/setup/nginx-preflight.sh /srv/docker/compose/nginx-wg.conf.candidate
+
+      - name: Publish validated compose and nginx configs
+        working-directory: /srv/docker/compose
+        run: |
+          cp docker-compose.yml docker-compose.yml.before-cockpit
+          cp nginx-wg.conf nginx-wg.conf.before-cockpit
+          # Copy into the existing inode: nginx bind-mounts this file.
+          cp docker-compose.yml.candidate docker-compose.yml
+          cp nginx-wg.conf.candidate nginx-wg.conf
 
       - name: Pull latest images
         working-directory: /srv/docker/compose
@@ -172,3 +190,15 @@ jobs:
           done
           docker compose --profile pertal logs --tail 50 pertal
           echo "::error::pertal did not become healthy"; exit 1
+
+      - name: Build and start Cockpit gateways
+        working-directory: /srv/docker/compose
+        # No health gate: an offline target must not fail the app-tier deployment.
+        run: |
+          sudo -n test -s /etc/pertal-cockpit/id_ed25519
+          sudo -n test -s /etc/pertal-cockpit/known_hosts
+          docker compose --profile cockpit build cockpit-opti cockpit-rpi cockpit-noblenumbat
+          for gateway in cockpit-opti cockpit-rpi cockpit-noblenumbat; do
+            docker compose --profile cockpit run --rm --no-deps --interactive=false "$gateway" --check-config
+          done
+          docker compose --profile cockpit up -d cockpit-opti cockpit-rpi cockpit-noblenumbat

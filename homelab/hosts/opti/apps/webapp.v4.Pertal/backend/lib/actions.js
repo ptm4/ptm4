@@ -68,23 +68,6 @@ async function waitForContainer(ctx, host, name, note, timeoutMs = 60_000) {
   throw new Error(`${name} was not running and healthy within ${timeoutMs / 1000}s — check its Logs tab`);
 }
 
-async function waitForAgent(ctx, host, want, timeoutMs, note) {
-  if (ctx.dry) { note(`dry run: skipped waiting for ${host} to ${want ? 'return' : 'go down'}`); return; }
-  const t0 = Date.now();
-  while (Date.now() - t0 < timeoutMs) {
-    let alive = false;
-    try { alive = (await ctx.agent(host, '/status', { timeoutMs: 3000 })).ok; } catch (_) { alive = false; }
-    if (alive === want) {
-      note(`${host} ${want ? 'answered again' : 'stopped answering'} after ${Math.round((Date.now() - t0) / 1000)}s`);
-      return;
-    }
-    await sleep(want ? 5000 : 3000);
-  }
-  throw new Error(want
-    ? `${host} did not come back within ${timeoutMs / 60_000} minutes`
-    : `${host} was still answering ${timeoutMs / 1000}s after accepting the reboot`);
-}
-
 const agentOn = (r) => !!AGENT_HOSTS[r.host];
 const autoupdateMode = (r, snaps) => snaps.data(`agent:${r.host}`)?.autoupdate?.mode ?? null;
 
@@ -175,27 +158,7 @@ const ACTIONS = {
     },
   },
 
-  'host.reboot': {
-    label: 'Reboot', icon: 'power', risky: true,
-    applies: (r) => r.type === 'host' && agentOn(r),
-    plan: (r) => [
-      { key: 'preflight', label: `Check the agent on ${r.name} is answering` },
-      { key: 'send', label: 'Send the reboot request', detail: 'The agent replies before rebooting: accepted, not finished.' },
-      { key: 'gone', label: `Wait for ${r.name} to stop answering` },
-      { key: 'back', label: `Wait for ${r.name} to answer again` },
-      { key: 'verify', label: 'Re-read everything about the host' },
-    ],
-    run: async (ctx, job, r) => {
-      await job.step('preflight', (note) => preflight(ctx, r.host, note));
-      await job.step('send', (note) => mustPost(ctx, r.host, '/reboot', { host: r.host }, 15_000, note, 'the reboot'));
-      await job.step('gone', (note) => waitForAgent(ctx, r.host, false, 90_000, note));
-      await job.step('back', (note) => waitForAgent(ctx, r.host, true, 10 * 60_000, note));
-      await job.step('verify', async (note) => {
-        await ctx.snapshots.refreshGroup(r.host);
-        note('host data re-read');
-      });
-    },
-  },
+
 };
 
 const describe = (kind) => {

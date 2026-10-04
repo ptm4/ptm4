@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { internalLink } from "$lib/console";
   // The Azure-style command bar: every action this resource supports, plus its links.
   // Buttons for an action already running on this resource show a spinner and disable.
   import { LoaderCircle } from '@lucide/svelte';
@@ -13,7 +14,7 @@
     new Set(live.jobs.filter((j) => j.status === 'running' && j.resource === resource.id).map((j) => j.kind)),
   );
   const linkLabel: Record<string, string> = {
-    cockpit: 'Cockpit', omv: 'OpenMediaVault', pihole: 'Pi-hole', jellyfin: 'Jellyfin', kuma: 'Uptime Kuma',
+    cockpit: 'Console', terminal: 'Terminal', omv: 'OpenMediaVault', pihole: 'Pi-hole', jellyfin: 'Jellyfin', kuma: 'Uptime Kuma',
   };
 </script>
 
@@ -31,7 +32,7 @@
     </button>
   {/each}
   {#each Object.entries(resource.links ?? {}) as [key, href] (key)}
-    <a class="btn ghost" {href} target="_blank" rel="noreferrer">
+    <a class="btn ghost" {href} target={internalLink(href) ? undefined : "_blank"} rel={internalLink(href) ? undefined : "noreferrer"}>
       <Icon name="external-link" />{linkLabel[key] ?? key}
     </a>
   {/each}

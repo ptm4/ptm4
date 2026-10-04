@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { internalLink } from "$lib/console";
   // Top-bar "Apps" button: a quick grid of every launchpad link, with the same live
   // reachability dots. The full page (/launchpad) is one click further.
   import { LayoutGrid } from '@lucide/svelte';
@@ -35,7 +36,7 @@
         <div class="group faint">{g.group}</div>
         <div class="grid">
           {#each g.links as l (l.url)}
-            <a class="app" href={l.url} target="_blank" rel="noreferrer" role="menuitem" onclick={() => (open = false)} class:down={l.reach && !l.reach.up}
+            <a class="app" href={l.url} target={internalLink(l.url) ? undefined : "_blank"} rel={internalLink(l.url) ? undefined : "noreferrer"} role="menuitem" onclick={() => (open = false)} class:down={l.reach && !l.reach.up}
               title={l.reach ? (l.reach.up ? `up · ${l.reach.ms} ms` : `down · ${l.reach.error}`) : l.label}>
               <img src="/icons/apps/{l.icon}" alt="" width="26" height="26" />
               <span>{l.label}</span>

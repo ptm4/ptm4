@@ -13,11 +13,13 @@ const LINK_GROUPS = [
     { label: 'Dozzle (logs)', url: 'http://opti.lan:9999/', icon: 'dozzle.svg', check: ['http://opti.lan:9999', 'http://dozzle:8080'] },
     { label: 'OpenMediaVault', url: 'http://opti.lan/', icon: 'openmediavault.svg', check: 'http://opti.lan' },
     { label: 'Portainer', url: 'http://noblenumbat.lan:9000/', icon: 'portainer.svg', check: 'http://noblenumbat.lan:9000' },
-    // No probe: Pertal runs ON opti, and opti's firewall (rightly) drops container→host
-    // traffic to :9090, so a probe would always report a healthy Cockpit as down.
-    { label: 'Cockpit · opti', url: 'https://opti.lan:9090/', icon: 'cockpit.svg' },
-    { label: 'Cockpit · rpi', url: 'https://rpi.lan:9090/', icon: 'cockpit.svg', check: 'https://rpi.lan:9090' },
-    { label: 'Cockpit · noblenumbat', url: 'https://noblenumbat.lan:9090/', icon: 'cockpit.svg', check: 'https://noblenumbat.lan:9090' },
+    // Console availability is reported by its own background gateway snapshots.
+    { label: 'Console · opti', url: '/console/opti/system', icon: 'cockpit.svg' },
+    { label: 'Terminal · opti', url: '/console/opti/system/terminal', icon: 'cockpit.svg' },
+    { label: 'Console · rpi', url: '/console/rpi/system', icon: 'cockpit.svg' },
+    { label: 'Terminal · rpi', url: '/console/rpi/system/terminal', icon: 'cockpit.svg' },
+    { label: 'Console · noblenumbat', url: '/console/noblenumbat/system', icon: 'cockpit.svg' },
+    { label: 'Terminal · noblenumbat', url: '/console/noblenumbat/system/terminal', icon: 'cockpit.svg' },
     { label: 'ntfy', url: 'http://noblenumbat.lan:2586/', icon: 'generic.svg', check: 'http://noblenumbat.lan:2586' },
   ]},
   { group: 'Apps', links: [

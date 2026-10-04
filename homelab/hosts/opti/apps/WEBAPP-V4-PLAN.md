@@ -14,8 +14,8 @@ Goal in Peter's words: *simple and effective like v1, with a better design — s
 | Look | Dense ops console. Borrow Azure-portal *ideas* (resources, blades, command bar, breadcrumbs, Ctrl K) — not its looks |
 | Palette | **Pure gruvbox** (dark + light) by default; Fable's GitHub Dark/Light kept as a switchable alternate (Settings → Appearance). Rule kept: *healthy is quiet, colour means something wants you* |
 | Navigation | Side drawer on phone (Azure-style), left rail on desktop, Ctrl K everywhere |
-| Control | **Full control**; confirm tap for risky actions only (reboot, stop, update, delete) |
-| Auth | None — LAN + WireGuard only. Every action still lands in the audit trail |
+| Control | **Full control**; confirm tap for risky actions only (stop, update, delete; reboot now belongs to Cockpit) |
+| Auth | None — LAN + WireGuard only. Pertal actions land in the audit trail; Cockpit Console is the approved exception |
 | opti down | Installed PWA caches its shell; if opti stops answering it reads Uptime Kuma on noblenumbat directly and says so. No extra server; rpi stays DNS-only |
 | Stack | Fastify + SvelteKit (Fable's), shipped as a **baked image** — no `npm install` at start |
 | Claude assistant | **Out of v4 scope.** Peter plans a local-model host; revisit when it exists (see "Local model" below) |
@@ -150,3 +150,35 @@ tests it on every push. The `add-to-webapp` skill now documents Pertal (v3 = fix
 
 - ~~Palette~~ — answered: gruvbox default, GitHub Dark kept as the switchable alternate.
 - Where does the local model live (see above) — only matters once an assistant is back in scope.
+
+## Cockpit Console — audited implementation (2026-10-04)
+
+Source implemented: internal Console navigation, last-host selection, host chips and
+Terminal shortcuts, viewport frame, memory-only `/api/console` from background
+manifest snapshots, age/error/recovery/fallback, safe host/path validation and state-only
+deep-link hashes, theme synchronization, worker bypass. No iframe while disabled,
+loading, failed or stale. Pertal host reboot/confirmation text removed; cautions retained.
+Holds, historical metrics and Docker operations remain. Cockpit is a deliberate exception
+to the Pertal job/audit rule and loses the Pertal ZFS reboot precheck.
+
+Hosts patched before authorization: Ubuntu `362-1~bpo24.04.1`; opti Bookworm rebuild
+`337-1~bpo12+pertal1` of Debian security-fixed `337-1+deb13u2`, preserving bundled-JS
+patch/verification and full build tests. Old packages/config saved. Automated setup
+creates/reuses a dedicated opti key, preserves other authorized keys, installs forced
+root bridge restrictions, obtains host keys through trusted SSH, checks subnet overlap
+and adds the narrow opti SSH firewall allowance. Loopback root/shell/compatibility,
+logout and SSH-loss recovery gate passed before integration.
+
+Three profile `cockpit` gateways on private `172.30.90.0/24`, no published ports,
+nginx/Pertal attached, no gateway nginx dependency. Supervisor cleans children,
+propagates termination and restarts on process loss or two invalid manifest checks.
+Same-origin `/cp-<host>` routes preserve URI, Host port and WebSockets; exact Origin,
+cross-site guards and actual-client LAN/WireGuard allowlist remain.
+Deploy syncs gateway context and preflights both compose profiles and staged nginx
+before replacing configs; gateways build/start after Pertal. Offline host does not fail
+deployment. Setup/security/rollback details: `cockpit-gw/README.md`.
+
+Peter retains commit/push and acceptance. Source/local checks and host setup are
+separate from post-push production deployment and live acceptance. After push verify
+all three consoles/Terminal root, desktop/375px, themes/recovery/worker, browser errors,
+reversible test-service operation and all security gates.

@@ -5,6 +5,11 @@ export interface AppLink {
   reach: null | { up: boolean; status?: number; ms?: number; error?: string };
 }
 export interface LinkGroup { group: string; links: AppLink[] }
+export interface ConsoleStatus {
+  enabled: boolean;
+  hosts: { id: string; root: string; ok: boolean | null; error: string | null;
+    fetched_at: string | null; stale: boolean; pages: { label: string; path: string }[] }[];
+}
 
 // Video is same-origin: nginx (prod) / vite (dev) proxy /hls to stream-station.
 export const hlsUrl = (slot: number) => `/hls/slot${slot}/index.m3u8`;
@@ -59,6 +64,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  console: () => request<ConsoleStatus>('/api/console'),
   state: () => request<any>('/api/state'),
   resource: (id: string) =>
     request<{ resource: Resource; children: Resource[]; jobs: Job[]; audit: Job[]; activity: ActivityEntry[] }>(

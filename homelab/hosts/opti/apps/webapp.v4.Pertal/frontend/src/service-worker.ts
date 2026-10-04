@@ -37,7 +37,7 @@ sw.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== sw.location.origin || url.pathname.startsWith('/api/')) return; // live data: never cached
+  if (url.origin !== sw.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/cp-')) return; // live data: never cached
   // Asset Library files come from ptm through nginx. Hands off — above all, a gallery page
   // or an image opened in its own tab is a navigation, and must not become the cached shell.
   if (url.pathname.startsWith('/asset-files/') || url.pathname.startsWith('/asset-thumbs/')) return;

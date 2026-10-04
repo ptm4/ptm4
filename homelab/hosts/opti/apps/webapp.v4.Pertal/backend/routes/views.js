@@ -4,7 +4,7 @@
 // lines are too big to poll into memory. They are the only exceptions to "no request
 // waits on an upstream", and each carries a hard timeout and a plain error body.
 'use strict';
-const { AGENT_HOSTS } = require('../lib/hosts');
+const { AGENT_HOSTS, HOSTS } = require('../lib/hosts');
 const { agentFetch } = require('../lib/agent-client');
 const { LINK_GROUPS } = require('../lib/links');
 const { buildTopology } = require('../lib/topology');
@@ -14,6 +14,16 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const SINCE_RE = /^\d{1,4}[smh]$/;
 
 module.exports = async function viewRoutes(app) {
+  app.get('/console', async () => ({
+    enabled: app.cockpitEnabled,
+    hosts: HOSTS.filter((host) => host.console).map((host) => {
+      const snapshot = app.snapshots.get(`cockpit:${host.id}`);
+      return { id: host.id, root: host.console.root,
+        ok: snapshot?.meta.ok ?? null, error: snapshot?.meta.error ?? null,
+        fetched_at: snapshot?.meta.fetched_at ?? null, stale: snapshot?.meta.stale ?? true,
+        pages: snapshot?.data?.pages ?? [] };
+    }),
+  }));
   // GET /api/metrics/:host?metric=cpu_pct&range=1h|24h|7d|30d|90d
   app.get('/metrics/:host', async (req, reply) => {
     const { host } = req.params;

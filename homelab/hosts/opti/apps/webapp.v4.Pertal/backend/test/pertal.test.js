@@ -150,7 +150,7 @@ test('actions: applicability, confirmation and job lifecycle', async () => {
   assert.ok(kinds.includes('host.updates-resume'), 'held host offers resume');
   assert.ok(!kinds.includes('host.updates-hold'));
 
-  const risky = await app.inject({ method: 'POST', url: '/api/actions/host.reboot', payload: { resource: 'opti' } });
+  const risky = await app.inject({ method: 'POST', url: '/api/actions/container.update', payload: { resource: 'opti:webapp' } });
   assert.strictEqual(risky.statusCode, 428);
 
   const bad = await app.inject({ method: 'POST', url: '/api/actions/container.restart', payload: { resource: 'opti' } });

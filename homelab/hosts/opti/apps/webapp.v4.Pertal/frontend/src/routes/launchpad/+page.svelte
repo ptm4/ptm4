@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { internalLink } from "$lib/console";
   import { onMount } from 'svelte';
   import Age from '$lib/components/Age.svelte';
   import { api, type LinkGroup } from '$lib/api';
@@ -36,7 +37,7 @@
   <h2 class="group faint">{g.group}</h2>
   <div class="grid">
     {#each g.links as l (l.url)}
-      <a class="panel tile" href={l.url} target="_blank" rel="noreferrer" class:down={l.reach && !l.reach.up}>
+      <a class="panel tile" href={l.url} target={internalLink(l.url) ? undefined : "_blank"} rel={internalLink(l.url) ? undefined : "noreferrer"} class:down={l.reach && !l.reach.up}>
         <img src="/icons/apps/{l.icon}" alt="" width="28" height="28" />
         <span class="label">{l.label}</span>
         {#if l.reach}

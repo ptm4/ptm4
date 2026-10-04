@@ -22,7 +22,9 @@ const { registerExtrasSources } = require('./sources/extras');
 const { registerStreamSources } = require('./sources/streams');
 const { registerDownloadSources } = require('./sources/downloads');
 const { registerSeerrSource } = require('./sources/seerr');
+const { registerReadarrSource } = require('./sources/readarr');
 const { registerAssetSources } = require('./sources/assets');
+const { registerCockpitSources } = require('./sources/cockpit');
 const { createHistory } = require('./lib/history');
 const { createAcks } = require('./lib/acks');
 
@@ -79,6 +81,7 @@ async function buildApp(opts = {}) {
     },
   });
   app.decorate('snapshots', snapshots);
+  app.decorate('cockpitEnabled', process.env.PERTAL_COCKPIT === '1');
   if (!opts.snapshots) {
     registerAgentSources(snapshots);
     registerProbeSources(snapshots);
@@ -87,7 +90,9 @@ async function buildApp(opts = {}) {
     registerStreamSources(snapshots);
     registerDownloadSources(snapshots);
     if (process.env.SEERR_API_KEY) registerSeerrSource(snapshots); // before setup there is nothing to poll
+    if (process.env.READARR_API_KEY) registerReadarrSource(snapshots);
     registerAssetSources(snapshots);
+    if (app.cockpitEnabled) registerCockpitSources(snapshots);
     if (!registerHldbSource(snapshots)) app.log.warn('HOMELAB_DB_URL not set — no collector findings');
   }
 
