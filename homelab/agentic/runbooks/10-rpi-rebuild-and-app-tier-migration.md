@@ -30,8 +30,22 @@ requires a judgment call; where a choice existed it has already been made and is
 - opti listening ports already taken (do not collide): 22, 80 (OMV nginx), 139/445 (smbd),
   3389 (xrdp), 5357/3702 (wsdd), 8787 (hl-arch-agent), 9090 (cockpit socket), 9100
   (homelab-db). Port 9099 (dispatcher) is currently **not** listening — see §0.1.
-- opti's `systemd-resolved` runs with the stub listener on 127.0.0.53:53 and uses
-  DNS=192.168.1.10 (drop-in `/etc/systemd/resolved.conf.d/10-homelab-lan-dns.conf`).
+- opti's `systemd-resolved` runs with the stub listener on 127.0.0.53:53. As verified
+  2026-10-08, the global drop-in `/etc/systemd/resolved.conf.d/10-homelab-lan-dns.conf`
+  contains `DNS=192.168.1.10 1.1.1.1`. NetworkManager's `ethernet-eno1` profile must
+  use **only `192.168.1.10`** for `ipv4.dns`, with `ipv4.dns-search=lan` and
+  `ipv4.ignore-auto-dns=yes`. The link's more-specific `lan` domain routes private
+  names to Pi-hole; the global pool remains available for public names. Including
+  Cloudflare in the link's DNS list caused all four doctor service checks to fail
+  with DNS NXDOMAIN while every service returned HTTP 200 by IP.
+  Apply DNS-only changes with `nmcli device reapply eno1`, allow the resolver state
+  to settle, then `resolvectl flush-caches` and verify both `resolvectl status eno1`
+  and the original hostname-based HTTP checks. Do not cycle the connection.
+  The 2026-10-08 repair backed up the profile under
+  `/var/backups/homelab-dns/20261008T215815Z/`; rollback of that change is
+  `nmcli connection modify ethernet-eno1 ipv4.dns '192.168.1.10,1.1.1.1'`, followed
+  by reapply and cache flush (this restores the faulty mixed resolver list).
+  The refreshed doctor report and digest preview must show `4/4 services up`.
 - Compose project name on both hosts is `compose` (directory `/srv/docker/compose`), so
   named volumes are `compose_<name>`. Keep that directory name on opti — the volume names
   in the rescue copy depend on it.

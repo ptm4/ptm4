@@ -2,7 +2,7 @@
 
 Three gateways run on opti in compose profile `cockpit`. Each Ubuntu 24.04 image pins
 `cockpit-ws=362-1~bpo24.04.1`, cross-connects its `--local-session=-` stream to an SSH
-forced command `sudo -n /usr/bin/cockpit-bridge` on one patched host, and serves a
+forced command `sudo -n /usr/local/libexec/pertal-cockpit-bridge` on one patched host, and serves a
 shared **root session without a login**. The existing authenticated host `:9090`
 listeners are retained. All trusted LAN/WireGuard users of Pertal get full root control.
 Cockpit operations bypass Pertal jobs, confirmations, maintenance holds and audit
@@ -37,7 +37,7 @@ python homelab/hosts/opti/apps/cockpit-gw/setup/setup.py --packages
 Requires existing trusted `opti`, `rpi`, `noblenumbat` SSH aliases for ptm, passwordless
 sudo, Docker on opti and the hosts' existing backport apt sources. Package patching
 precedes key authorization. Repeating setup reuses the dedicated key, verifies
-restricted entries, and skips correct package versions/existing network/firewall rules.
+restricted entries, migrates the exact legacy bridge entry, and skips correct package versions/existing network/firewall rules.
 Without `--packages`, it refuses authorization until the exact approved host page
 packages are installed. Only opti needs the gateway-subnet UFW SSH allowance: remote
 hosts see opti's masqueraded LAN address and already accept that trusted connection.
@@ -61,8 +61,40 @@ bash cockpit-gw/setup/spike.sh noblenumbat
 ```
 
 Before a new rollout, this loopback-only spike must pass: require shell
-and valid manifests, WebSocket `id -u=0`, logout restart, SSH-loss restart, and clean
+and valid manifests, WebSocket `id -u=0`, repeated session-bus failures followed by
+system/internal D-Bus calls and live metrics, logout restart, SSH-loss restart, and clean
 SIGTERM. A failed gate stops rollout; do not switch architecture.
+
+## Bridge compatibility repair (2026-10-04)
+
+Cockpit 337/362's vendored `Bus.default_user()` caches a Bus before connecting.
+These root SSH sessions have no user-session bus. The first request fails cleanly;
+a second reuses the empty cached pointer and raises `sd_bus_attach_event: Invalid
+argument` outside channel error handling. A page retry then produces `channel is
+already open`, terminating the shared bridge and causing nginx 502s during restart.
+This was reproduced through the loopback gateway; manifest/root-only checks missed it.
+
+`setup/bridge_compat.py` is installed as the root-owned, non-writable launcher
+`/usr/local/libexec/pertal-cockpit-bridge`. It resets a newly populated default-bus
+cache if creation/attachment raises `OSError`, then propagates the original error.
+Existing healthy shared buses are retained. It invokes the normal Cockpit bridge;
+package files, pinned versions, native authenticated `:9090`, access restrictions
+and gateway architecture stay intact. A missing root user bus can still emit a
+nonfatal browser warning. Noblenumbat's PCP metrics passed after gateway restart;
+no PCP package change was required.
+
+Run `python setup/setup.py` from this gateway directory to install/migrate an existing
+setup (without package upgrades), then run each isolated spike. Restart only the
+three `cockpit-<host>` containers to adopt the launcher. Setup checks the approved
+host package versions first; conflicting/duplicate dedicated key entries fail untouched.
+Authorization backups are saved before migration; newer launcher revisions are
+backed up under `/var/backups/pertal-cockpit/bridge-compat/`.
+
+To roll back only this repair, replace the exact dedicated key line's forced command
+with `sudo -n /usr/bin/cockpit-bridge`, keeping `restrict` and the same key. Preserve
+other keys, then restart only that gateway. The original crash can recur. The launcher
+can remain unused; removing it is optional once no key references it. Do not downgrade
+the security-fixed Cockpit packages for this repair.
 
 ## Deployment
 

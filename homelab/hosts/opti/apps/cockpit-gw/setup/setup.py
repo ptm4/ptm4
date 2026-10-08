@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Run from the trusted workstation: package patching precedes root authorization."""
 import argparse
+import base64
+import hashlib
 from pathlib import Path
 import re
 import shlex
@@ -20,6 +22,28 @@ def remote(host, script, *args):
 
 def run(host, file, *args):
     print(remote(host, (HERE/file).read_text(encoding='utf-8'), *args), end='', flush=True)
+
+def install_bridge_compat(host):
+    source = (HERE/'bridge_compat.py').read_bytes().replace(b'\r\n', b'\n')
+    encoded = base64.b64encode(source).decode()
+    digest = hashlib.sha256(source).hexdigest()
+    script = """set -euo pipefail
+stage=$(mktemp)
+trap 'rm -f "$stage"' EXIT
+printf '%s' "$1" | base64 -d > "$stage"
+printf '%s  %s\\n' "$2" "$stage" | sha256sum -c -
+sudo -n install -d -m 755 /usr/local/libexec
+if sudo -n test -f /usr/local/libexec/pertal-cockpit-bridge; then
+  if ! sudo -n cmp -s "$stage" /usr/local/libexec/pertal-cockpit-bridge; then
+    sudo -n install -d -m 700 /var/backups/pertal-cockpit/bridge-compat
+    sudo -n cp -p /usr/local/libexec/pertal-cockpit-bridge "/var/backups/pertal-cockpit/bridge-compat/$(date -u +%Y%m%dT%H%M%SZ)"
+  fi
+fi
+sudo -n install -o root -g root -m 755 "$stage" /usr/local/libexec/pertal-cockpit-bridge
+sudo -n /usr/local/libexec/pertal-cockpit-bridge --version
+"""
+    print(remote(host, script, encoded, digest), end='', flush=True)
+
 
 def setup(packages):
     if packages:
@@ -59,6 +83,7 @@ sudo -n cat /etc/pertal-cockpit/id_ed25519.pub
            "sudo -n tee /etc/pertal-cockpit/known_hosts >/dev/null <<'TRUSTED_HOST_KEYS'\n" + known +
            "\nTRUSTED_HOST_KEYS\nsudo -n chmod 600 /etc/pertal-cockpit/known_hosts\n")
     for host in HOSTS:
+        install_bridge_compat(host)
         run(host, 'authorize-key.sh', key)
     run('opti', 'network.sh')
     print('Patched hosts and restricted keys ready. Run the loopback spike before rollout.')

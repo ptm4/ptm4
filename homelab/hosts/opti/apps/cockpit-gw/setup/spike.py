@@ -70,6 +70,69 @@ for _ in range(30):
             break
 assert output.strip() == '0', output
 print('root identity verified: id -u = 0')
+
+def wait_event(channel, wanted):
+    for _ in range(80):
+        message = receive()
+        current, data = message.split('\n', 1)
+        if current == channel:
+            event = json.loads(data)
+            if wanted == 'reply' and event.get('id') == 'probe':
+                assert 'reply' in event, event
+                return event
+            if wanted == 'data': return event
+        elif not current:
+            event = json.loads(data)
+            if event.get('channel') == channel and event.get('command') in ('ready', 'close'):
+                if wanted == 'ready': return event
+                if event['command'] == 'close': raise AssertionError(event)
+    raise AssertionError('channel did not respond: ' + channel)
+
+def exercise_dbus():
+    # Root SSH bridges normally have no user-session bus. Repeated failures must
+    # close only the requesting channel and leave later system/internal calls alive.
+    for index in range(6):
+        channel = 'session-' + str(index)
+        control({'command':'open','channel':channel,'payload':'dbus-json3','bus':'session'})
+        event = wait_event(channel,'ready')
+        if event['command'] == 'ready': control({'command':'close','channel':channel})
+        else: assert event.get('problem') == 'protocol-error', event
+    for bus, name, path, interface, member, args in (
+        ('system','org.freedesktop.systemd1','/org/freedesktop/systemd1','org.freedesktop.DBus.Properties','Get',['org.freedesktop.systemd1.Manager','Version']),
+        ('internal',None,'/config','cockpit.Config','GetUInt',['WebService','IdleTimeout',15,120,0]),
+    ):
+        for index in range(6):
+            channel = bus + '-' + str(index)
+            options = {'command':'open','channel':channel,'payload':'dbus-json3','bus':bus}
+            if name: options['name'] = name
+            control(options)
+            event = wait_event(channel,'ready')
+            assert event['command'] == 'ready', event
+            send(channel + '\n' + json.dumps({'call':[path,interface,member,args],'id':'probe'}))
+            event = wait_event(channel,'reply')
+            assert event['reply'], event
+            control({'command':'close','channel':channel})
+    print('six repeated session-bus attempts, six system calls and six internal calls passed')
+    channel = 'metrics-probe'
+    control({'command':'open','channel':channel,'payload':'metrics1','source':'internal','interval':1000,'metrics':[{'name':'memory.used'}]})
+    assert wait_event(channel,'ready')['command'] == 'ready'
+    metadata = wait_event(channel,'data')
+    assert metadata['metrics'][0]['name'] == 'memory.used', metadata
+    assert isinstance(wait_event(channel,'data'), list)
+    control({'command':'close','channel':channel})
+    print('live internal metrics received')
+    if host == 'noblenumbat':
+        channel = 'pcp-probe'
+        control({'command':'open','channel':channel,'payload':'metrics1','source':'direct','interval':1000,'metrics':[{'name':'kernel.all.load'}]})
+        assert wait_event(channel,'ready')['command'] == 'ready'
+        metadata = wait_event(channel,'data')
+        assert metadata['metrics'][0]['name'] == 'kernel.all.load', metadata
+        assert isinstance(wait_event(channel,'data'), list)
+        control({'command':'close','channel':channel})
+        print('live PCP metrics received')
+
+if len(sys.argv) > 2 and sys.argv[2] == 'dbus': exercise_dbus()
+
 if len(sys.argv) > 2 and sys.argv[2] == 'logout':
     control({'command': 'logout', 'disconnect': True})
     print('logout sent')

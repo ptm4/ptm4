@@ -1,4 +1,5 @@
 import io
+import tempfile
 import json
 import subprocess
 import unittest
@@ -9,6 +10,96 @@ import health
 import supervisor
 sys.path.insert(0, str(Path(__file__).parent / 'setup'))
 import verify_bookworm
+import bridge_compat
+
+class BridgeCompatibilityTests(unittest.TestCase):
+    def bus_type(self, fail='connect'):
+        class Bus:
+            _default_system_instance = None
+            _default_user_instance = None
+            calls = 0
+            @staticmethod
+            def default_user(attach_event=True):
+                if Bus._default_user_instance is None:
+                    Bus._default_user_instance = Mock(value=None)
+                    Bus.calls += 1
+                    if fail == 'connect': raise OSError(123, 'No medium found')
+                    Bus._default_user_instance.value = 1234
+                    if fail == 'attach' and attach_event: raise OSError(22, 'attach failed')
+                return Bus._default_user_instance
+            @staticmethod
+            def default_system(attach_event=True):
+                if Bus._default_system_instance is None:
+                    Bus._default_system_instance = Mock(value=5678)
+                    Bus.calls += 1
+                return Bus._default_system_instance
+        return Bus
+
+    def test_failed_creation_never_poisons_cache_and_preserves_original_error(self):
+        for failure, code in (('connect', 123), ('attach', 22)):
+            bus = self.bus_type(failure)
+            bridge_compat.install_bus_retry(bus)
+            for _ in range(3):
+                with self.assertRaises(OSError) as error: bus.default_user()
+                self.assertEqual(error.exception.errno, code)
+                self.assertIsNone(bus._default_user_instance)
+            self.assertEqual(bus.calls, 3)
+            self.assertEqual(bus.default_system().value, 5678)
+
+    def test_healthy_bus_is_reused_and_options_are_preserved(self):
+        bus = self.bus_type('attach')
+        bridge_compat.install_bus_retry(bus)
+        instance = bus.default_user(attach_event=False)
+        self.assertIs(bus.default_user(), instance)
+        self.assertIs(bus.default_system(), bus.default_system())
+        self.assertEqual(bus.calls, 2)
+
+    def test_existing_bus_error_does_not_discard_a_shared_connection(self):
+        bus = self.bus_type()
+        instance = Mock(value=1234)
+        bus._default_user_instance = instance
+        bus.default_user = staticmethod(Mock(side_effect=OSError(16, 'busy')))
+        bridge_compat.install_bus_retry(bus)
+        with self.assertRaises(OSError): bus.default_user()
+        self.assertIs(bus._default_user_instance, instance)
+
+
+class AuthorizationTests(unittest.TestCase):
+    key = 'ssh-ed25519 ABC= pertal-cockpit'
+    old = 'command="sudo -n /usr/bin/cockpit-bridge",restrict ' + key
+    new = 'command="sudo -n /usr/local/libexec/pertal-cockpit-bridge",restrict ' + key
+
+    def authorize(self, file):
+        script = (Path(__file__).parent/'setup/authorize-key.sh').read_text()
+        script = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        return subprocess.run([sys.executable, '-c', script, str(file), self.key], capture_output=True)
+
+    def test_exact_legacy_entry_migrates_and_unrelated_keys_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory)/'authorized_keys'
+            other = b'# untouched\r\nssh-ed25519 OTHER ordinary\r\n'
+            file.write_bytes(other + self.old.encode() + b'\n')
+            self.assertEqual(self.authorize(file).returncode, 0)
+            self.assertEqual(file.read_bytes(), other + self.new.encode() + b'\n')
+            self.assertEqual(self.authorize(file).returncode, 0)
+            self.assertEqual(len(list(Path(directory).glob('*.before-*'))), 1)
+
+    def test_conflicting_or_duplicate_entries_fail_without_changes(self):
+        for body in (self.old+'\n'+self.old+'\n', self.key+'\n'):
+            with tempfile.TemporaryDirectory() as directory:
+                file = Path(directory)/'authorized_keys'
+                file.write_bytes(body.encode())
+                self.assertNotEqual(self.authorize(file).returncode, 0)
+                self.assertEqual(file.read_bytes(), body.encode())
+                self.assertFalse(list(Path(directory).glob('*.before-*')))
+
+    def test_first_authorization_retains_existing_keys(self):
+        with tempfile.TemporaryDirectory() as directory:
+            file = Path(directory)/'authorized_keys'
+            file.write_bytes(b'ssh-ed25519 OTHER ordinary')
+            self.assertEqual(self.authorize(file).returncode, 0)
+            self.assertEqual(file.read_bytes(), b'ssh-ed25519 OTHER ordinary\n'+self.new.encode()+b'\n')
+
 
 class PackageTests(unittest.TestCase):
     def test_shipped_bundle_requires_fixed_quoting_and_rejects_old_expression(self):

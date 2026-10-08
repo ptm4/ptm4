@@ -182,3 +182,13 @@ Peter retains commit/push and acceptance. Source/local checks and host setup are
 separate from post-push production deployment and live acceptance. After push verify
 all three consoles/Terminal root, desktop/375px, themes/recovery/worker, browser errors,
 reversible test-service operation and all security gates.
+
+Production disconnect repair (2026-10-04): reproduced Cockpit's failed user-bus cache
+causing `sd_bus_attach_event: Invalid argument`, bridge exit and 502s. Installed a
+root-owned compatibility launcher on all three hosts and migrated only the dedicated
+restricted key. Security-fixed package files/versions remain intact. Strengthened the
+loopback gate with repeated session-bus failures, system/internal D-Bus calls and live
+metrics; logout/SSH-loss/SIGTERM recovery passed on all hosts. Source regression tests
+cover cache rollback/reuse and exact key migration/conflicts/idempotence. Host repair
+is active; repository changes still await Peter's commit. Live browser verification
+and Peter's acceptance remain separate evidence. See the gateway runbook.

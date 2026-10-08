@@ -173,5 +173,7 @@ Never relax LAN/WireGuard access to accommodate translated addresses or trust su
 forwarding headers. Preserve exact Origin/cross-site guards and port-bearing Host.
 Sync gateway context, validate both profiles, syntax-test a staged nginx candidate,
 then publish/recreate. Build/start gateways after Pertal; an offline host is not a CI
-failure, but bad configuration/build/start is. Stop on a failed loopback root/recovery
-spike. Read `homelab/hosts/opti/apps/cockpit-gw/README.md` before changing this boundary.
+failure, but bad configuration/build/start is. Stop on a failed loopback root/D-Bus/metrics/recovery
+spike. The forced root bridge uses the root-owned compatibility launcher in
+`cockpit-gw/setup/bridge_compat.py`; keep failed default-bus creation from poisoning
+the shared cache. Package files must remain security-fixed; see its runbook for rollback. Read `homelab/hosts/opti/apps/cockpit-gw/README.md` before changing this boundary.

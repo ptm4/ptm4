@@ -12,7 +12,9 @@ for i in $(seq 1 15); do
   if sudo -n docker exec pertal-cockpit-spike python3 /opt/cockpit-gw/health.py; then break; fi
   sleep 2
 done
-python3 "$here/spike.py" "$host"
+python3 "$here/spike.py" "$host" dbus
+
+test "$(sudo -n docker inspect -f '{{.RestartCount}}' pertal-cockpit-spike)" = 0
 
 before=$(sudo -n docker inspect -f '{{.RestartCount}}' pertal-cockpit-spike)
 python3 "$here/spike.py" "$host" logout | tail -5

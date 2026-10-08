@@ -57,3 +57,8 @@ host cautions. Maintenance holds, historical metrics and Docker operations remai
 The host authenticated `:9090` endpoints remain fallback links. Service-worker handling
 never intercepts `/cp-` paths; Console mirrors validated iframe paths with SvelteKit
 navigation APIs and synchronizes Cockpit's theme through `shell:style`.
+
+The restricted SSH command uses `/usr/local/libexec/pertal-cockpit-bridge`, a root-owned
+launcher that fixes failed default-bus caching in Cockpit 337/362 without changing
+package files. Rollout checks include repeated missing session-bus requests followed
+by working system/internal D-Bus calls, live metrics and gateway recovery.
