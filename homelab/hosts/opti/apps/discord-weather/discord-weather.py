@@ -301,17 +301,18 @@ def build_payload(cfg):
     if first_fc:
         desc += (f"\nSunrise {first_fc['sunrise']} · Sunset {first_fc['sunset']}"
                  " — daylight is issued once, use it")
+    persona = (witty_messages.EMBED if witty_messages else {}) or {}
     payload = {
         # The whole post is in-character: Mr. Murf files the morning briefing.
-        "username": "Mr. Murf",
+        "username": persona.get("username") or "Mr. Murf",
         # explicit allow-list so @everyone/@here in the message actually ping
         "allowed_mentions": {"parse": ["everyone", "roles", "users"]},
         "embeds": [{
-            "title": "🌤️ Scoutmaster's Morning Briefing",
+            "title": persona.get("title") or "🌤️ Scoutmaster's Morning Briefing",
             "description": desc,
             "color": EMBED_COLOR,
             "fields": spaced,
-            "footer": {"text": "Forecast: Open-Meteo. Standards: Mr. Murf."},
+            "footer": {"text": persona.get("footer") or "Forecast: Open-Meteo. Standards: Mr. Murf."},
         }],
     }
     witty_entry = None
@@ -326,13 +327,19 @@ def build_payload(cfg):
             log(f"witty selection failed: {e}")
     content = cfg.get("message", "")
     if witty_entry:
-        composed = f"{content} {witty_entry['rendered']}".strip()
+        composed = f"{content} {witty_messages.apply_pings(witty_entry['rendered'])}".strip()
         if len(composed) <= 2000:
             content = composed
         else:
             witty_entry = None  # too long — drop the joke, keep the report
     if content:
         payload["content"] = content
+    # One self-name per post: sender, title and footer reuse the joke's {me}.
+    me = witty_messages.self_name(witty_entry) if witty_messages else "Mr. Murf"
+    embed = payload["embeds"][0]
+    payload["username"] = payload["username"].replace("{me}", me)
+    embed["title"] = embed["title"].replace("{me}", me)
+    embed["footer"]["text"] = embed["footer"]["text"].replace("{me}", me)
     if context:
         witty_entry = dict(witty_entry or {}, weather_snapshot=context["snapshot"])
     return payload, failed, witty_entry

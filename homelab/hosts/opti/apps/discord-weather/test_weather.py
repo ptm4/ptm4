@@ -196,6 +196,45 @@ class WeatherTests(unittest.TestCase):
                 self.assertLess(len(rendered), 400)
                 self.assertNotIn("{", rendered)
 
+    def persona(self, **extra):
+        self.addCleanup(witty.use_persona, None)
+        data = {"templates": [{"id": "p_tom", "text": "{name}, on at 10 means midnight.", "who": "@tom"},
+                              {"id": "p_any", "text": "Query: {name}, explain yourself."},
+                              {"id": "p_bit", "text": "Statement: {me} endures."}],
+                "event_lines": {"fire": ["{subject} is cooking at {feels}°."],
+                                "wind": ["{me} reports {wind} mph."]},
+                "word_banks": {"me": ["WB"]},
+                "pings": {"@tom": "111", "Starks": "222"},
+                "embed": {"title": "MURF", "username": "{me}"}, **extra}
+        return witty.use_persona(data)
+
+    def test_persona_who_lines_pings_and_events(self):
+        self.assertIsNone(self.persona())
+        pairs = witty._all_pairs(["@tom", "@matt"])
+        self.assertEqual([p[1] for p in pairs if p[0]["id"] == "p_tom"], ["@tom"])
+        self.assertEqual(witty._all_pairs(["@matt"])[0][0]["id"], "p_any")  # who-line skipped
+        self.assertEqual(witty.apply_pings("@tom and Starks, not @tomboe"), "<@111> and <@222>, not @tomboe")
+        ctx = self.pool.weather([(NC, forecast(105))], START)
+        self.assertEqual(self.pool.peek(NAMES, event=ctx["event"])["rendered"], "Starks is cooking at 105°.")
+        self.assertEqual(witty._demo_render(witty.TEMPLATES_BY_ID["p_bit"], NAMES), "Statement: WB endures.")
+        wind = weather.describe([], [(NY, forecast(wind=35))], START)["event"]
+        self.assertEqual(self.pool.peek(NAMES, event=wind)["rendered"], "WB reports 35 mph.")
+        with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", side_effect=[forecast(), forecast(105)]):
+            payload, _, _ = bot.build_payload(self.config())
+        self.assertIn("<@222> is cooking", payload["content"])
+        self.assertEqual(payload["embeds"][0]["title"], "MURF")
+        self.assertEqual(payload["username"], "WB")
+
+    def test_bad_persona_keeps_defaults(self):
+        for bad in [{"pings": {"@tom": "not-an-id"}}, {"event_lines": {"fire": ["{nope}"]}},
+                    {"templates": [{"id": "x", "text": "no name here", "who": "@tom"}]}]:
+            with self.subTest(bad=bad):
+                self.assertIn("persona rejected", witty.use_persona(bad))
+                self.assertTrue(witty.TEMPLATES[0]["id"].startswith("v5_"))
+                self.assertEqual(witty.PINGS, {})
+                self.assertEqual(witty.WORD_BANKS, {})
+        witty.use_persona(None)
+
     def config(self, **extra):
         return {**bot.DEFAULT_CONFIG, "locations": [NY, NC], "witty_names": NAMES,
                 "webhook_url": "https://discord.com/api/webhooks/offline-test", **extra}

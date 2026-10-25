@@ -89,6 +89,21 @@ a retry/preview keeps its selection across restarts. Updated facts can change
 the message so it stays accurate. A broken witty module still allows the plain
 weather report; failed state writes log a warning and fall back to memory.
 
+### Private persona (`/data/persona.json`)
+
+The repo is public, so lines about real people live only on the volume. If
+`/data/persona.json` exists it replaces the catalogue above and can override
+any `EVENT_LINES` kind, the embed `username`/`title`/`footer`, and map names to
+Discord user ids (`"pings": {"@tomboe": "2104…"}`) so they render as real
+`<@id>` mentions. Templates may set `"who": "@name"` to be drawn only for that
+roster name. A `"word_banks": {"me": [...]}` list gives the bot rotating
+self-names: `{me}` in lines, event lines and the embed fields resolves to **one**
+name per post, so sender, title, footer and joke never disagree. An invalid
+file logs a warning and the defaults stay in use.
+Editing it starts a fresh cycle (premise history is kept). Taste-test:
+`python3 witty_messages.py --persona persona.json 20`. Install with
+`docker cp persona.json discord-weather:/data/` and restart the container.
+
 Examples (illustrative forecasts):
 
 - Ordinary: “What game could this group cooperate in for twenty minutes without appointing a defendant?”

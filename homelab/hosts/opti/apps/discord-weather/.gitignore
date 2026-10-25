@@ -1,0 +1,4 @@
+# Private persona material: real names, nicknames, Discord user ids and group
+# profiles. The repo is public; the live copy is /data/persona.json on opti.
+private/
+persona*.json

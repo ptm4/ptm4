@@ -8,10 +8,12 @@ keep state on the existing /data volume; only accepted posts advance history.
 
 Taste-test: python witty_messages.py --all
 """
+import hashlib
 import itertools
 import json
 import os
 import random
+import re
 import string
 import threading
 import time
@@ -388,7 +390,11 @@ def _prepare():
     known_banks = set(WORD_BANKS)
     for tpl in TEMPLATES:
         tpl.setdefault("tag", "any")
-        tpl["days"] = frozenset(d.strip() for d in tpl.get("days", "").split(",") if d.strip())
+        tpl.setdefault("who", None)   # persona lines about one specific person
+        days = tpl.get("days", "")
+        if isinstance(days, str):
+            days = days.split(",")
+        tpl["days"] = frozenset(d.strip() for d in days if d.strip())
         slots = _slots(tpl["text"])
         tpl["banks"] = sorted(slots & known_banks)
         tpl["weather_slots"] = frozenset(slots & WEATHER_SLOTS)
@@ -414,6 +420,8 @@ def _selfcheck():
             raise ValueError(f"{tid}: unresolvable slots {sorted(unknown)}")
         if tpl["two_names"] and not tpl["uses_name"]:
             raise ValueError(f"{tid}: uses name2 without name")
+        if tpl["who"] is not None and not (isinstance(tpl["who"], str) and tpl["uses_name"]):
+            raise ValueError(f"{tid}: 'who' must be a name and the text must use {{name}}")
     for bank, words in WORD_BANKS.items():
         if not words:
             raise ValueError(f"word bank {bank!r} is empty")
@@ -422,6 +430,96 @@ def _selfcheck():
 _prepare()
 _selfcheck()
 TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
+
+
+# ── optional private persona ──────────────────────────────────────────────────
+# The catalogue above is the public default. A persona file on the data volume
+# can replace it with lines about real people (nicknames, in-jokes, Discord
+# pings) that don't belong in a public repo:
+#   {"templates": [{"id", "text", "tag"?, "days"?, "who"?}, ...],
+#    "event_lines": {"fire_streak": ["..."], ...},   # per-kind override
+#    "word_banks": {"me": ["Big Weather", ...]},      # {me} in any line picks one
+#    "pings": {"@name": "<discord user id>"},         # rendered as <@id>
+#    "embed": {"username"?, "title"?, "footer"?}}
+# An invalid file logs a warning and leaves the defaults in place.
+PERSONA_PATH = os.environ.get("WITTY_PERSONA_PATH", "/data/persona.json")
+PINGS = {}
+EMBED = {}
+_DEFAULTS = (TEMPLATES, dict(weather_context.EVENT_LINES), VERSION)
+_EVENT_FACTS = dict(subject="S", location="L", badge="🔥", feels="100", days=3, wind=30,
+                    gap="1", change=20, direction="up", warm="W", cool="C", spread=25)
+
+
+def use_persona(data):
+    """Activate a persona dict (None restores the defaults). Returns an error
+    string and keeps the defaults if anything in it fails validation."""
+    global TEMPLATES, TEMPLATES_BY_ID, VERSION, PINGS, EMBED, WORD_BANKS
+    templates, events, version = _DEFAULTS
+    TEMPLATES, VERSION, PINGS, EMBED, WORD_BANKS = templates, version, {}, {}, {}
+    weather_context.EVENT_LINES.clear()
+    weather_context.EVENT_LINES.update(events)
+    error = None
+    if data:
+        try:
+            pings = {str(k): str(v) for k, v in (data.get("pings") or {}).items()}
+            if not all(v.isdigit() for v in pings.values()):
+                raise ValueError("pings must map names to numeric Discord user ids")
+            banks = {str(k): [str(w) for w in v] for k, v in (data.get("word_banks") or {}).items()}
+            overrides = data.get("event_lines") or {}
+            for kind, lines in overrides.items():
+                if kind not in events or not lines:
+                    raise ValueError(f"event_lines: unknown or empty kind {kind!r}")
+                for line in lines:
+                    line.format(**_EVENT_FACTS, **{b: "x" for b in banks})
+            WORD_BANKS = banks
+            TEMPLATES = [dict(t) for t in data.get("templates") or templates]
+            _prepare()
+            _selfcheck()
+            weather_context.EVENT_LINES.update(overrides)
+            PINGS, EMBED = pings, dict(data.get("embed") or {})
+            digest = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:8]
+            VERSION = f"{version}+{digest}"   # persona edit = fresh cycle, history kept
+        except Exception as exc:
+            error = f"persona rejected, using defaults: {exc}"
+            TEMPLATES, WORD_BANKS = templates, {}
+            weather_context.EVENT_LINES.update(events)
+    TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
+    return error
+
+
+def load_persona(path=PERSONA_PATH):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as exc:
+        return f"persona unreadable, using defaults: {exc}"
+    return use_persona(data)
+
+
+def self_name(entry=None):
+    """The name the bot goes by in this post: the joke's {me} fill if it drew
+    one, else one keyed to the entry id (stable across retries), so the whole
+    message uses one name."""
+    entry = entry or {}
+    bank = WORD_BANKS.get("me") or ["Mr. Murf"]
+    return (entry.get("fills") or {}).get("me") or bank[int(entry.get("id") or 0) % len(bank)]
+
+
+def apply_pings(text):
+    """Swap persona names for real Discord mentions (<@id>), longest first so
+    '@matt' can't eat part of '@mattyb'."""
+    for name in sorted(PINGS, key=len, reverse=True):
+        text = re.sub(rf"(?<![\w@<]){re.escape(name)}(?!\w)", f"<@{PINGS[name]}>", text)
+    return text
+
+
+_persona_error = load_persona()
+if _persona_error:
+    print(f"WARNING: {_persona_error}", flush=True)
+elif VERSION != _DEFAULTS[2]:
+    print(f"persona loaded: {len(TEMPLATES)} lines, {len(PINGS)} pings", flush=True)
 
 
 # ── rendering helpers ─────────────────────────────────────────────────────────
@@ -740,8 +838,9 @@ class WittyPool:
         oldest = min(last_used.get(tid, -1) for tid, _ in candidates)
         tid, line = random.choice([(tid, line) for tid, line in candidates
                                    if last_used.get(tid, -1) == oldest])
-        entry = {"id": state["next_id"], "t": tid, "name": "", "event": True,
-                 "signature": signature, "rendered": line.format(**event["facts"])}
+        fills = {b: random.choice(words) for b, words in WORD_BANKS.items()}
+        entry = {"id": state["next_id"], "t": tid, "name": "", "event": True, "fills": fills,
+                 "signature": signature, "rendered": line.format(**fills, **event["facts"])}
         state["next_id"] += 1
         state["pending_event"] = entry
         self._save(state)
@@ -840,7 +939,14 @@ def _all_pairs(names):
     """Every (template, name, name2) combination available for these names."""
     pairs = []
     for tpl in TEMPLATES:
-        if tpl["two_names"]:
+        if tpl["who"] is not None:
+            # about one person: drawn only while they're on the roster
+            who = next((n for n in names if n.lower() == tpl["who"].lower()), None)
+            if who and tpl["two_names"]:
+                pairs.extend((tpl, who, b) for b in names if b != who)
+            elif who:
+                pairs.append((tpl, who, None))
+        elif tpl["two_names"]:
             if len(names) >= 2:
                 pairs.extend((tpl, a, b) for a, b in itertools.permutations(names, 2))
         elif tpl["uses_name"]:
@@ -870,7 +976,7 @@ _DEMO_WEATHER = {
 
 
 def _demo_entry(tpl, names):
-    name = random.choice(names)
+    name = tpl["who"] or random.choice(names)
     name2 = random.choice([n for n in names if n != name]) if tpl["two_names"] else None
     return {"id": 0, "t": tpl["id"], "name": name if tpl["uses_name"] else "",
             "name2": name2,
@@ -909,6 +1015,12 @@ def _fill_space(tpl):
 def _main(argv):
     import sys
     names = _DEMO_NAMES
+    if "--persona" in argv:   # taste-test a persona file: --persona path.json
+        err = load_persona(argv[argv.index("--persona") + 1])
+        if err:
+            print(err, file=sys.stderr)
+            return 1
+        names = list(PINGS) or names
     if "--all" in argv:
         for tpl in TEMPLATES:
             print(f"[{tpl['id']} {tpl['tag']}{'/' + ','.join(sorted(tpl['days'])) if tpl['days'] else ''}] "
