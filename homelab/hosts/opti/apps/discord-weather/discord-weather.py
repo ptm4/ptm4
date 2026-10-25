@@ -39,6 +39,10 @@ LAST_POST_PATH = os.path.join(DATA_DIR, "last_post")
 WITTY_STATE_PATH = os.path.join(DATA_DIR, "witty_pool.json")
 API_PORT = 8080
 
+DISCORD_API = "https://discord.com/api/v10"
+# Weather-Bot's token: posts the report to channel_id and answers pings. Without
+# it (or without a channel) the report falls back to webhook_url.
+BOT_TOKEN = os.environ.get("DISCORD_BOT_TOKEN", "")
 OM_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 OM_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 EMBED_COLOR = 0x556B2F  # olive drab — scoutmaster khaki, not weather-app blue
@@ -54,7 +58,8 @@ DEFAULT_CONFIG = {
         "Anthony Johnson", "Joey Oddo", "Stanley Mcombe", "Nino",
         "Ryan Ardito", "Matt Kaprowski",
     ],
-    "webhook_url": "",  # seeded from DISCORD_WEBHOOK_URL env on first boot
+    "channel_id": "",   # where Weather-Bot posts; learned from the webhook if blank
+    "webhook_url": "",  # legacy fallback, seeded from DISCORD_WEBHOOK_URL env
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
         {"name": "Kew Gardens, NY", "lat": 40.7143, "lon": -73.8310},
@@ -92,7 +97,7 @@ def log(msg):
 _lock = threading.Lock()
 _post_lock = threading.Lock()  # serialize manual and scheduled build/post/commit
 _wake = threading.Event()   # poked on config change so the scheduler recomputes
-_status = {"last_post_at": None, "last_status": None, "next_post_at": None}
+_status = {"last_post_at": None, "last_status": None, "next_post_at": None, "gateway": "off"}
 _witty = witty_messages.WittyPool(WITTY_STATE_PATH) if witty_messages else None
 
 
@@ -174,7 +179,24 @@ def validate_config(cfg):
     url = cfg.get("webhook_url", "")
     if url and not url.startswith("https://discord.com/api/webhooks/"):
         return "webhook_url must start with https://discord.com/api/webhooks/"
+    if not re.fullmatch(r"\d{0,20}", str(cfg.get("channel_id", ""))):
+        return "channel_id must be a numeric Discord channel id"
     return None
+
+
+def adopt_webhook_channel(cfg):
+    """Migration: a webhook knows its channel, so a config that only has a
+    webhook_url gets channel_id filled in once and Weather-Bot takes over."""
+    if cfg.get("channel_id") or not cfg.get("webhook_url") or not BOT_TOKEN:
+        return
+    try:
+        _, info = http_json(cfg["webhook_url"], tries=1)
+        cfg["channel_id"] = str(info["channel_id"])
+        with _lock:
+            save_config(cfg)
+        log(f"adopted webhook channel {cfg['channel_id']} for Weather-Bot posts")
+    except Exception as e:
+        log(f"could not read the webhook's channel: {e}")
 
 
 def mask_webhook(url):
@@ -182,13 +204,13 @@ def mask_webhook(url):
 
 
 # ── HTTP + weather ────────────────────────────────────────────────────────────
-def http_json(url, body=None, tries=3):
+def http_json(url, body=None, tries=3, headers=None):
     for attempt in range(tries):
         req = urllib.request.Request(
             url,
             data=json.dumps(body).encode() if body is not None else None,
             headers={"Content-Type": "application/json",
-                     "User-Agent": "discord-weather (rpi homelab)"})
+                     "User-Agent": "DiscordBot (homelab discord-weather, 2)", **(headers or {})})
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
                 raw = r.read()
@@ -351,6 +373,25 @@ def post_webhook(url, payload):
         raise RuntimeError(f"webhook returned HTTP {status}")
 
 
+def post_channel(channel_id, payload):
+    # a bot can't rename itself per message, so the webhook-only key goes
+    body = {k: v for k, v in payload.items() if k != "username"}
+    status, _ = http_json(f"{DISCORD_API}/channels/{channel_id}/messages", body=body,
+                          headers={"Authorization": f"Bot {BOT_TOKEN}"})
+    if not 200 <= status < 300:
+        raise RuntimeError(f"Discord returned HTTP {status}")
+
+
+def deliver(cfg, payload):
+    """Post as Weather-Bot when it can; the webhook is the fallback."""
+    if BOT_TOKEN and cfg.get("channel_id"):
+        post_channel(cfg["channel_id"], payload)
+    elif cfg.get("webhook_url"):
+        post_webhook(cfg["webhook_url"], payload)
+    else:
+        raise RuntimeError("set channel_id + DISCORD_BOT_TOKEN (or a webhook_url)")
+
+
 def post_report(cfg):
     """Build and post the report. Returns (ok, detail)."""
     with _post_lock:
@@ -359,11 +400,8 @@ def post_report(cfg):
 
 def _post_report(cfg):
     payload, failed, witty_entry = build_payload(cfg)
-    url = cfg.get("webhook_url")
-    if not url:
-        return False, "DISCORD_WEBHOOK_URL / webhook_url not set"
     try:
-        post_webhook(url, payload)
+        deliver(cfg, payload)
     except RuntimeError as e:
         return False, str(e)
     if witty_entry and _witty:
@@ -459,6 +497,130 @@ def scheduler_loop():
             scheduled_post(load_config(), nxt.date().isoformat())
 
 
+# ── gateway: answer pings ─────────────────────────────────────────────────────
+REPLY_COOLDOWN = 20   # seconds per person, so a ping storm can't hammer Open-Meteo
+FORECAST_TTL = 600
+_forecasts = {}       # (lat, lon) -> (fetched monotonic, forecast)
+
+
+def cached_forecast(loc, tz):
+    key = (loc["lat"], loc["lon"])
+    hit = _forecasts.get(key)
+    if hit and time.monotonic() - hit[0] < FORECAST_TTL:
+        return hit[1]
+    fc = fetch_forecast(loc, tz)
+    _forecasts[key] = (time.monotonic(), fc)
+    return fc
+
+
+def town_of(loc):
+    return loc["name"].split(",")[0].strip()
+
+
+def match_location(cfg, text, user_id):
+    """A town named in the message wins, then the asker's home town (persona)."""
+    for loc in cfg["locations"]:
+        subject = loc.get("witty_subject") or (
+            "Starks" if loc["name"].strip().casefold() == "greensboro, nc" else "")
+        for word in filter(None, (town_of(loc), subject)):
+            if re.search(rf"\b{re.escape(word.lower())}\b", text):
+                return loc
+    home = witty_messages.HOMES.get(str(user_id), "") if witty_messages else ""
+    return next((l for l in cfg["locations"] if l["name"].casefold() == home.casefold()), None)
+
+
+def build_reply(cfg, user_id, text):
+    """(content, embed-or-None) answering a ping. Peeks only — never consumes
+    the morning joke or advances streaks."""
+    text = re.sub(r"<[@#][!&]?\d+>", " ", text).lower()
+    asker, tz = f"<@{user_id}>", cfg["timezone"]
+    reply = witty_messages.reply_line if witty_messages else None
+    if re.search(r"\b(full|report|briefing|card|everything)\b", text):
+        payload, _, receipt = build_payload(cfg)
+        me = witty_messages.self_name(receipt) if witty_messages else "Weather Bot"
+        line = reply("full", asker, me=me) if reply else f"{asker}, the full briefing:"
+        return line, payload["embeds"][0]
+    loc = match_location(cfg, text, user_id)
+    if loc:
+        fc = cached_forecast(loc, tz)
+        vals = dict(witty_messages.weather_values(fc), town=town_of(loc)) if witty_messages else {}
+        if reply:
+            return reply("town", asker, **vals), None
+        return f"{asker}: {town_of(loc)} {fc['hi']:.0f}°/{fc['lo']:.0f}°", None
+    rows = []
+    for l in cfg["locations"]:
+        try:
+            fc = cached_forecast(l, tz)
+            rows.append(f"{fc['emoji']} **{town_of(l)}** {fc['hi']:.0f}°/{fc['lo']:.0f}° · "
+                        f"feels {fc['feels']:.0f}° · rain {fc['rain']:.0f}%")
+        except Exception as e:
+            log(f"reply forecast failed for {l['name']}: {e}")
+    summary = "\n".join(rows) or "(no forecast data right now)"
+    return (reply("all", asker, summary=summary) if reply else f"{asker}\n{summary}"), None
+
+
+def run_gateway():
+    """Keep Weather-Bot logged in and answer mentions/replies. Optional: no token
+    or no discord.py just means no replies; the daily report is unaffected."""
+    if not BOT_TOKEN:
+        log("DISCORD_BOT_TOKEN not set — not answering pings")
+        return
+    try:
+        import asyncio
+        import discord
+    except ImportError as e:
+        log(f"discord.py unavailable ({e}) — not answering pings")
+        return
+
+    intents = discord.Intents.default()
+    intents.message_content = True
+    client = discord.Client(intents=intents, allowed_mentions=discord.AllowedMentions(
+        everyone=False, roles=False, users=True, replied_user=True))
+    last_reply = {}
+
+    @client.event
+    async def on_ready():
+        with _lock:
+            _status["gateway"] = f"connected as {client.user}"
+        log(f"gateway: connected as {client.user}")
+
+    @client.event
+    async def on_message(msg):
+        if msg.author.bot or client.user is None:
+            return
+        ref = msg.reference.resolved if msg.reference else None
+        if not (client.user in msg.mentions
+                or (isinstance(ref, discord.Message) and ref.author.id == client.user.id)):
+            return
+        now = time.monotonic()
+        if now - last_reply.get(msg.author.id, -REPLY_COOLDOWN) < REPLY_COOLDOWN:
+            return
+        last_reply[msg.author.id] = now
+        try:
+            async with msg.channel.typing():
+                content, embed = await asyncio.get_running_loop().run_in_executor(
+                    None, build_reply, load_config(), msg.author.id, msg.content)
+            await msg.reply(content, embed=discord.Embed.from_dict(embed) if embed else None)
+            log(f"gateway: answered {msg.author} in #{msg.channel}")
+        except Exception as e:
+            log(f"gateway: reply failed: {e}")
+
+    while True:
+        try:
+            client.run(BOT_TOKEN, log_handler=None)
+            return
+        except discord.LoginFailure as e:
+            log(f"gateway: login rejected ({e}) — check DISCORD_BOT_TOKEN")
+            with _lock:
+                _status["gateway"] = "login rejected"
+            return
+        except Exception as e:
+            with _lock:
+                _status["gateway"] = f"disconnected: {e}"
+            log(f"gateway: crashed ({e}); reconnecting in 60s")
+            time.sleep(60)
+
+
 # ── control API ───────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):  # route access logs through our logger
@@ -532,7 +694,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "invalid JSON"})
         current = load_config()
         merged = {**current, **{k: v for k, v in incoming.items()
-                                if k in ("enabled", "post_time", "timezone", "locations",
+                                if k in ("enabled", "post_time", "timezone", "locations", "channel_id",
                                          "webhook_url", "message", "witty_enabled", "witty_names")}}
         # masked/blank webhook in the payload means "keep the current one"
         wh = incoming.get("webhook_url", "")
@@ -597,11 +759,12 @@ def main(argv):
         print(detail)
         return 0 if ok else 1
 
-    # daemon: control API thread + scheduler in main thread
+    # daemon: control API + gateway threads, scheduler in main thread
     server = ThreadingHTTPServer(("0.0.0.0", API_PORT), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log(f"control API listening on :{API_PORT}")
-    load_config()  # seed on first boot
+    adopt_webhook_channel(load_config())  # seeds on first boot, then migrates
+    threading.Thread(target=run_gateway, daemon=True).start()
     scheduler_loop()
     return 0
 

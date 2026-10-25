@@ -1,15 +1,23 @@
 # discord-weather
 
-Posts a daily weather report (Open-Meteo, no API key) to a Discord channel
-webhook as an embed, and exposes a control API used by the rpi webapp's
-**Weather Channel Bot Settings** tab (`https://rpi:8443/#weather`) — locations,
-post time, enable/disable, test send and preview are all managed from there,
-not by editing files.
+Logs in as the **Weather-Bot** Discord account. It posts a daily weather report
+(Open-Meteo, no API key) to `channel_id` as an embed, and **answers pings**:
+mention it or reply to it and it replies with that town's forecast (a town named
+in the message, else the asker's home town from the persona, else every town).
+"full report" gets the whole embed. Replies only peek, so they never consume the
+morning joke or advance streaks. There is a 20 s cooldown per person.
 
-Runs as the `discord-weather` service in `../docker-compose.yml`. The webhook
-URL comes from `DISCORD_WEBHOOK_URL` in the stack's gitignored `.env` (seed
-only — after first boot the volume-persisted config is authoritative and the
-URL can be rotated from the webapp tab).
+The control API is used by the webapp's Bots → Weather tab (`webapp.lan:8443`),
+where locations, post time, channel, enable/disable, test send and preview are
+managed.
+
+Runs as the `discord-weather` service in `../../docker-compose.apps.yml`.
+`DISCORD_BOT_TOKEN` comes from the stack's gitignored `.env`. Without the token
+(or without discord.py) there are no replies, and the report falls back to the
+legacy `webhook_url`. A config that only has a webhook adopts the webhook's
+channel as `channel_id` on start. Bot permissions needed in the channel: View
+Channel, Send Messages, Embed Links, Read Message History, and Mention Everyone
+for the `@everyone` message.
 
 ## Config
 
@@ -17,7 +25,7 @@ URL can be rotated from the webapp tab).
 
 ```json
 {"enabled": true, "post_time": "07:00", "timezone": "America/New_York",
- "webhook_url": "https://discord.com/api/webhooks/…",
+ "channel_id": "1527…", "webhook_url": "",
  "locations": [{"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178}, …]}
 ```
 

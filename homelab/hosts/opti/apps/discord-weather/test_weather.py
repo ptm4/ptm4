@@ -225,6 +225,33 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(payload["embeds"][0]["title"], "MURF")
         self.assertEqual(payload["username"], "WB")
 
+    def test_posts_as_bot_when_token_and_channel_else_webhook(self):
+        with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", return_value=forecast()), \
+                patch.object(bot, "post_channel") as chan, patch.object(bot, "post_webhook") as hook:
+            with patch.object(bot, "BOT_TOKEN", "t"):
+                self.assertTrue(bot.post_report(self.config(channel_id="42"))[0])
+            self.assertEqual(chan.call_args.args[0], "42")
+            hook.assert_not_called()
+            self.assertTrue(bot.post_report(self.config(channel_id="42"))[0])  # no token
+            hook.assert_called_once()
+            ok, detail = bot.post_report(self.config(webhook_url=""))
+            self.assertFalse(ok)
+        self.assertIn("channel_id", bot.validate_config(self.config(channel_id="#weather")))
+
+    def test_ping_replies_pick_town_home_or_everyone(self):
+        self.persona(replies={"town": ["{name} {me}: {town} {hi}°"], "all": ["{name}\n{summary}"]},
+                     homes={"7": "Greensboro, NC"})
+        cfg = self.config()
+        with patch.object(bot, "fetch_forecast", side_effect=lambda loc, tz: forecast(80 if loc is NY else 90)):
+            bot._forecasts.clear()
+            self.assertEqual(bot.build_reply(cfg, 5, "<@99> weather in bellerose?")[0], "<@5> WB: Bellerose 80°")
+            self.assertEqual(bot.build_reply(cfg, 5, "how hot is starks")[0], "<@5> WB: Greensboro 90°")
+            self.assertEqual(bot.build_reply(cfg, 7, "<@99> weather?")[0], "<@7> WB: Greensboro 90°")
+            content, embed = bot.build_reply(cfg, 5, "<@99> weather?")
+            self.assertIn("Bellerose", content)
+            self.assertIn("Greensboro", content)
+            self.assertIsNone(embed)
+
     def test_bad_persona_keeps_defaults(self):
         for bad in [{"pings": {"@tom": "not-an-id"}}, {"event_lines": {"fire": ["{nope}"]}},
                     {"templates": [{"id": "x", "text": "no name here", "who": "@tom"}]}]:

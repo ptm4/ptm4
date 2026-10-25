@@ -40,8 +40,10 @@ export const BOTS: BotDef[] = [
     icon: '🌤️',
     container: 'discord-weather',
     fields: [
-      ...COMMON,
-      { key: 'witty_enabled', label: 'Witty messages', type: 'boolean', help: 'Madlibs roast line in the daily post' },
+      // posts as Weather-Bot; the webhook is only a fallback, so it's not edited here
+      ...COMMON.filter((f) => f.key !== 'webhook_url'),
+      { key: 'channel_id', label: 'Channel ID', type: 'text', help: 'Where Weather-Bot posts (right-click the channel → Copy Channel ID)' },
+      { key: 'witty_enabled', label: 'Witty messages', type: 'boolean', help: 'Persona line in the daily post' },
     ],
     passthrough: ['timezone'],
     extras: ['geocode', 'witty'],

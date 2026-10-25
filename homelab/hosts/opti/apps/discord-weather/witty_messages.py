@@ -440,11 +440,25 @@ TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
 #    "event_lines": {"fire_streak": ["..."], ...},   # per-kind override
 #    "word_banks": {"me": ["Big Weather", ...]},      # {me} in any line picks one
 #    "pings": {"@name": "<discord user id>"},         # rendered as <@id>
+#    "replies": {"town"|"all"|"full": ["..."]},       # answers when pinged
+#    "homes": {"<discord user id>": "Town, ST"},      # default town per asker
 #    "embed": {"username"?, "title"?, "footer"?}}
 # An invalid file logs a warning and leaves the defaults in place.
 PERSONA_PATH = os.environ.get("WITTY_PERSONA_PATH", "/data/persona.json")
 PINGS = {}
 EMBED = {}
+HOMES = {}
+REPLIES = {}
+# Plain answers when pinged; a persona can replace any kind with its own voice.
+# {name} is the asker's mention, {me} the bot's name for this one message.
+DEFAULT_REPLIES = {
+    "town": ["{name}: {town} today is {cond_lower} {emoji}, high {hi}°, low {lo}°, "
+             "feels like {feels}°, {rain}% chance of rain."],
+    "all": ["{name}, today's forecast:\n{summary}"],
+    "full": ["{name}, here's today's full briefing:"],
+}
+_REPLY_FACTS = dict(name="@x", me="WB", town="T", hi=1, lo=1, feels=1, rain=1, wind=1, uv=1,
+                    humidity=1, cond="C", cond_lower="c", emoji="☀️", summary="S")
 _DEFAULTS = (TEMPLATES, dict(weather_context.EVENT_LINES), VERSION)
 _EVENT_FACTS = dict(subject="S", location="L", badge="🔥", feels="100", days=3, wind=30,
                     gap="1", change=20, direction="up", warm="W", cool="C", spread=25)
@@ -453,9 +467,10 @@ _EVENT_FACTS = dict(subject="S", location="L", badge="🔥", feels="100", days=3
 def use_persona(data):
     """Activate a persona dict (None restores the defaults). Returns an error
     string and keeps the defaults if anything in it fails validation."""
-    global TEMPLATES, TEMPLATES_BY_ID, VERSION, PINGS, EMBED, WORD_BANKS
+    global TEMPLATES, TEMPLATES_BY_ID, VERSION, PINGS, EMBED, WORD_BANKS, HOMES, REPLIES
     templates, events, version = _DEFAULTS
     TEMPLATES, VERSION, PINGS, EMBED, WORD_BANKS = templates, version, {}, {}, {}
+    HOMES, REPLIES = {}, {}
     weather_context.EVENT_LINES.clear()
     weather_context.EVENT_LINES.update(events)
     error = None
@@ -471,12 +486,20 @@ def use_persona(data):
                     raise ValueError(f"event_lines: unknown or empty kind {kind!r}")
                 for line in lines:
                     line.format(**_EVENT_FACTS, **{b: "x" for b in banks})
+            replies = {str(k): [str(l) for l in v] for k, v in (data.get("replies") or {}).items()}
+            for kind, lines in replies.items():
+                if kind not in DEFAULT_REPLIES or not lines:
+                    raise ValueError(f"replies: unknown or empty kind {kind!r}")
+                for line in lines:
+                    line.format(**_REPLY_FACTS)
+            homes = {str(k): str(v) for k, v in (data.get("homes") or {}).items()}
             WORD_BANKS = banks
             TEMPLATES = [dict(t) for t in data.get("templates") or templates]
             _prepare()
             _selfcheck()
             weather_context.EVENT_LINES.update(overrides)
             PINGS, EMBED = pings, dict(data.get("embed") or {})
+            HOMES, REPLIES = homes, replies
             digest = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:8]
             VERSION = f"{version}+{digest}"   # persona edit = fresh cycle, history kept
         except Exception as exc:
@@ -505,6 +528,18 @@ def self_name(entry=None):
     entry = entry or {}
     bank = WORD_BANKS.get("me") or ["Mr. Murf"]
     return (entry.get("fills") or {}).get("me") or bank[int(entry.get("id") or 0) % len(bank)]
+
+
+class _Blank(dict):
+    def __missing__(self, key):   # a forecast field Open-Meteo didn't return
+        return "?"
+
+
+def reply_line(kind, asker, me=None, **vals):
+    """One answer to a ping, in one self-name, with persona names turned into pings."""
+    me = me or random.choice(WORD_BANKS.get("me") or ["Weather Bot"])
+    line = random.choice(REPLIES.get(kind) or DEFAULT_REPLIES[kind])
+    return apply_pings(line.format_map(_Blank(vals, name=asker, me=me)))
 
 
 def apply_pings(text):

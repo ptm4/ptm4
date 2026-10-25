@@ -204,6 +204,7 @@ services:
     logging: *default-logging
     environment:
       TZ: "America/New_York"
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
     volumes:
       - weather_data:/data
