@@ -99,13 +99,14 @@
           {/if}
           <!-- row 3: live meters (or the state, for hosts without an agent) -->
           {#if h.metrics}
-            {@const gw = Math.min(96, (h.w - 32 - 40) / 2)}
-            {#each [['cpu', h.metrics.cpu_pct], ['mem', h.metrics.mem_pct]] as [lbl, v], i}
+            <!-- three meters: label and value on one line, a thin bar under them (rpi's lane is 230px) -->
+            {@const gw = Math.min(80, (h.w - 32 - 36 - 16) / 3)}
+            {#each [['cpu', h.metrics.cpu_pct, 85], ['mem', h.metrics.mem_pct, 85], ['disk', h.metrics.disk_pct, 80]] as [lbl, v, hi], i}
               {@const gx = h.x + 16 + i * (gw + 8)}
-              <text x={gx} y={h.y + 67} class="mlabel">{lbl}</text>
-              <rect x={gx + 24} y={h.y + 61} width={gw - 58} height="5" rx="2.5" class="mtrack" />
-              <rect x={gx + 24} y={h.y + 61} width={Math.max(0, Math.min(1, ((v as number | null) ?? 0) / 100)) * (gw - 58)} height="5" rx="2.5" class="mfill" class:hi={((v as number | null) ?? 0) >= 85} />
-              <text x={gx + gw - 4} y={h.y + 67} text-anchor="end" class="mval">{pct(v as number | null)}</text>
+              <text x={gx} y={h.y + 64} class="mlabel">{lbl}</text>
+              <text x={gx + gw} y={h.y + 64} text-anchor="end" class="mval">{pct(v as number | null)}</text>
+              <rect x={gx} y={h.y + 69} width={gw} height="4" rx="2" class="mtrack" />
+              <rect x={gx} y={h.y + 69} width={Math.max(0, Math.min(1, ((v as number | null) ?? 0) / 100)) * gw} height="4" rx="2" class="mfill" class:hi={((v as number | null) ?? 0) >= (hi as number)} />
             {/each}
             {#if h.metrics.temp_c != null}
               <text x={h.x + h.w - 16} y={h.y + 67} text-anchor="end" class="mval" class:hot={h.metrics.temp_c >= 75}>{Math.round(h.metrics.temp_c)}°</text>

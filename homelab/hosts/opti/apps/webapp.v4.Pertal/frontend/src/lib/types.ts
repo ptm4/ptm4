@@ -7,6 +7,11 @@ export interface Reason { key: string; severity: Severity; text: string; source:
 export interface Fact { label: string; value: string | null; tone?: 'warn' | 'crit' }
 export interface ActionRef { kind: string; label: string; icon: string; risky: boolean }
 
+export interface Disk {
+  mount: string | null; source: string; fstype: string; pool: boolean; readonly: boolean;
+  size_bytes: number; used_bytes: number; avail_bytes: number; pct: number | null;
+}
+
 export interface Resource {
   id: string;
   type: 'host' | 'container';
@@ -23,6 +28,8 @@ export interface Resource {
     cpu_pct: number | null; mem_pct: number | null; load1: number | null; cores: number | null;
     temp_c: number | null; uptime_s: number | null; rx_bps: number | null; tx_bps: number | null;
     mem_total_bytes: number | null;
+    // Storage (agent v0.9.0+): the fullest writable filesystem or pool, and every one.
+    disk_pct: number | null; disk_mount: string | null; disks: Disk[] | null;
   };
   counts: null | { containers: number; running: number };
   state?: string;

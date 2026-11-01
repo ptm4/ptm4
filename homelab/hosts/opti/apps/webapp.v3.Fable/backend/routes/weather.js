@@ -14,6 +14,11 @@ const ROUTES = [
   { method: 'get', path: '/preview', bot: 'GET',  botPath: '/preview', timeout: 30000 },
   { method: 'get', path: '/witty',   bot: 'GET',  botPath: '/witty' },
   { method: 'post', path: '/witty/reroll', bot: 'POST', botPath: '/witty/reroll', timeout: 30000 },
+  // the considered-reply lane + server profiles (discord-weather README, "Answering pings")
+  { method: 'get', path: '/inbox',       bot: 'GET',  botPath: '/inbox' },
+  { method: 'post', path: '/inbox/ack',  bot: 'POST', botPath: '/inbox/ack' },
+  { method: 'post', path: '/say',        bot: 'POST', botPath: '/say',     timeout: 15000 },
+  { method: 'post', path: '/profile',    bot: 'POST', botPath: '/profile' },
 ];
 
 module.exports = async function weatherRoutes(app) {

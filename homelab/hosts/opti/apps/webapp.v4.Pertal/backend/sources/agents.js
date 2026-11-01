@@ -1,5 +1,5 @@
 // hl-arch-agent sources — three per agent host:
-//   vitals:<host>      15s  CPU/mem/load/temp/net, derived from the agent's raw counters
+//   vitals:<host>      15s  CPU/mem/disk/load/temp/net, derived from the agent's raw counters
 //   containers:<host>  15s  live `docker ps` via GET /containers (agent v0.7.0+)
 //   agent:<host>       5m   agent status + auto-update hold state
 'use strict';
@@ -14,10 +14,40 @@ async function agentGet(base, path, signal) {
   return res.json();
 }
 
+const round1 = (v) => Math.round(v * 1000) / 10;
+
+// Storage (agent v0.9.0+; older agents send no `disks`, so everything stays null). Percent
+// the way you'd read it by hand: df's used/(used+avail) for a filesystem, zpool's alloc/size
+// for a pool — the same numbers homelab-doctor records as disk_used_pct / pool_used_pct, so
+// the 1h ring and the long-range charts agree. The headline is the fullest writable one
+// outside /boot: whichever disk is filling raises the card, and rpi's small boot partition
+// doesn't stand in for the host.
+function storage(raw) {
+  const out = { disks: null, disk_pct: null, disk_mount: null, root_pct: null, pool_pct: null };
+  if (!Array.isArray(raw)) return out;
+  out.disks = raw.map((d) => {
+    const denom = d.pool ? d.size_bytes : d.used_bytes + d.avail_bytes;
+    return {
+      mount: d.mount ?? null, source: d.source, fstype: d.fstype, pool: !!d.pool, readonly: !!d.readonly,
+      size_bytes: d.size_bytes, used_bytes: d.used_bytes, avail_bytes: d.avail_bytes,
+      pct: denom > 0 ? round1(d.used_bytes / denom) : null,
+    };
+  });
+  for (const d of out.disks) {
+    if (d.pct == null) continue;
+    if (d.mount === '/') out.root_pct = d.pct;
+    if (d.pool) out.pool_pct = Math.max(out.pool_pct ?? 0, d.pct);
+    if (d.readonly || (d.mount && /^\/boot(\/|$)/.test(d.mount))) continue;
+    if (out.disk_pct == null || d.pct > out.disk_pct) { out.disk_pct = d.pct; out.disk_mount = d.pool ? d.source : d.mount; }
+  }
+  return out;
+}
+
 // Turn two raw agent readings into rates. The agent is stateless (cumulative counters),
 // so the first reading after a restart has no CPU%/network rate — null, not a fake 0.
 function derive(prev, cur) {
   const out = {
+    ...storage(cur.disks),
     t: cur.t,
     cores: cur.cores ?? null,
     load1: Array.isArray(cur.loadavg) ? cur.loadavg[0] : null,
@@ -31,7 +61,7 @@ function derive(prev, cur) {
     agent_version: cur.agent_version ?? null,
   };
   if (cur.mem?.total_bytes && cur.mem.used_bytes != null) {
-    out.mem_pct = Math.round((cur.mem.used_bytes / cur.mem.total_bytes) * 1000) / 10;
+    out.mem_pct = round1(cur.mem.used_bytes / cur.mem.total_bytes);
   }
   const dt = prev ? cur.t - prev.t : 0;
   if (!prev || dt <= 0) return out;
@@ -111,4 +141,4 @@ function registerAgentSources(snapshots) {
   }
 }
 
-module.exports = { registerAgentSources, derive };
+module.exports = { registerAgentSources, derive, storage };

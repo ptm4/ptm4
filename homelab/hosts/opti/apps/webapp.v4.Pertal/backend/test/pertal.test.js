@@ -218,6 +218,27 @@ test('metrics: last hour comes from the in-memory ring; bad input is a 4xx', asy
   await app.close();
 });
 
+test('storage: df/zpool percentages, headline is the fullest writable disk outside /boot', () => {
+  const { derive } = require('../sources/agents');
+  const GB = 1e9;
+  const fsys = (mount, used, avail, extra = {}) => ({ source: `/dev/${mount}`, fstype: 'ext4', mount, pool: false, readonly: false, size_bytes: used + avail + 5 * GB, used_bytes: used, avail_bytes: avail, ...extra });
+  const v = derive(null, { t: 1, disks: [
+    fsys('/', 40 * GB, 360 * GB),
+    fsys('/boot/efi', 0.9 * GB, 0.1 * GB),                        // 90% but a boot partition
+    fsys('/mnt/archive', 97 * GB, 3 * GB, { readonly: true }),    // full but read-only
+    { source: 'red', fstype: 'zfs', mount: '/srv/red', pool: true, readonly: false, size_bytes: 4000 * GB, used_bytes: 2900 * GB, avail_bytes: 970 * GB },
+  ] });
+  assert.strictEqual(v.root_pct, 10);                 // used/(used+avail), like df — not used/size
+  assert.strictEqual(v.pool_pct, 72.5);               // alloc/size, like zpool and homelab-doctor
+  assert.strictEqual(v.disk_pct, 72.5);
+  assert.strictEqual(v.disk_mount, 'red');
+  assert.strictEqual(v.disks.length, 4, 'every filesystem is still listed');
+
+  const old = derive(null, { t: 1 });                 // agent < v0.9.0 sends no disks
+  assert.strictEqual(old.disk_pct, null);
+  assert.strictEqual(old.disks, null);
+});
+
 test('logs: names are validated before anything is sent to an agent', async () => {
   const app = await appWith(fakeSnapshots());
   assert.strictEqual((await app.inject('/api/logs/opti/..%2Fetc')).statusCode, 400);

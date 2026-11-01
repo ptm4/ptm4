@@ -33,10 +33,18 @@ except Exception as _e:  # a witty bug must never take down the 7 AM report
     print(f"WARNING: witty_messages failed to load, running without it: {_e}", flush=True)
     witty_messages = None
 
+try:
+    import model_reply   # optional model-written replies; templates stay the fallback
+except Exception as _e:
+    print(f"WARNING: model_reply failed to load, replies stay template-only: {_e}", flush=True)
+    model_reply = None
+
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
 LAST_POST_PATH = os.path.join(DATA_DIR, "last_post")
 WITTY_STATE_PATH = os.path.join(DATA_DIR, "witty_pool.json")
+INBOX_PATH = os.path.join(DATA_DIR, "inbox.jsonl")   # pings worth a considered reply
+INBOX_MAX = 500
 API_PORT = 8080
 
 DISCORD_API = "https://discord.com/api/v10"
@@ -60,6 +68,19 @@ DEFAULT_CONFIG = {
     ],
     "channel_id": "",   # where Weather-Bot posts; learned from the webhook if blank
     "webhook_url": "",  # legacy fallback, seeded from DISCORD_WEBHOOK_URL env
+    # Which server the bot talks in. Pings are answered only in guild_id (any
+    # guild if blank) and, if reply_channels is set, only in those channels.
+    # persona is a file name under /data. profiles are named presets of these
+    # four fields, so one call flips the bot between the live server and a
+    # test server: PUT /config {"active_profile": "test"} or POST /profile.
+    "guild_id": "",
+    "reply_channels": [],
+    "persona": "persona.json",
+    "profiles": {},        # {"live": {"guild_id", "channel_id", "reply_channels", "persona"}, ...}
+    "active_profile": "",
+    # model-written replies (model_reply.py); off unless a profile turns it on
+    "claude": {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 40,
+               "max_tokens": 300, "history": 10, "kinds": []},
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
         {"name": "Kew Gardens, NY", "lat": 40.7143, "lon": -73.8310},
@@ -181,7 +202,70 @@ def validate_config(cfg):
         return "webhook_url must start with https://discord.com/api/webhooks/"
     if not re.fullmatch(r"\d{0,20}", str(cfg.get("channel_id", ""))):
         return "channel_id must be a numeric Discord channel id"
+    err = validate_server_fields(cfg)
+    if err:
+        return err
+    profiles = cfg.get("profiles", {})
+    if not isinstance(profiles, dict) or len(profiles) > 10:
+        return "profiles must be an object of at most 10 named presets"
+    for name, prof in profiles.items():
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,24}", str(name)):
+            return f"profile name {name!r} — letters, digits, - and _ only, max 24"
+        if not isinstance(prof, dict) or set(prof) - PROFILE_FIELDS:
+            return f"profile {name!r} may only set {sorted(PROFILE_FIELDS)}"
+        merged_prof = {**DEFAULT_CONFIG, **prof}
+        err = validate_server_fields(merged_prof) or (model_reply.validate(merged_prof) if model_reply else None)
+        if err:
+            return f"profile {name!r}: {err}"
+    if model_reply:
+        err = model_reply.validate(cfg)
+        if err:
+            return err
+    active = cfg.get("active_profile", "")
+    if active and active not in profiles:
+        return f"active_profile {active!r} is not a configured profile"
     return None
+
+
+PROFILE_FIELDS = {"guild_id", "channel_id", "reply_channels", "persona", "claude"}
+
+
+def validate_server_fields(cfg):
+    if not re.fullmatch(r"\d{0,20}", str(cfg.get("guild_id", ""))):
+        return "guild_id must be a numeric Discord server id"
+    if not re.fullmatch(r"\d{0,20}", str(cfg.get("channel_id", ""))):
+        return "channel_id must be a numeric Discord channel id"
+    chans = cfg.get("reply_channels", [])
+    if (not isinstance(chans, list) or len(chans) > 20
+            or not all(isinstance(c, str) and re.fullmatch(r"\d{1,20}", c) for c in chans)):
+        return "reply_channels must be a list of numeric channel ids"
+    persona = cfg.get("persona", "persona.json")
+    if not (isinstance(persona, str) and re.fullmatch(r"[A-Za-z0-9._-]{1,64}", persona)
+            and persona.endswith(".json") and ".." not in persona):
+        return "persona must be a .json file name under /data"
+    return None
+
+
+def apply_profile(cfg):
+    """Copy the active profile's server fields into the flat config (which stays
+    the single source of truth the scheduler, gateway and webapp read)."""
+    prof = (cfg.get("profiles") or {}).get(cfg.get("active_profile") or "")
+    if prof:
+        for k in PROFILE_FIELDS:
+            cfg[k] = prof.get(k, DEFAULT_CONFIG[k])
+    return cfg
+
+
+def reload_persona(cfg):
+    """Load the configured persona file; defaults stay on failure, as before."""
+    if not witty_messages:
+        return
+    path = os.path.join(DATA_DIR, cfg.get("persona") or "persona.json")
+    err = witty_messages.load_persona(path)
+    with _lock:
+        _status["persona"] = f"{os.path.basename(path)}: {err}" if err else (
+            os.path.basename(path) if os.path.exists(path) else "defaults (no persona file)")
+    log(f"persona {path}: {err or 'loaded'}")
 
 
 def adopt_webhook_channel(cfg):
@@ -498,7 +582,7 @@ def scheduler_loop():
 
 
 # ── gateway: answer pings ─────────────────────────────────────────────────────
-REPLY_COOLDOWN = 20   # seconds per person, so a ping storm can't hammer Open-Meteo
+REPLY_COOLDOWN = 8    # seconds per person; the channel burst cap below does the real limiting
 FORECAST_TTL = 600
 _forecasts = {}       # (lat, lon) -> (fetched monotonic, forecast)
 
@@ -517,46 +601,245 @@ def town_of(loc):
     return loc["name"].split(",")[0].strip()
 
 
-def match_location(cfg, text, user_id):
-    """A town named in the message wins, then the asker's home town (persona)."""
+def subject_of(loc):
+    return loc.get("witty_subject") or (
+        "Starks" if loc["name"].strip().casefold() == "greensboro, nc" else "")
+
+
+def named_location(cfg, text):
+    """The configured town (or its witty subject) named in the message, if any."""
     for loc in cfg["locations"]:
-        subject = loc.get("witty_subject") or (
-            "Starks" if loc["name"].strip().casefold() == "greensboro, nc" else "")
-        for word in filter(None, (town_of(loc), subject)):
+        for word in filter(None, (town_of(loc), subject_of(loc))):
             if re.search(rf"\b{re.escape(word.lower())}\b", text):
                 return loc
+    return None
+
+
+def home_location(cfg, user_id):
     home = witty_messages.HOMES.get(str(user_id), "") if witty_messages else ""
     return next((l for l in cfg["locations"] if l["name"].casefold() == home.casefold()), None)
 
 
+def match_location(cfg, text, user_id):
+    """A town named in the message wins, then the asker's home town (persona)."""
+    return named_location(cfg, text) or home_location(cfg, user_id)
+
+
+def reply_facts(cfg, user_id, loc=None):
+    """Weather fields for a reply line: the given town, else the asker's home,
+    else the first configured town. A failed fetch leaves them blank ('?')."""
+    loc = loc or home_location(cfg, user_id) or cfg["locations"][0]
+    vals = {}
+    try:
+        fc = cached_forecast(loc, cfg["timezone"])
+        vals = witty_messages.weather_values(fc) if witty_messages else {}
+    except Exception as e:
+        log(f"reply forecast failed for {loc['name']}: {e}")
+    return dict(vals, town=town_of(loc), asker_town=town_of(loc))
+
+
+FULL_RE = r"\b(full|report|briefing|card|everything)\b"
+
+
 def build_reply(cfg, user_id, text):
-    """(content, embed-or-None) answering a ping. Peeks only — never consumes
-    the morning joke or advances streaks."""
+    """(content, embed-or-None, kind) answering a ping. Peeks only — never
+    consumes the morning joke or advances streaks. The kind is what the message
+    asked for (see witty_messages.REPLY_KINDS); only "full" and "weather" answer
+    with a forecast, everything else gets an in-character line that still has
+    the asker's weather on hand."""
     text = re.sub(r"<[@#][!&]?\d+>", " ", text).lower()
     asker, tz = f"<@{user_id}>", cfg["timezone"]
     reply = witty_messages.reply_line if witty_messages else None
-    if re.search(r"\b(full|report|briefing|card|everything)\b", text):
+    if witty_messages:
+        towns = [w for l in cfg["locations"] for w in (town_of(l), subject_of(l)) if w]
+        kind = witty_messages.classify(text, towns)
+    else:
+        kind = "full" if re.search(FULL_RE, text) else "weather"
+    if kind == "full":
         payload, _, receipt = build_payload(cfg)
         me = witty_messages.self_name(receipt) if witty_messages else "Weather Bot"
         line = reply("full", asker, me=me) if reply else f"{asker}, the full briefing:"
-        return line, payload["embeds"][0]
-    loc = match_location(cfg, text, user_id)
-    if loc:
-        fc = cached_forecast(loc, tz)
-        vals = dict(witty_messages.weather_values(fc), town=town_of(loc)) if witty_messages else {}
-        if reply:
-            return reply("town", asker, **vals), None
-        return f"{asker}: {town_of(loc)} {fc['hi']:.0f}°/{fc['lo']:.0f}°", None
-    rows = []
-    for l in cfg["locations"]:
+        return line, payload["embeds"][0], kind
+    if kind == "weather":
+        loc = match_location(cfg, text, user_id)
+        if loc:
+            fc = cached_forecast(loc, tz)
+            vals = dict(witty_messages.weather_values(fc), town=town_of(loc)) if witty_messages else {}
+            if reply:
+                return reply("town", asker, **vals), None, kind
+            return f"{asker}: {town_of(loc)} {fc['hi']:.0f}°/{fc['lo']:.0f}°", None, kind
+        rows = []
+        for l in cfg["locations"]:
+            try:
+                fc = cached_forecast(l, tz)
+                rows.append(f"{fc['emoji']} **{town_of(l)}** {fc['hi']:.0f}°/{fc['lo']:.0f}° · "
+                            f"feels {fc['feels']:.0f}° · rain {fc['rain']:.0f}%")
+            except Exception as e:
+                log(f"reply forecast failed for {l['name']}: {e}")
+        summary = "\n".join(rows) or "(no forecast data right now)"
+        return (reply("all", asker, summary=summary) if reply else f"{asker}\n{summary}"), None, kind
+    vals = reply_facts(cfg, user_id)
+    vals["pick"] = witty_messages.pick_name(user_id)
+    return reply(kind, asker, **vals), None, kind
+
+
+# ── model-written replies (model_reply.py), templates as fallback ────────────
+def handle_of(user_id, fallback="someone"):
+    """The persona's @handle for a Discord id, else the given display name."""
+    pings = witty_messages.PINGS if witty_messages else {}
+    for name, uid in pings.items():
+        if uid == str(user_id) and name.startswith("@"):
+            return name
+    return fallback
+
+
+def chat_line(author_id, author_name, text, is_bot=False, me="Weather Bot"):
+    """One 'handle: text' line of context for the model: real ids become
+    handles, the bot's own posts are labelled with its name, embeds are noted."""
+    who = me if is_bot else handle_of(author_id, "@" + str(author_name))
+    body = re.sub(r"<@!?(\d+)>", lambda m: handle_of(m.group(1), "@someone"), text or "")
+    body = re.sub(r"<@&\d+>", "@" + me, body)
+    body = re.sub(r"\s+", " ", body).strip() or "[embed]"
+    return f"{who}: {body[:300]}"
+
+
+def model_line(cfg, user_id, text, kind, recent):
+    """Ask the model for this ping's line; None means use the template."""
+    if not (model_reply and witty_messages):
+        return None
+    roster = sorted(n for n in witty_messages.PINGS if n.startswith("@"))
+    ping = re.sub(r"<@[!&]?\d+>", " ", text).strip()
+    facts = reply_facts(cfg, user_id)
+    examples = list(witty_messages.REPLIES.get(kind) or [])[:3]
+    system, user = model_reply.build_prompt(witty_messages.BRIEF, roster, recent, handle_of(user_id),
+                                            ping, kind, facts, examples)
+    raw = model_reply.ask(cfg, system, user, log=log)
+    line = model_reply.clean_line(raw, witty_messages.PINGS.values()) if raw else ""
+    return witty_messages.apply_pings(line) if line else None
+
+
+# ── gateway helpers (pure, so they can be tested without discord.py) ─────────
+BURST_LIMIT, BURST_WINDOW = 6, 60   # replies per channel per minute, all askers together
+_last_reply = {}   # user id -> monotonic time of their last answered ping
+_burst = {}        # channel id -> recent reply times
+
+
+def addressed(msg, me):
+    """Mentioned directly, through the bot's own managed role (@Weather-Bot the
+    role, which is what the mention picker often inserts), or replied to."""
+    if any(getattr(u, "id", None) == me.id for u in getattr(msg, "mentions", []) or []):
+        return True
+    for role in getattr(msg, "role_mentions", []) or []:
+        if getattr(getattr(role, "tags", None), "bot_id", None) == me.id:
+            return True
+    ref = getattr(getattr(msg, "reference", None), "resolved", None)
+    return getattr(getattr(ref, "author", None), "id", None) == me.id
+
+
+def in_scope(cfg, msg):
+    """Only the configured server (and channels, if listed) get answers, so a
+    test-server profile can't leak replies into the live one or vice versa."""
+    guild = str(cfg.get("guild_id") or "")
+    if guild and str(getattr(getattr(msg, "guild", None), "id", "")) != guild:
+        return False
+    chans = cfg.get("reply_channels") or []
+    return not chans or str(msg.channel.id) in chans
+
+
+def throttled(user_id, channel_id, now=None):
+    """True if this ping should be ignored: the asker pinged again inside the
+    per-person cooldown, or the channel has hit its burst cap. Records the reply
+    otherwise."""
+    now = time.monotonic() if now is None else now
+    if now - _last_reply.get(user_id, -REPLY_COOLDOWN) < REPLY_COOLDOWN:
+        return True
+    recent = [t for t in _burst.get(channel_id, []) if now - t < BURST_WINDOW]
+    if len(recent) >= BURST_LIMIT:
+        _burst[channel_id] = recent
+        return True
+    recent.append(now)
+    _burst[channel_id] = recent
+    _last_reply[user_id] = now
+    return False
+
+
+# ── inbox + say: the lane for a considered reply ─────────────────────────────
+# Every ping that didn't ask for weather is appended here with the line the bot
+# answered on the spot, so a person (or Claude in a session Peter drives) can
+# follow up with a real answer through POST /say. Read with GET /inbox.
+_inbox_lock = threading.Lock()
+
+
+def inbox_read():
+    try:
+        with open(INBOX_PATH, encoding="utf-8") as f:
+            return [json.loads(l) for l in f if l.strip()]
+    except OSError:
+        return []
+
+
+def _inbox_write(entries):
+    tmp = INBOX_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        for e in entries[-INBOX_MAX:]:
+            f.write(json.dumps(e, ensure_ascii=False) + "\n")
+    os.replace(tmp, INBOX_PATH)
+
+
+def inbox_add(entry):
+    with _inbox_lock:
         try:
-            fc = cached_forecast(l, tz)
-            rows.append(f"{fc['emoji']} **{town_of(l)}** {fc['hi']:.0f}°/{fc['lo']:.0f}° · "
-                        f"feels {fc['feels']:.0f}° · rain {fc['rain']:.0f}%")
-        except Exception as e:
-            log(f"reply forecast failed for {l['name']}: {e}")
-    summary = "\n".join(rows) or "(no forecast data right now)"
-    return (reply("all", asker, summary=summary) if reply else f"{asker}\n{summary}"), None
+            _inbox_write(inbox_read() + [entry])
+        except OSError as e:
+            log(f"inbox write failed: {e}")
+
+
+def inbox_pending(limit=50):
+    return [e for e in inbox_read() if not e.get("answered")][-limit:]
+
+
+def inbox_mark(message_ids, how="acked"):
+    ids = {str(i) for i in message_ids}
+    with _inbox_lock:
+        entries = inbox_read()
+        n = 0
+        for e in entries:
+            if str(e.get("id")) in ids and not e.get("answered"):
+                e["answered"] = how
+                n += 1
+        if n:
+            _inbox_write(entries)
+    return n
+
+
+def say(cfg, content, channel_id=None, reply_to=None):
+    """Post `content` as Weather-Bot, as a reply to `reply_to` if given. Persona
+    names become mentions; @everyone/@here are refused outright and could not
+    ping anyway (allowed_mentions is users-only). Returns the new message id."""
+    if not BOT_TOKEN:
+        raise RuntimeError("DISCORD_BOT_TOKEN not set — cannot speak")
+    content = str(content or "").strip()
+    if not content or len(content) > 2000:
+        raise ValueError("content must be 1–2000 characters")
+    if re.search(r"@(everyone|here)\b", content):
+        raise ValueError("@everyone/@here are not allowed in replies")
+    channel = str(channel_id or cfg.get("channel_id") or "")
+    if not re.fullmatch(r"\d{1,20}", channel):
+        raise ValueError("channel_id required (none configured)")
+    if reply_to is not None and not re.fullmatch(r"\d{1,20}", str(reply_to)):
+        raise ValueError("reply_to must be a message id")
+    body = {"content": witty_messages.apply_pings(content) if witty_messages else content,
+            "allowed_mentions": {"parse": ["users"], "replied_user": True}}
+    if reply_to:
+        body["message_reference"] = {"message_id": str(reply_to), "fail_if_not_exists": False}
+    status, posted = http_json(f"{DISCORD_API}/channels/{channel}/messages", body=body,
+                               headers={"Authorization": f"Bot {BOT_TOKEN}"}, tries=1)
+    if not 200 <= status < 300:
+        raise RuntimeError(f"Discord returned HTTP {status}")
+    if reply_to:
+        inbox_mark([reply_to], "said")
+    log(f"say: posted {len(content)} chars to channel {channel}" + (f" replying to {reply_to}" if reply_to else ""))
+    return str((posted or {}).get("id", ""))
 
 
 def run_gateway():
@@ -576,7 +859,6 @@ def run_gateway():
     intents.message_content = True
     client = discord.Client(intents=intents, allowed_mentions=discord.AllowedMentions(
         everyone=False, roles=False, users=True, replied_user=True))
-    last_reply = {}
 
     @client.event
     async def on_ready():
@@ -586,22 +868,42 @@ def run_gateway():
 
     @client.event
     async def on_message(msg):
-        if msg.author.bot or client.user is None:
+        if msg.author.bot or client.user is None or not addressed(msg, client.user):
             return
-        ref = msg.reference.resolved if msg.reference else None
-        if not (client.user in msg.mentions
-                or (isinstance(ref, discord.Message) and ref.author.id == client.user.id)):
+        cfg = load_config()
+        if not in_scope(cfg, msg):
             return
-        now = time.monotonic()
-        if now - last_reply.get(msg.author.id, -REPLY_COOLDOWN) < REPLY_COOLDOWN:
+        if throttled(msg.author.id, msg.channel.id):
+            log(f"gateway: throttled {msg.author} in #{msg.channel}")
             return
-        last_reply[msg.author.id] = now
         try:
+            loop = asyncio.get_running_loop()
+            source = "template"
             async with msg.channel.typing():
-                content, embed = await asyncio.get_running_loop().run_in_executor(
-                    None, build_reply, load_config(), msg.author.id, msg.content)
+                content, embed, kind = await loop.run_in_executor(
+                    None, build_reply, cfg, msg.author.id, msg.content)
+                if model_reply and model_reply.wants(cfg, kind):
+                    me = witty_messages.self_name() if witty_messages else "Weather Bot"
+                    n = model_reply.settings(cfg)["history"]
+                    recent = []
+                    if n:
+                        async for m in msg.channel.history(limit=n, before=msg):
+                            recent.append(chat_line(m.author.id, m.author.display_name, m.content,
+                                                    m.author.id == client.user.id, me))
+                        recent.reverse()
+                    line = await loop.run_in_executor(None, model_line, cfg, msg.author.id,
+                                                      msg.content, kind, recent)
+                    if line:
+                        content, source = line, "claude"
             await msg.reply(content, embed=discord.Embed.from_dict(embed) if embed else None)
-            log(f"gateway: answered {msg.author} in #{msg.channel}")
+            log(f"gateway: answered {msg.author} in #{msg.channel} ({kind}, {source})")
+            if kind not in ("weather", "full"):
+                inbox_add({"ts": datetime.now().isoformat(timespec="seconds"), "id": str(msg.id),
+                           "channel_id": str(msg.channel.id), "channel": str(msg.channel),
+                           "guild_id": str(getattr(msg.guild, "id", "")),
+                           "author": str(msg.author), "author_id": str(msg.author.id),
+                           "text": msg.content, "kind": kind, "answered_with": content,
+                           "source": source})
         except Exception as e:
             log(f"gateway: reply failed: {e}")
 
@@ -645,7 +947,16 @@ class Handler(BaseHTTPRequestHandler):
             with _lock:
                 st = dict(_status)
             self._send(200, {"ok": True, "enabled": cfg["enabled"],
-                             "post_time": cfg["post_time"], "timezone": cfg["timezone"], **st})
+                             "post_time": cfg["post_time"], "timezone": cfg["timezone"],
+                             "guild_id": cfg.get("guild_id", ""), "channel_id": cfg.get("channel_id", ""),
+                             "active_profile": cfg.get("active_profile", ""),
+                             "inbox_pending": len(inbox_pending(INBOX_MAX)),
+                             "claude": model_reply.status(cfg) if model_reply else None, **st})
+        elif path == "/inbox":
+            limit = urllib.parse.parse_qs(query).get("limit", ["50"])[0]
+            limit = int(limit) if limit.isdigit() else 50
+            self._send(200, {"pending": inbox_pending(limit),
+                             "kinds": list(witty_messages.REPLY_KINDS) if witty_messages else []})
         elif path == "/config":
             pub = dict(cfg)
             pub["webhook_url"] = mask_webhook(cfg.get("webhook_url", ""))
@@ -692,10 +1003,15 @@ class Handler(BaseHTTPRequestHandler):
             incoming = self._body()
         except ValueError:
             return self._send(400, {"error": "invalid JSON"})
+        self._update_config(incoming)
+
+    def _update_config(self, incoming):
         current = load_config()
         merged = {**current, **{k: v for k, v in incoming.items()
                                 if k in ("enabled", "post_time", "timezone", "locations", "channel_id",
-                                         "webhook_url", "message", "witty_enabled", "witty_names")}}
+                                         "webhook_url", "message", "witty_enabled", "witty_names",
+                                         "guild_id", "reply_channels", "persona", "profiles",
+                                         "active_profile", "claude")}}
         # masked/blank webhook in the payload means "keep the current one"
         wh = incoming.get("webhook_url", "")
         if not wh or "…" in wh:
@@ -703,11 +1019,18 @@ class Handler(BaseHTTPRequestHandler):
         err = validate_config(merged)
         if err:
             return self._send(400, {"error": err})
+        # choosing (or editing) a profile copies its server fields into the config
+        if merged.get("active_profile") and (merged["active_profile"] != current.get("active_profile")
+                                             or "profiles" in incoming):
+            apply_profile(merged)
         with _lock:
             save_config(merged)
         _wake.set()  # reschedule immediately
+        if merged.get("persona") != current.get("persona"):
+            reload_persona(merged)
         log(f"config updated: enabled={merged['enabled']} post_time={merged['post_time']} "
-            f"locations={[l['name'] for l in merged['locations']]}")
+            f"locations={[l['name'] for l in merged['locations']]} "
+            f"profile={merged.get('active_profile') or '-'} guild={merged.get('guild_id') or 'any'}")
         pub = dict(merged)
         pub["webhook_url"] = mask_webhook(merged.get("webhook_url", ""))
         pub["webhook_configured"] = bool(merged.get("webhook_url"))
@@ -738,6 +1061,28 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(502, {"error": str(e)})
             self._send(200 if out.get("ok") else 400, out)
+        elif path == "/say":
+            try:
+                body = self._body()
+                mid = say(load_config(), body.get("content"), body.get("channel_id"), body.get("reply_to"))
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(502, {"error": str(e)})
+            self._send(200, {"ok": True, "message_id": mid})
+        elif path == "/inbox/ack":
+            try:
+                ids = self._body().get("ids") or []
+            except ValueError:
+                return self._send(400, {"error": "invalid JSON"})
+            self._send(200, {"acked": inbox_mark(ids)})
+        elif path == "/profile":
+            # shortcut for PUT /config {"active_profile": name}: switch servers in one call
+            try:
+                name = str(self._body().get("name") or "")
+            except ValueError:
+                return self._send(400, {"error": "invalid JSON"})
+            self._update_config({"active_profile": name})
         else:
             self._send(404, {"error": "not found"})
 
@@ -764,6 +1109,7 @@ def main(argv):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     log(f"control API listening on :{API_PORT}")
     adopt_webhook_channel(load_config())  # seeds on first boot, then migrates
+    reload_persona(load_config())         # the configured persona file, not just the default path
     threading.Thread(target=run_gateway, daemon=True).start()
     scheduler_loop()
     return 0

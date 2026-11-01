@@ -44,7 +44,7 @@
   --crit: #fb4934;       /* red */
   --crit-dim: rgba(251, 73, 52, .15);
   --purple: #d3869b;
-  --chart-1: #83a598; --chart-2: #d3869b; --chart-3: #fabd2f; --chart-4: #8ec07c;
+  --chart-1: #83a598; --chart-2: #d3869b; --chart-3: #fabd2f; --chart-4: #8ec07c; --chart-5: #b8bb26; --chart-6: #bdae93;
   --shadow: 0 12px 32px rgba(0, 0, 0, .55);
 }
 
@@ -74,7 +74,7 @@
   --crit: #9d0006;
   --crit-dim: rgba(157, 0, 6, .11);
   --purple: #8f3f71;
-  --chart-1: #076678; --chart-2: #8f3f71; --chart-3: #b57614; --chart-4: #427b58;
+  --chart-1: #076678; --chart-2: #8f3f71; --chart-3: #b57614; --chart-4: #427b58; --chart-5: #79740e; --chart-6: #665c54;
   --shadow: 0 10px 28px rgba(60, 56, 54, .22);
 }
 
@@ -104,7 +104,7 @@
   --crit: #ff7b72;
   --crit-dim: rgba(255, 123, 114, .13);
   --purple: #d2a8ff;
-  --chart-1: #79c0ff; --chart-2: #d2a8ff; --chart-3: #ffa657; --chart-4: #39c5cf;
+  --chart-1: #79c0ff; --chart-2: #d2a8ff; --chart-3: #ffa657; --chart-4: #39c5cf; --chart-5: #7ee787; --chart-6: #e3b341;
   --shadow: 0 16px 40px rgba(1, 4, 9, .7);
 }
 
@@ -134,6 +134,6 @@
   --crit: #cf222e;
   --crit-dim: rgba(207, 34, 46, .1);
   --purple: #8250df;
-  --chart-1: #0969da; --chart-2: #8250df; --chart-3: #bc4c00; --chart-4: #1b7c83;
+  --chart-1: #0969da; --chart-2: #8250df; --chart-3: #bc4c00; --chart-4: #1b7c83; --chart-5: #1a7f37; --chart-6: #9a6700;
   --shadow: 0 8px 24px rgba(31, 35, 40, .16);
 }

@@ -2,6 +2,7 @@
 import importlib.util
 import json
 from pathlib import Path
+from types import SimpleNamespace
 import uuid
 import unittest
 from datetime import datetime, timedelta
@@ -247,10 +248,130 @@ class WeatherTests(unittest.TestCase):
             self.assertEqual(bot.build_reply(cfg, 5, "<@99> weather in bellerose?")[0], "<@5> WB: Bellerose 80°")
             self.assertEqual(bot.build_reply(cfg, 5, "how hot is starks")[0], "<@5> WB: Greensboro 90°")
             self.assertEqual(bot.build_reply(cfg, 7, "<@99> weather?")[0], "<@7> WB: Greensboro 90°")
-            content, embed = bot.build_reply(cfg, 5, "<@99> weather?")
+            content, embed, kind = bot.build_reply(cfg, 5, "<@99> weather?")
             self.assertIn("Bellerose", content)
             self.assertIn("Greensboro", content)
             self.assertIsNone(embed)
+            self.assertEqual(kind, "weather")
+
+    def test_classify_precedence_and_persona_patterns(self):
+        towns = ["Bellerose", "Starks"]
+        cases = {"weather?": "weather", "how's starks": "weather", "full report": "full",
+                 "it feels like I'm melting, turn the thermostat down": "control",
+                 "everytime you type e say hi": "command",
+                 "blink twice if you're held against your will": "sentience",
+                 "I rate the experience a 6 out of 10": "rating", "murfbot lied": "complaint",
+                 "I burned the files": "files", "phones on a camping trip?": "outdoors",
+                 "any daymers?": "gaming", "what do you think of the percolator": "lore",
+                 "you clanker": "name", "thanks wb": "thanks", "half and half or whole milk?": "opinion",
+                 "no bless yous for giacomo?": "wild"}
+        for text, kind in cases.items():
+            self.assertEqual(witty.classify(text, towns), kind, text)
+        self.persona(reply_patterns={"lore": [r"\bgiacomo\b"]})
+        self.assertEqual(witty.classify("no bless yous for giacomo?"), "lore")
+        for bad in ({"reply_patterns": {"wild": ["x"]}}, {"reply_patterns": {"lore": ["("]}},
+                    {"replies": {"nope": ["x"]}}, {"replies": {"wild": ["{nothere}"]}}):
+            self.assertIn("persona rejected", witty.use_persona(bad), bad)
+        witty.use_persona(None)
+
+    def test_reply_lines_rotate_without_repeating(self):
+        self.persona(replies={"wild": ["a {name}", "b {name}", "c {name}"]},
+                     pings={"@tom": "111", "@pete": "222"})
+        seen = [witty.reply_line("wild", "<@5>") for _ in range(6)]
+        self.assertEqual(sorted(seen[:3]), ["a <@5>", "b <@5>", "c <@5>"])
+        self.assertEqual(sorted(seen[3:]), ["a <@5>", "b <@5>", "c <@5>"])
+        self.assertNotEqual(seen[2], seen[3])
+        self.assertEqual(witty.pick_name("111"), "<@222>")
+        self.assertIn(witty.pick_name(), ("<@111>", "<@222>"))
+        witty.use_persona(None)
+        self.assertEqual(witty.pick_name(), "someone")
+
+    def test_non_weather_ping_gets_kind_line_with_facts(self):
+        self.persona(replies={"control": ["{name}: {me} does not run {town} at {feels}°. Ask {pick}."]},
+                     homes={"7": "Greensboro, NC"}, pings={"@tom": "111"})
+        cfg = self.config()
+        with patch.object(bot, "fetch_forecast", side_effect=lambda loc, tz: forecast(80 if loc is NY else 90)):
+            bot._forecasts.clear()
+            content, embed, kind = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
+        self.assertEqual(kind, "control")
+        self.assertEqual(content, "<@7>: WB does not run Greensboro at 90°. Ask <@111>.")
+        self.assertIsNone(embed)
+        with patch.object(bot, "fetch_forecast", side_effect=RuntimeError("offline")):
+            bot._forecasts.clear()
+            content, _, kind = bot.build_reply(cfg, 5, "<@99> turn the thermostat down")
+        self.assertEqual(kind, "control")
+        self.assertIn("Bellerose at ?°", content)   # first town, facts blank, still answers
+
+    def test_addressed_scope_and_throttle(self):
+        me = SimpleNamespace(id=1)
+        role = SimpleNamespace(tags=SimpleNamespace(bot_id=1))
+        other = SimpleNamespace(tags=None)
+
+        def msg(**kw):
+            return SimpleNamespace(**{"mentions": [], "role_mentions": [], "reference": None,
+                                      "guild": SimpleNamespace(id=10), "channel": SimpleNamespace(id=20), **kw})
+        self.assertTrue(bot.addressed(msg(mentions=[me]), me))
+        self.assertTrue(bot.addressed(msg(role_mentions=[other, role]), me))
+        self.assertTrue(bot.addressed(msg(reference=SimpleNamespace(resolved=SimpleNamespace(author=me))), me))
+        self.assertFalse(bot.addressed(msg(role_mentions=[other]), me))
+        self.assertFalse(bot.addressed(msg(mentions=[SimpleNamespace(id=2)]), me))
+        self.assertTrue(bot.in_scope(self.config(), msg()))
+        self.assertTrue(bot.in_scope(self.config(guild_id="10", reply_channels=["20"]), msg()))
+        self.assertFalse(bot.in_scope(self.config(guild_id="11"), msg()))
+        self.assertFalse(bot.in_scope(self.config(reply_channels=["21"]), msg()))
+        bot._last_reply.clear()
+        bot._burst.clear()
+        self.assertFalse(bot.throttled("u1", "c", now=100))
+        self.assertTrue(bot.throttled("u1", "c", now=104))      # inside the per-person cooldown
+        self.assertFalse(bot.throttled("u1", "c", now=109))
+        for i in range(2, 6):
+            self.assertFalse(bot.throttled(f"u{i}", "c", now=110 + i))
+        self.assertTrue(bot.throttled("u9", "c", now=120))      # 6 replies in the window: capped
+        self.assertFalse(bot.throttled("u9", "d", now=120))     # another channel is unaffected
+        self.assertFalse(bot.throttled("u9", "c", now=200))     # window has passed
+
+    def test_inbox_and_say(self):
+        inbox = str(Path(self.path).with_name("inbox.jsonl"))
+        self.addCleanup(lambda: [Path(p).unlink(missing_ok=True) for p in (inbox, inbox + ".tmp")])
+        with patch.object(bot, "INBOX_PATH", inbox):
+            bot.inbox_add({"id": "1", "text": "hi", "kind": "wild"})
+            bot.inbox_add({"id": "2", "text": "yo", "kind": "thanks"})
+            self.assertEqual([e["id"] for e in bot.inbox_pending()], ["1", "2"])
+            self.assertEqual(bot.inbox_mark(["1"]), 1)
+            self.assertEqual([e["id"] for e in bot.inbox_pending()], ["2"])
+            cfg = self.config(channel_id="42")
+            with patch.object(bot, "BOT_TOKEN", "t"), \
+                    patch.object(bot, "http_json", return_value=(200, {"id": "77"})) as post:
+                self.assertEqual(bot.say(cfg, "Statement: hello", reply_to="2"), "77")
+                self.assertIn("/channels/42/messages", post.call_args.args[0])
+                body = post.call_args.kwargs["body"]
+                self.assertEqual(body["message_reference"]["message_id"], "2")
+                self.assertEqual(body["allowed_mentions"]["parse"], ["users"])
+                self.assertEqual(bot.inbox_pending(), [])
+                for bad in ("", "x" * 2001, "hey @everyone", "@here now", "@everyone"):
+                    with self.assertRaises(ValueError):
+                        bot.say(cfg, bad)
+                with self.assertRaises(ValueError):
+                    bot.say(self.config(channel_id=""), "no channel")
+            with self.assertRaises(RuntimeError):
+                bot.say(cfg, "no token")
+
+    def test_profiles_switch_server_fields(self):
+        cfg = self.config(profiles={"live": {"guild_id": "1", "channel_id": "2", "persona": "persona.json"},
+                                    "test": {"guild_id": "3", "channel_id": "4", "reply_channels": ["4"],
+                                             "persona": "persona-test.json"}},
+                          active_profile="test")
+        self.assertIsNone(bot.validate_config(cfg))
+        bot.apply_profile(cfg)
+        self.assertEqual((cfg["guild_id"], cfg["channel_id"], cfg["reply_channels"], cfg["persona"]),
+                         ("3", "4", ["4"], "persona-test.json"))
+        cfg["active_profile"] = "live"
+        bot.apply_profile(cfg)
+        self.assertEqual((cfg["guild_id"], cfg["channel_id"], cfg["reply_channels"]), ("1", "2", []))
+        for bad in (dict(active_profile="nope"), dict(guild_id="abc"), dict(persona="../x.json"),
+                    dict(persona="x.txt"), dict(reply_channels=["x"]), dict(profiles={"bad name!": {}}),
+                    dict(profiles={"p": {"webhook_url": "x"}}), dict(profiles={"p": {"guild_id": "q"}})):
+            self.assertIsNotNone(bot.validate_config(self.config(**bad)), bad)
 
     def test_bad_persona_keeps_defaults(self):
         for bad in [{"pings": {"@tom": "not-an-id"}}, {"event_lines": {"fire": ["{nope}"]}},

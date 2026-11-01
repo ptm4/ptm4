@@ -4,16 +4,20 @@
   import { api } from '$lib/api';
   import { bytes } from '$lib/format';
 
-  let { host }: { host: string } = $props();
+  // `pool`: the host has a ZFS pool, so it gets a pool chart beside its root disk.
+  let { host, pool = false }: { host: string; pool?: boolean } = $props();
   const ranges = ['1h', '24h', '7d', '30d', '90d'] as const;
   let range = $state<(typeof ranges)[number]>('1h');
 
-  const charts = [
-    { metric: 'cpu_pct', label: 'CPU', max: 100, fmt: (v: number) => `${Math.round(v)}%`, color: 'var(--chart-1)' },
-    { metric: 'mem_pct', label: 'Memory', max: 100, fmt: (v: number) => `${Math.round(v)}%`, color: 'var(--chart-2)' },
+  const percent = (v: number) => `${Math.round(v)}%`;
+  const charts = $derived([
+    { metric: 'cpu_pct', label: 'CPU', max: 100, fmt: percent, color: 'var(--chart-1)' },
+    { metric: 'mem_pct', label: 'Memory', max: 100, fmt: percent, color: 'var(--chart-2)' },
+    { metric: 'root_pct', label: 'Root disk', max: 100, fmt: percent, color: 'var(--chart-5)' },
+    ...(pool ? [{ metric: 'pool_pct', label: 'ZFS pool', max: 100, fmt: percent, color: 'var(--chart-6)' }] : []),
     { metric: 'temp_c', label: 'Temperature', max: null, fmt: (v: number) => `${Math.round(v)}°`, color: 'var(--chart-3)' },
     { metric: 'rx_bps', label: 'Network in', max: null, fmt: (v: number) => `${bytes(v)}/s`, color: 'var(--chart-4)' },
-  ];
+  ]);
 
   type Series = { points: [number, number | null][]; source?: string; error?: string };
   let data = $state<Record<string, Series>>({});

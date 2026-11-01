@@ -102,6 +102,7 @@ function buildResources(snapshots, acks = null) {
         r.metrics = {
           cpu_pct: v.cpu_pct, mem_pct: v.mem_pct, load1: v.load1, cores: v.cores, temp_c: v.temp_c,
           uptime_s: v.uptime_s, rx_bps: v.rx_bps, tx_bps: v.tx_bps, mem_total_bytes: v.mem_total_bytes,
+          disk_pct: v.disk_pct ?? null, disk_mount: v.disk_mount ?? null, disks: v.disks ?? null,
         };
         r.facts.push({ label: 'Uptime', value: fmtUptime(v.uptime_s) });
         if (r.online) r.state_text = `up ${fmtUptime(v.uptime_s)}`;

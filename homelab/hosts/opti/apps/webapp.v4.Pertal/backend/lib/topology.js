@@ -72,7 +72,7 @@ function buildTopology(resources) {
   const hostsOut = resources.filter((r) => r.type === 'host').map((h) => ({
     id: h.id, label: h.name, status: h.status, online: h.online, state_text: h.state_text,
     role: h.facts.find((f) => f.label === 'Role')?.value ?? null,
-    metrics: h.metrics ? { cpu_pct: h.metrics.cpu_pct, mem_pct: h.metrics.mem_pct, temp_c: h.metrics.temp_c } : null,
+    metrics: h.metrics ? { cpu_pct: h.metrics.cpu_pct, mem_pct: h.metrics.mem_pct, disk_pct: h.metrics.disk_pct, temp_c: h.metrics.temp_c } : null,
     counts: h.counts,
     // Kept for the host cards above the diagram.
     children: resources.filter((c) => c.type === 'container' && c.host === h.id)

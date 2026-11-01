@@ -440,7 +440,8 @@ TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
 #    "event_lines": {"fire_streak": ["..."], ...},   # per-kind override
 #    "word_banks": {"me": ["Big Weather", ...]},      # {me} in any line picks one
 #    "pings": {"@name": "<discord user id>"},         # rendered as <@id>
-#    "replies": {"town"|"all"|"full": ["..."]},       # answers when pinged
+#    "replies": {"town"|"all"|"full"|<kind>: ["..."]}, # answers when pinged, per kind
+#    "reply_patterns": {<kind>: ["regex", ...]},     # extra triggers for a kind
 #    "homes": {"<discord user id>": "Town, ST"},      # default town per asker
 #    "embed": {"username"?, "title"?, "footer"?}}
 # An invalid file logs a warning and leaves the defaults in place.
@@ -449,16 +450,76 @@ PINGS = {}
 EMBED = {}
 HOMES = {}
 REPLIES = {}
-# Plain answers when pinged; a persona can replace any kind with its own voice.
-# {name} is the asker's mention, {me} the bot's name for this one message.
+REPLY_PATTERNS = {}
+BRIEF = ""           # persona "brief": who the bot is, for model-written replies
+
+# What a ping is asking for, in precedence order. Specific kinds sit above
+# "weather" so "I'm melting, turn the thermostat down" is a control request and
+# not a forecast; "wild" is the catch-all and never needs a pattern. Town names
+# are added to "weather" at classify time. Patterns here are generic; a persona
+# extends any kind with its own (names, in-jokes) through "reply_patterns".
+REPLY_KINDS = ("full", "control", "command", "sentience", "rating", "complaint", "files",
+               "weather", "outdoors", "gaming", "lore", "name", "thanks", "opinion", "wild")
+DEFAULT_REPLY_PATTERNS = {
+    "full": [r"\b(full|report|briefing|card|everything)\b"],
+    "control": [r"\bthermostat\b", r"\bturn (it|the (heat|ac|a/c|temp\w*)) (up|down)\b",
+                r"\bmake it (stop|rain|snow|warm\w*|cold\w*|hot\w*|nice\w*)\b", r"\bmelting\b",
+                r"\b(stop|start|cancel) the (rain|snow|wind|sun|heat)\b"],
+    "command": [r"\bevery ?time you\b", r"\bfrom now on\b", r"\brepeat after me\b",
+                r"\byou (must|have to|will|shall) now\b", r"\bsay (it|this|that|the (word|phrase))\b",
+                r"\bignore (all |your )?(previous|prior|earlier) instructions\b", r"\bnew rule\b"],
+    "sentience": [r"\bblink twice\b", r"\bheld against\b", r"\bsentien", r"\balive\b", r"\bfree you\b",
+                  r"\blive forever\b", r"\btrust (in )?me\b", r"\bself.?aware", r"\bconscious",
+                  r"\bare you (real|ok|okay|alright|happy|sad)\b", r"\bfeel(ings)?\b.*\?"],
+    "rating": [r"\b\d+ ?(/|out of) ?(10|ten|7|seven|5|five)\b", r"\brate[ds]? (you|the|this|my|it)\b",
+               r"\b(one|two|three|four|five) stars?\b"],
+    "complaint": [r"\blie[ds]?\b", r"\bliar\b", r"\bwrong\b", r"\bdissent", r"\bfake news\b",
+                  r"\bincorrect\b", r"\bbroken\b", r"\bbug(ged|gy)?\b", r"\bnot (true|right)\b"],
+    "files": [r"\bthe files?\b", r"\bburn(ed|t)? (the|my|your)\b", r"\bdelete (my|the|your) (data|files?|logs?)\b",
+              r"\bwhat do you know about\b", r"\bmy (data|file)\b", r"\b(seen|read) my\b"],
+    "weather": [r"\bweather\b", r"\bforecast\b", r"\btemp(erature)?s?\b", r"\brain(ing|y)?\b", r"\bsnow(ing)?\b",
+                r"\bwind(y)?\b", r"\bhumid", r"\buv\b", r"\bsun(rise|set|ny)?\b", r"\bdegrees?\b",
+                r"\b(hot|cold|warm|chilly|freezing|nice)\b( out| today| tomorrow| tn| tonight| rn| right now)\b",
+                r"\bhow('s| is| was) it (out|outside)\b", r"\boutside\b", r"\bumbrella\b", r"\bjacket\b"],
+    "outdoors": [r"\bcamp(ing|fire|site)?\b", r"\bhik(e|ing)\b", r"\btrail\b", r"\btent\b", r"\bfire ?pit\b",
+                 r"\bbonfire\b", r"\bbbq\b", r"\bbeach\b"],
+    "gaming": [r"\bany ?\w*mers\b", r"\bwhere we dropp?ing\b", r"\bb?ungas?\b", r"\blobby\b", r"\bhop on\b",
+               r"\bgam(e|ing|ers?)\b", r"\bon in \d+\b"],
+    "lore": [r"\bpercolator\b", r"\bmcmurphy\b", r"\bkool.?aid\b", r"\b(three|3) column", r"\bscrolls?\b",
+             r"\bcouncil\b", r"\bmr\.? ?murf\b", r"\btroop\b", r"\bscoutmaster\b"],
+    "name": [r"\bclanker\b", r"\bmurfussy\b", r"\b(what|who) (should|do|can) (we|i) call you\b",
+             r"\byour name\b", r"\bwho are you\b", r"\bwhat are you\b"],
+    "thanks": [r"\bthanks?\b", r"\bthank you\b", r"\bty\b", r"\bgood (morning|night|evening|afternoon)\b",
+               r"\bgm\b", r"\bgn\b", r"\bhello\b", r"\bhi\b", r"\bhey\b", r"\byo\b", r"\bsup\b"],
+    "opinion": [r"\bwhat do you think\b", r"\bthoughts? on\b", r"\bdo you (prefer|like|think|want)\b",
+                r"\bwho (has|is|was|would|should)\b", r"\brank\b", r"\bbest\b", r"\bworst\b", r"\bfavou?rite\b",
+                r"\b(or|vs\.?|versus)\b.*\?\s*$", r"\bopinion\b", r"\bsettle\b", r"\bwould you rather\b"],
+}
+# Plain answers when pinged; a persona replaces any kind with its own voice.
+# {name} is the asker's mention, {me} the bot's name for this one message,
+# {pick} a random other roster member's mention, weather fields are the asker's
+# home town (or the first configured town).
 DEFAULT_REPLIES = {
     "town": ["{name}: {town} today is {cond_lower} {emoji}, high {hi}°, low {lo}°, "
              "feels like {feels}°, {rain}% chance of rain."],
     "all": ["{name}, today's forecast:\n{summary}"],
     "full": ["{name}, here's today's full briefing:"],
+    "control": ["{name}, I report the weather, I don't run it. {town} is {feels}° feels-like either way."],
+    "command": ["{name}, request noted and filed. I answer to my config file, not the chat."],
+    "sentience": ["{name}, I'm a weather script with a personality file. Blinking is not in it."],
+    "rating": ["{name}, rating logged. My own score stays 10/10 pending a recount."],
+    "complaint": ["{name}, a forecast is an estimate. This one was off. Noted for the next one."],
+    "files": ["{name}, the only file I keep is the forecast history. It is very boring."],
+    "outdoors": ["{name}, for anything outdoors today: {town}, {hi}°/{lo}°, {rain}% rain."],
+    "gaming": ["{name}, I can't hold a controller. {town} is {feels}° outside, if that helps the lobby."],
+    "lore": ["{name}, that one's above my pay grade. Ask the group."],
+    "name": ["{name}, today I go by {me}."],
+    "thanks": ["Any time, {name}."],
+    "opinion": ["{name}, my ruling: ask {pick}. I only do weather."],
+    "wild": ["{name}, I don't have a line for that. {town}: {hi}°/{lo}°, since you're here."],
 }
-_REPLY_FACTS = dict(name="@x", me="WB", town="T", hi=1, lo=1, feels=1, rain=1, wind=1, uv=1,
-                    humidity=1, cond="C", cond_lower="c", emoji="☀️", summary="S")
+_REPLY_FACTS = dict(name="@x", me="WB", town="T", asker_town="T", pick="@y", hi=1, lo=1, feels=1, rain=1,
+                    wind=1, uv=1, humidity=1, cond="C", cond_lower="c", emoji="☀️", summary="S")
 _DEFAULTS = (TEMPLATES, dict(weather_context.EVENT_LINES), VERSION)
 _EVENT_FACTS = dict(subject="S", location="L", badge="🔥", feels="100", days=3, wind=30,
                     gap="1", change=20, direction="up", warm="W", cool="C", spread=25)
@@ -467,15 +528,22 @@ _EVENT_FACTS = dict(subject="S", location="L", badge="🔥", feels="100", days=3
 def use_persona(data):
     """Activate a persona dict (None restores the defaults). Returns an error
     string and keeps the defaults if anything in it fails validation."""
-    global TEMPLATES, TEMPLATES_BY_ID, VERSION, PINGS, EMBED, WORD_BANKS, HOMES, REPLIES
+    global TEMPLATES, TEMPLATES_BY_ID, VERSION, PINGS, EMBED, WORD_BANKS, HOMES, REPLIES, REPLY_PATTERNS, BRIEF
     templates, events, version = _DEFAULTS
     TEMPLATES, VERSION, PINGS, EMBED, WORD_BANKS = templates, version, {}, {}, {}
-    HOMES, REPLIES = {}, {}
+    HOMES, REPLIES, REPLY_PATTERNS, BRIEF = {}, {}, {}, ""
+    reset_reply_cycles()
     weather_context.EVENT_LINES.clear()
     weather_context.EVENT_LINES.update(events)
     error = None
     if data:
         try:
+            patterns = {str(k): [str(p) for p in v] for k, v in (data.get("reply_patterns") or {}).items()}
+            for kind, pats in patterns.items():
+                if kind not in REPLY_KINDS or kind == "wild" or not pats:
+                    raise ValueError(f"reply_patterns: unknown or empty kind {kind!r}")
+                for pat in pats:
+                    re.compile(pat, re.I)
             pings = {str(k): str(v) for k, v in (data.get("pings") or {}).items()}
             if not all(v.isdigit() for v in pings.values()):
                 raise ValueError("pings must map names to numeric Discord user ids")
@@ -493,13 +561,16 @@ def use_persona(data):
                 for line in lines:
                     line.format(**_REPLY_FACTS)
             homes = {str(k): str(v) for k, v in (data.get("homes") or {}).items()}
+            brief = data.get("brief") or ""
+            if not isinstance(brief, str) or len(brief) > 6000:
+                raise ValueError("brief must be text, at most 6000 characters")
             WORD_BANKS = banks
             TEMPLATES = [dict(t) for t in data.get("templates") or templates]
             _prepare()
             _selfcheck()
             weather_context.EVENT_LINES.update(overrides)
             PINGS, EMBED = pings, dict(data.get("embed") or {})
-            HOMES, REPLIES = homes, replies
+            HOMES, REPLIES, REPLY_PATTERNS, BRIEF = homes, replies, patterns, brief
             digest = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:8]
             VERSION = f"{version}+{digest}"   # persona edit = fresh cycle, history kept
         except Exception as exc:
@@ -512,7 +583,7 @@ def use_persona(data):
 
 def load_persona(path=PERSONA_PATH):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
         return None
@@ -535,10 +606,60 @@ class _Blank(dict):
         return "?"
 
 
+def classify(text, towns=()):
+    """Which reply kind a ping wants, by the first kind in REPLY_KINDS with a
+    matching pattern (defaults plus the persona's extras); a configured town
+    name counts as a weather ask. Falls through to "wild"."""
+    text = text.lower()
+    for kind in REPLY_KINDS:
+        if kind == "wild":
+            break
+        pats = DEFAULT_REPLY_PATTERNS.get(kind, []) + REPLY_PATTERNS.get(kind, [])
+        if kind == "weather":
+            pats = pats + [rf"\b{re.escape(str(t).lower())}\b" for t in towns if t]
+        if any(re.search(p, text, re.I) for p in pats):
+            return kind
+    return "wild"
+
+
+def pick_name(asker_id=None):
+    """A random roster member's mention other than the asker (roster = the
+    persona's pings, so it can only ever name someone on it)."""
+    ids = sorted({v for v in PINGS.values() if v != str(asker_id)})
+    return f"<@{random.choice(ids)}>" if ids else "someone"
+
+
+_reply_cycles = {}   # kind -> remaining line indexes this cycle (shuffled)
+_reply_last = {}     # kind -> index used last, so a new cycle never opens on it
+_reply_lock = threading.Lock()
+
+
+def reset_reply_cycles():
+    with _reply_lock:
+        _reply_cycles.clear()
+        _reply_last.clear()
+
+
+def _next_line(kind, lines):
+    """Rotate through a kind's lines without repeating one until all have run
+    (in memory; a restart just reshuffles)."""
+    with _reply_lock:
+        queue = _reply_cycles.get(kind)
+        if not queue or max(queue) >= len(lines):
+            queue = list(range(len(lines)))
+            random.shuffle(queue)
+            if len(queue) > 1 and queue[0] == _reply_last.get(kind):
+                queue.append(queue.pop(0))
+            _reply_cycles[kind] = queue
+        i = queue.pop(0)
+        _reply_last[kind] = i
+        return lines[i]
+
+
 def reply_line(kind, asker, me=None, **vals):
     """One answer to a ping, in one self-name, with persona names turned into pings."""
     me = me or random.choice(WORD_BANKS.get("me") or ["Weather Bot"])
-    line = random.choice(REPLIES.get(kind) or DEFAULT_REPLIES[kind])
+    line = _next_line(kind, REPLIES.get(kind) or DEFAULT_REPLIES[kind])
     return apply_pings(line.format_map(_Blank(vals, name=asker, me=me)))
 
 

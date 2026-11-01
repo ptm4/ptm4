@@ -5,7 +5,10 @@
 'use strict';
 
 const RING_MAX = 240; // 1h at 15s
-const METRICS = ['cpu_pct', 'mem_pct', 'load1', 'temp_c', 'rx_bps', 'tx_bps'];
+const METRICS = ['cpu_pct', 'mem_pct', 'root_pct', 'pool_pct', 'load1', 'temp_c', 'rx_bps', 'tx_bps'];
+// Storage history in homelab-db is homelab-doctor's (every 30 min, back to June), under
+// its own names; vitals_logger doesn't sample disks.
+const HLDB_NAME = { root_pct: 'disk_used_pct', pool_pct: 'pool_used_pct' };
 const RANGES = { '1h': null, '24h': 1, '7d': 7, '30d': 30, '90d': 90 };
 const CACHE_MS = 60_000;
 
@@ -30,7 +33,7 @@ function createHistory({ hldbUrl = process.env.HOMELAB_DB_URL || '', hldbToken =
     const key = `${host}|${metric}|${days}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
-    const url = `${hldbUrl}/api/metrics?metric=${encodeURIComponent(metric)}&host=${encodeURIComponent(host)}&days=${days}`;
+    const url = `${hldbUrl}/api/metrics?metric=${encodeURIComponent(HLDB_NAME[metric] ?? metric)}&host=${encodeURIComponent(host)}&days=${days}`;
     const res = await fetch(url, {
       headers: hldbToken ? { Authorization: `Bearer ${hldbToken}` } : {},
       signal: AbortSignal.timeout(8000),

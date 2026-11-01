@@ -18,6 +18,8 @@
 
   const id = $derived(decodeURIComponent(page.params.id ?? ''));
   const r = $derived(live.byId(id));
+  // The filesystem behind the Storage tile's headline (agent v0.9.0+).
+  const fullest = $derived(r?.metrics?.disks?.find((d) => (d.pool ? d.source : d.mount) === r?.metrics?.disk_mount) ?? null);
   const children = $derived(r?.type === 'host' ? live.resources.filter((x) => x.type === 'container' && x.host === r.id) : []);
   type Tab = 'overview' | 'metrics' | 'logs' | 'activity';
   let tab = $state<Tab>('overview');
@@ -94,7 +96,7 @@
   </div>
 
   {#if tab === 'metrics'}
-    <MetricsPanel host={r.id} />
+    <MetricsPanel host={r.id} pool={!!r.metrics?.disks?.some((d) => d.pool)} />
   {:else if tab === 'logs'}
     <LogViewer host={r.host} container={r.name} />
   {:else if tab === 'overview'}
@@ -124,8 +126,26 @@
       <section class="tiles">
         <div class="tile"><span class="faint">CPU</span><strong class="num">{pct(r.metrics.cpu_pct)}</strong><div class="meter {tone(r.metrics.cpu_pct)}"><span style="width:{r.metrics.cpu_pct ?? 0}%"></span></div><span class="faint">load {r.metrics.load1 ?? '—'} · {r.metrics.cores ?? '?'} cores</span></div>
         <div class="tile"><span class="faint">Memory</span><strong class="num">{pct(r.metrics.mem_pct)}</strong><div class="meter {tone(r.metrics.mem_pct)}"><span style="width:{r.metrics.mem_pct ?? 0}%"></span></div><span class="faint">of {bytes(r.metrics.mem_total_bytes)}</span></div>
+        <div class="tile"><span class="faint">Storage</span><strong class="num">{pct(r.metrics.disk_pct)}</strong><div class="meter {tone(r.metrics.disk_pct, 80, 90)}"><span style="width:{r.metrics.disk_pct ?? 0}%"></span></div><span class="faint">{fullest ? `${bytes(fullest.avail_bytes)} free · ${r.metrics.disk_mount}` : 'agent too old to report'}</span></div>
         <div class="tile"><span class="faint">Temperature</span><strong class="num">{r.metrics.temp_c != null ? `${Math.round(r.metrics.temp_c)} °C` : '—'}</strong><span class="faint">up {uptime(r.metrics.uptime_s)}</span></div>
         <div class="tile"><span class="faint">Network</span><strong class="num">↓ {rate(r.metrics.rx_bps)}</strong><span class="faint">↑ {rate(r.metrics.tx_bps)}</span></div>
+      </section>
+    {/if}
+
+    {#if r.metrics?.disks?.length}
+      <section class="panel disks">
+        <div class="panel-head"><h2>Storage</h2><span class="faint">local filesystems{r.metrics.disks.some((d) => d.pool) ? ' and ZFS pools' : ''}</span></div>
+        <div class="rows">
+          {#each r.metrics.disks as d (d.source + (d.mount ?? ''))}
+            <div class="row disk">
+              <span class="mono">{d.pool ? `${d.source} (pool)` : d.mount}</span>
+              <span class="faint fs">{d.pool ? d.mount ?? '' : d.source} · {d.fstype}{d.readonly ? ' · read-only' : ''}</span>
+              <div class="meter {tone(d.pct, 80, 90)}"><span style="width:{d.pct ?? 0}%"></span></div>
+              <span class="num">{pct(d.pct)}</span>
+              <span class="faint sz">{bytes(d.avail_bytes)} free of {bytes(d.size_bytes)}</span>
+            </div>
+          {/each}
+        </div>
       </section>
     {/if}
 
@@ -197,6 +217,11 @@
   .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: var(--s3); margin-bottom: var(--s4); }
   .tile { display: flex; flex-direction: column; gap: 4px; padding: var(--s3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); font-size: var(--fs-sm); }
   .tile strong { font-size: var(--fs-xl); font-weight: 600; }
+  .disks { margin-bottom: var(--s4); }
+  .disk { grid-template-columns: minmax(110px, 1fr) minmax(0, 1.4fr) minmax(80px, 1.2fr) 42px minmax(130px, auto); align-items: center; font-size: var(--fs-sm); }
+  .disk .num { text-align: right; }
+  .fs, .sz { font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mono { font-family: var(--mono); overflow-wrap: anywhere; }
   .child { grid-template-columns: 12px minmax(120px, 1fr) 60px minmax(0, 2fr); font-size: var(--fs-sm); }
   .kind { font-size: var(--fs-xs); }
   .st { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -209,5 +234,9 @@
   @media (max-width: 720px) {
     .child { grid-template-columns: 12px minmax(0, 1fr) auto; }
     .child .kind { display: none; }
+    .disk { grid-template-columns: minmax(0, 1fr) 42px; }
+    .disk .fs { display: none; }
+    .disk .num { grid-row: 1; grid-column: 2; }
+    .disk .meter, .disk .sz { grid-column: 1 / -1; }
   }
 </style>

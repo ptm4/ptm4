@@ -61,10 +61,12 @@
         <div class="meters">
           <div><span class="faint">CPU</span><span class="num">{pct(h.metrics.cpu_pct)}</span><div class="meter {tone(h.metrics.cpu_pct)}"><span style="width:{h.metrics.cpu_pct ?? 0}%"></span></div></div>
           <div><span class="faint">Mem</span><span class="num">{pct(h.metrics.mem_pct)}</span><div class="meter {tone(h.metrics.mem_pct)}"><span style="width:{h.metrics.mem_pct ?? 0}%"></span></div></div>
-          <div><span class="faint">Temp</span><span class="num">{h.metrics.temp_c != null ? `${Math.round(h.metrics.temp_c)}°` : '—'}</span></div>
-          <div><span class="faint">Ctr</span><span class="num">{childCount(h)}</span></div>
+          <div title={h.metrics.disk_mount ? `fullest: ${h.metrics.disk_mount}` : undefined}><span class="faint">Disk</span><span class="num">{pct(h.metrics.disk_pct)}</span><div class="meter {tone(h.metrics.disk_pct, 80, 90)}"><span style="width:{h.metrics.disk_pct ?? 0}%"></span></div></div>
         </div>
-        <div class="foot faint"><span>up {uptime(h.metrics.uptime_s)}</span><Age at={h.updated_at} staleAfterMs={45_000} /></div>
+        <div class="foot faint">
+          <span>up {uptime(h.metrics.uptime_s)} · {h.metrics.temp_c != null ? `${Math.round(h.metrics.temp_c)}°` : '—'} · {childCount(h)} ctr</span>
+          <Age at={h.updated_at} staleAfterMs={45_000} />
+        </div>
       {:else}
         <div class="foot faint"><span>{h.state_text}</span><Age at={h.updated_at} /></div>
       {/if}
@@ -171,7 +173,7 @@
   .state { font-size: var(--fs-sm); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .state.attn { color: var(--warn); }
   .host[data-status='crit'] .state.attn { color: var(--crit); }
-  .meters { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 10px; align-items: end; }
+  .meters { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: end; }
   .meters > div { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; font-size: var(--fs-sm); }
   .meters .meter { grid-column: 1 / -1; }
   .foot { display: flex; justify-content: space-between; font-size: var(--fs-xs); }

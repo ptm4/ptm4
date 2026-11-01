@@ -131,7 +131,9 @@ Then check the feature for real on :8444 (the container has the tokens dev lacks
 - **Container → opti's own LAN ports is blocked** by opti's ufw. Reach opti-hosted services by
   compose name on the `internal` network (`http://dozzle:8080`, `http://hltv-api:8080`,
   `http://seerr:5055`, `http://discord-*:8080`); other hosts by LAN IP.
-- **hl-arch-agent (≥ v0.8.0)** on every host: `GET /containers` (open, live `docker ps`),
+- **hl-arch-agent (≥ v0.9.0)** on every host: `GET /vitals` carries `disks` (local block
+  filesystems via statvfs + ZFS pools; never CIFS — a hung share would block it), which
+  `derive()` turns into `disk_pct`/`root_pct`/`pool_pct`. `GET /containers` (open, live `docker ps`),
   `GET /logs` (token), mutators need the token. It is **not** CI-deployed — install by hand to
   `/usr/local/bin/hl-arch-agent.py` with LF line endings, back up the old one, restart the unit.
   Fragments (`POST /api/architecture/ingest`) arrive only daily — never use them for live state.

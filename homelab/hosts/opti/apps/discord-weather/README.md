@@ -2,10 +2,12 @@
 
 Logs in as the **Weather-Bot** Discord account. It posts a daily weather report
 (Open-Meteo, no API key) to `channel_id` as an embed, and **answers pings**:
-mention it or reply to it and it replies with that town's forecast (a town named
-in the message, else the asker's home town from the persona, else every town).
-"full report" gets the whole embed. Replies only peek, so they never consume the
-morning joke or advance streaks. There is a 20 s cooldown per person.
+mention it (user or its own role) or reply to it. A weather ask gets that town's
+forecast (a town named in the message, else the asker's home town from the
+persona, else every town) and "full report" gets the whole embed; anything else
+gets an in-character line for what was asked — see *Answering pings* below.
+Replies only peek, so they never consume the morning joke or advance streaks.
+Rate limit: 8 s per person and at most 6 replies per channel per minute.
 
 The control API is used by the webapp's Bots → Weather tab (`webapp.lan:8443`),
 where locations, post time, channel, enable/disable, test send and preview are
@@ -134,6 +136,114 @@ Layout: locations render as a 2-per-row grid (inline fields + invisible
 spacer fields). Sunrise/sunset appear once in the header, taken from the
 first location in the list — fine while all locations share a metro area.
 
+## Answering pings
+
+Most pings are not weather questions. A ping is first **classified** into one of
+these kinds, in this precedence order (the first kind with a matching pattern
+wins; `wild` is the catch-all):
+
+| Kind | Triggers (generic defaults in `witty_messages.DEFAULT_REPLY_PATTERNS`) | Answer |
+|---|---|---|
+| `full` | full / report / briefing / everything | the whole embed |
+| `control` | thermostat, "turn it down", "make it stop raining", melting | line |
+| `command` | "every time you…", "from now on", "repeat after me" | line |
+| `sentience` | blink twice, held against, alive, live forever, trust me | line |
+| `rating` | "6 out of 10", "rate you" | line |
+| `complaint` | lied, liar, wrong, dissent | line |
+| `files` | the files, burned, "what do you know about me" | line |
+| `weather` | weather, forecast, rain, snow, temp…, or a configured town name | forecast (`town` / `all`) |
+| `outdoors` | camping, hike, trail, fire pit | line |
+| `gaming` | any gamers, where we dropping, lobby | line |
+| `lore` | percolator, scrolls, council, Mr. Murf | line |
+| `name` | clanker, "what do we call you" | line |
+| `thanks` | thanks, gm, hello | line |
+| `opinion` | "what do you think", "do you prefer", "who has the…", rank, best | line |
+| `wild` | anything else | line from the big unhinged pool |
+
+Specific kinds sit above `weather` on purpose, so "I'm melting, turn the
+thermostat down" is a control request, not a forecast. Lines come from the
+persona's `replies` (one list per kind; the public defaults are one plain line
+each) and rotate **without repeating** until a kind's list is exhausted (in
+memory; a restart reshuffles). Every line can use the asker's weather
+(`{town} {hi} {lo} {feels} {rain} {wind} {cond} {cond_lower} {emoji}`, from the
+asker's home town or the first configured town), `{name}` (the asker's mention),
+`{me}` (one self-name per message) and `{pick}` (a random *other* roster
+member's mention, drawn from the persona's `pings`). A persona may add triggers
+per kind with `"reply_patterns": {"lore": ["\\bgiacomo\\b"]}` (regex, case-
+insensitive; not for `wild`).
+
+### The considered-reply lane (inbox + say)
+
+Every ping answered with a non-weather kind is appended to `/data/inbox.jsonl`
+with the line it got, so someone with a better answer (Peter, or Claude in a
+session Peter drives) can follow up as Weather-Bot:
+
+```sh
+docker exec discord-weather wget -qO- http://127.0.0.1:8080/inbox
+docker exec discord-weather wget -qO- --header 'Content-Type: application/json' \
+  --post-data '{"content":"Statement: …","reply_to":"<message id>"}' http://127.0.0.1:8080/say
+```
+
+`/say` posts as a reply to that message (users-only mentions; `@everyone`/`@here`
+are refused), marks the inbox entry answered, and logs it. The bot never calls a
+model itself; the lane is how a person gets a word in.
+
+### Which server: `guild_id`, `reply_channels`, profiles
+
+Pings are answered only in `guild_id` (any server if blank) and, if
+`reply_channels` is set, only in those channels. `persona` names the persona
+file under `/data`. `profiles` holds named presets of those plus `channel_id`,
+so the bot flips between the live server and a test server in one call:
+
+```sh
+# define once (PUT /config merges, so other settings are untouched)
+… -X PUT /config '{"profiles": {"live": {"guild_id": "…", "channel_id": "…", "persona": "persona.json"},
+                                "test": {"guild_id": "…", "channel_id": "…", "persona": "persona-test.json"}}}'
+# switch
+docker exec discord-weather wget -qO- --header 'Content-Type: application/json' \
+  --post-data '{"name":"test"}' http://127.0.0.1:8080/profile
+```
+
+Switching copies the profile's fields into the flat config (which stays the
+single source of truth the scheduler, gateway and webapp read) and reloads the
+persona. `GET /health` reports `active_profile`, `guild_id` and `inbox_pending`.
+
+**Deploy order matters once:** a persona with the new reply kinds is rejected by
+the *old* code (it falls back to the public defaults entirely), so ship the code
+first and `docker cp` the persona after the container is running the new build.
+
+### Model-written replies (`model_reply.py`, off by default)
+
+A profile can let the bot ask Claude for the line instead of drawing a template:
+the persona's `brief` (who the bot is, the voice, the roster, the off-limits
+list), the last `history` messages of the channel, the ping, the asker's weather
+and three template lines of the kind as a voice reference go to the Messages
+API; one line comes back, is checked (users-only mentions from the roster,
+`@everyone`/`@here`/role pings refused, 400 chars max) and posted. Any
+failure, timeout or refusal falls back to the template line, so the bot never
+goes quiet because the model did. Forecast kinds (`weather`, `full`) never use
+the model.
+
+```json
+"claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "medium",
+           "daily_cap": 40, "max_tokens": 300, "history": 10, "kinds": []}
+```
+
+`effort` is low/medium/high (thinking stays adaptive). `kinds` empty = every
+non-weather kind. `claude` is a profile field, so it is
+switched on **per server**: `enabled: true` is rejected unless that profile (or
+the flat config) names a `guild_id`, and switching to a profile without a
+`claude` block turns it off. The key comes from `ANTHROPIC_API_KEY` in the
+container environment (the compose file passes it from the stack `.env`) or,
+failing that, `/data/anthropic.key`. `GET /health` reports `claude`:
+enabled, model, key source, today's calls and tokens, and the last error.
+Usage is in `/data/claude_usage.json`, reset per local day. Replies carry
+`"source": "claude"` in the inbox. Pricing is per token at the model's rate;
+at a handful of pings a day the cost is cents.
+
+Personal use only: this answers whoever pings it on the configured server, so
+keep it on a server that is yours.
+
 ## Control API (`:8080`, internal docker network only — never published)
 
 | Endpoint | Purpose |
@@ -146,6 +256,10 @@ first location in the list — fine while all locations share a metro area.
 | `GET /geocode?q=name` | Open-Meteo geocoding search (top 5) for adding locations |
 | `GET /witty` | witty pool status: remaining, cycle, next-up (generic), last posted |
 | `POST /witty/reroll` | rotate today's pick to the back of the cycle, return the new one |
+| `GET /inbox?limit=50` | pending non-weather pings and the line each got |
+| `POST /inbox/ack` | `{"ids": [...]}` — mark entries handled without replying |
+| `POST /say` | `{"content", "reply_to"?, "channel_id"?}` — post as Weather-Bot (reply if `reply_to`) |
+| `POST /profile` | `{"name"}` — switch to a configured server profile (= `PUT /config {"active_profile"}`) |
 
 The webapp proxies these at `/api/weather/*` (backend/routes/weather.js).
 

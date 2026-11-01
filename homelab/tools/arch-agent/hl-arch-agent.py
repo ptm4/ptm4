@@ -95,6 +95,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import socket
 import ssl
 import subprocess
@@ -109,7 +110,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import monitor
 
-AGENT_VERSION = "0.8.0"
+AGENT_VERSION = "0.9.0"
 
 HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
@@ -304,10 +305,94 @@ def collect_vitals():
         "mem": _section(collect_mem, errors, "mem"),
         "temp_c": _section(collect_temp, errors, "temp"),
         "net": _section(collect_net_counters, errors, "net"),
+        "disks": _section(collect_storage, errors, "disks"),
         "uptime_s": collect_uptime(),
         "agent_version": AGENT_VERSION,
         "errors": errors,
     }
+
+
+# ── storage (v0.9.0) ───────────────────────────────────────────────────────────
+# Capacity per filesystem, so the dashboard can show storage beside CPU and memory.
+# Local kernel filesystems only: statvfs on a CIFS/NFS mount blocks in the kernel when
+# the server is gone (and so would a wedged FUSE daemon), which would hang /vitals —
+# and a network share's space is its server's to report anyway. ZFS datasets all share
+# their pool's free space, so pools are reported once each instead of per dataset.
+_LOCAL_FSTYPES = ("ext2", "ext3", "ext4", "xfs", "btrfs", "f2fs", "vfat", "exfat")
+_ZFS_TTL_S = 60
+_zfs = {"at": 0.0, "pools": [], "busy": False}
+_zfs_lock = threading.Lock()
+
+
+def _unescape_mount(s):
+    # /proc/mounts writes a space in a path as \040 (octal).
+    return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m.group(1), 8)), s)
+
+
+def _refresh_zfs():
+    """`zpool list` for size/alloc (the same used% homelab-doctor records) and `zfs list`
+    for what is actually writable. Runs on its own thread: a suspended pool can hang
+    these commands, and that must never stall a /vitals response."""
+    pools = []
+    try:
+        out, _ = _run(["zpool", "list", "-Hp", "-o", "name,size,alloc"], timeout=20)
+        avail = {}
+        zout, _ = _run(["zfs", "list", "-Hp", "-d", "0", "-o", "name,avail,mountpoint"], timeout=20)
+        for line in zout.splitlines():
+            parts = line.split("\t")
+            if len(parts) == 3 and parts[1].isdigit():
+                avail[parts[0]] = (int(parts[1]), parts[2])
+        for line in out.splitlines():
+            parts = line.split("\t")
+            if len(parts) != 3 or not parts[1].isdigit() or not parts[2].isdigit():
+                continue
+            name, size, alloc = parts[0], int(parts[1]), int(parts[2])
+            free, mount = avail.get(name, (size - alloc, None))
+            pools.append({
+                "source": name, "fstype": "zfs", "pool": True, "readonly": False,
+                "mount": mount if mount and mount.startswith("/") else None,
+                "size_bytes": size, "used_bytes": alloc, "avail_bytes": free,
+            })
+    finally:
+        with _zfs_lock:
+            _zfs.update(at=time.time(), pools=pools, busy=False)
+
+
+def collect_storage():
+    disks, seen = [], set()
+    with open("/proc/self/mounts") as f:
+        lines = f.readlines()
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        source, mount, fstype, opts = parts[0], _unescape_mount(parts[1]), parts[2], parts[3]
+        if fstype not in _LOCAL_FSTYPES or not source.startswith("/dev/") or source in seen:
+            continue  # the `seen` check drops bind mounts of the same device
+        seen.add(source)
+        try:
+            st = os.statvfs(mount)
+        except OSError:
+            continue
+        if not st.f_blocks:
+            continue
+        disks.append({
+            "source": source, "fstype": fstype, "mount": mount, "pool": False,
+            "readonly": "ro" in opts.split(","),
+            "size_bytes": st.f_frsize * st.f_blocks,
+            "used_bytes": st.f_frsize * (st.f_blocks - st.f_bfree),
+            "avail_bytes": st.f_frsize * st.f_bavail,
+        })
+    if shutil.which("zpool"):
+        with _zfs_lock:
+            stale = time.time() - _zfs["at"] > _ZFS_TTL_S and not _zfs["busy"]
+            if stale:
+                _zfs["busy"] = True
+            pools = list(_zfs["pools"])
+        if stale:
+            threading.Thread(target=_refresh_zfs, name="zfs-capacity", daemon=True).start()
+        disks.extend(pools)
+    return disks
 
 
 def collect_cpu_cores():
