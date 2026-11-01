@@ -86,7 +86,8 @@ class ModelReplyTests(unittest.TestCase):
         self.assertEqual(mr.key_source(), "file")
         self.assertFalse(mr.wants(self.cfg(), "wild"))           # disabled
         self.assertTrue(mr.wants(self.on(), "wild"))
-        self.assertFalse(mr.wants(self.on(), "weather"))         # forecasts stay template/embed
+        self.assertTrue(mr.wants(self.on(), "weather"))          # answers anything, weather included
+        self.assertFalse(mr.wants(self.on(), "full"))            # the briefing card stays an embed
         self.assertFalse(mr.wants(self.on(kinds=["opinion"]), "wild"))
         self.assertTrue(mr.wants(self.on(kinds=["opinion"]), "opinion"))
         with patch.object(mr, "_create", return_value=response()):
@@ -168,6 +169,111 @@ class ModelReplyTests(unittest.TestCase):
         with patch.object(mr, "ask", return_value=None), patch.object(bot, "reply_facts", return_value=facts):
             self.assertIsNone(bot.model_line(self.on(), "3", "x", "wild", []))
         self.assertIn("brief", witty.use_persona({**PERSONA, "brief": "x" * 6001}))
+
+    def test_model_line_uses_the_town_named_in_the_ping(self):
+        cfg = self.on(locations=[{"name": "Bellerose, NY", "lat": 1, "lon": 1},
+                                 {"name": "Hicksville, NY", "lat": 2, "lon": 2}])
+        with patch.object(mr, "ask", return_value="Hicksville: damp."), \
+                patch.object(bot, "reply_facts", return_value={}) as facts:
+            bot.model_line(cfg, "3", "<@1> how's Hicksville", "weather", [])
+        self.assertEqual(facts.call_args.args[2]["name"], "Hicksville, NY")
+
+    def test_decide_reports_a_spent_budget_as_limit(self):
+        (self.folder / "key").write_text("sk-test", encoding="utf-8")
+        quiet = lambda *_: None
+        self.assertIsNone(mr.decide(self.cfg(), "wild"))                  # off
+        self.assertIsNone(mr.decide(self.on(), "full"))
+        self.assertEqual(mr.decide(self.on(), "wild"), "model")
+        with patch.object(mr, "_create", return_value=response(inp=900, out=200)):
+            mr.ask(self.on(), "s", "u", log=quiet)
+        self.assertEqual(mr.decide(self.on(daily_cap=1), "wild"), "limit")
+        self.assertEqual(mr.spent(self.on(daily_cap=1)), "calls")
+        self.assertEqual(mr.spent(self.on(daily_tokens=1000)), "tokens")
+        self.assertEqual(mr.decide(self.on(daily_tokens=1000), "rating"), "limit")
+        self.assertEqual(mr.decide(self.on(daily_tokens=0), "rating"), "model")   # 0 = no token cap
+        self.assertEqual(mr.status(self.on(daily_cap=1))["spent"], "calls")
+
+    def test_api_out_of_credit_or_rate_limited_means_limit_until_tomorrow(self):
+        (self.folder / "key").write_text("sk-test", encoding="utf-8")
+        quiet = lambda *_: None
+        self.addCleanup(mr._limited.clear)
+        with patch.object(mr, "_create", side_effect=TimeoutError("slow")):
+            self.assertIsNone(mr.ask(self.on(), "s", "u", log=quiet))
+        self.assertEqual(mr.decide(self.on(), "wild"), "model")          # a timeout is not a limit
+        credit = RuntimeError("Your credit balance is too low to access the Anthropic API.")
+        with patch.object(mr, "_create", side_effect=credit):
+            self.assertIsNone(mr.ask(self.on(), "s", "u", log=quiet))
+        self.assertEqual(mr.spent(self.on()), "credit")
+        self.assertEqual(mr.decide(self.on(), "wild"), "limit")
+        mr._limited.clear()
+        rate = RuntimeError("rate limited")
+        rate.status_code = 429
+        with patch.object(mr, "_create", side_effect=rate):
+            mr.ask(self.on(), "s", "u", log=quiet)
+        self.assertEqual(mr.spent(self.on()), "rate")
+
+    def test_empty_or_thinking_only_reply_falls_back(self):
+        quiet = lambda *_: None
+        with patch.object(mr, "_create", return_value=response("", stop="max_tokens")):
+            self.assertIsNone(mr.ask(self.on(), "s", "u", log=quiet))
+        self.assertIn("max_tokens", mr._last_error)
+        self.assertEqual(mr.usage("America/New_York")["calls"], 1)       # still counted
+        with patch.object(mr, "_create", return_value=response()) as create:
+            mr.ask(self.on(), "s", "u", log=quiet, effort="medium", timeout=45.0)
+        s = create.call_args.args[0]
+        self.assertEqual((s["effort"], s["timeout"], s["max_tokens"]), ("medium", 45.0, 1024))
+
+    def test_new_settings_validate(self):
+        self.assertIsNone(mr.validate(self.on(morning=True, morning_effort="high", daily_tokens=0,
+                                              morning_history=0, max_tokens=4000)))
+        for bad in ({"morning": "yes"}, {"morning_effort": "max"}, {"daily_tokens": -1},
+                    {"morning_history": 501}, {"max_tokens": 4001}):
+            self.assertIsNotNone(mr.validate(self.cfg(claude=bad)), bad)
+        self.assertEqual(bot.DEFAULT_CONFIG["claude"], mr.DEFAULTS)    # the two copies agree
+        (self.folder / "key").write_text("sk-test", encoding="utf-8")
+        self.assertIsNone(mr.decide(self.on(), "morning"))             # morning has its own switch
+        self.assertEqual(mr.decide(self.on(morning=True, kinds=["opinion"]), "morning"), "model")
+
+    def test_morning_prompt_carries_chat_weather_and_past_lines(self):
+        system, user = mr.build_morning_prompt("Be WB.", ["@tomboe"], ["@tomboe: rate the rain 2/10"],
+                                               ["Bellerose: high 61°F"], "fire streak (days 5)",
+                                               [f"line {i}" for i in range(10)])
+        self.assertTrue(system.startswith("Be WB."))
+        self.assertIn("280 characters", system)
+        self.assertIn("Roster (the only handles you may mention): @tomboe", system)
+        self.assertIn("@tomboe: rate the rain 2/10", user)
+        self.assertIn("- Bellerose: high 61°F", user)
+        self.assertIn("weather story: fire streak (days 5)", user)
+        self.assertIn("- line 9", user)
+        self.assertNotIn("- line 2", user)                               # only the last seven
+        _, quiet = mr.build_morning_prompt("", [], [], [], "", [])
+        self.assertIn("nobody said anything", quiet)
+        self.assertNotIn("weather story", quiet)
+        self.assertLessEqual(len(mr.clean_line("x. " * 300, max_chars=mr.MORNING_MAX_CHARS)), mr.MORNING_MAX_CHARS)
+
+    def test_limit_and_pester_lines_stay_in_character(self):
+        with patch.object(bot, "reply_facts", return_value={"town": "Bellerose", "feels": 50}):
+            line = bot.limit_line(self.cfg(), "7")
+        self.assertIn("<@7>", line)
+        self.assertNotIn("limit", line.lower())                          # never says it plainly
+        with patch.object(bot, "reply_facts", side_effect=AssertionError("no fetch")):
+            self.assertIn("<@7>", bot.limit_line(self.cfg(), "7", "pester"))
+        self.assertIsNone(witty.use_persona({**PERSONA, "replies": {"limit": ["Closed, {name}."]}}))
+        with patch.object(bot, "reply_facts", return_value={}):
+            self.assertEqual(bot.limit_line(self.cfg(), "7"), "Closed, <@7>.")
+        self.assertNotIn("limit", witty.REPLY_KINDS)                     # never classified from a ping
+        self.assertIn("persona rejected", witty.use_persona({"replies": {"limit": ["{nope}"]}}))
+
+    def test_one_pester_line_per_person_per_interval(self):
+        self.addCleanup(bot._last_nag.clear)
+        self.assertTrue(bot.nag_ok("u1", now=1000))
+        self.assertFalse(bot.nag_ok("u1", now=1000 + bot.NAG_INTERVAL - 1))
+        self.assertTrue(bot.nag_ok("u2", now=1001))
+        self.assertTrue(bot.nag_ok("u1", now=1000 + bot.NAG_INTERVAL))
+        self.addCleanup(bot._last_reply.clear)
+        self.addCleanup(bot._burst.clear)
+        self.assertFalse(bot.throttled("n1", "c", now=5000))
+        self.assertEqual(bot.throttled("n1", "c", now=5001), "cooldown")
 
 
 if __name__ == "__main__":

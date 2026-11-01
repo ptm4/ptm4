@@ -214,32 +214,64 @@ first and `docker cp` the persona after the container is running the new build.
 
 ### Model-written replies (`model_reply.py`, off by default)
 
-A profile can let the bot ask Claude for the line instead of drawing a template:
-the persona's `brief` (who the bot is, the voice, the roster, the off-limits
-list), the last `history` messages of the channel, the ping, the asker's weather
+A profile can let the bot ask Claude to answer whatever it was asked, in
+character, instead of drawing a template: the persona's `brief` (who the bot is,
+the voice, the roster, the off-limits list), the last `history` messages of the
+channel, the ping, the weather for the town it names (else the asker's home)
 and three template lines of the kind as a voice reference go to the Messages
-API; one line comes back, is checked (users-only mentions from the roster,
-`@everyone`/`@here`/role pings refused, 400 chars max) and posted. Any
-failure, timeout or refusal falls back to the template line, so the bot never
-goes quiet because the model did. Forecast kinds (`weather`, `full`) never use
-the model.
+API; one reply comes back, is checked (users-only mentions from the roster,
+`@everyone`/`@here`/role pings refused, 900 chars max) and posted. Any
+failure, timeout, refusal or empty reply falls back to the template line, so
+the bot never goes quiet because the model did. Every kind can use the model,
+weather questions included; only `full` keeps its briefing card.
 
 ```json
-"claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "medium",
-           "daily_cap": 40, "max_tokens": 300, "history": 10, "kinds": []}
+"claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "low",
+           "daily_cap": 150, "daily_tokens": 400000, "max_tokens": 1024,
+           "history": 10, "kinds": [],
+           "morning": true, "morning_effort": "medium", "morning_history": 150}
 ```
 
-`effort` is low/medium/high (thinking stays adaptive). `kinds` empty = every
-non-weather kind. `claude` is a profile field, so it is
+`effort` is low/medium/high (thinking stays adaptive; `max_tokens` covers the
+thinking too, so keep it well above the reply). `kinds` empty = every kind.
+
+**Limits, in character.** When today's budget is spent (`daily_cap` calls or
+`daily_tokens` tokens, local day; `daily_tokens: 0` = no token cap) or the API
+says the credit is gone or rate-limits it, the bot stops calling the model until
+tomorrow and answers with a `limit` line instead ("my daily allotment of words
+has been spent..."). Someone pinging again inside the 8 s cooldown gets one
+`pester` line ("one ping at a time, I am a weather bot, not a slot machine"),
+then silence for 10 minutes. Both pools live in `witty_messages.py` and a
+persona can replace them through `replies.limit` / `replies.pester`.
+
+**Morning line from the chat.** With `morning: true` the daily post's line under
+`@everyone` is written by the model instead of drawn from the witty pool. Before
+the post the bot reads, over Discord REST, every message in the post channel and
+`reply_channels` since the last *posted* morning line (up to `morning_history`,
+newest kept; the first run reads the last 24 h), and gives the model that chat,
+today's weather per town, the weather story (streaks, swings) and its last seven
+morning lines so it doesn't repeat itself. The per-channel cursor
+(`/data/chat_cursor.json`) only moves after the post lands, the day's line is
+kept as a draft (`/data/morning_draft.json`) so the 15-minute retries re-post the
+same text, and posted lines are logged in `/data/morning_lines.jsonl`. If the
+model is off, spent or fails, the witty template line is used as before and is
+left in the pool when the model line wins. Previews (`GET /preview`) never call
+the model. The bot needs Read Message History in those channels.
+
+`claude` is a profile field, so it is
 switched on **per server**: `enabled: true` is rejected unless that profile (or
 the flat config) names a `guild_id`, and switching to a profile without a
 `claude` block turns it off. The key comes from `ANTHROPIC_API_KEY` in the
 container environment (the compose file passes it from the stack `.env`) or,
 failing that, `/data/anthropic.key`. `GET /health` reports `claude`:
-enabled, model, key source, today's calls and tokens, and the last error.
+enabled, model, key source, caps, `morning`, today's calls and tokens, `spent`
+(why the budget is gone, or empty) and the last error.
 Usage is in `/data/claude_usage.json`, reset per local day. Replies carry
-`"source": "claude"` in the inbox. Pricing is per token at the model's rate;
-at a handful of pings a day the cost is cents.
+`"source": "claude"` (or `"limit"`) in the inbox. Cost on Haiku 5.5 ($0.10 in /
+$0.50 out per million tokens): a reply is roughly 1.5k in / 400 out, about
+$0.0004, so a full 150-call day plus the morning line is about $0.06. The
+Max plan's monthly API credit covers that many times over; see
+https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers.
 
 Personal use only: this answers whoever pings it on the configured server, so
 keep it on a server that is yours.

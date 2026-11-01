@@ -78,9 +78,10 @@ DEFAULT_CONFIG = {
     "persona": "persona.json",
     "profiles": {},        # {"live": {"guild_id", "channel_id", "reply_channels", "persona"}, ...}
     "active_profile": "",
-    # model-written replies (model_reply.py); off unless a profile turns it on
-    "claude": {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 40,
-               "max_tokens": 300, "history": 10, "kinds": []},
+    # model-written replies and morning line (model_reply.py); off unless a profile turns it on
+    "claude": {"enabled": False, "model": "claude-haiku-5-5", "effort": "low", "daily_cap": 150,
+               "daily_tokens": 400000, "max_tokens": 1024, "history": 10, "kinds": [],
+               "morning": False, "morning_effort": "medium", "morning_history": 150},
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
         {"name": "Kew Gardens, NY", "lat": 40.7143, "lon": -73.8310},
@@ -370,10 +371,13 @@ def location_field(loc, fc):
     }
 
 
-def build_payload(cfg):
+def build_payload(cfg, morning=False):
     """Fetch all locations and build the webhook payload.
     Returns (payload, failed_names, receipt). The receipt contains the selected
-    joke (if any) and weather snapshot; commit only after webhook acceptance."""
+    joke (if any) and weather snapshot; commit only after webhook acceptance.
+    morning=True (the real daily post, not a preview) lets the model write the
+    line from the chat delta when the profile allows it; the template joke is
+    then left unconsumed and the receipt carries the model line instead."""
     tz = cfg["timezone"]
     now = datetime.now(ZoneInfo(tz))
     fields, failed = [], []
@@ -432,6 +436,19 @@ def build_payload(cfg):
         except Exception as e:
             log(f"witty selection failed: {e}")
     content = cfg.get("message", "")
+    # One self-name per post: sender, title and footer reuse the joke's {me}.
+    me = witty_messages.self_name(witty_entry) if witty_messages else "Mr. Murf"
+    model_entry = None
+    if morning:
+        try:
+            line, cursors = morning_line(cfg, observations, context, now.date().isoformat())
+        except Exception as e:  # the model path must never cost the report
+            log(f"morning: model line failed: {e}")
+            line, cursors = None, None
+        if line and len(f"{content} {line}") <= 2000:
+            model_entry = {"date": now.date().isoformat(), "line": line, "cursors": cursors or {}}
+            content = f"{content} {line}".strip()
+            witty_entry = None  # the template joke stays in the pool for another day
     if witty_entry:
         composed = f"{content} {witty_messages.apply_pings(witty_entry['rendered'])}".strip()
         if len(composed) <= 2000:
@@ -440,14 +457,14 @@ def build_payload(cfg):
             witty_entry = None  # too long — drop the joke, keep the report
     if content:
         payload["content"] = content
-    # One self-name per post: sender, title and footer reuse the joke's {me}.
-    me = witty_messages.self_name(witty_entry) if witty_messages else "Mr. Murf"
     embed = payload["embeds"][0]
     payload["username"] = payload["username"].replace("{me}", me)
     embed["title"] = embed["title"].replace("{me}", me)
     embed["footer"]["text"] = embed["footer"]["text"].replace("{me}", me)
     if context:
         witty_entry = dict(witty_entry or {}, weather_snapshot=context["snapshot"])
+    if model_entry:
+        witty_entry = dict(witty_entry or {}, model_morning=model_entry)
     return payload, failed, witty_entry
 
 
@@ -483,7 +500,7 @@ def post_report(cfg):
 
 
 def _post_report(cfg):
-    payload, failed, witty_entry = build_payload(cfg)
+    payload, failed, witty_entry = build_payload(cfg, morning=True)
     try:
         deliver(cfg, payload)
     except RuntimeError as e:
@@ -493,6 +510,8 @@ def _post_report(cfg):
             _witty.commit(witty_entry)
         except Exception as e:
             log(f"witty commit failed (line may repeat): {e}")
+    if witty_entry and witty_entry.get("model_morning"):
+        commit_morning(witty_entry["model_morning"])
     detail = "posted" + (f" (no data for: {', '.join(failed)})" if failed else "")
     return True, detail
 
@@ -709,13 +728,206 @@ def model_line(cfg, user_id, text, kind, recent):
         return None
     roster = sorted(n for n in witty_messages.PINGS if n.startswith("@"))
     ping = re.sub(r"<@[!&]?\d+>", " ", text).strip()
-    facts = reply_facts(cfg, user_id)
+    facts = reply_facts(cfg, user_id, match_location(cfg, ping.lower(), user_id))
     examples = list(witty_messages.REPLIES.get(kind) or [])[:3]
     system, user = model_reply.build_prompt(witty_messages.BRIEF, roster, recent, handle_of(user_id),
                                             ping, kind, facts, examples)
     raw = model_reply.ask(cfg, system, user, log=log)
     line = model_reply.clean_line(raw, witty_messages.PINGS.values()) if raw else ""
     return witty_messages.apply_pings(line) if line else None
+
+
+NAG_INTERVAL = 600   # one "slow down" line per person per 10 min; the rest are ignored
+_last_nag = {}       # user id -> monotonic time of their last pester line
+
+
+def limit_line(cfg, user_id, kind="limit"):
+    """The in-character "leave me alone": "limit" when the model's budget for
+    today is spent, "pester" when one person pings inside the cooldown. The
+    pester line skips the forecast fetch, it only needs the name."""
+    asker = f"<@{user_id}>"
+    if not witty_messages:
+        return f"{asker}, out of words for today." if kind == "limit" else f"{asker}, one at a time."
+    vals = reply_facts(cfg, user_id) if kind == "limit" else {}
+    return witty_messages.reply_line(kind, asker, **vals)
+
+
+def nag_ok(user_id, now=None):
+    """True at most once per NAG_INTERVAL per person (and records it)."""
+    now = time.monotonic() if now is None else now
+    if now - _last_nag.get(user_id, -NAG_INTERVAL) < NAG_INTERVAL:
+        return False
+    _last_nag[user_id] = now
+    return True
+
+
+# ── morning line from the chat delta (model_reply.py) ────────────────────────
+# Each morning the model reads what the group said since the previous morning
+# post and writes the line that rides under @everyone. A per-channel cursor (the
+# newest message id that the last *posted* line had read) lives in
+# chat_cursor.json and moves only once a post lands, so a failed or retried
+# morning re-reads the same delta. It reads over REST, not the gateway, so the
+# delta is the same whether or not the bot was online overnight. The day's line
+# is kept as a draft, so the 15-minute retries re-post the same text.
+CHAT_CURSOR_PATH = os.path.join(DATA_DIR, "chat_cursor.json")
+MORNING_DRAFT_PATH = os.path.join(DATA_DIR, "morning_draft.json")
+MORNING_LOG_PATH = os.path.join(DATA_DIR, "morning_lines.jsonl")
+MORNING_LOG_MAX = 60
+FIRST_LOOKBACK = 86400   # no cursor yet: read the last day
+DISCORD_EPOCH_MS = 1420070400000
+_self_id = {}
+
+
+def read_json(path, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return default
+
+
+def write_json(path, data):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def snowflake_at(epoch_seconds):
+    """The smallest Discord id at a moment, for 'after' queries by time."""
+    return str(max(0, int(epoch_seconds * 1000) - DISCORD_EPOCH_MS) << 22)
+
+
+def morning_channels(cfg):
+    """The post channel and any reply channels, deduplicated."""
+    out = []
+    for c in [cfg.get("channel_id")] + list(cfg.get("reply_channels") or []):
+        c = str(c or "")
+        if re.fullmatch(r"\d{1,20}", c) and c not in out:
+            out.append(c)
+    return out
+
+
+def _discord_get(path):
+    _, data = http_json(f"{DISCORD_API}{path}", headers={"Authorization": f"Bot {BOT_TOKEN}"}, tries=2)
+    return data
+
+
+def bot_user_id():
+    if "id" not in _self_id:
+        _self_id["id"] = str((_discord_get("/users/@me") or {}).get("id", ""))
+    return _self_id["id"]
+
+
+def fetch_since(channel_id, after, limit):
+    """Up to `limit` of the newest messages in a channel with ids above
+    `after`, oldest first. Pages backwards from now so a busy night keeps its
+    latest messages, and stops at the cursor."""
+    got, before = [], None
+    while len(got) < limit:
+        n = min(100, limit - len(got))
+        qs = urllib.parse.urlencode({"limit": n, **({"before": before} if before else {})})
+        page = sorted(_discord_get(f"/channels/{channel_id}/messages?{qs}") or [],
+                      key=lambda m: int(m["id"]), reverse=True)
+        fresh = [m for m in page if int(m["id"]) > int(after)]
+        got.extend(fresh)
+        if len(fresh) < len(page) or len(page) < n:
+            break
+        before = page[-1]["id"]
+    return sorted(got, key=lambda m: int(m["id"]))
+
+
+def chat_delta(cfg, limit, now=None):
+    """('handle: text' lines since the last posted morning line, oldest first;
+    {channel: newest id read}) across the post and reply channels."""
+    cursors = read_json(CHAT_CURSOR_PATH, {})
+    first = snowflake_at((now or time.time()) - FIRST_LOOKBACK)
+    me = witty_messages.self_name() if witty_messages else "Weather Bot"
+    own = bot_user_id() if BOT_TOKEN else ""
+    msgs, newest = [], {}
+    for ch in morning_channels(cfg):
+        got = fetch_since(ch, cursors.get(ch) or first, limit)
+        if got:
+            newest[ch] = got[-1]["id"]
+        msgs.extend(got)
+    msgs = sorted(msgs, key=lambda m: int(m["id"]))[-limit:] if limit else []
+    lines = []
+    for m in msgs:
+        a = m.get("author") or {}
+        text = m.get("content") or ""
+        if not text.strip() and not m.get("embeds"):
+            continue   # joins, pins, stickers
+        lines.append(chat_line(a.get("id", ""), a.get("global_name") or a.get("username") or "someone",
+                               text, str(a.get("id")) == own, me))
+    return lines, newest
+
+
+def describe_event(context):
+    ev = (context or {}).get("event") or {}
+    if not ev.get("kind"):
+        return ""
+    facts = ", ".join(f"{k} {v}" for k, v in (ev.get("facts") or {}).items())
+    return ev["kind"].replace("_", " ") + (f" ({facts})" if facts else "")
+
+
+def morning_line(cfg, observations, context, today):
+    """(line, cursors) written by the model from the chat delta, or (None, None)
+    for the template. Reuses today's draft so retries post the same line."""
+    if not (model_reply and witty_messages) or model_reply.decide(cfg, "morning") != "model":
+        return None, None
+    draft = read_json(MORNING_DRAFT_PATH, {})
+    if draft.get("date") == today and draft.get("line"):
+        return draft["line"], draft.get("cursors") or {}
+    s = model_reply.settings(cfg)
+    try:
+        chat, cursors = chat_delta(cfg, s["morning_history"]) if BOT_TOKEN else ([], {})
+    except Exception as e:
+        log(f"morning: chat read failed ({e}); writing from the weather alone")
+        chat, cursors = [], {}
+    weather = [f"{town_of(loc)}: high {fc['hi']:.0f}°F, low {fc['lo']:.0f}°F, feels like {fc['feels']:.0f}°F, "
+               f"{str(fc['cond']).lower()}, rain {fc['rain']:.0f}%" for loc, fc in observations if fc]
+    recent = [e.get("line", "") for e in read_jsonl(MORNING_LOG_PATH)]
+    roster = sorted(n for n in witty_messages.PINGS if n.startswith("@"))
+    system, user = model_reply.build_morning_prompt(witty_messages.BRIEF, roster, chat, weather,
+                                                    describe_event(context), recent)
+    raw = model_reply.ask(cfg, system, user, log=log, effort=s["morning_effort"],
+                          timeout=model_reply.MORNING_TIMEOUT, max_tokens=max(s["max_tokens"], 2048))
+    line = model_reply.clean_line(raw, witty_messages.PINGS.values(), model_reply.MORNING_MAX_CHARS) if raw else ""
+    if not line:
+        return None, None
+    line = witty_messages.apply_pings(line)
+    try:
+        write_json(MORNING_DRAFT_PATH, {"date": today, "line": line, "cursors": cursors})
+    except OSError as e:
+        log(f"morning: draft not saved ({e}); a retry will ask again")
+    log(f"morning: model line from {len(chat)} chat message(s)")
+    return line, cursors
+
+
+def read_jsonl(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return [json.loads(l) for l in f if l.strip()]
+    except (OSError, ValueError):
+        return []
+
+
+def commit_morning(entry):
+    """After the post lands: advance the cursors, log the line, drop the draft."""
+    try:
+        cursors = read_json(CHAT_CURSOR_PATH, {})
+        cursors.update(entry.get("cursors") or {})
+        write_json(CHAT_CURSOR_PATH, cursors)
+        lines = read_jsonl(MORNING_LOG_PATH) + [{"date": entry.get("date"), "line": entry.get("line")}]
+        tmp = MORNING_LOG_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            for e in lines[-MORNING_LOG_MAX:]:
+                f.write(json.dumps(e, ensure_ascii=False) + "\n")
+        os.replace(tmp, MORNING_LOG_PATH)
+        if os.path.exists(MORNING_DRAFT_PATH):
+            os.remove(MORNING_DRAFT_PATH)
+    except OSError as e:
+        log(f"morning: commit failed (tomorrow may re-read some chat): {e}")
 
 
 # ── gateway helpers (pure, so they can be tested without discord.py) ─────────
@@ -747,16 +959,16 @@ def in_scope(cfg, msg):
 
 
 def throttled(user_id, channel_id, now=None):
-    """True if this ping should be ignored: the asker pinged again inside the
-    per-person cooldown, or the channel has hit its burst cap. Records the reply
-    otherwise."""
+    """Why this ping should be ignored, or False: "cooldown" if the asker pinged
+    again inside the per-person cooldown, "burst" if the channel has hit its
+    cap. Records the reply otherwise."""
     now = time.monotonic() if now is None else now
     if now - _last_reply.get(user_id, -REPLY_COOLDOWN) < REPLY_COOLDOWN:
-        return True
+        return "cooldown"
     recent = [t for t in _burst.get(channel_id, []) if now - t < BURST_WINDOW]
     if len(recent) >= BURST_LIMIT:
         _burst[channel_id] = recent
-        return True
+        return "burst"
     recent.append(now)
     _burst[channel_id] = recent
     _last_reply[user_id] = now
@@ -873,8 +1085,14 @@ def run_gateway():
         cfg = load_config()
         if not in_scope(cfg, msg):
             return
-        if throttled(msg.author.id, msg.channel.id):
-            log(f"gateway: throttled {msg.author} in #{msg.channel}")
+        why = throttled(msg.author.id, msg.channel.id)
+        if why:
+            log(f"gateway: throttled ({why}) {msg.author} in #{msg.channel}")
+            if why == "cooldown" and nag_ok(msg.author.id):   # one "slow down", then silence
+                try:
+                    await msg.reply(limit_line(cfg, msg.author.id, "pester"))
+                except Exception as e:
+                    log(f"gateway: pester reply failed: {e}")
             return
         try:
             loop = asyncio.get_running_loop()
@@ -882,7 +1100,8 @@ def run_gateway():
             async with msg.channel.typing():
                 content, embed, kind = await loop.run_in_executor(
                     None, build_reply, cfg, msg.author.id, msg.content)
-                if model_reply and model_reply.wants(cfg, kind):
+                how = model_reply.decide(cfg, kind) if model_reply else None
+                if how == "model":
                     me = witty_messages.self_name() if witty_messages else "Weather Bot"
                     n = model_reply.settings(cfg)["history"]
                     recent = []
@@ -895,6 +1114,11 @@ def run_gateway():
                                                       msg.content, kind, recent)
                     if line:
                         content, source = line, "claude"
+                    elif model_reply.spent(cfg):   # this very call ran out of budget or credit
+                        how = "limit"
+                if how == "limit":
+                    content = await loop.run_in_executor(None, limit_line, cfg, msg.author.id)
+                    embed, source = None, "limit"
             await msg.reply(content, embed=discord.Embed.from_dict(embed) if embed else None)
             log(f"gateway: answered {msg.author} in #{msg.channel} ({kind}, {source})")
             if kind not in ("weather", "full"):

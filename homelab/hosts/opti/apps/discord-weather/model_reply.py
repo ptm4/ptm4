@@ -1,10 +1,13 @@
 """Optional model-written replies for discord-weather.
 
-When a ping is not a weather question, the bot can ask Claude for one line in
-the persona's voice instead of drawing a template. This module owns that path:
-the key, the prompt, the daily cap, and the checks on what comes back. Any
-failure returns None and the caller falls back to the template line, so the
-bot never goes quiet because the model did.
+When pinged, the bot can ask Claude to answer whatever was asked, in the
+persona's voice, instead of drawing a template; once a day it can also have the
+model write the morning line from what the chat said since the last post. This
+module owns that path: the key, the prompts, the daily budget, and the checks on
+what comes back. Any failure returns None and the caller falls back to the
+template line, so the bot never goes quiet because the model did. A spent
+budget (calls, tokens, or API credit) is reported as "limit" so the caller can
+say so in character instead.
 
 Gating lives in the config (`claude.enabled`, per server profile) and is
 validated here: it cannot be switched on for "any server".
@@ -25,11 +28,16 @@ DATA_DIR = os.environ.get("DATA_DIR", "/data")
 KEY_PATH = os.path.join(DATA_DIR, "anthropic.key")
 USAGE_PATH = os.path.join(DATA_DIR, "claude_usage.json")
 
-DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 40,
-            "max_tokens": 300, "history": 10, "kinds": []}
+# max_tokens covers thinking too (Haiku 5.5 thinks by default), so it is sized
+# well above the reply itself; effort "low" keeps chat replies quick and cheap.
+DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "low", "daily_cap": 150,
+            "daily_tokens": 400000, "max_tokens": 1024, "history": 10, "kinds": [],
+            "morning": False, "morning_effort": "medium", "morning_history": 150}
 EFFORTS = ("low", "medium", "high")
 TIMEOUT = 12.0        # seconds; Discord shows "typing" meanwhile, templates cover a miss
-MAX_CHARS = 400       # a line, not an essay
+MORNING_TIMEOUT = 45.0  # the morning line is off the hot path; give it room
+MAX_CHARS = 900       # an answer, not an essay
+MORNING_MAX_CHARS = 400
 MODEL_RE = r"[a-z0-9][a-z0-9.-]{2,63}"
 
 # Shown to the model when the persona has no `brief` of its own.
@@ -40,16 +48,30 @@ DEFAULT_BRIEF = (
     "short declaratives, occasional fake statistics. Never cruel, never explain the joke.")
 
 RULES = (
-    "Rules: reply with ONE message of at most 300 characters, no preamble, no quotes "
-    "around it, no explanation. Stay in character. Mention people only by the handles "
-    "in the roster, written exactly as @handle; never @everyone or @here. Do not bring "
-    "up health, money, work, partners, family, politics, or anything personal that is "
-    "not already a running joke in the chat shown. If the ping is really about the "
-    "weather, answer with the numbers given. If you have nothing good, be briefly "
-    "dismissive rather than long.")
+    "Rules: answer whatever you were actually asked, on any topic, the way a helpful "
+    "chat bot would, but always in character. Reply with ONE Discord message: usually "
+    "one to three sentences, never more than 600 characters, no preamble, no quotes "
+    "around it, no explanation of the joke. Mention people only by the handles in the "
+    "roster, written exactly as @handle; never @everyone or @here. Do not bring up "
+    "health, money, work, partners, family, politics, or anything personal that is not "
+    "already a running joke in the chat shown or part of the question. If the ping is "
+    "about the weather, answer with the numbers given and do not invent others. If a "
+    "real answer needs facts you don't have, say so in character rather than guessing.")
+
+MORNING_RULES = (
+    "Task: write the line that follows the @everyone ping on today's morning weather "
+    "post. ONE or two sentences, at most 280 characters, no preamble, no quotes. Make "
+    "it the funniest line you can from what happened in the chat since your last "
+    "morning post: running jokes, who said what, what people asked you, how they "
+    "treated you. Tie it to today's weather. Mention at most two people, only by the "
+    "handles in the roster, written exactly as @handle; never @everyone or @here. Do "
+    "not repeat or closely echo your recent morning lines. Never cruel. Do not bring up "
+    "health, money, work, partners, family or politics unless it is already a running "
+    "joke in the chat shown. If the chat was quiet, joke about the silence.")
 
 _lock = threading.Lock()
 _last_error = ""
+_limited = {}         # local date -> why the API said no more today ("credit", "rate")
 
 
 def settings(cfg):
@@ -69,9 +91,13 @@ def validate(cfg):
         return "claude.enabled must be true/false"
     if not (isinstance(s["model"], str) and re.fullmatch(MODEL_RE, s["model"])):
         return "claude.model must be a model id"
-    if s["effort"] not in EFFORTS:
-        return f"claude.effort must be one of {', '.join(EFFORTS)}"
-    for k, lo, hi in (("daily_cap", 0, 1000), ("max_tokens", 50, 2000), ("history", 0, 30)):
+    for k in ("effort", "morning_effort"):
+        if s[k] not in EFFORTS:
+            return f"claude.{k} must be one of {', '.join(EFFORTS)}"
+    if not isinstance(s["morning"], bool):
+        return "claude.morning must be true/false"
+    for k, lo, hi in (("daily_cap", 0, 1000), ("daily_tokens", 0, 5000000), ("max_tokens", 50, 4000),
+                      ("history", 0, 30), ("morning_history", 0, 500)):
         if not (isinstance(s[k], int) and not isinstance(s[k], bool) and lo <= s[k] <= hi):
             return f"claude.{k} must be an integer {lo}-{hi}"
     if not isinstance(s["kinds"], list) or not all(isinstance(k, str) for k in s["kinds"]):
@@ -137,19 +163,49 @@ def _record(tz, input_tokens, output_tokens):
 def status(cfg):
     s = settings(cfg)
     return {"enabled": s["enabled"], "model": s["model"], "key": key_source() or "none",
-            "daily_cap": s["daily_cap"], "today": usage(cfg.get("timezone", "UTC")),
+            "daily_cap": s["daily_cap"], "daily_tokens": s["daily_tokens"], "morning": s["morning"],
+            "today": usage(cfg.get("timezone", "UTC")), "spent": spent(cfg),
             "last_error": _last_error, "sdk": bool(anthropic)}
 
 
-def wants(cfg, kind):
-    """Should this ping go to the model? Config says so, the kind is eligible,
-    there is a key, and today's cap has room."""
+def decide(cfg, kind):
+    """How to answer this ping: "model", "limit" (the model would be used but
+    today's budget is spent, so say so in character) or None (template, as
+    before). "full" keeps its briefing card; every other kind, weather
+    included, can go to the model. "morning" is the daily line."""
     s = settings(cfg)
-    if not s["enabled"] or kind in ("weather", "full") or not anthropic or not key_source():
-        return False
-    if s["kinds"] and kind not in s["kinds"]:
-        return False
-    return usage(cfg.get("timezone", "UTC"))["calls"] < s["daily_cap"]
+    if not s["enabled"] or kind == "full" or not anthropic or not key_source():
+        return None
+    if kind == "morning" and not s["morning"]:
+        return None
+    if s["kinds"] and kind not in s["kinds"] and kind != "morning":
+        return None
+    return "limit" if spent(cfg) else "model"
+
+
+def wants(cfg, kind):
+    return decide(cfg, kind) == "model"
+
+
+def spent(cfg):
+    """Why today's budget is gone ("calls", "tokens", "credit", "rate"), or ''."""
+    s, tz = settings(cfg), cfg.get("timezone", "UTC")
+    u = usage(tz)
+    if u["calls"] >= s["daily_cap"]:
+        return "calls"
+    if s["daily_tokens"] and u["input_tokens"] + u["output_tokens"] >= s["daily_tokens"]:
+        return "tokens"
+    return _limited.get(u["date"], "")
+
+
+def _limit_reason(exc):
+    """'credit' or 'rate' if an API error means "no more today", else ''."""
+    text = str(exc).lower()
+    if "credit balance" in text or "billing" in text:
+        return "credit"
+    if getattr(exc, "status_code", None) == 429 or "rate_limit" in text:
+        return "rate"
+    return ""
 
 
 # -- prompt -------------------------------------------------------------------
@@ -174,7 +230,26 @@ def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples):
     return system, user
 
 
-def clean_line(text, allowed_ids=()):
+def build_morning_prompt(brief, roster, chat, weather, event, recent_lines):
+    """(system, user) for the morning line. `chat` is 'handle: text' lines since
+    the last morning post, oldest first; `weather` one line per town; `event`
+    a short note on today's weather story or ''; `recent_lines` the last few
+    morning lines, so the model doesn't repeat itself."""
+    system = (brief or DEFAULT_BRIEF).strip() + "\n\n" + MORNING_RULES
+    if roster:
+        system += "\n\nRoster (the only handles you may mention): " + ", ".join(roster)
+    chat_txt = "\n".join(chat) if chat else "(nobody said anything since your last post)"
+    wx = "\n".join(f"- {w}" for w in weather) or "- (no forecast data this morning)"
+    prev = "\n".join(f"- {l}" for l in recent_lines[-7:]) or "- (none yet)"
+    user = (f"Chat since your last morning post, oldest first:\n{chat_txt}\n\n"
+            f"Today's weather:\n{wx}\n"
+            + (f"Today's weather story: {event}\n" if event else "")
+            + f"\nYour recent morning lines (do not repeat):\n{prev}\n\n"
+            "Write today's line.")
+    return system, user
+
+
+def clean_line(text, allowed_ids=(), max_chars=MAX_CHARS):
     """Trim the model's text down to one safe Discord message, or '' if it is
     unusable. Raw <@id> mentions outside the roster are replaced, role and
     mass mentions are refused outright."""
@@ -188,17 +263,17 @@ def clean_line(text, allowed_ids=()):
     allowed = {str(i) for i in allowed_ids}
     t = re.sub(r"<@!?(\d+)>", lambda m: m.group(0) if m.group(1) in allowed else "someone", t)
     t = re.sub(r"\n{3,}", "\n\n", t)
-    if len(t) > MAX_CHARS:
-        cut = t[:MAX_CHARS]
+    if len(t) > max_chars:
+        cut = t[:max_chars]
         end = max(cut.rfind(". "), cut.rfind("! "), cut.rfind("? "))
-        t = (cut[:end + 1] if end > MAX_CHARS // 2 else cut.rstrip() + "…").strip()
+        t = (cut[:end + 1] if end > max_chars // 2 else cut.rstrip() + "…").strip()
     return t
 
 
 # -- the call -----------------------------------------------------------------
 def _create(s, system, user):
     """One Messages API call. Separated so tests can stub it."""
-    client = anthropic.Anthropic(api_key=_key(), timeout=TIMEOUT, max_retries=0)
+    client = anthropic.Anthropic(api_key=_key(), timeout=s.get("timeout", TIMEOUT), max_retries=0)
     return client.messages.create(
         model=s["model"], max_tokens=s["max_tokens"],
         output_config={"effort": s["effort"]},   # chat, not reasoning; thinking stays adaptive
@@ -206,16 +281,21 @@ def _create(s, system, user):
         messages=[{"role": "user", "content": user}])
 
 
-def ask(cfg, system, user, log=print):
+def ask(cfg, system, user, log=print, **over):
     """The model's text, or None - in which case the caller uses the template
-    it already has. Records today's usage either way the call returns."""
+    it already has (or, if spent(cfg) now says so, its limit line). Records
+    today's usage either way the call returns. `over` overrides settings for
+    this one call (the morning line's effort and timeout)."""
     global _last_error
-    s, tz = settings(cfg), cfg.get("timezone", "UTC")
+    s, tz = {**settings(cfg), **over}, cfg.get("timezone", "UTC")
     try:
         resp = _create(s, system, user)
     except Exception as e:  # auth, network, 4xx/5xx, timeout: all the same to the bot
         _last_error = f"{type(e).__name__}: {str(e)[:160]}"
-        log(f"claude: call failed - {_last_error}")
+        reason = _limit_reason(e)
+        if reason:   # out of credit or rate-limited: stop asking until tomorrow
+            _limited[_today(tz)] = reason
+        log(f"claude: call failed - {_last_error}" + (f" (limit: {reason})" if reason else ""))
         return None
     u = getattr(resp, "usage", None)
     _record(tz, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
@@ -224,5 +304,9 @@ def ask(cfg, system, user, log=print):
         log("claude: refusal - using the template line")
         return None
     text = "".join(b.text for b in getattr(resp, "content", []) if getattr(b, "type", "") == "text")
+    if not text.strip():   # e.g. max_tokens spent on thinking: nothing to say
+        _last_error = f"empty reply (stop_reason {getattr(resp, 'stop_reason', '?')})"
+        log(f"claude: {_last_error} - using the template line")
+        return None
     _last_error = ""
     return text

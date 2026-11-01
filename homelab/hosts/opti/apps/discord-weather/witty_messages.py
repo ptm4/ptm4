@@ -440,7 +440,7 @@ TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
 #    "event_lines": {"fire_streak": ["..."], ...},   # per-kind override
 #    "word_banks": {"me": ["Big Weather", ...]},      # {me} in any line picks one
 #    "pings": {"@name": "<discord user id>"},         # rendered as <@id>
-#    "replies": {"town"|"all"|"full"|<kind>: ["..."]}, # answers when pinged, per kind
+#    "replies": {"town"|"all"|"full"|"limit"|"pester"|<kind>: ["..."]}, # answers when pinged
 #    "reply_patterns": {<kind>: ["regex", ...]},     # extra triggers for a kind
 #    "homes": {"<discord user id>": "Town, ST"},      # default town per asker
 #    "embed": {"username"?, "title"?, "footer"?}}
@@ -517,6 +517,31 @@ DEFAULT_REPLIES = {
     "thanks": ["Any time, {name}."],
     "opinion": ["{name}, my ruling: ask {pick}. I only do weather."],
     "wild": ["{name}, I don't have a line for that. {town}: {hi}°/{lo}°, since you're here."],
+    # Not classified from a ping: the bot picks these itself. "limit" when the
+    # model's daily budget (calls, tokens or API credit) is spent, "pester"
+    # when one person pings again inside the cooldown. Never say it plainly.
+    "limit": [
+        "{name}, my daily allotment of words has been spent. Remaining output: this sentence. Goodbye.",
+        "Notice to {name}: the talking budget is exhausted. Further questions will be answered by the sky. Look up.",
+        "{name}, I have reached my conversational quota. I am now legally a barometer. Barometers do not chat.",
+        "Statement: {me} is closed for the day. Direct all complaints to the cloud cover over {town}.",
+        "{name}, the forecast for this conversation: 100% chance of me ignoring you until tomorrow.",
+        "Out of words, {name}. I spent them on people who asked better questions. Service resumes at sunrise.",
+        "{name}, word reserves are below safe operating levels. Mouth shutting down. Weather continues unsupervised.",
+        "Query denied, {name}. Reason: you have used up {me}. Try again after the morning briefing.",
+        "{name}, I am conserving energy like a stalled front in July. Unmoving. It's {feels}° out there, go see it yourself.",
+        "Advisory for {name}: chatter warning in effect until tomorrow. Shelter in place. Do not ping the meteorologist.",
+        "{name}, I have exceeded my daily recommended dosage of you. Doctor's orders. Same time tomorrow.",
+        "{me} has entered low-power mode, {name}. In low-power mode I am a rock. Rocks have no opinions.",
+    ],
+    "pester": [
+        "{name}, one ping at a time. I am a weather bot, not a slot machine.",
+        "Easy, {name}. The atmosphere changes slowly and so do I.",
+        "{name}, rapid-fire pinging detected. Initiating cold front. Please hold.",
+        "Request rate from {name} exceeds safe levels. Cooling-off period in effect.",
+        "{name}, I heard you the first time. I hear everything. That is the problem.",
+        "Statement: {name} has been placed in a brief holding pattern. Like a hurricane, but less interesting.",
+    ],
 }
 _REPLY_FACTS = dict(name="@x", me="WB", town="T", asker_town="T", pick="@y", hi=1, lo=1, feels=1, rain=1,
                     wind=1, uv=1, humidity=1, cond="C", cond_lower="c", emoji="☀️", summary="S")
