@@ -210,6 +210,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     volumes:
       - weather_data:/data
+      # nightly WBdb copies (wbdb.py); in the shared tree so the weekly cold copy takes them
+      - /srv/red/fs/ptm/wbdb/backup:/backup
     expose:
       - "8080"
     networks:

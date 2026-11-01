@@ -229,7 +229,8 @@ weather questions included; only `full` keeps its briefing card.
 "claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "low",
            "daily_cap": 150, "daily_tokens": 400000, "max_tokens": 1024,
            "history": 10, "kinds": [],
-           "morning": true, "morning_effort": "medium", "morning_history": 150}
+           "morning": true, "morning_effort": "medium", "morning_history": 150,
+           "memory": true, "memory_tail": 40, "memory_related": 30, "memory_backfill": 20000}
 ```
 
 `effort` is low/medium/high (thinking stays adaptive; `max_tokens` covers the
@@ -257,6 +258,33 @@ same text, and posted lines are logged in `/data/morning_lines.jsonl`. If the
 model is off, spent or fails, the witty template line is used as before and is
 left in the pool when the model line wins. Previews (`GET /preview`) never call
 the model. The bot needs Read Message History in those channels.
+
+**Shared memory: WBdb (`wbdb.py`, `memory: true`).** With memory on, the bot
+keeps every message from its channels in `/data/wbdb.sqlite` (SQLite, WAL,
+full-text index) on opti's ZFS pool (`red/docker`, auto-snapshotted every 15
+min). It reads each channel forward every 15 minutes and again right before any
+model reply, and pages back through history (5,000 messages a pass) until the
+channel's start or `memory_backfill` messages. New messages are folded into the
+model's running notes about the group (the digest, about 1,500 words) once 40
+pile up or the oldest is 6 hours old, 300 per call, at most 5 calls a pass. The
+digest only moves after a good answer, and folds stop while today's usage is
+within 50 calls or a third of `daily_tokens` of the cap, so a backlog never
+turns pings into limit lines (a big backfill digests over a few days; raise
+`daily_tokens` to speed it up). Ping replies get the digest, the channel's last
+`memory_tail` messages and the `memory_related` best full-text matches for the
+ping; the morning line gets the digest too. Both prompts tell the model it
+knows only its notes and the chat shown, never logs or stats.
+
+Reliability: one connection behind a lock, each batch in one transaction;
+`PRAGMA quick_check` at open, and a file that fails is renamed
+`wbdb.sqlite.corrupt-<time>` and rebuilt from Discord (only the digest is not
+re-readable). A nightly `VACUUM INTO` copy goes to `/backup`, which compose
+binds to `/srv/red/fs/ptm/wbdb/backup` (7 kept), so the weekly cold copy takes
+it. If WBdb can't serve a ping, the reply uses the live last `history`
+messages as before. `GET /memory` shows the counts and the digest,
+`POST /memory/reset` forgets the digest (`{"everything": true}` also wipes the
+messages and re-reads Discord), and `GET /health` carries a `wbdb` summary.
+Cost on Haiku 5.5: about $0.0008 a reply with memory, about $0.002 a fold.
 
 `claude` is a profile field, so it is
 switched on **per server**: `enabled: true` is rejected unless that profile (or

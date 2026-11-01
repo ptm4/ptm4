@@ -32,7 +32,8 @@ USAGE_PATH = os.path.join(DATA_DIR, "claude_usage.json")
 # well above the reply itself; effort "low" keeps chat replies quick and cheap.
 DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "low", "daily_cap": 150,
             "daily_tokens": 400000, "max_tokens": 1024, "history": 10, "kinds": [],
-            "morning": False, "morning_effort": "medium", "morning_history": 150}
+            "morning": False, "morning_effort": "medium", "morning_history": 150,
+            "memory": False, "memory_tail": 40, "memory_related": 30, "memory_backfill": 20000}
 EFFORTS = ("low", "medium", "high")
 TIMEOUT = 12.0        # seconds; Discord shows "typing" meanwhile, templates cover a miss
 MORNING_TIMEOUT = 45.0  # the morning line is off the hot path; give it room
@@ -56,7 +57,22 @@ RULES = (
     "health, money, work, partners, family, politics, or anything personal that is not "
     "already a running joke in the chat shown or part of the question. If the ping is "
     "about the weather, answer with the numbers given and do not invent others. If a "
-    "real answer needs facts you don't have, say so in character rather than guessing.")
+    "real answer needs facts you don't have, say so in character rather than guessing. "
+    "You know only what is in this prompt: your notes and older messages if shown, the "
+    "recent chat, the roster and the weather. Never claim logs, records, statistics, "
+    "counts or memories beyond those; if asked what you know, say in character that "
+    "you remember what's in your notes and the chat you've read, nothing else.")
+
+FOLD_RULES = (
+    "Task: you keep private notes about this Discord group so your replies and morning "
+    "lines can be funnier and more in on the joke. Update your notes with the new "
+    "messages below. Keep: running jokes and bits, nicknames, short memorable quotes "
+    "attributed by @handle, who does what, recurring topics and games, how people "
+    "treat you, ongoing stories and rivalries. Merge repeats, drop stale one-off trivia. "
+    "Plain notes grouped by person and by bit, at most 1,500 words. Write only what the "
+    "messages actually say; never invent. Do not record health, money, work, partners, "
+    "family or politics details unless they are already an open running joke. Refer to "
+    "people only by the handles shown. Output only the updated notes, no preamble.")
 
 MORNING_RULES = (
     "Task: write the line that follows the @everyone ping on today's morning weather "
@@ -94,10 +110,12 @@ def validate(cfg):
     for k in ("effort", "morning_effort"):
         if s[k] not in EFFORTS:
             return f"claude.{k} must be one of {', '.join(EFFORTS)}"
-    if not isinstance(s["morning"], bool):
-        return "claude.morning must be true/false"
+    for k in ("morning", "memory"):
+        if not isinstance(s[k], bool):
+            return f"claude.{k} must be true/false"
     for k, lo, hi in (("daily_cap", 0, 1000), ("daily_tokens", 0, 5000000), ("max_tokens", 50, 4000),
-                      ("history", 0, 30), ("morning_history", 0, 500)):
+                      ("history", 0, 30), ("morning_history", 0, 500), ("memory_tail", 0, 100),
+                      ("memory_related", 0, 60), ("memory_backfill", 0, 200000)):
         if not (isinstance(s[k], int) and not isinstance(s[k], bool) and lo <= s[k] <= hi):
             return f"claude.{k} must be an integer {lo}-{hi}"
     if not isinstance(s["kinds"], list) or not all(isinstance(k, str) for k in s["kinds"]):
@@ -164,6 +182,7 @@ def status(cfg):
     s = settings(cfg)
     return {"enabled": s["enabled"], "model": s["model"], "key": key_source() or "none",
             "daily_cap": s["daily_cap"], "daily_tokens": s["daily_tokens"], "morning": s["morning"],
+            "memory": s["memory"],
             "today": usage(cfg.get("timezone", "UTC")), "spent": spent(cfg),
             "last_error": _last_error, "sdk": bool(anthropic)}
 
@@ -176,9 +195,9 @@ def decide(cfg, kind):
     s = settings(cfg)
     if not s["enabled"] or kind == "full" or not anthropic or not key_source():
         return None
-    if kind == "morning" and not s["morning"]:
+    if kind in ("morning", "memory") and not s[kind]:
         return None
-    if s["kinds"] and kind not in s["kinds"] and kind != "morning":
+    if s["kinds"] and kind not in s["kinds"] and kind not in ("morning", "memory"):
         return None
     return "limit" if spent(cfg) else "model"
 
@@ -209,20 +228,32 @@ def _limit_reason(exc):
 
 
 # -- prompt -------------------------------------------------------------------
-def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples):
+def _notes(digest):
+    return f"\n\nYour notes on this group (from chat you have read):\n{digest.strip()}" if digest else ""
+
+
+def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples, digest="", related=()):
     """(system, user) strings. `recent` is a list of 'handle: text' lines,
-    oldest first; `examples` are template lines of this kind, for voice only."""
+    oldest first; `examples` are template lines of this kind, for voice only.
+    With memory on, `digest` is the bot's notes and `related` older messages
+    that match the ping."""
     system = (brief or DEFAULT_BRIEF).strip() + "\n\n" + RULES
     if roster:
         system += "\n\nRoster (the only handles you may mention): " + ", ".join(roster)
+    system += _notes(digest)
     chat = "\n".join(recent) if recent else "(no earlier messages)"
+    if related:
+        chat = "Older messages that match this ping, oldest first:\n" + "\n".join(related) + \
+               "\n\nRecent chat, oldest first:\n" + chat
+    else:
+        chat = "Recent chat, oldest first:\n" + chat
     weather = ""
     if facts and facts.get("town"):
         weather = (f"\nWeather right now for {facts['town']}: high {facts.get('hi', '?')}, "
                    f"low {facts.get('lo', '?')}, feels like {facts.get('feels', '?')} (F), "
                    f"{str(facts.get('cond', '')).lower()}, rain {facts.get('rain', '?')}%.")
     ex = "\n".join(f"- {e}" for e in examples[:3])
-    user = (f"Recent chat, oldest first:\n{chat}\n\n"
+    user = (f"{chat}\n\n"
             f"{asker} just pinged you: {ping.strip()}\n"
             f"The router filed this under: {kind}.{weather}\n\n"
             f"Lines you have used for this kind before (voice reference, do not copy):\n{ex or '- (none)'}\n\n"
@@ -230,7 +261,17 @@ def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples):
     return system, user
 
 
-def build_morning_prompt(brief, roster, chat, weather, event, recent_lines):
+def build_fold_prompt(brief, roster, digest, lines):
+    """(system, user) asking the model to fold new chat lines into its notes."""
+    system = (brief or DEFAULT_BRIEF).strip() + "\n\n" + FOLD_RULES
+    if roster:
+        system += "\n\nRoster handles: " + ", ".join(roster)
+    user = (f"Your current notes:\n{(digest or '').strip() or '(empty: this is the start)'}\n\n"
+            f"New messages, oldest first:\n" + "\n".join(lines) + "\n\nWrite the updated notes.")
+    return system, user
+
+
+def build_morning_prompt(brief, roster, chat, weather, event, recent_lines, digest=""):
     """(system, user) for the morning line. `chat` is 'handle: text' lines since
     the last morning post, oldest first; `weather` one line per town; `event`
     a short note on today's weather story or ''; `recent_lines` the last few
@@ -238,6 +279,7 @@ def build_morning_prompt(brief, roster, chat, weather, event, recent_lines):
     system = (brief or DEFAULT_BRIEF).strip() + "\n\n" + MORNING_RULES
     if roster:
         system += "\n\nRoster (the only handles you may mention): " + ", ".join(roster)
+    system += _notes(digest)
     chat_txt = "\n".join(chat) if chat else "(nobody said anything since your last post)"
     wx = "\n".join(f"- {w}" for w in weather) or "- (no forecast data this morning)"
     prev = "\n".join(f"- {l}" for l in recent_lines[-7:]) or "- (none yet)"

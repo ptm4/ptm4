@@ -5,5 +5,5 @@ RUN apk add --no-cache tzdata
 # anthropic SDK for the optional model-written replies (model_reply.py)
 RUN pip install --no-cache-dir discord.py==2.4.0 anthropic==2.3.0
 WORKDIR /app
-COPY discord-weather.py witty_messages.py weather_context.py model_reply.py .
+COPY discord-weather.py witty_messages.py weather_context.py model_reply.py wbdb.py .
 CMD ["python3", "discord-weather.py"]

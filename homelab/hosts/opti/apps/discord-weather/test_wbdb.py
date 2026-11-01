@@ -1,0 +1,291 @@
+"""Offline tests for WBdb (wbdb.py) and the bot's memory path: ingest,
+backfill, folding, prompts, backups and the corrupt-file rebuild. Discord and
+Anthropic are stubbed; the database is a real SQLite file in a temp folder."""
+import importlib.util
+import os
+import threading
+import uuid
+import unittest
+from datetime import datetime
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import model_reply as mr
+import wbdb
+import witty_messages as witty
+
+spec = importlib.util.spec_from_file_location("bot", Path(__file__).with_name("discord-weather.py"))
+bot = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bot)
+
+PERSONA = {"pings": {"@tomboe": "2", "@antwah": "3"}, "word_banks": {"me": ["WB"]}}
+BOT_ID = "900"
+
+
+def snow(seconds_after_epoch):
+    """A snowflake for a unix time, so message ages are controllable."""
+    return int(bot.snowflake_at(seconds_after_epoch))
+
+
+def msg(mid, author="2", text="hi", name="Tom"):
+    return {"id": str(mid), "content": text, "embeds": [], "timestamp": "2026-11-01T12:00:00+00:00",
+            "author": {"id": author, "global_name": name, "username": name.lower()}}
+
+
+class FakeDiscord:
+    """GET /channels/<id>/messages (limit, before) newest first, and /users/@me."""
+    def __init__(self, channels):
+        self.channels = channels
+        self.calls = []
+
+    def __call__(self, path):
+        self.calls.append(path)
+        if path == "/users/@me":
+            return {"id": BOT_ID}
+        ch, qs = path.split("/")[2], path.partition("?")[2]
+        q = dict(p.split("=") for p in qs.split("&") if p)
+        msgs = sorted(self.channels.get(ch, []), key=lambda m: int(m["id"]), reverse=True)
+        if "before" in q:
+            msgs = [m for m in msgs if int(m["id"]) < int(q["before"])]
+        return msgs[:int(q.get("limit", 50))]
+
+
+class WBDBTests(unittest.TestCase):
+    def setUp(self):
+        folder = Path(__file__).resolve().parent / (".test-state-" + uuid.uuid4().hex)
+        folder.mkdir()
+        self.folder = folder
+        self.patches = [patch.object(bot, "WBDB_PATH", str(folder / "wbdb.sqlite")),
+                        patch.object(bot, "WBDB_BACKUP_DIR", str(folder / "backup")),
+                        patch.object(bot, "BOT_TOKEN", "tok"),
+                        patch.object(mr, "USAGE_PATH", str(folder / "usage.json")),
+                        patch.object(mr, "KEY_PATH", str(folder / "key")),
+                        patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test"}),
+                        patch.object(mr, "anthropic", object())]
+        for p in self.patches:
+            p.start()
+        bot._self_id.clear()
+        bot._self_id["id"] = BOT_ID     # never ask the real Discord
+        bot._wb.update(db=None, error="")
+        witty.use_persona(PERSONA)
+
+        def cleanup():
+            if bot._wb["db"]:
+                bot._wb["db"].close()
+            bot._wb.update(db=None, error="")
+            for p in self.patches:
+                p.stop()
+            for root, dirs, files in os.walk(folder, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            folder.rmdir()
+            witty.use_persona(None)
+            bot._self_id.clear()
+        self.addCleanup(cleanup)
+
+    def cfg(self, **claude):
+        return {**bot.DEFAULT_CONFIG, "guild_id": "1", "channel_id": "10", "timezone": "America/New_York",
+                "claude": {**mr.DEFAULTS, "enabled": True, "memory": True, **claude}}
+
+    def db(self):
+        return bot.memory_db()
+
+    def row(self, mid, text="hi", author="@tomboe", ch="10", author_id="2"):
+        return {"id": mid, "channel_id": ch, "author_id": author_id, "author": author, "is_bot": False,
+                "ts": "t", "content": text}
+
+    # -- the store itself --------------------------------------------------------
+    def test_add_is_idempotent_and_takes_edits(self):
+        db = self.db()
+        self.assertEqual(db.add([self.row(1), self.row(2, "rain again")]), 2)
+        self.assertEqual(db.add([self.row(1), self.row(2, "rain AGAIN (edited)")]), 0)
+        self.assertEqual([r["content"] for r in db.recent(["10"], 5)], ["hi", "rain AGAIN (edited)"])
+        self.assertEqual([r["id"] for r in db.search("edited", 5)], [2])   # the index followed the edit
+
+    def test_search_finds_old_bits_and_skips_whats_already_shown(self):
+        db = self.db()
+        db.add([self.row(1, "the great umbrella incident of july"), self.row(2, "nothing here"),
+                self.row(3, "umbrella guy strikes again", "@antwah", author_id="3"), self.row(4, "lol")])
+        self.assertEqual([r["id"] for r in db.search("what happened with the umbrella?", 5)], [1, 3])
+        self.assertEqual([r["id"] for r in db.search("umbrella", 5, exclude=[3])], [1])
+        self.assertEqual([r["id"] for r in db.search("antwah", 5)], [3])        # by handle
+        self.assertEqual(db.search("the and what", 5), [])                     # stopwords only
+        self.assertEqual(wbdb.WBDB.terms('"quoted" OR drop*'), ["quoted", "drop"])   # no FTS syntax leaks
+
+    def test_positions_only_move_outward(self):
+        db = self.db()
+        db.mark("10", newest=50, oldest=40)
+        db.mark("10", newest=45, oldest=42)
+        self.assertEqual((db.channel("10")["newest_id"], db.channel("10")["oldest_id"]), (50, 40))
+        db.mark("10", newest=60, oldest=30, backfilled=True)
+        self.assertEqual(db.channel("10"), {"channel_id": "10", "newest_id": 60, "oldest_id": 30, "backfilled": 1})
+
+    def test_corrupt_file_is_set_aside_and_rebuilt(self):
+        path = self.folder / "bad.sqlite"
+        path.write_bytes(b"this is not a database" * 100)
+        db = wbdb.WBDB(str(path))
+        self.addCleanup(db.close)
+        self.assertIn("set aside", db.note)
+        self.assertEqual(db.add([self.row(1)]), 1)
+        self.assertTrue(any(f.startswith("bad.sqlite.corrupt-") for f in os.listdir(self.folder)))
+
+    def test_backup_is_a_dated_consistent_copy_pruned_to_keep(self):
+        db = self.db()
+        db.add([self.row(1, "keep me")])
+        dest = Path(self.folder / "backup")
+        for day in ("2026-11-01", "2026-11-02", "2026-11-03"):
+            db.backup(str(dest), day, keep=2)
+        self.assertEqual(sorted(os.listdir(dest)), ["wbdb-2026-11-02.sqlite", "wbdb-2026-11-03.sqlite"])
+        copy = wbdb.WBDB(str(dest / "wbdb-2026-11-03.sqlite"))
+        self.addCleanup(copy.close)
+        self.assertEqual(copy.recent(["10"], 5)[0]["content"], "keep me")
+        self.assertTrue(db.get_meta("last_backup").startswith("2026-11-03"))
+        self.assertFalse(bot.backup_due(db, datetime(2026, 11, 3, 4)))          # done today
+        self.assertTrue(bot.backup_due(db, datetime(2026, 11, 4, 4)))
+        self.assertFalse(bot.backup_due(db, datetime(2026, 11, 4, 2)))          # before BACKUP_HOUR
+
+    def test_concurrent_writers_do_not_collide(self):
+        db = self.db()
+        errors = []
+
+        def write(base):
+            try:
+                for i in range(50):
+                    db.add([self.row(base + i)])
+            except Exception as e:   # pragma: no cover - the assertion reports it
+                errors.append(e)
+        threads = [threading.Thread(target=write, args=(b,)) for b in (1000, 2000, 3000)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertEqual(db.count(["10"]), 150)
+
+    # -- the bot's memory path ---------------------------------------------------
+    def test_ingest_reads_forward_then_backfill_reaches_the_start(self):
+        fake = FakeDiscord({"10": [msg(i, text=f"m{i}") for i in range(1, 1301)]})
+        db = self.db()
+        with patch.object(bot, "_discord_get", fake):
+            self.assertEqual(bot.ingest(db, self.cfg()), 1000)                 # a new channel: last 1000
+            self.assertEqual(db.channel("10")["oldest_id"], 301)
+            bot.backfill(db, self.cfg(), pages=2, pause=0)
+            self.assertEqual(db.count(["10"]), 1200)                         # two pages a pass
+            self.assertFalse(db.channel("10")["backfilled"])
+            bot.backfill(db, self.cfg(), pages=5, pause=0)
+            self.assertTrue(db.channel("10")["backfilled"])
+            fake.channels["10"].append(msg(1301, text="new one"))
+            self.assertEqual(bot.ingest(db, self.cfg()), 1)
+        self.assertEqual(db.recent(["10"], 1)[0]["content"], "new one")
+        self.assertIsNotNone(db.get_meta("last_ingest_at"))
+
+    def test_backfill_stops_at_the_configured_cap(self):
+        fake = FakeDiscord({"10": [msg(i) for i in range(1, 3001)]})
+        db = self.db()
+        with patch.object(bot, "_discord_get", fake):
+            bot.ingest(db, self.cfg(memory_backfill=1200))
+            bot.backfill(db, self.cfg(memory_backfill=1200), pages=50, pause=0)
+        self.assertLessEqual(db.count(["10"]), 1300)
+        self.assertTrue(db.channel("10")["backfilled"])
+
+    def test_rows_use_handles_and_label_the_bot(self):
+        r = bot.to_row(msg(5, author="2", text="yo <@3> <@&8>"), "10", BOT_ID)
+        self.assertEqual((r["author"], r["content"], r["is_bot"]), ("@tomboe", "yo @antwah @role", False))
+        me = bot.to_row(msg(6, author=BOT_ID, text="", name="Weather-Bot") | {"embeds": [{}]}, "10", BOT_ID)
+        self.assertEqual(bot.row_line(me, BOT_ID, "WB"), "WB: [embed]")
+
+    def test_fold_waits_for_enough_then_moves_the_digest(self):
+        db = self.db()
+        now = 1_800_000_000
+        db.add([self.row(snow(now - 60) + i, f"bit {i}") for i in range(10)])
+        cfg = self.cfg()
+        with patch.object(mr, "ask", return_value="NOTES: @tomboe keeps saying bit.") as ask:
+            self.assertEqual(bot.fold(db, cfg, now=now), 0)                    # 10 new, 1 min old: wait
+            ask.assert_not_called()
+            self.assertEqual(bot.fold(db, cfg, now=now + bot.FOLD_MAX_AGE), 1)  # old enough now
+        mem = db.memory("1")
+        self.assertEqual(mem["digest"], "NOTES: @tomboe keeps saying bit.")
+        self.assertEqual(mem["folded_through"], snow(now - 60) + 9)
+        self.assertIn("bit 9", ask.call_args.args[2])
+        self.assertIn("(empty: this is the start)", ask.call_args.args[2])
+        self.assertEqual(db.count_unfolded("1", ["10"]), 0)
+
+    def test_fold_failure_keeps_the_old_digest_and_backlog(self):
+        db = self.db()
+        db.set_memory("1", "old notes", 0)
+        db.add([self.row(snow(1_800_000_000) + i) for i in range(50)])
+        with patch.object(mr, "ask", return_value=None):
+            self.assertEqual(bot.fold(db, self.cfg(), now=1_800_000_000), 0)
+        self.assertEqual(db.memory("1")["digest"], "old notes")
+        self.assertEqual(db.count_unfolded("1", ["10"]), 50)
+
+    def test_fold_backlog_is_chunked_and_leaves_calls_for_pings(self):
+        db = self.db()
+        db.add([self.row(snow(1_800_000_000) + i) for i in range(bot.FOLD_CHUNK * 7)])
+        with patch.object(mr, "ask", return_value="notes") as ask:
+            self.assertEqual(bot.fold(db, self.cfg(), now=1_800_000_000), bot.FOLDS_PER_PASS)
+        self.assertEqual(ask.call_count, bot.FOLDS_PER_PASS)
+        self.assertEqual(db.count_unfolded("1", ["10"]), bot.FOLD_CHUNK * 2)
+        with patch.object(mr, "usage", return_value={"calls": 100, "input_tokens": 0, "output_tokens": 0,
+                                                     "date": "d"}), \
+                patch.object(mr, "ask") as ask:
+            self.assertEqual(bot.fold(db, self.cfg(daily_cap=150), now=1_800_000_000), 0)
+            ask.assert_not_called()                                            # 100 >= 150 - 50
+        heavy = {"calls": 10, "input_tokens": 200000, "output_tokens": 70000, "date": "d"}
+        with patch.object(mr, "usage", return_value=heavy):
+            self.assertFalse(bot.fold_ok(self.cfg(daily_tokens=400000)))       # a third kept for pings
+            self.assertTrue(bot.fold_ok(self.cfg(daily_tokens=1500000)))
+            self.assertTrue(bot.fold_ok(self.cfg(daily_tokens=0)))
+        self.assertFalse(bot.fold_ok(self.cfg(memory=False)))
+
+    def test_ping_context_has_notes_recent_and_related(self):
+        db = self.db()
+        db.set_memory("1", "@tomboe is the umbrella guy.", 0)
+        fake = FakeDiscord({"10": [msg(1, text="the umbrella saga begins"), msg(2, text="unrelated"),
+                                   msg(3, author="3", text="cold today", name="Ant"),
+                                   msg(4, text="<@900> what about the umbrella?")]})
+        with patch.object(bot, "_discord_get", fake):
+            digest, recent, related = bot.memory_context(self.cfg(memory_tail=2), "10", 4,
+                                                         "<@900> what about the umbrella?")
+        self.assertEqual(digest, "@tomboe is the umbrella guy.")
+        self.assertEqual(recent, ["@tomboe: unrelated", "@antwah: cold today"])  # before the ping
+        self.assertEqual(related, ["@tomboe: the umbrella saga begins"])         # the ping itself excluded
+        self.assertIsNone(bot.memory_context(self.cfg(memory=False), "10", 4, "x"))
+        with patch.object(bot, "memory_db", return_value=None):
+            self.assertIsNone(bot.memory_context(self.cfg(), "10", 4, "x"))     # falls back to live history
+
+    def test_prompts_carry_memory_and_the_honesty_rule(self):
+        system, user = mr.build_prompt("Be WB.", ["@tomboe"], ["@tomboe: hi"], "@antwah", "umbrella?",
+                                       "wild", {}, [], digest="@tomboe is the umbrella guy.",
+                                       related=["@tomboe: the umbrella saga begins"])
+        self.assertIn("Your notes on this group", system)
+        self.assertIn("@tomboe is the umbrella guy.", system)
+        self.assertIn("Never claim logs, records, statistics", system)
+        self.assertIn("Older messages that match this ping, oldest first:\n@tomboe: the umbrella saga begins", user)
+        self.assertIn("Recent chat, oldest first:\n@tomboe: hi", user)
+        system, _ = mr.build_morning_prompt("Be WB.", [], [], [], "", [], digest="notes!")
+        self.assertIn("notes!", system)
+        _, plain = mr.build_prompt("Be WB.", [], [], "@x", "p", "wild", {}, [])
+        self.assertNotIn("Older messages", plain)
+        self.assertIsNone(mr.validate(self.cfg(memory_tail=100, memory_related=60, memory_backfill=0)))
+        for bad in ({"memory": "on"}, {"memory_tail": 101}, {"memory_backfill": -1}):
+            self.assertIsNotNone(mr.validate({"claude": bad}), bad)
+
+    def test_reset_and_health(self):
+        db = self.db()
+        db.add([self.row(1)])
+        db.set_memory("1", "notes", 1)
+        h = bot.memory_health(self.cfg())
+        self.assertEqual((h["enabled"], h["messages"], h["digest_chars"], h["unfolded"]), (True, 1, 5, 0))
+        db.reset("1")
+        self.assertEqual((db.memory("1")["digest"], db.count(["10"])), ("", 1))   # notes only
+        db.reset("1", everything=True)
+        self.assertEqual((db.count(["10"]), db.channel("10")["newest_id"]), (0, None))
+        self.assertEqual(bot.memory_health(self.cfg(memory=False)), {"enabled": False})
+
+
+if __name__ == "__main__":
+    unittest.main()
