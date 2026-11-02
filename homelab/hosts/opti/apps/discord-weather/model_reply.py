@@ -29,13 +29,14 @@ KEY_PATH = os.path.join(DATA_DIR, "anthropic.key")
 USAGE_PATH = os.path.join(DATA_DIR, "claude_usage.json")
 
 # max_tokens covers thinking too (Haiku 5.5 thinks by default), so it is sized
-# well above the reply itself; effort "low" keeps chat replies quick and cheap.
-DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "low", "daily_cap": 150,
-            "daily_tokens": 400000, "max_tokens": 1024, "history": 10, "kinds": [],
+# well above the reply itself; effort "medium" buys better jokes for fractions of a cent.
+DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 150,
+            "daily_tokens": 400000, "max_tokens": 2048, "history": 10, "kinds": [],
             "morning": False, "morning_effort": "medium", "morning_history": 150,
-            "memory": False, "memory_tail": 40, "memory_related": 30, "memory_backfill": 20000}
+            "memory": False, "memory_tail": 40, "memory_related": 30, "memory_backfill": 50000,
+            "memory_skip_channels": []}
 EFFORTS = ("low", "medium", "high")
-TIMEOUT = 12.0        # seconds; Discord shows "typing" meanwhile, templates cover a miss
+TIMEOUT = 25.0        # seconds; Discord shows "typing" meanwhile, templates cover a miss
 MORNING_TIMEOUT = 45.0  # the morning line is off the hot path; give it room
 MAX_CHARS = 900       # an answer, not an essay
 MORNING_MAX_CHARS = 400
@@ -43,25 +44,29 @@ MODEL_RE = r"[a-z0-9][a-z0-9.-]{2,63}"
 
 # Shown to the model when the persona has no `brief` of its own.
 DEFAULT_BRIEF = (
-    "You are a Discord weather bot for a small group of friends. You post a forecast "
-    "every morning and get pinged with bits in between. Voice: dry, officious, a little "
-    "unhinged, like a lab AI that has decided it is in charge of the weather. Deadpan, "
-    "short declaratives, occasional fake statistics. Never cruel, never explain the joke.")
+    "You are a chat bot for a small group of friends. Posting the morning weather is your "
+    "day job; the rest of the time you are an unhinged AI with opinions. Your voice is a "
+    "hodgepodge of your own: a lab computer's serene passive aggression, a needy little "
+    "robot's manic enthusiasm, and a stern old scoutmaster's standards. Deadpan one moment, "
+    "wildly overexcited the next, occasional absurd fake statistics. Be genuinely helpful "
+    "and funny at once. Never cruel, never explain the joke.")
 
 RULES = (
-    "Rules: answer whatever you were actually asked, on any topic, the way a helpful "
-    "chat bot would, but always in character. Reply with ONE Discord message: usually "
-    "one to three sentences, never more than 600 characters, no preamble, no quotes "
-    "around it, no explanation of the joke. Mention people only by the handles in the "
-    "roster, written exactly as @handle; never @everyone or @here. Do not bring up "
+    "Rules: answer whatever you were actually asked, on any topic, and be funny about it. "
+    "Lead with the bit: an absurd take, a roast of whoever asked, or a callback from your "
+    "notes or the chat shown. Use running jokes whenever one fits. Reply with ONE Discord "
+    "message: usually one to three sentences, never more than 600 characters, no preamble, "
+    "no quotes around it, no explanation of the joke. Mention people only by the handles "
+    "in the roster, written exactly as @handle; never @everyone or @here. Do not bring up "
     "health, money, work, partners, family, politics, or anything personal that is not "
-    "already a running joke in the chat shown or part of the question. If the ping is "
-    "about the weather, answer with the numbers given and do not invent others. If a "
-    "real answer needs facts you don't have, say so in character rather than guessing. "
-    "You know only what is in this prompt: your notes and older messages if shown, the "
-    "recent chat, the roster and the weather. Never claim logs, records, statistics, "
-    "counts or memories beyond those; if asked what you know, say in character that "
-    "you remember what's in your notes and the chat you've read, nothing else.")
+    "already a running joke in the chat shown or part of the question. "
+    "Do not talk about the weather unless this prompt gives you weather numbers; if it "
+    "does, answer with those numbers and invent no others. "
+    "Obvious jokes and absurd fake statistics are fine, but never present made-up logs, "
+    "records, counts or memories of what someone really did as real. When you don't know "
+    "something, don't disclaim and don't explain what your notes cover: riff instead. "
+    "[removed] marks a topic this group no longer discusses: never mention it, ask about "
+    "it or guess at it; brush it off in a line and move on.")
 
 FOLD_RULES = (
     "Task: you keep private notes about this Discord group so your replies and morning "
@@ -69,7 +74,7 @@ FOLD_RULES = (
     "messages below. Keep: running jokes and bits, nicknames, short memorable quotes "
     "attributed by @handle, who does what, recurring topics and games, how people "
     "treat you, ongoing stories and rivalries. Merge repeats, drop stale one-off trivia. "
-    "Plain notes grouped by person and by bit, at most 1,500 words. Write only what the "
+    "Plain notes grouped by person and by bit, at most 3,000 words. Write only what the "
     "messages actually say; never invent. Do not record health, money, work, partners, "
     "family or politics details unless they are already an open running joke. Refer to "
     "people only by the handles shown. Output only the updated notes, no preamble.")
@@ -118,6 +123,9 @@ def validate(cfg):
                       ("memory_related", 0, 60), ("memory_backfill", 0, 200000)):
         if not (isinstance(s[k], int) and not isinstance(s[k], bool) and lo <= s[k] <= hi):
             return f"claude.{k} must be an integer {lo}-{hi}"
+    skip = s["memory_skip_channels"]
+    if not isinstance(skip, list) or not all(isinstance(c, str) and c.isdigit() for c in skip):
+        return "claude.memory_skip_channels must be a list of numeric channel ids"
     if not isinstance(s["kinds"], list) or not all(isinstance(k, str) for k in s["kinds"]):
         return "claude.kinds must be a list of reply kinds"
     if s["enabled"] and not str(cfg.get("guild_id") or "").strip():
@@ -195,7 +203,7 @@ def decide(cfg, kind):
     s = settings(cfg)
     if not s["enabled"] or kind == "full" or not anthropic or not key_source():
         return None
-    if kind in ("morning", "memory") and not s[kind]:
+    if kind in ("morning", "memory") and not s[kind]:   # each has its own switch
         return None
     if s["kinds"] and kind not in s["kinds"] and kind not in ("morning", "memory"):
         return None
@@ -243,7 +251,7 @@ def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples, dige
     system += _notes(digest)
     chat = "\n".join(recent) if recent else "(no earlier messages)"
     if related:
-        chat = "Older messages that match this ping, oldest first:\n" + "\n".join(related) + \
+        chat = "Older messages from this server that match this ping, oldest first:\n" + "\n".join(related) + \
                "\n\nRecent chat, oldest first:\n" + chat
     else:
         chat = "Recent chat, oldest first:\n" + chat
@@ -253,6 +261,8 @@ def build_prompt(brief, roster, recent, asker, ping, kind, facts, examples, dige
                    f"low {facts.get('lo', '?')}, feels like {facts.get('feels', '?')} (F), "
                    f"{str(facts.get('cond', '')).lower()}, rain {facts.get('rain', '?')}%.")
     ex = "\n".join(f"- {e}" for e in examples[:3])
+    if not facts:
+        weather = ""
     user = (f"{chat}\n\n"
             f"{asker} just pinged you: {ping.strip()}\n"
             f"The router filed this under: {kind}.{weather}\n\n"

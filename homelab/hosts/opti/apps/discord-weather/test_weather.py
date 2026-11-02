@@ -246,7 +246,7 @@ class WeatherTests(unittest.TestCase):
         with patch.object(bot, "fetch_forecast", side_effect=lambda loc, tz: forecast(80 if loc is NY else 90)):
             bot._forecasts.clear()
             self.assertEqual(bot.build_reply(cfg, 5, "<@99> weather in bellerose?")[0], "<@5> WB: Bellerose 80°")
-            self.assertEqual(bot.build_reply(cfg, 5, "how hot is starks")[0], "<@5> WB: Greensboro 90°")
+            self.assertEqual(bot.build_reply(cfg, 5, "weather for starks?")[0], "<@5> WB: Greensboro 90°")
             self.assertEqual(bot.build_reply(cfg, 7, "<@99> weather?")[0], "<@7> WB: Greensboro 90°")
             content, embed, kind = bot.build_reply(cfg, 5, "<@99> weather?")
             self.assertIn("Bellerose", content)
@@ -256,7 +256,11 @@ class WeatherTests(unittest.TestCase):
 
     def test_classify_precedence_and_persona_patterns(self):
         towns = ["Bellerose", "Starks"]
-        cases = {"weather?": "weather", "how's starks": "weather", "full report": "full",
+        cases = {"weather?": "weather", "weather report": "weather", "tell me my weather": "weather",
+                 "tell me the weather": "weather", "what's the weather": "weather", "weather in bellerose": "weather",
+                 "how's starks": "wild", "is it hot out": "wild", "it's raining again": "wild",
+                 "the weather sucks": "wild", "bellerose": "wild", "full report": "full",
+                 "I'm full": "wild", "report him": "wild", "everything is fine": "wild",
                  "it feels like I'm melting, turn the thermostat down": "control",
                  "everytime you type e say hi": "command",
                  "blink twice if you're held against your will": "sentience",
@@ -286,21 +290,22 @@ class WeatherTests(unittest.TestCase):
         witty.use_persona(None)
         self.assertEqual(witty.pick_name(), "someone")
 
-    def test_non_weather_ping_gets_kind_line_with_facts(self):
-        self.persona(replies={"control": ["{name}: {me} does not run {town} at {feels}°. Ask {pick}."]},
+    def test_non_weather_ping_gets_no_forecast_data(self):
+        self.persona(replies={"control": ["{name}: {me} does not run {town} at {feels}°.", "{name}: ask {pick}."]},
                      homes={"7": "Greensboro, NC"}, pings={"@tom": "111"})
         cfg = self.config()
-        with patch.object(bot, "fetch_forecast", side_effect=lambda loc, tz: forecast(80 if loc is NY else 90)):
-            bot._forecasts.clear()
-            content, embed, kind = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
-        self.assertEqual(kind, "control")
-        self.assertEqual(content, "<@7>: WB does not run Greensboro at 90°. Ask <@111>.")
-        self.assertIsNone(embed)
-        with patch.object(bot, "fetch_forecast", side_effect=RuntimeError("offline")):
-            bot._forecasts.clear()
-            content, _, kind = bot.build_reply(cfg, 5, "<@99> turn the thermostat down")
-        self.assertEqual(kind, "control")
-        self.assertIn("Bellerose at ?°", content)   # first town, facts blank, still answers
+        with patch.object(bot, "fetch_forecast", side_effect=AssertionError("no forecast fetch")):
+            for _ in range(3):
+                content, embed, kind = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
+                self.assertEqual((kind, content, embed), ("control", "<@7>: ask <@111>.", None))
+        self.persona(replies={"control": ["{name}: {town} at {feels}°."]})   # every line needs weather
+        with patch.object(bot, "fetch_forecast", side_effect=AssertionError("no forecast fetch")):
+            content, _, _ = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
+        self.assertNotIn("°", content)   # the built-in dry line, not "? at ?°"
+        for kind, lines in witty.DEFAULT_REPLIES.items():
+            if kind not in ("town", "all", "full", "weather"):
+                for line in lines:
+                    self.assertFalse(witty._slots(line) & witty.FORECAST_SLOTS, line)
 
     def test_addressed_scope_and_throttle(self):
         me = SimpleNamespace(id=1)

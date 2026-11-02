@@ -214,23 +214,33 @@ first and `docker cp` the persona after the container is running the new build.
 
 ### Model-written replies (`model_reply.py`, off by default)
 
+The bot has two modes. **Weather mode** is the daily post plus an explicit ask:
+"tell me my weather", "weather report", "what's the weather", "weather in
+Hicksville", a bare "weather?", or "full report" for the briefing card. Naming a
+town, or words like "rain" and "hot", don't count. **Everything else** is chat
+with an unhinged AI, and those replies get no forecast data at all, from the
+model or from templates (lines using forecast slots are skipped).
+
 A profile can let the bot ask Claude to answer whatever it was asked, in
 character, instead of drawing a template: the persona's `brief` (who the bot is,
-the voice, the roster, the off-limits list), the last `history` messages of the
-channel, the ping, the weather for the town it names (else the asker's home)
-and three template lines of the kind as a voice reference go to the Messages
-API; one reply comes back, is checked (users-only mentions from the roster,
-`@everyone`/`@here`/role pings refused, 900 chars max) and posted. Any
-failure, timeout, refusal or empty reply falls back to the template line, so
-the bot never goes quiet because the model did. Every kind can use the model,
-weather questions included; only `full` keeps its briefing card.
+the voice, the roster, the off-limits list; up to 12,000 characters), the last
+`history` messages of the channel, the ping, for a weather ask the weather for
+the town it names (else the asker's home), and three template lines of the kind
+as a voice reference go to the Messages API; one reply comes back, is checked
+(users-only mentions from the roster, `@everyone`/`@here`/role pings refused,
+900 chars max) and posted. Any failure, timeout, refusal or empty reply falls
+back to the template line, so the bot never goes quiet because the model did.
+Only `full` skips the model and keeps its briefing card. The rules tell the
+model that jokes and absurd fake statistics are fine but made-up logs or records
+presented as real are not, and to riff instead of disclaiming.
 
 ```json
-"claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "low",
-           "daily_cap": 150, "daily_tokens": 400000, "max_tokens": 1024,
+"claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "medium",
+           "daily_cap": 150, "daily_tokens": 400000, "max_tokens": 2048,
            "history": 10, "kinds": [],
            "morning": true, "morning_effort": "medium", "morning_history": 150,
-           "memory": true, "memory_tail": 40, "memory_related": 30, "memory_backfill": 20000}
+           "memory": true, "memory_tail": 40, "memory_related": 30, "memory_backfill": 50000,
+           "memory_skip_channels": []}
 ```
 
 `effort` is low/medium/high (thinking stays adaptive; `max_tokens` covers the
@@ -260,20 +270,31 @@ left in the pool when the model line wins. Previews (`GET /preview`) never call
 the model. The bot needs Read Message History in those channels.
 
 **Shared memory: WBdb (`wbdb.py`, `memory: true`).** With memory on, the bot
-keeps every message from its channels in `/data/wbdb.sqlite` (SQLite, WAL,
-full-text index) on opti's ZFS pool (`red/docker`, auto-snapshotted every 15
-min). It reads each channel forward every 15 minutes and again right before any
-model reply, and pages back through history (5,000 messages a pass) until the
-channel's start or `memory_backfill` messages. New messages are folded into the
-model's running notes about the group (the digest, about 1,500 words) once 40
-pile up or the oldest is 6 hours old, 300 per call, at most 5 calls a pass. The
-digest only moves after a good answer, and folds stop while today's usage is
-within 50 calls or a third of `daily_tokens` of the cap, so a backlog never
+keeps every message from the server's text channels in `/data/wbdb.sqlite`
+(SQLite, WAL, full-text index) on opti's ZFS pool (`red/docker`,
+auto-snapshotted every 15 min), minus `memory_skip_channels` and any channel
+that answers 403. It reads each channel forward every 15 minutes and the pinged
+one again right before a model reply, and pages back through history (5,000
+messages a pass, all channels together) until each channel's start or
+`memory_backfill` messages. Once history is in, messages are folded into the
+model's running notes about the group (the digest, about 3,000 words) as 40
+pile up or the oldest turns 6 hours old, 300 per call, at most 5 calls a pass.
+The digest only moves after a good answer, and folds stop while today's usage
+is within 50 calls or a third of `daily_tokens` of the cap, so a backlog never
 turns pings into limit lines (a big backfill digests over a few days; raise
 `daily_tokens` to speed it up). Ping replies get the digest, the channel's last
-`memory_tail` messages and the `memory_related` best full-text matches for the
-ping; the morning line gets the digest too. Both prompts tell the model it
-knows only its notes and the chat shown, never logs or stats.
+`memory_tail` messages and the `memory_related` best full-text matches across
+all channels; the morning line reads every channel since its last post and gets
+the digest too.
+
+**Forgetting.** The private persona's `"forget": {"terms": [...], "user_ids":
+[...]}` lists what the bot must act as if it never saw. A message naming a term,
+or written by that user, is never stored and is purged if it already was; digest
+lines naming a term are dropped; a ping naming one reaches the model as
+`[removed]`; and a reply that names one is thrown out for a template line. Terms
+match whole words in any case, so a first name also catches other people with
+that name. The list stays in the persona because the repo is public. Backups
+taken before a term was added keep what they held until they age out (7 days).
 
 Reliability: one connection behind a lock, each batch in one transaction;
 `PRAGMA quick_check` at open, and a file that fails is renamed

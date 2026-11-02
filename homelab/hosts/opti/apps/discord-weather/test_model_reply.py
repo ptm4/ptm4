@@ -168,7 +168,8 @@ class ModelReplyTests(unittest.TestCase):
         self.assertIn("- Statement: no, {name}.", seen["user"])
         with patch.object(mr, "ask", return_value=None), patch.object(bot, "reply_facts", return_value=facts):
             self.assertIsNone(bot.model_line(self.on(), "3", "x", "wild", []))
-        self.assertIn("brief", witty.use_persona({**PERSONA, "brief": "x" * 6001}))
+        self.assertNotIn("Bellerose", seen["user"])           # chat kinds get no forecast data
+        self.assertIn("brief", witty.use_persona({**PERSONA, "brief": "x" * (witty.BRIEF_MAX + 1)}))
 
     def test_model_line_uses_the_town_named_in_the_ping(self):
         cfg = self.on(locations=[{"name": "Bellerose, NY", "lat": 1, "lon": 1},
@@ -221,7 +222,7 @@ class ModelReplyTests(unittest.TestCase):
         with patch.object(mr, "_create", return_value=response()) as create:
             mr.ask(self.on(), "s", "u", log=quiet, effort="medium", timeout=45.0)
         s = create.call_args.args[0]
-        self.assertEqual((s["effort"], s["timeout"], s["max_tokens"]), ("medium", 45.0, 1024))
+        self.assertEqual((s["effort"], s["timeout"], s["max_tokens"]), ("medium", 45.0, 2048))
 
     def test_new_settings_validate(self):
         self.assertIsNone(mr.validate(self.on(morning=True, morning_effort="high", daily_tokens=0,

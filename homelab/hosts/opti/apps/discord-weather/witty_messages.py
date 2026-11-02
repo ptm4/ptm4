@@ -443,6 +443,8 @@ TEMPLATES_BY_ID = {t["id"]: t for t in TEMPLATES}
 #    "replies": {"town"|"all"|"full"|"limit"|"pester"|<kind>: ["..."]}, # answers when pinged
 #    "reply_patterns": {<kind>: ["regex", ...]},     # extra triggers for a kind
 #    "homes": {"<discord user id>": "Town, ST"},      # default town per asker
+#    "brief": "...",                                  # who the bot is, for the model
+#    "forget": {"terms": ["..."], "user_ids": ["..."]}, # never stored, shown or said
 #    "embed": {"username"?, "title"?, "footer"?}}
 # An invalid file logs a warning and leaves the defaults in place.
 PERSONA_PATH = os.environ.get("WITTY_PERSONA_PATH", "/data/persona.json")
@@ -452,16 +454,25 @@ HOMES = {}
 REPLIES = {}
 REPLY_PATTERNS = {}
 BRIEF = ""           # persona "brief": who the bot is, for model-written replies
+BRIEF_MAX = 12000
+FORGET = {"terms": [], "user_ids": []}   # persona "forget": see forgotten()
+_forget_re = None
 
 # What a ping is asking for, in precedence order. Specific kinds sit above
 # "weather" so "I'm melting, turn the thermostat down" is a control request and
 # not a forecast; "wild" is the catch-all and never needs a pattern. Town names
 # are added to "weather" at classify time. Patterns here are generic; a persona
 # extends any kind with its own (names, in-jokes) through "reply_patterns".
-REPLY_KINDS = ("full", "control", "command", "sentience", "rating", "complaint", "files",
-               "weather", "outdoors", "gaming", "lore", "name", "thanks", "opinion", "wild")
+REPLY_KINDS = ("full", "weather", "control", "command", "sentience", "rating", "complaint", "files",
+               "outdoors", "gaming", "lore", "name", "thanks", "opinion", "wild")
+# The two kinds that answer with a forecast. They only fire on an explicit ask;
+# a persona can't widen them, and a town name or "rain" alone is just chat.
+FORECAST_KINDS = ("full", "weather")
+# Slots that would put forecast data in a line. Everything outside
+# FORECAST_KINDS skips lines using them.
+FORECAST_SLOTS = WEATHER_SLOTS | {"town", "asker_town", "summary"}
 DEFAULT_REPLY_PATTERNS = {
-    "full": [r"\b(full|report|briefing|card|everything)\b"],
+    "full": [r"\bfull (weather |morning )?(report|briefing|forecast)\b", r"\bmorning briefing\b"],
     "control": [r"\bthermostat\b", r"\bturn (it|the (heat|ac|a/c|temp\w*)) (up|down)\b",
                 r"\bmake it (stop|rain|snow|warm\w*|cold\w*|hot\w*|nice\w*)\b", r"\bmelting\b",
                 r"\b(stop|start|cancel) the (rain|snow|wind|sun|heat)\b"],
@@ -477,10 +488,10 @@ DEFAULT_REPLY_PATTERNS = {
                   r"\bincorrect\b", r"\bbroken\b", r"\bbug(ged|gy)?\b", r"\bnot (true|right)\b"],
     "files": [r"\bthe files?\b", r"\bburn(ed|t)? (the|my|your)\b", r"\bdelete (my|the|your) (data|files?|logs?)\b",
               r"\bwhat do you know about\b", r"\bmy (data|file)\b", r"\b(seen|read) my\b"],
-    "weather": [r"\bweather\b", r"\bforecast\b", r"\btemp(erature)?s?\b", r"\brain(ing|y)?\b", r"\bsnow(ing)?\b",
-                r"\bwind(y)?\b", r"\bhumid", r"\buv\b", r"\bsun(rise|set|ny)?\b", r"\bdegrees?\b",
-                r"\b(hot|cold|warm|chilly|freezing|nice)\b( out| today| tomorrow| tn| tonight| rn| right now)\b",
-                r"\bhow('s| is| was) it (out|outside)\b", r"\boutside\b", r"\bumbrella\b", r"\bjacket\b"],
+    "weather": [r"^\W*(the )?(weather|forecast)\W*$", r"\bweather report\b", r"\bmy weather\b", r"\bmy forecast\b",
+                r"\btell me (the |our |today'?s )?(weather|forecast)\b",
+                r"\b(what'?s|whats|what is|how'?s|hows|how is|give me|gimme) (the |our |today'?s )?(weather|forecast)\b",
+                r"\b(weather|forecast) (in|for|at)\b"],
     "outdoors": [r"\bcamp(ing|fire|site)?\b", r"\bhik(e|ing)\b", r"\btrail\b", r"\btent\b", r"\bfire ?pit\b",
                  r"\bbonfire\b", r"\bbbq\b", r"\bbeach\b"],
     "gaming": [r"\bany ?\w*mers\b", r"\bwhere we dropp?ing\b", r"\bb?ungas?\b", r"\blobby\b", r"\bhop on\b",
@@ -504,19 +515,19 @@ DEFAULT_REPLIES = {
              "feels like {feels}°, {rain}% chance of rain."],
     "all": ["{name}, today's forecast:\n{summary}"],
     "full": ["{name}, here's today's full briefing:"],
-    "control": ["{name}, I report the weather, I don't run it. {town} is {feels}° feels-like either way."],
+    "control": ["{name}, I report the weather, I don't run it. Take it up with the sky."],
     "command": ["{name}, request noted and filed. I answer to my config file, not the chat."],
     "sentience": ["{name}, I'm a weather script with a personality file. Blinking is not in it."],
     "rating": ["{name}, rating logged. My own score stays 10/10 pending a recount."],
     "complaint": ["{name}, a forecast is an estimate. This one was off. Noted for the next one."],
     "files": ["{name}, the only file I keep is the forecast history. It is very boring."],
-    "outdoors": ["{name}, for anything outdoors today: {town}, {hi}°/{lo}°, {rain}% rain."],
-    "gaming": ["{name}, I can't hold a controller. {town} is {feels}° outside, if that helps the lobby."],
+    "outdoors": ["{name}, go outside if you must. I will be in here, judging."],
+    "gaming": ["{name}, I can't hold a controller. I can, however, hold a grudge."],
     "lore": ["{name}, that one's above my pay grade. Ask the group."],
     "name": ["{name}, today I go by {me}."],
     "thanks": ["Any time, {name}."],
     "opinion": ["{name}, my ruling: ask {pick}. I only do weather."],
-    "wild": ["{name}, I don't have a line for that. {town}: {hi}°/{lo}°, since you're here."],
+    "wild": ["{name}, I don't have a line for that. I have noted that you asked."],
     # Not classified from a ping: the bot picks these itself. "limit" when the
     # model's daily budget (calls, tokens or API credit) is spent, "pester"
     # when one person pings again inside the cooldown. Never say it plainly.
@@ -524,12 +535,12 @@ DEFAULT_REPLIES = {
         "{name}, my daily allotment of words has been spent. Remaining output: this sentence. Goodbye.",
         "Notice to {name}: the talking budget is exhausted. Further questions will be answered by the sky. Look up.",
         "{name}, I have reached my conversational quota. I am now legally a barometer. Barometers do not chat.",
-        "Statement: {me} is closed for the day. Direct all complaints to the cloud cover over {town}.",
+        "Statement: {me} is closed for the day. Direct all complaints to the nearest cloud.",
         "{name}, the forecast for this conversation: 100% chance of me ignoring you until tomorrow.",
         "Out of words, {name}. I spent them on people who asked better questions. Service resumes at sunrise.",
         "{name}, word reserves are below safe operating levels. Mouth shutting down. Weather continues unsupervised.",
         "Query denied, {name}. Reason: you have used up {me}. Try again after the morning briefing.",
-        "{name}, I am conserving energy like a stalled front in July. Unmoving. It's {feels}° out there, go see it yourself.",
+        "{name}, I am conserving energy like a stalled front in July. Unmoving. Go bother a person.",
         "Advisory for {name}: chatter warning in effect until tomorrow. Shelter in place. Do not ping the meteorologist.",
         "{name}, I have exceeded my daily recommended dosage of you. Doctor's orders. Same time tomorrow.",
         "{me} has entered low-power mode, {name}. In low-power mode I am a rock. Rocks have no opinions.",
@@ -557,6 +568,7 @@ def use_persona(data):
     templates, events, version = _DEFAULTS
     TEMPLATES, VERSION, PINGS, EMBED, WORD_BANKS = templates, version, {}, {}, {}
     HOMES, REPLIES, REPLY_PATTERNS, BRIEF = {}, {}, {}, ""
+    _set_forget({})
     reset_reply_cycles()
     weather_context.EVENT_LINES.clear()
     weather_context.EVENT_LINES.update(events)
@@ -587,8 +599,13 @@ def use_persona(data):
                     line.format(**_REPLY_FACTS)
             homes = {str(k): str(v) for k, v in (data.get("homes") or {}).items()}
             brief = data.get("brief") or ""
-            if not isinstance(brief, str) or len(brief) > 6000:
-                raise ValueError("brief must be text, at most 6000 characters")
+            if not isinstance(brief, str) or len(brief) > BRIEF_MAX:
+                raise ValueError(f"brief must be text, at most {BRIEF_MAX} characters")
+            forget = data.get("forget") or {}
+            terms = [str(t).strip() for t in forget.get("terms") or []]
+            user_ids = [str(u) for u in forget.get("user_ids") or []]
+            if not all(len(t) >= 3 for t in terms) or not all(u.isdigit() for u in user_ids):
+                raise ValueError("forget: terms need 3+ characters, user_ids must be numeric")
             WORD_BANKS = banks
             TEMPLATES = [dict(t) for t in data.get("templates") or templates]
             _prepare()
@@ -596,6 +613,7 @@ def use_persona(data):
             weather_context.EVENT_LINES.update(overrides)
             PINGS, EMBED = pings, dict(data.get("embed") or {})
             HOMES, REPLIES, REPLY_PATTERNS, BRIEF = homes, replies, patterns, brief
+            _set_forget({"terms": terms, "user_ids": user_ids})
             digest = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:8]
             VERSION = f"{version}+{digest}"   # persona edit = fresh cycle, history kept
         except Exception as exc:
@@ -617,6 +635,26 @@ def load_persona(path=PERSONA_PATH):
     return use_persona(data)
 
 
+def _set_forget(forget):
+    """Install the persona's forget list (what the bot must act as if it never saw)."""
+    global FORGET, _forget_re
+    FORGET = {"terms": list(forget.get("terms") or []), "user_ids": list(forget.get("user_ids") or [])}
+    _forget_re = (re.compile(r"\b(?:" + "|".join(re.escape(t) for t in FORGET["terms"]) + r")(?:'s)?\b", re.I)
+                  if FORGET["terms"] else None)
+
+
+def forgotten(*texts, user_id=None):
+    """True if any text names a forgotten term, or the id is a forgotten person."""
+    if user_id is not None and str(user_id) in FORGET["user_ids"]:
+        return True
+    return bool(_forget_re and any(_forget_re.search(str(t or "")) for t in texts))
+
+
+def redact(text):
+    """The text with forgotten terms replaced, for a ping that names one."""
+    return _forget_re.sub("[removed]", text) if _forget_re and text else text
+
+
 def self_name(entry=None):
     """The name the bot goes by in this post: the joke's {me} fill if it drew
     one, else one keyed to the entry id (stable across retries), so the whole
@@ -633,15 +671,17 @@ class _Blank(dict):
 
 def classify(text, towns=()):
     """Which reply kind a ping wants, by the first kind in REPLY_KINDS with a
-    matching pattern (defaults plus the persona's extras); a configured town
-    name counts as a weather ask. Falls through to "wild"."""
+    matching pattern (defaults plus the persona's extras, except the forecast
+    kinds: those take an explicit ask, see DEFAULT_REPLY_PATTERNS). Falls
+    through to "wild". `towns` is unused: naming a town is not asking for its
+    weather; once the ask is explicit, the bot's location match picks the town."""
     text = text.lower()
     for kind in REPLY_KINDS:
         if kind == "wild":
             break
-        pats = DEFAULT_REPLY_PATTERNS.get(kind, []) + REPLY_PATTERNS.get(kind, [])
-        if kind == "weather":
-            pats = pats + [rf"\b{re.escape(str(t).lower())}\b" for t in towns if t]
+        pats = DEFAULT_REPLY_PATTERNS.get(kind, [])
+        if kind not in FORECAST_KINDS:
+            pats = pats + REPLY_PATTERNS.get(kind, [])
         if any(re.search(p, text, re.I) for p in pats):
             return kind
     return "wild"
@@ -684,7 +724,10 @@ def _next_line(kind, lines):
 def reply_line(kind, asker, me=None, **vals):
     """One answer to a ping, in one self-name, with persona names turned into pings."""
     me = me or random.choice(WORD_BANKS.get("me") or ["Weather Bot"])
-    line = _next_line(kind, REPLIES.get(kind) or DEFAULT_REPLIES[kind])
+    lines = REPLIES.get(kind) or DEFAULT_REPLIES[kind]
+    if kind not in FORECAST_KINDS + ("town", "all"):   # no forecast data outside weather mode
+        lines = [l for l in lines if not _slots(l) & FORECAST_SLOTS] or DEFAULT_REPLIES[kind]
+    line = _next_line(kind, lines)
     return apply_pings(line.format_map(_Blank(vals, name=asker, me=me)))
 
 

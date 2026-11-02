@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS messages (
     author     TEXT NOT NULL,         -- the persona @handle, else @display name
     is_bot     INTEGER NOT NULL DEFAULT 0,
     ts         TEXT NOT NULL,
-    content    TEXT NOT NULL          -- mentions already turned into handles
+    content    TEXT NOT NULL,         -- mentions already turned into handles
+    folded     INTEGER NOT NULL DEFAULT 0   -- already in the digest
 );
 CREATE INDEX IF NOT EXISTS messages_channel ON messages(channel_id, id);
 CREATE INDEX IF NOT EXISTS messages_author ON messages(author_id, id);
@@ -62,7 +63,7 @@ not but can could would should will just like about from they them their there t
 its it's i'm im you're youre dont don't does did get got out all any our ours his her she him
 weather bot wb hey yo lol lmao please tell know think say said one also really very much
 """.split())
-DIGEST_MAX = 12000   # characters; the prompt asks for far less, this is the backstop
+DIGEST_MAX = 24000   # characters; the prompt asks for less, this is the backstop
 
 
 def _now():
@@ -99,6 +100,7 @@ class WBDB:
             if ok != "ok":
                 raise sqlite3.DatabaseError(f"quick_check: {ok}")
             conn.executescript(SCHEMA)
+            self._migrate(conn)
             return conn
         except sqlite3.DatabaseError as e:
             try:
@@ -112,7 +114,18 @@ class WBDB:
             self.note = f"set aside {os.path.basename(aside)} ({e}); rebuilding from Discord"
             conn = self._connect()
             conn.executescript(SCHEMA)
+            self._migrate(conn)
             return conn
+
+    @staticmethod
+    def _migrate(conn):
+        """Bring an older file up to date. Before the folded flag, the digest
+        covered everything up to memory.folded_through."""
+        if "folded" not in [r["name"] for r in conn.execute("PRAGMA table_info(messages)")]:
+            conn.execute("ALTER TABLE messages ADD COLUMN folded INTEGER NOT NULL DEFAULT 0")
+            conn.execute("UPDATE messages SET folded = 1 WHERE id <= "
+                         "(SELECT COALESCE(MAX(folded_through), 0) FROM memory)")
+        conn.execute("CREATE INDEX IF NOT EXISTS messages_folded ON messages(folded, id)")
 
     def close(self):
         with self.lock:
@@ -214,35 +227,61 @@ class WBDB:
             r = self.conn.execute("SELECT * FROM memory WHERE scope = ?", (str(scope),)).fetchone()
         return dict(r) if r else {"scope": str(scope), "digest": "", "folded_through": 0, "updated_at": None}
 
-    def set_memory(self, scope, digest, folded_through):
+    def set_memory(self, scope, digest, ids=()):
+        """Save the digest and flag the messages it now covers, in one transaction."""
+        ids = [int(i) for i in ids]
         with self.lock:
-            self.conn.execute(
-                "INSERT INTO memory (scope, digest, folded_through, updated_at) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(scope) DO UPDATE SET digest = excluded.digest, "
-                "folded_through = excluded.folded_through, updated_at = excluded.updated_at",
-                (str(scope), (digest or "").strip()[:DIGEST_MAX], int(folded_through), _now()))
+            self.conn.execute("BEGIN")
+            try:
+                self.conn.execute(
+                    "INSERT INTO memory (scope, digest, folded_through, updated_at) VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(scope) DO UPDATE SET digest = excluded.digest, "
+                    "folded_through = MAX(folded_through, excluded.folded_through), "
+                    "updated_at = excluded.updated_at",
+                    (str(scope), (digest or "").strip()[:DIGEST_MAX], max(ids, default=0), _now()))
+                self.conn.executemany("UPDATE messages SET folded = 1 WHERE id = ?", [(i,) for i in ids])
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
 
-    def unfolded(self, scope, channel_ids, limit):
-        """Messages newer than the digest in these channels, oldest first."""
-        if not channel_ids:
-            return []
-        through = self.memory(scope)["folded_through"]
-        marks = ",".join("?" * len(channel_ids))
+    def unfolded(self, limit):
+        """Messages not yet in the digest, oldest first. A flag, not a position:
+        history backfilled later is older than what's folded and still counts."""
         with self.lock:
-            rows = self.conn.execute(
-                f"SELECT * FROM messages WHERE id > ? AND channel_id IN ({marks}) ORDER BY id LIMIT ?",
-                [through] + [str(c) for c in channel_ids] + [limit]).fetchall()
+            rows = self.conn.execute("SELECT * FROM messages WHERE folded = 0 ORDER BY id LIMIT ?",
+                                     (limit,)).fetchall()
         return [dict(r) for r in rows]
 
-    def count_unfolded(self, scope, channel_ids):
-        if not channel_ids:
-            return 0
-        through = self.memory(scope)["folded_through"]
-        marks = ",".join("?" * len(channel_ids))
+    def count_unfolded(self):
         with self.lock:
-            return self.conn.execute(
-                f"SELECT COUNT(*) FROM messages WHERE id > ? AND channel_id IN ({marks})",
-                [through] + [str(c) for c in channel_ids]).fetchone()[0]
+            return self.conn.execute("SELECT COUNT(*) FROM messages WHERE folded = 0").fetchone()[0]
+
+    def purge(self, terms=(), user_ids=()):
+        """Delete messages naming a term or written by a user id, and drop the
+        lines of any digest that names a term. Returns messages removed."""
+        terms = [t for t in terms if t]
+        with self.lock:
+            before = self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            self.conn.execute("BEGIN")
+            try:
+                if terms:
+                    query = " OR ".join('"' + t.replace('"', '') + '"' for t in terms)
+                    self.conn.execute("DELETE FROM messages WHERE id IN "
+                                      "(SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)", (query,))
+                    pattern = re.compile("|".join(re.escape(t) for t in terms), re.I)
+                    for r in self.conn.execute("SELECT scope, digest FROM memory").fetchall():
+                        kept = [l for l in r["digest"].splitlines() if not pattern.search(l)]
+                        if len(kept) != len(r["digest"].splitlines()):
+                            self.conn.execute("UPDATE memory SET digest = ? WHERE scope = ?",
+                                              ("\n".join(kept), r["scope"]))
+                for u in user_ids:
+                    self.conn.execute("DELETE FROM messages WHERE author_id = ?", (str(u),))
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
+            return before - self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
 
     def reset(self, scope, everything=False):
         """Forget the digest (the messages stay and get folded again), or with
@@ -250,6 +289,7 @@ class WBDB:
         with self.lock:
             self.conn.execute("BEGIN")
             self.conn.execute("DELETE FROM memory WHERE scope = ?", (str(scope),))
+            self.conn.execute("UPDATE messages SET folded = 0")
             if everything:
                 self.conn.execute("DELETE FROM messages")
                 self.conn.execute("DELETE FROM channels")
@@ -266,7 +306,7 @@ class WBDB:
             self.conn.execute("INSERT INTO meta (key, value) VALUES (?, ?) "
                               "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
 
-    def stats(self, scope=None, channel_ids=()):
+    def stats(self, scope=None):
         with self.lock:
             n, newest = self.conn.execute("SELECT COUNT(*), MAX(ts) FROM messages").fetchone()
             chans = [dict(r) for r in self.conn.execute("SELECT * FROM channels ORDER BY channel_id")]
@@ -274,7 +314,7 @@ class WBDB:
         size = sum(os.path.getsize(self.path + s) for s in ("", "-wal") if os.path.exists(self.path + s))
         return {"messages": n, "newest_message_at": newest, "channels": chans, "bytes": size,
                 "digest_chars": len(mem.get("digest") or ""), "digest_updated_at": mem.get("updated_at"),
-                "unfolded": self.count_unfolded(scope, channel_ids) if scope else None,
+                "unfolded": self.count_unfolded(),
                 "last_ingest_at": self.get_meta("last_ingest_at"), "last_backup": self.get_meta("last_backup"),
                 "note": self.note}
 
