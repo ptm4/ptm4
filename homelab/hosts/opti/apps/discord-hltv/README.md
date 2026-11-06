@@ -33,9 +33,22 @@ cost real time to discover, so don't undo them:
   sections and never become "visible".
 
 A **persistent browser profile** lives on the `hltvapi_data` volume, so the Cloudflare clearance
-cookie survives restarts and the service looks like one returning visitor. Pacing is
-deliberately gentle: 3 scheduled scrapes a day, a 10-minute response cache, 2s between page
-loads, at most `DETAIL_CAP` match-detail pages per scrape.
+cookie survives restarts and the service looks like one returning visitor.
+
+**Pacing is a hard constraint, not a tuning knob.** The scraper shares the household's WAN
+IP. On 2026-11-06 a 10-minute warm timer plus a 5-minute dashboard poll had it opening ~210
+browser sessions a day (up to 26 pages each); Cloudflare flagged the IP and the HLTV phone app
+stopped loading on home Wi-Fi ("VPN or proxy … blocked"). Current limits:
+
+- No background warm timer (`HLTV_WARM_SECS=0`); scrapes happen at the digest's `post_times`
+  and when a reader's cache is older than its `max_age` (dashboard and bot: 3600s).
+- At most one reader-triggered refresh per `HLTV_REFRESH_MIN_SECS` (1800s).
+- `DETAIL_CAP` 12 match pages per scrape, 2s between page loads.
+- After any Cloudflare challenge, **no HLTV requests at all for 6h**
+  (`HLTV_CHALLENGE_BACKOFF_SECS`), persisted in `/data/challenge_backoff_until` so a restart
+  doesn't reset it. `/health` shows `backoff_until`.
+
+Don't route it through Gluetun to dodge this: HLTV blocks VPN exits outright.
 
 **The browser only runs during a scrape.** It is launched on demand and shut down as soon as
 the job queue drains, because a resident Chromium is not free at idle: HLTV's ad and analytics
@@ -84,9 +97,9 @@ description's 4096 characters it falls back to fields, chunked at 1024 each. Eit
 match is listed rather than trailing off in a "+N more", and lines are never cut mid-way: a
 severed markdown link breaks the whole embed.
 
-`DETAIL_CAP` (default 24) bounds how many match pages a scrape opens, and **only those matches
-get a stream link and map scores** — set it below a day's notable-match count and the tail of
-the digest quietly loses its streams.
+`DETAIL_CAP` (default 12, was 24 until 2026-11-06) bounds how many match pages a scrape opens,
+and **only those matches get a stream link and map scores** — on a big event day the tail of
+the digest loses its streams. That is the accepted trade for not getting the home IP flagged.
 
 ### Which stream gets linked
 

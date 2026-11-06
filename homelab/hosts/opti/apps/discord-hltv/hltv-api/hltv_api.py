@@ -52,16 +52,44 @@ UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
       "Chrome/151.0.0.0 Safari/537.36")
 
 VRS_CACHE_HOURS = 24
-# Match pages per scrape. Only these get map scores and a stream link, so the cap
-# has to cover a full day's notable matches — a big event fields ~16 — or the
-# tail of the digest silently loses its streams.
-DETAIL_CAP = int(os.environ.get("DETAIL_CAP", "24"))
+# Match pages per scrape. Only these get map scores and a stream link, so a big
+# event day (~16 notable matches) can lose streams on its tail at 12. That is the
+# accepted price: at 24, scraping every ~5 min got the home WAN IP flagged by
+# HLTV's Cloudflare on 2026-11-06, which broke the HLTV phone app for the whole
+# household. Total page loads against HLTV matter more than completeness here.
+DETAIL_CAP = int(os.environ.get("DETAIL_CAP", "12"))
 PAGE_DELAY = float(os.environ.get("PAGE_DELAY", "2"))  # seconds between page loads
 READY_BUDGET = 45          # seconds to wait for real content after a navigation
 SCRAPE_RETRIES = 3
 RETRY_SLEEP = 30
 
 CHALLENGE_TITLES = ("just a moment", "attention required", "checking your browser")
+
+# After a Cloudflare challenge, touch HLTV not at all for this long. Retrying a
+# challenged IP every few minutes is exactly what keeps it flagged — and the flag
+# lands on the household's shared WAN IP, not just on this container. The deadline
+# is persisted so a container restart cannot reset it.
+CHALLENGE_BACKOFF_SECS = int(os.environ.get("HLTV_CHALLENGE_BACKOFF_SECS", str(6 * 3600)))
+BACKOFF_PATH = os.path.join(DATA_DIR, "challenge_backoff_until")
+
+
+def backoff_until():
+    try:
+        with open(BACKOFF_PATH) as f:
+            return float(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0.0
+
+
+def start_backoff():
+    until = time.time() + CHALLENGE_BACKOFF_SECS
+    try:
+        with open(BACKOFF_PATH, "w") as f:
+            f.write(str(until))
+    except OSError:
+        pass
+    log(f"Cloudflare challenge: no HLTV requests until "
+        f"{datetime.fromtimestamp(until).isoformat(timespec='seconds')}")
 
 
 def log(msg):
@@ -167,6 +195,11 @@ class Browser:
 
     def fetch(self, path, ready_sel, extract):
         """Load a page, wait for real content, run `extract` (a JS expression)."""
+        until = backoff_until()
+        if time.time() < until:
+            _state["challenge_detected"] = True
+            raise Challenged(f"backing off after a Cloudflare challenge until "
+                             f"{datetime.fromtimestamp(until).isoformat(timespec='seconds')}")
         self._ensure()
         page = self._ctx.new_page()
         try:
@@ -180,6 +213,7 @@ class Browser:
             title = (page.title() or "")
             if any(m in title.lower() for m in CHALLENGE_TITLES):
                 _state["challenge_detected"] = True
+                start_backoff()
                 raise Challenged(f"Cloudflare challenge on {path} (title {title!r})")
             raise RuntimeError(f"{path}: {ready_sel} never appeared (title {title!r})")
         finally:
@@ -611,7 +645,10 @@ _refresh_attempted = {}          # (date, tz) -> when we last STARTED a refresh
 # the _refreshing key is released while that scrape may still be queued. Without a
 # floor between attempts, a wedged browser would collect one more abandoned full
 # scrape every time anybody polled. One attempt per JOB_TIMEOUT bounds that queue.
-REFRESH_MIN_INTERVAL = JOB_TIMEOUT
+# It is also the floor on how often a dashboard poll can make us scrape HLTV, so it
+# is set well above JOB_TIMEOUT: at 300s an open dashboard alone meant ~12 full
+# scrapes an hour, which is what got the home IP flagged (2026-11-06).
+REFRESH_MIN_INTERVAL = max(JOB_TIMEOUT, int(os.environ.get("HLTV_REFRESH_MIN_SECS", "1800")))
 
 
 def _refresh_day_async(date_str, tzname):
@@ -727,7 +764,10 @@ class Handler(BaseHTTPRequestHandler):
         one = lambda k, d=None: (q.get(k) or [d])[0]
         try:
             if u.path == "/health":
-                return self._send(200, {"ok": True, **_state})
+                until = backoff_until()
+                return self._send(200, {"ok": True, **_state,
+                                        "backoff_until": (datetime.fromtimestamp(until).isoformat(timespec="seconds")
+                                                          if until > time.time() else None)})
             if u.path == "/day":
                 tzname = one("tz", "America/New_York")
                 date_str = one("date") or datetime.now(ZoneInfo(tzname)).strftime("%Y-%m-%d")
@@ -804,7 +844,11 @@ class Handler(BaseHTTPRequestHandler):
 # copy instead — so "stale" was the normal state rather than the exception. Scraping
 # on a schedule means readers hit a recent payload and the cold path is rare.
 # 0 disables it (the Discord bot's own schedule is then the only thing refreshing).
-WARM_SECS = int(os.environ.get("HLTV_WARM_SECS", "600"))
+# Disabled by default since 2026-11-06: at 600s it was the bulk of ~210 browser
+# sessions a day against HLTV, and Cloudflare flagged the household's WAN IP — the
+# HLTV phone app then refused to load on home Wi-Fi. Don't turn it back on without
+# a much longer interval.
+WARM_SECS = int(os.environ.get("HLTV_WARM_SECS", "0"))
 WARM_TZ = os.environ.get("TZ", "America/New_York")
 
 

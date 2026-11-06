@@ -139,7 +139,7 @@ Then check the feature for real on :8444 (the container has the tokens dev lacks
   Fragments (`POST /api/architecture/ingest`) arrive only daily — never use them for live state.
 - **qBittorrent** whitelists the LAN subnet: call it at `192.168.1.6:8081`, not `localhost`
   (from noblenumbat itself, localhost comes from the Docker bridge → 403).
-- **hltv-api:** always `/day?max_age=900` (non-blocking); `max_age=0` waits for a full scrape.
+- **hltv-api:** always `/day?max_age=3600` (non-blocking); `max_age=0` waits for a full scrape. Never poll it harder — every refresh is a browser session against HLTV from the home IP, and that rate got the IP Cloudflare-flagged on 2026-11-06.
 - **SSE:** browsers never retry an EventSource after a non-200 (nginx 502 during deploys);
   `live.svelte.ts` reconnects itself and the server pings every 15s — keep both.
 - **Bot configs** are read from each bot's `GET /config` on the internal network; change them

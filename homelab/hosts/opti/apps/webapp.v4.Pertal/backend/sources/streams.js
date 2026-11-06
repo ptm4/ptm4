@@ -29,12 +29,15 @@ function registerStreamSources(snapshots) {
     intervalMs: 10 * 60_000, timeoutMs: 6000, staleAfterMs: 60 * 60_000,
     fetch: ({ signal }) => getJson(`${STREAM_URL}/presets`, signal),
   });
-  // max_age=900 is hltv-api's non-blocking path: a cache hit or a stale-marked
-  // last-good answer, with the scrape refreshed behind the response.
+  // max_age>0 is hltv-api's non-blocking path: a cache hit or a stale-marked
+  // last-good answer, with the scrape refreshed behind the response. It is an hour,
+  // not 15 min, because this poller runs whether or not anyone is looking, and each
+  // refresh it triggers is a browser session against HLTV from the home WAN IP —
+  // that rate got the IP flagged by Cloudflare on 2026-11-06.
   snapshots.register({
     key: 'hltv:day', group: 'hltv', label: 'HLTV day feed',
-    intervalMs: 5 * 60_000, timeoutMs: 15_000, staleAfterMs: 30 * 60_000,
-    fetch: ({ signal }) => getJson(`${HLTV_API}/day?max_age=900&tz=${encodeURIComponent(TZ)}`, signal),
+    intervalMs: 10 * 60_000, timeoutMs: 15_000, staleAfterMs: 90 * 60_000,
+    fetch: ({ signal }) => getJson(`${HLTV_API}/day?max_age=3600&tz=${encodeURIComponent(TZ)}`, signal),
   });
   snapshots.register({
     key: 'hltv:vrs', group: 'hltv', label: 'Valve Regional Standings',

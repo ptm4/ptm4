@@ -639,8 +639,9 @@ def _set_forget(forget):
     """Install the persona's forget list (what the bot must act as if it never saw)."""
     global FORGET, _forget_re
     FORGET = {"terms": list(forget.get("terms") or []), "user_ids": list(forget.get("user_ids") or [])}
-    _forget_re = (re.compile(r"\b(?:" + "|".join(re.escape(t) for t in FORGET["terms"]) + r")(?:'s)?\b", re.I)
-                  if FORGET["terms"] else None)
+    parts = [r"\b(?:" + "|".join(re.escape(t) for t in FORGET["terms"]) + r")(?:'s)?\b"] if FORGET["terms"] else []
+    parts += [rf"<@!?{u}>" for u in FORGET["user_ids"]]   # an @mention names them too
+    _forget_re = re.compile("|".join(parts), re.I) if parts else None
 
 
 def forgotten(*texts, user_id=None):

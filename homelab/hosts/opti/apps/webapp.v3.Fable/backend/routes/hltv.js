@@ -11,7 +11,9 @@ const HLTV_BOT_URL = process.env.HLTV_BOT_URL || 'http://discord-hltv:8080';
 // hltv-api's get_day() reads max_age=0 as "ignore the cache". A read therefore raced
 // a cold ~60s scrape and, when it lost, the failure got cached here for a minute —
 // which is what made the Streams guide flicker in and out.
-const DAY_MAX_AGE = Number(process.env.HLTV_DAY_MAX_AGE || 900);
+// An hour, not 15 min: every refresh is a real browser session against HLTV from the
+// home WAN IP, and scraping that often got the IP flagged by Cloudflare (2026-11-06).
+const DAY_MAX_AGE = Number(process.env.HLTV_DAY_MAX_AGE || 3600);
 
 // route → bot endpoint. /send, /preview, /day and /vrs reach hltv.org through the
 // hltv-api sidecar, which drives a real browser — a cold scrape takes ~60s, hence

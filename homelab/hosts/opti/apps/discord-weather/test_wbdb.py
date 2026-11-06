@@ -369,6 +369,14 @@ class WBDBTests(unittest.TestCase):
         self.assertTrue(witty.forgotten("hi", user_id="666"))
         self.assertFalse(witty.forgotten("voldemortish vibes", "tom", user_id="2"))
         self.assertEqual(witty.redact("where is Voldemort's wand"), "where is [removed] wand")
+        self.assertTrue(witty.forgotten("ask <@666> about it"))                 # an @mention counts
+        self.assertTrue(witty.forgotten("ask <@!666> about it"))
+        self.assertFalse(witty.forgotten("ask <@6667> about it"))
+        self.assertIsNone(bot.to_row(msg(7, text="ask <@666>"), "10", BOT_ID))
+        witty.use_persona({**PERSONA, "forget": {"terms": ["just_a_thing"]}})
+        self.assertTrue(witty.forgotten("JUST_A_THING said hi"))                # usernames with underscores
+        self.assertFalse(witty.forgotten("just a thing"))
+        self.forget()
         self.assertIn("persona rejected", witty.use_persona({"forget": {"terms": ["x"]}}))
         self.assertIn("persona rejected", witty.use_persona({"forget": {"user_ids": ["bob"]}}))
         witty.use_persona(None)

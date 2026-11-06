@@ -46,7 +46,7 @@ API_PORT = 8080
 
 HLTV_API = os.environ.get("HLTV_API_URL", "http://hltv-api:8080")
 VRS_CACHE_SECONDS = 3600     # the sidecar caches for a day; this just avoids chatter
-DAY_MAX_AGE = 900            # widget/preview reads may be up to 15 min stale
+DAY_MAX_AGE = 3600           # widget/preview reads may be up to an hour stale (HLTV rate, see hltv-api)
 EMBED_COLOR = 0x2B6EA4       # HLTV blue
 MAX_MATCHES = 30
 FIELD_CAP = 1024             # Discord's per-field limit
