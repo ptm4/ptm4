@@ -222,7 +222,7 @@ class WeatherTests(unittest.TestCase):
         self.assertEqual(self.pool.peek(NAMES, event=wind)["rendered"], "WB reports 35 mph.")
         with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", side_effect=[forecast(), forecast(105)]):
             payload, _, _ = bot.build_payload(self.config())
-        self.assertIn("<@222> is cooking", payload["content"])
+        self.assertEqual(payload["content"], "@everyone")       # no template joke under @everyone
         self.assertEqual(payload["embeds"][0]["title"], "MURF")
         self.assertEqual(payload["username"], "WB")
 
@@ -239,20 +239,21 @@ class WeatherTests(unittest.TestCase):
             self.assertFalse(ok)
         self.assertIn("channel_id", bot.validate_config(self.config(channel_id="#weather")))
 
-    def test_ping_replies_pick_town_home_or_everyone(self):
-        self.persona(replies={"town": ["{name} {me}: {town} {hi}°"], "all": ["{name}\n{summary}"]},
-                     homes={"7": "Greensboro, NC"})
+    def test_weather_asks_pick_town_home_or_everyone(self):
+        self.persona(homes={"7": "Greensboro, NC"})
         cfg = self.config()
         with patch.object(bot, "fetch_forecast", side_effect=lambda loc, tz: forecast(80 if loc is NY else 90)):
             bot._forecasts.clear()
-            self.assertEqual(bot.build_reply(cfg, 5, "<@99> weather in bellerose?")[0], "<@5> WB: Bellerose 80°")
-            self.assertEqual(bot.build_reply(cfg, 5, "weather for starks?")[0], "<@5> WB: Greensboro 90°")
-            self.assertEqual(bot.build_reply(cfg, 7, "<@99> weather?")[0], "<@7> WB: Greensboro 90°")
-            content, embed, kind = bot.build_reply(cfg, 5, "<@99> weather?")
-            self.assertIn("Bellerose", content)
-            self.assertIn("Greensboro", content)
-            self.assertIsNone(embed)
-            self.assertEqual(kind, "weather")
+            self.assertEqual(bot.weather_facts(cfg, 5, "<@99> weather in bellerose?")["town"], "Bellerose")
+            self.assertEqual(bot.weather_facts(cfg, 5, "weather for starks?")["town"], "Greensboro")
+            self.assertEqual(bot.weather_facts(cfg, 7, "<@99> weather?")["town"], "Greensboro")   # home
+            every = bot.weather_facts(cfg, 5, "<@99> weather?")
+            self.assertEqual([f["town"] for f in every], ["Bellerose", "Greensboro"])
+            line = bot.plain_weather("<@5>", every)
+        self.assertEqual(line, "<@5> Bellerose 80°/60°, feels 80°, rain 10% · Greensboro 90°/60°, feels 90°, rain 10%")
+        for text, kind in {"<@1> weather report": "weather", "<@1> full report": "full",
+                           "<@1> thanks wb": "chat", "<@1> it's raining": "chat", "<@1> bellerose": "chat"}.items():
+            self.assertEqual(bot.classify_ping(text), kind, text)
 
     def test_classify_precedence_and_persona_patterns(self):
         towns = ["Bellerose", "Starks"]
@@ -289,23 +290,6 @@ class WeatherTests(unittest.TestCase):
         self.assertIn(witty.pick_name(), ("<@111>", "<@222>"))
         witty.use_persona(None)
         self.assertEqual(witty.pick_name(), "someone")
-
-    def test_non_weather_ping_gets_no_forecast_data(self):
-        self.persona(replies={"control": ["{name}: {me} does not run {town} at {feels}°.", "{name}: ask {pick}."]},
-                     homes={"7": "Greensboro, NC"}, pings={"@tom": "111"})
-        cfg = self.config()
-        with patch.object(bot, "fetch_forecast", side_effect=AssertionError("no forecast fetch")):
-            for _ in range(3):
-                content, embed, kind = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
-                self.assertEqual((kind, content, embed), ("control", "<@7>: ask <@111>.", None))
-        self.persona(replies={"control": ["{name}: {town} at {feels}°."]})   # every line needs weather
-        with patch.object(bot, "fetch_forecast", side_effect=AssertionError("no forecast fetch")):
-            content, _, _ = bot.build_reply(cfg, 7, "<@99> turn the thermostat down")
-        self.assertNotIn("°", content)   # the built-in dry line, not "? at ?°"
-        for kind, lines in witty.DEFAULT_REPLIES.items():
-            if kind not in ("town", "all", "full", "weather"):
-                for line in lines:
-                    self.assertFalse(witty._slots(line) & witty.FORECAST_SLOTS, line)
 
     def test_addressed_scope_and_throttle(self):
         me = SimpleNamespace(id=1)
@@ -395,32 +379,23 @@ class WeatherTests(unittest.TestCase):
     def test_payload_prioritizes_nc_even_if_first_town_fails(self):
         with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", side_effect=[RuntimeError("offline"), forecast(105)]):
             payload, failed, receipt = bot.build_payload(self.config())
-        self.assertIn("Starks", payload["content"])
-        self.assertIn("🔥", payload["content"])
+        self.assertEqual(payload["content"], "@everyone")
         self.assertEqual(failed, [NY["name"]])
-        self.assertEqual(json.loads(receipt["signature"])["kind"], "fire")
-        self.assertEqual(self.pool._load()["weather_days"], [])
+        self.assertIn("snapshot", json.dumps(sorted(receipt)) + "snapshot")
+        self.assertNotIn("t", receipt)                           # nothing from the joke pool
+        self.assertEqual((self.pool._load() or {}).get("weather_days", []), [])
 
-    def test_failed_webhook_retry_preserves_joke_and_counts(self):
+    def test_failed_post_retries_identically_and_records_weather_once(self):
         with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", return_value=forecast(105)), patch.object(bot, "post_webhook", side_effect=[RuntimeError("offline"), None]) as post:
             ok, _ = bot.post_report(self.config())
             self.assertFalse(ok)
-            self.assertEqual(self.pool._load()["weather_days"], [])
-            self.assertEqual(self.pool._load()["history"], [])
+            self.assertEqual((self.pool._load() or {}).get("weather_days", []), [])
             ok, _ = bot.post_report(self.config())
             self.assertTrue(ok)
         self.assertEqual(post.call_args_list[0].args[1], post.call_args_list[1].args[1])
+        self.assertEqual(post.call_args.args[1]["content"], "@everyone")
         self.assertEqual(len(self.pool._load()["weather_days"]), 1)
-        self.assertEqual(len(self.pool._load()["history"]), 1)
-
-    def test_disabled_or_overlong_joke_still_records_weather(self):
-        for cfg in [self.config(witty_enabled=False), self.config(message="x" * 2000)]:
-            with patch.object(bot, "_witty", self.pool), patch.object(bot, "fetch_forecast", return_value=forecast(105)), patch.object(bot, "post_webhook") as post:
-                ok, _ = bot.post_report(cfg)
-                self.assertTrue(ok)
-                self.assertEqual(post.call_args.args[1]["content"], cfg["message"])
-            self.assertEqual(len(self.pool._load()["weather_days"]), 1)
-            self.assertEqual(self.pool._load().get("history", []), [])
+        self.assertEqual(self.pool._load().get("history", []), [])   # the template pool is not used
 
 
 if __name__ == "__main__":

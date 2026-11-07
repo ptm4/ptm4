@@ -66,7 +66,7 @@ DEFAULT_CONFIG = {
     "post_time": "07:00",
     "timezone": "America/New_York",
     "message": "@everyone",  # plain-text content sent above the embed
-    "witty_enabled": True,   # append a generated one-liner after the message
+    "witty_enabled": True,   # legacy: template jokes are no longer posted (model line or none)
     "witty_names": [
         "Joe Stasi", "Matt duBourg", "Andrew Kenny", "Tommy Whisker",
         "Anthony Johnson", "Joey Oddo", "Stanley Mcombe", "Nino",
@@ -84,12 +84,12 @@ DEFAULT_CONFIG = {
     "persona": "persona.json",
     "profiles": {},        # {"live": {"guild_id", "channel_id", "reply_channels", "persona"}, ...}
     "active_profile": "",
-    # model-written replies and morning line (model_reply.py); off unless a profile turns it on
+    # model-written replies, morning line and learning (model_reply.py, wbdb.py);
+    # off unless a profile turns it on
     "claude": {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 150,
-               "daily_tokens": 400000, "max_tokens": 2048, "history": 10, "kinds": [],
+               "daily_tokens": 400000, "max_tokens": 4096, "history": 15,
                "morning": False, "morning_effort": "medium", "morning_history": 150,
-               "memory": False, "memory_tail": 40, "memory_related": 30, "memory_backfill": 50000,
-               "memory_skip_channels": []},
+               "memory": False, "memory_skip_channels": []},
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
         {"name": "Kew Gardens, NY", "lat": 40.7143, "lon": -73.8310},
@@ -417,35 +417,31 @@ def build_payload(cfg, morning=False):
     date_str = now.strftime("%A, %B %d, %Y").replace(" 0", " ")
     desc = f"**{date_str}**"
     if first_fc:
-        desc += (f"\nSunrise {first_fc['sunrise']} · Sunset {first_fc['sunset']}"
-                 " — daylight is issued once, use it")
+        desc += f"\nSunrise {first_fc['sunrise']} · Sunset {first_fc['sunset']}"
     persona = (witty_messages.EMBED if witty_messages else {}) or {}
+    me = "WB"
     payload = {
-        # The whole post is in-character: Mr. Murf files the morning briefing.
-        "username": persona.get("username") or "Mr. Murf",
+        "username": (persona.get("username") or "WB").replace("{me}", me),
         # explicit allow-list so @everyone/@here in the message actually ping
         "allowed_mentions": {"parse": ["everyone", "roles", "users"]},
         "embeds": [{
-            "title": persona.get("title") or "🌤️ Scoutmaster's Morning Briefing",
+            "title": (persona.get("title") or "🌤️ Morning Weather").replace("{me}", me),
             "description": desc,
             "color": EMBED_COLOR,
             "fields": spaced,
-            "footer": {"text": persona.get("footer") or "Forecast: Open-Meteo. Standards: Mr. Murf."},
+            "footer": {"text": (persona.get("footer") or "Forecast: Open-Meteo").replace("{me}", me)},
         }],
     }
-    witty_entry = None
+    # The weather story (streaks, swings) still comes from the witty pool's
+    # history; its template jokes are no longer posted: the only line under
+    # @everyone is the one the model writes, or none.
     context = None
     if _witty:
         try:
             context = _witty.weather(observations, now)
-            if cfg.get("witty_enabled"):
-                witty_entry = _witty.peek(cfg.get("witty_names") or [], first_fc, now,
-                                          event=context["event"])
         except Exception as e:
-            log(f"witty selection failed: {e}")
+            log(f"weather story failed: {e}")
     content = cfg.get("message", "")
-    # One self-name per post: sender, title and footer reuse the joke's {me}.
-    me = witty_messages.self_name(witty_entry) if witty_messages else "Mr. Murf"
     model_entry = None
     if morning:
         try:
@@ -456,24 +452,14 @@ def build_payload(cfg, morning=False):
         if line and len(f"{content} {line}") <= 2000:
             model_entry = {"date": now.date().isoformat(), "line": line, "cursors": cursors or {}}
             content = f"{content} {line}".strip()
-            witty_entry = None  # the template joke stays in the pool for another day
-    if witty_entry:
-        composed = f"{content} {witty_messages.apply_pings(witty_entry['rendered'])}".strip()
-        if len(composed) <= 2000:
-            content = composed
-        else:
-            witty_entry = None  # too long — drop the joke, keep the report
     if content:
         payload["content"] = content
-    embed = payload["embeds"][0]
-    payload["username"] = payload["username"].replace("{me}", me)
-    embed["title"] = embed["title"].replace("{me}", me)
-    embed["footer"]["text"] = embed["footer"]["text"].replace("{me}", me)
+    receipt = None
     if context:
-        witty_entry = dict(witty_entry or {}, weather_snapshot=context["snapshot"])
+        receipt = {"weather_snapshot": context["snapshot"]}
     if model_entry:
-        witty_entry = dict(witty_entry or {}, model_morning=model_entry)
-    return payload, failed, witty_entry
+        receipt = dict(receipt or {}, model_morning=model_entry)
+    return payload, failed, receipt
 
 
 def post_webhook(url, payload):
@@ -668,49 +654,37 @@ def reply_facts(cfg, user_id, loc=None):
 FULL_RE = r"\bfull (weather |morning )?(report|briefing|forecast)\b"
 
 
-def build_reply(cfg, user_id, text):
-    """(content, embed-or-None, kind) answering a ping. Peeks only — never
-    consumes the morning joke or advances streaks. The kind is what the message
-    asked for (see witty_messages.REPLY_KINDS); only "full" and "weather" answer
-    with a forecast, and only on an explicit ask. Everything else gets an
-    in-character line with no forecast data at all."""
-    text = re.sub(r"<[@#][!&]?\d+>", " ", text).lower()
-    asker, tz = f"<@{user_id}>", cfg["timezone"]
-    reply = witty_messages.reply_line if witty_messages else None
+def classify_ping(text):
+    """What a ping wants: "full" (the briefing card), "weather" (an explicit
+    weather ask) or "chat" (everything else). See witty_messages.FORECAST_KINDS
+    for the patterns; naming a town or "rain" alone is just chat."""
+    t = re.sub(r"<[@#][!&]?\d+>", " ", text or "").lower()
     if witty_messages:
-        towns = [w for l in cfg["locations"] for w in (town_of(l), subject_of(l)) if w]
-        kind = witty_messages.classify(text, towns)
+        kind = witty_messages.classify(t)
     else:
-        kind = "full" if re.search(FULL_RE, text) else "wild"
-    if kind == "full":
-        payload, _, receipt = build_payload(cfg)
-        me = witty_messages.self_name(receipt) if witty_messages else "Weather Bot"
-        line = reply("full", asker, me=me) if reply else f"{asker}, the full briefing:"
-        return line, payload["embeds"][0], kind
-    if kind == "weather":
-        loc = match_location(cfg, text, user_id)
-        if loc:
-            fc = cached_forecast(loc, tz)
-            vals = dict(witty_messages.weather_values(fc), town=town_of(loc)) if witty_messages else {}
-            if reply:
-                return reply("town", asker, **vals), None, kind
-            return f"{asker}: {town_of(loc)} {fc['hi']:.0f}°/{fc['lo']:.0f}°", None, kind
-        rows = []
-        for l in cfg["locations"]:
-            try:
-                fc = cached_forecast(l, tz)
-                rows.append(f"{fc['emoji']} **{town_of(l)}** {fc['hi']:.0f}°/{fc['lo']:.0f}° · "
-                            f"feels {fc['feels']:.0f}° · rain {fc['rain']:.0f}%")
-            except Exception as e:
-                log(f"reply forecast failed for {l['name']}: {e}")
-        summary = "\n".join(rows) or "(no forecast data right now)"
-        return (reply("all", asker, summary=summary) if reply else f"{asker}\n{summary}"), None, kind
-    if not reply:
-        return f"{asker}, the part of me that talks is offline.", None, kind
-    return reply(kind, asker, pick=witty_messages.pick_name(user_id)), None, kind
+        kind = "full" if re.search(FULL_RE, t) else "chat"
+    return kind if kind in ("full", "weather") else "chat"
 
 
-# ── model-written replies (model_reply.py), templates as fallback ────────────
+def weather_facts(cfg, user_id, text):
+    """Forecast numbers for a weather ask: the town named in it, else the
+    asker's home town, else every configured town (a list)."""
+    t = re.sub(r"<[@#][!&]?\d+>", " ", text or "").lower()
+    loc = match_location(cfg, t, user_id)
+    if loc:
+        return reply_facts(cfg, user_id, loc)
+    return [reply_facts(cfg, user_id, l) for l in cfg["locations"]]
+
+
+def plain_weather(asker, facts):
+    """Numbers only, for a weather ask when the model can't be reached. Data,
+    not a joke: no line here pretends to be WB talking."""
+    rows = [f"{f['town']} {f.get('hi', '?')}°/{f.get('lo', '?')}°, feels {f.get('feels', '?')}°, "
+            f"rain {f.get('rain', '?')}%" for f in (facts if isinstance(facts, list) else [facts]) if f]
+    return f"{asker} " + " · ".join(rows) if rows else ""
+
+
+# ── model-written replies (model_reply.py) ───────────────────────────────────
 def handle_of(user_id, fallback="someone"):
     """The persona's @handle for a Discord id, else the given display name."""
     pings = witty_messages.PINGS if witty_messages else {}
@@ -720,33 +694,65 @@ def handle_of(user_id, fallback="someone"):
     return fallback
 
 
-def chat_line(author_id, author_name, text, is_bot=False, me="Weather Bot"):
+FORECAST_TEXT_RE = (r"\d+\s*°|\b\d+\s*%\s*(chance|rain|precip|humid)|\bfeels like\b|\b(high|low)s? (of )?\d+"
+                    r"|\b\d+\s*mph\b|\buv (index )?\d")
+
+
+def chat_line(author_id, author_name, text, is_bot=False, me="WB", bot_author=False):
     """One 'handle: text' line of context for the model: real ids become
-    handles, the bot's own posts are labelled with its name, embeds are noted."""
+    handles, the bot's own posts are labelled with its name, embeds are noted.
+    A bot's post carrying forecast numbers (WB's own, the old webhook reports)
+    is reduced to a note, so stale numbers from earlier in the chat can't be
+    repeated as if they were today's."""
     who = me if is_bot else handle_of(author_id, "@" + str(author_name))
     body = re.sub(r"<@!?(\d+)>", lambda m: handle_of(m.group(1), "@someone"), text or "")
     body = re.sub(r"<@&\d+>", "@" + me, body)
     body = re.sub(r"\s+", " ", body).strip() or "[embed]"
+    if (is_bot or bot_author) and (body == "[embed]" or re.search(FORECAST_TEXT_RE, body, re.I)):
+        body = "[posted a forecast]"
     return f"{who}: {body[:300]}"
 
 
-def model_line(cfg, user_id, text, kind, recent, digest="", related=()):
-    """Ask the model for this ping's line; None means use the template. With
-    memory on, `digest` and `related` come from WBdb (see memory_context)."""
+def model_answer(cfg, user_id, author_name, text, kind, recent, replied_to="", mentioned=(), own_id=""):
+    """WB's reply to a ping, written by the model, or None. The prompt carries
+    WB's notes on itself, the group, the asker and anyone mentioned (WBdb), the
+    recent chat, the message being replied to, WB's last few replies, weather
+    numbers only for a weather ask, and the message itself last."""
     if not (model_reply and witty_messages):
         return None
     roster = sorted(n for n in witty_messages.PINGS if n.startswith("@"))
-    ping = witty_messages.redact(re.sub(r"<@[!&]?\d+>", " ", text).strip())
-    # Forecast data goes in only for an explicit weather ask, so it can't leak into chat.
-    facts = reply_facts(cfg, user_id, match_location(cfg, ping.lower(), user_id)) if kind == "weather" else {}
-    examples = [l for l in (witty_messages.REPLIES.get(kind) or []) if kind == "weather" or
-                not witty_messages._slots(l) & witty_messages.FORECAST_SLOTS][:3]
-    system, user = model_reply.build_prompt(witty_messages.BRIEF, roster, recent, handle_of(user_id),
-                                            ping, kind, facts, examples, digest, related)
+    body = text or ""
+    if own_id:
+        body = re.sub(rf"<@!?{own_id}>", " ", body)
+    body = re.sub(r"<@&\d+>", " ", body)
+    body = re.sub(r"<@!?(\d+)>", lambda m: handle_of(m.group(1), "@someone"), body)
+    message = witty_messages.redact(re.sub(r"\s+", " ", body).strip())
+    asker = handle_of(user_id, "@" + str(author_name))
+    self_notes = group_notes = ""
+    people, own_recent = [], []
+    db = memory_db() if memory_on(cfg) else None
+    if db:
+        try:
+            self_notes, group_notes = db.profile("self")["notes"], db.profile("group")["notes"]
+            for uid in dict.fromkeys([str(user_id)] + [str(m) for m in mentioned]):
+                p = db.profile(uid)
+                if p["notes"]:
+                    people.append((handle_of(uid, p["handle"] or "@someone"), p["notes"]))
+            own_recent = db.recent_replies(5)
+        except Exception as e:
+            log(f"wbdb: profiles unavailable ({e})")
+    facts = None
+    if kind == "weather":
+        facts = weather_facts(cfg, user_id, text)
+    elif kind == "full":
+        facts = [reply_facts(cfg, user_id, l) for l in cfg["locations"]]
+    system, user = model_reply.build_chat_prompt(
+        witty_messages.BRIEF, roster, recent, asker, message, self_notes, group_notes, people,
+        replied_to, own_recent, facts)
     raw = model_reply.ask(cfg, system, user, log=log)
     line = model_reply.clean_line(raw, witty_messages.PINGS.values()) if raw else ""
     if line and witty_messages.forgotten(line):
-        log("claude: reply named a forgotten term; using the template line")
+        log("claude: reply named a forgotten term; not sending it")
         return None
     return witty_messages.apply_pings(line) if line else None
 
@@ -756,12 +762,19 @@ _last_nag = {}       # user id -> monotonic time of their last pester line
 
 
 def limit_line(cfg, user_id, kind="limit"):
-    """The in-character "leave me alone": "limit" when the model's budget for
-    today is spent, "pester" when one person pings inside the cooldown."""
-    asker = f"<@{user_id}>"
-    if not witty_messages:
-        return f"{asker}, out of words for today." if kind == "limit" else f"{asker}, one at a time."
-    return witty_messages.reply_line(kind, asker)
+    """One of the lines WB wrote ahead of time for when it can't call the model:
+    "limit" (out of words for today) or "pester" (pinged again too fast). None
+    if it hasn't written any yet; the caller reacts instead."""
+    db = memory_db() if memory_on(cfg) else None
+    try:
+        line = db.line(kind) if db else None
+    except Exception as e:
+        log(f"wbdb: line unavailable ({e})")
+        line = None
+    if not line:
+        return None
+    line = line.replace("{name}", f"<@{user_id}>")
+    return witty_messages.apply_pings(line) if witty_messages else line
 
 
 def nag_ok(user_id, now=None):
@@ -860,7 +873,7 @@ def chat_delta(cfg, limit, now=None):
     channel WBdb reads when memory is on. Forgotten messages never make it in."""
     cursors = read_json(CHAT_CURSOR_PATH, {})
     first = snowflake_at((now or time.time()) - FIRST_LOOKBACK)
-    me = witty_messages.self_name() if witty_messages else "Weather Bot"
+    me = "WB"
     own = bot_user_id() if BOT_TOKEN else ""
     msgs, newest = [], {}
     for ch in (memory_channels(cfg) if memory_on(cfg) else morning_channels(cfg)):
@@ -871,7 +884,8 @@ def chat_delta(cfg, limit, now=None):
             continue
         if got:
             newest[ch] = got[-1]["id"]
-        msgs.extend(got)
+        msgs.extend(dict(m, _channel=ch) for m in got)
+    tagged = len(newest) > 1
     msgs = sorted(msgs, key=lambda m: int(m["id"]))[-limit:] if limit else []
     lines = []
     for m in msgs:
@@ -882,8 +896,9 @@ def chat_delta(cfg, limit, now=None):
         if witty_messages and witty_messages.forgotten(text, a.get("global_name"), a.get("username"),
                                                        user_id=a.get("id")):
             continue
-        lines.append(chat_line(a.get("id", ""), a.get("global_name") or a.get("username") or "someone",
-                               text, str(a.get("id")) == own, me))
+        line = chat_line(a.get("id", ""), a.get("global_name") or a.get("username") or "someone",
+                         text, str(a.get("id")) == own, me, bool(a.get("bot")))
+        lines.append((channel_tag(m["_channel"]) if tagged else "") + line)
     return lines, newest
 
 
@@ -913,10 +928,11 @@ def morning_line(cfg, observations, context, today):
                f"{str(fc['cond']).lower()}, rain {fc['rain']:.0f}%" for loc, fc in observations if fc]
     recent = [e.get("line", "") for e in read_jsonl(MORNING_LOG_PATH)]
     roster = sorted(n for n in witty_messages.PINGS if n.startswith("@"))
+    self_notes, group_notes = memory_notes(cfg)
     system, user = model_reply.build_morning_prompt(witty_messages.BRIEF, roster, chat, weather,
-                                                    describe_event(context), recent, memory_digest(cfg))
+                                                    describe_event(context), recent, self_notes, group_notes)
     raw = model_reply.ask(cfg, system, user, log=log, effort=s["morning_effort"],
-                          timeout=model_reply.MORNING_TIMEOUT, max_tokens=max(s["max_tokens"], 2048))
+                          timeout=model_reply.SLOW_TIMEOUT, max_tokens=max(s["max_tokens"], 2048))
     line = model_reply.clean_line(raw, witty_messages.PINGS.values(), model_reply.MORNING_MAX_CHARS) if raw else ""
     if not line or witty_messages.forgotten(line):
         return None, None
@@ -929,32 +945,28 @@ def morning_line(cfg, observations, context, today):
     return line, cursors
 
 
-# ── WBdb: the shared memory (wbdb.py) ────────────────────────────────────────
-# Every message in the server's text channels (minus memory_skip_channels and
-# any the bot can't read) lands in /data/wbdb.sqlite: read forward from each
-# channel's newest id every INGEST_EVERY seconds and, for the pinged channel, just
-# before a model reply, and backwards through history (BACKFILL_PAGES a pass,
-# all channels together) until memory_backfill messages or the channel's start.
-# Once history is in, messages are folded into the model's running notes (the
-# digest) as FOLD_MIN pile up or the oldest is FOLD_MAX_AGE old. Ping replies get
-# the digest, the channel's last memory_tail messages and the memory_related best
-# full-text matches for the ping; the morning line gets the digest. Folds count
-# against the daily cap but leave FOLD_RESERVE calls for pings. Anything naming the
-# persona's "forget" list is never stored, and purged if already there. A nightly
-# copy goes to WBDB_BACKUP_DIR.
-WBDB_PATH = os.path.join(DATA_DIR, "wbdb.sqlite")
+# ── WBdb: what WB learns about the group (wbdb.py) ───────────────────────────
+# With memory on, WB reads every text channel in the server (minus
+# memory_skip_channels and any that answer 403) forward from the moment it first
+# sees each one: there is no history import, it gets to know the group day by
+# day. Every LEARN_HOUR it has the model update its notes on each person who
+# posted that day, on the group, and on itself (what landed: the reactions on its
+# replies), then writes a fresh set of limit/pester lines in its current voice.
+# Profiles start from a private seed file (SEED_PATH, loaded once). Anything
+# naming the persona's "forget" list is never stored and is purged if it was.
+# A nightly copy goes to WBDB_BACKUP_DIR.
+WBDB_PATH = os.path.join(DATA_DIR, "wb.sqlite")
+SEED_PATH = os.path.join(DATA_DIR, "wb_seed.json")
 WBDB_BACKUP_DIR = os.environ.get("WBDB_BACKUP_DIR", "/backup")
 INGEST_EVERY = 900
-BACKFILL_PAGES = 50          # x100 messages per pass, a second apart
-FOLD_MIN, FOLD_MAX_AGE = 40, 6 * 3600
-FOLD_CHUNK, FOLDS_PER_PASS = 300, 5
-FOLD_RESERVE = 50
+LEARN_HOUR, BACKUP_KEEP = 3, 7
+LEARN_RESERVE = 50           # calls left for pings when learning runs
+LEARN_MIN_MESSAGES = 3       # fewer than this in a day (and no pings): profile unchanged
 CHANNELS_TTL = 3600          # re-list the server's channels hourly
-BACKUP_HOUR, BACKUP_KEEP = 3, 7
 _wb = {"db": None, "error": ""}
 _wb_lock = threading.Lock()      # opening the db
 _ingest_lock = threading.Lock()  # one reader of Discord at a time
-_channels = {"at": None, "ids": []}   # the server's text channels, cached
+_channels = {"at": None, "ids": [], "names": {}}   # the server's text channels, cached
 _unreadable = set()                   # channels that answered 403 (until restart)
 
 
@@ -963,7 +975,7 @@ def memory_on(cfg):
 
 
 def memory_db():
-    """The open WBdb, or None (memory off for this call; replies fall back)."""
+    """The open WBdb, or None (memory off for this call; replies go without notes)."""
     with _wb_lock:
         if _wb["db"] is None and wbdb:
             try:
@@ -977,36 +989,38 @@ def memory_db():
         return _wb["db"]
 
 
-def memory_scope(cfg):
-    return str(cfg.get("guild_id") or "default")
-
-
-def memory_digest(cfg):
-    if not memory_on(cfg):
-        return ""
-    db = memory_db()
+def memory_notes(cfg):
+    """(self notes, group notes) for the morning line, or ('', '')."""
+    db = memory_db() if memory_on(cfg) else None
     try:
-        return db.memory(memory_scope(cfg))["digest"] if db else ""
+        return (db.profile("self")["notes"], db.profile("group")["notes"]) if db else ("", "")
     except Exception as e:
-        log(f"wbdb: digest read failed: {e}")
-        return ""
+        log(f"wbdb: notes read failed: {e}")
+        return "", ""
 
 
 def memory_channels(cfg):
-    """Every text channel in the server WBdb should read: the post and reply
+    """Every text channel in the server WB should read: the post and reply
     channels, plus the guild's listing (cached), minus memory_skip_channels and
     any the bot was refused. If Discord can't list them, the last list stands."""
     now = time.monotonic()
     if cfg.get("guild_id") and (_channels["at"] is None or now - _channels["at"] > CHANNELS_TTL):
         try:
             listed = _discord_get(f"/guilds/{cfg['guild_id']}/channels") or []
-            _channels["ids"] = [str(c["id"]) for c in sorted(listed, key=lambda c: c.get("position", 0))
-                                if c.get("type") in (0, 5)]   # text, announcement
+            listed = [c for c in sorted(listed, key=lambda c: c.get("position", 0)) if c.get("type") in (0, 5)]
+            _channels["ids"] = [str(c["id"]) for c in listed]   # text, announcement
+            _channels["names"] = {str(c["id"]): str(c.get("name") or "") for c in listed}
             _channels["at"] = now
         except Exception as e:
             log(f"wbdb: could not list channels ({e})")
     skip = set(model_reply.settings(cfg)["memory_skip_channels"]) | _unreadable
     return [c for c in dict.fromkeys(morning_channels(cfg) + _channels["ids"]) if c not in skip]
+
+
+def channel_tag(channel_id):
+    """'[#name] ' for a context line, so the model can tell conversations apart."""
+    name = _channels.get("names", {}).get(str(channel_id), "")
+    return f"[#{name}] " if name else f"[#channel-{str(channel_id)[-4:]}] "
 
 
 def refused(channel_id, error):
@@ -1019,13 +1033,16 @@ def refused(channel_id, error):
     return False
 
 
+def is_forgotten(text="", *names, user_id=None):
+    return bool(witty_messages and witty_messages.forgotten(text, *names, user_id=user_id))
+
+
 def to_row(m, channel_id, own_id=""):
     """A Discord API message -> a WBdb row (mentions as handles, embeds noted),
     or None if it names anything on the persona's forget list."""
     a = m.get("author") or {}
     text = m.get("content") or ""
-    if witty_messages and witty_messages.forgotten(text, a.get("global_name"), a.get("username"),
-                                                   user_id=a.get("id")):
+    if is_forgotten(text, a.get("global_name"), a.get("username"), user_id=a.get("id")):
         return None
     if not text.strip() and m.get("embeds"):
         text = "[embed]"
@@ -1036,155 +1053,173 @@ def to_row(m, channel_id, own_id=""):
             "content": re.sub(r"<@&\d+>", "@role", body).strip()}
 
 
-def row_line(r, own_id="", me="Weather Bot"):
+def row_line(r, own_id="", me="WB"):
     who = me if own_id and r["author_id"] == own_id else r["author"]
     body = re.sub(r"\s+", " ", r["content"]).strip() or "[blank]"
     return f"{who}: {body[:300]}"
 
 
-def store(db, messages, channel_id, own):
-    """Save a page of messages, dropping forgotten ones. Returns new rows."""
-    return db.add([r for r in (to_row(m, channel_id, own) for m in messages) if r])
-
-
 def ingest(db, cfg, channels=None):
-    """Read channels (all of them by default) forward from their newest stored
-    id. Returns new rows. A channel never seen starts with its last 1000
-    messages; backfill does the rest. One refused channel doesn't stop the rest."""
+    """Read channels (all of them by default) forward from their stored
+    position. A channel seen for the first time starts at its newest message:
+    nothing older is imported. Returns new rows."""
     own = bot_user_id()
     new = 0
     for ch in (memory_channels(cfg) if channels is None else channels):
-        pos = db.channel(ch)
+        start = db.newest(ch)
         try:
-            got = fetch_since(ch, str(pos["newest_id"] or 0), 1000)
+            if start is None:
+                latest = _discord_get(f"/channels/{ch}/messages?limit=1") or []
+                db.mark(ch, int(latest[0]["id"]) if latest else 0)
+                continue
+            got = fetch_since(ch, str(start), 1000)
         except Exception as e:
             if not refused(ch, e):
                 log(f"wbdb: read failed for channel {ch}: {e}")
             continue
         if got:
-            new += store(db, got, ch, own)
-            ids = [int(m["id"]) for m in got]
-            db.mark(ch, newest=max(ids), oldest=min(ids))
-        elif not pos["newest_id"]:
-            db.mark(ch, backfilled=True)   # an empty channel has no history to fetch
+            new += db.add([r for r in (to_row(m, ch, own) for m in got) if r])
+            db.mark(ch, max(int(m["id"]) for m in got))
     db.set_meta("last_ingest_at", datetime.now().isoformat(timespec="seconds"))
     return new
 
 
-def backfill(db, cfg, pages=BACKFILL_PAGES, pause=1.0):
-    """Page channels backwards from their oldest stored message until the start
-    or memory_backfill messages per channel. `pages` is shared by all channels,
-    so one pass stays short."""
-    limit = model_reply.settings(cfg)["memory_backfill"]
-    own = bot_user_id()
-    for ch in memory_channels(cfg):
-        pos = db.channel(ch)
-        if pos["backfilled"] or not pos["oldest_id"]:
-            continue
-        while pages > 0:
-            if db.count([ch]) >= limit:
-                db.mark(ch, backfilled=True)
-                break
-            pages -= 1
-            qs = urllib.parse.urlencode({"limit": 100, "before": db.channel(ch)["oldest_id"]})
-            try:
-                page = _discord_get(f"/channels/{ch}/messages?{qs}") or []
-            except Exception as e:
-                if not refused(ch, e):
-                    log(f"wbdb: backfill failed for channel {ch}: {e}")
-                break
-            if page:
-                store(db, page, ch, own)
-                db.mark(ch, oldest=min(int(m["id"]) for m in page))
-            if len(page) < 100:
-                db.mark(ch, backfilled=True)
-                log(f"wbdb: channel {ch} backfilled ({db.count([ch])} messages)")
-                break
-            time.sleep(pause)
-
-
-def backfill_done(db, cfg):
-    """True once every channel has its history in, so notes build oldest first."""
-    return all(db.channel(ch)["backfilled"] for ch in memory_channels(cfg))
-
-
-def fold_ok(cfg):
-    """A fold may spend a call: memory is on, the model is usable, and today's
-    usage leaves FOLD_RESERVE calls and a third of the token cap for pings, so
-    digesting a big backlog never turns pings into limit lines."""
-    if not model_reply or model_reply.decide(cfg, "memory") != "model":
+def learn_ok(cfg):
+    """Learning may spend a call: memory is on, the model is usable, and today's
+    usage leaves LEARN_RESERVE calls and a third of the token cap for pings."""
+    if not model_reply or model_reply.decide(cfg, "learn") != "model":
         return False
     s = model_reply.settings(cfg)
     u = model_reply.usage(cfg.get("timezone", "UTC"))
-    if u["calls"] >= s["daily_cap"] - min(FOLD_RESERVE, s["daily_cap"] // 3):
+    if u["calls"] >= s["daily_cap"] - min(LEARN_RESERVE, s["daily_cap"] // 3):
         return False
     tokens = u["input_tokens"] + u["output_tokens"]
     return not s["daily_tokens"] or tokens < s["daily_tokens"] - s["daily_tokens"] // 3
 
 
-def fold(db, cfg, now=None, force=False):
-    """Fold unfolded messages into the digest, oldest first, FOLD_CHUNK at a
-    time, at most FOLDS_PER_PASS calls. Waits for history to finish loading, then
-    for FOLD_MIN messages or the oldest to be FOLD_MAX_AGE old. The digest only
-    moves after a good answer."""
-    if not backfill_done(db, cfg):
-        return 0
-    scope = memory_scope(cfg)
-    own, me = bot_user_id(), (witty_messages.self_name() if witty_messages else "Weather Bot")
+def _ask_notes(cfg, system, user):
+    raw = model_reply.ask(cfg, system, user, log=log, effort="low", max_tokens=3000,
+                          timeout=model_reply.SLOW_TIMEOUT)
+    if not raw:
+        return None
+    return "\n".join(l for l in raw.strip().splitlines() if not is_forgotten(l))
+
+
+def _reactions(p):
+    counts = json.loads(p.get("reactions") or "{}")
+    return (" [reactions: " + " ".join(f"{e}x{n}" for e, n in counts.items()) + "]") if counts else ""
+
+
+def learn(db, cfg):
+    """The nightly pass: update each active person's notes, the group's, WB's
+    own, and its ready-made lines. Messages and pings it used are marked so the
+    next night starts where this one stopped; only what it got through is
+    marked, so a pass cut short by the budget picks up the rest tomorrow.
+    Returns calls made."""
+    msgs = db.unlearned(5000)
+    pings = db.unlearned_pings()
+    brief = witty_messages.BRIEF if witty_messages else ""
     roster = sorted(n for n in (witty_messages.PINGS if witty_messages else {}) if n.startswith("@"))
-    done = 0
-    while done < FOLDS_PER_PASS:
-        chunk = db.unfolded(FOLD_CHUNK)
-        if not chunk:
+    own = bot_user_id()
+    by_person = {}
+    for r in msgs:
+        if not r["is_bot"]:
+            by_person.setdefault(r["author_id"], []).append(r)
+    asks = {}
+    for p in pings:
+        asks.setdefault(p["author_id"], []).append(f"{p['text']} -> {p['reply'] or '(no reply)'}{_reactions(p)}")
+    calls, done_msgs, done_pings = 0, [], []
+    people = sorted(set(by_person) | set(asks), key=lambda u: -len(by_person.get(u, [])))
+    for uid in people:
+        rows = by_person.get(uid, [])
+        if len(rows) < LEARN_MIN_MESSAGES and uid not in asks:
+            done_msgs += [r["id"] for r in rows]
+            continue
+        if not learn_ok(cfg):
             break
-        age = (now or time.time()) - snowflake_seconds(chunk[0]["id"])
-        if not force and len(chunk) < FOLD_MIN and age < FOLD_MAX_AGE:
+        prof = db.profile(uid)
+        handle = handle_of(uid, rows[-1]["author"] if rows else prof["handle"] or "@someone")
+        notes = _ask_notes(cfg, *model_reply.build_person_prompt(
+            brief, handle, prof["notes"], [row_line(r, own) for r in rows][-300:], asks.get(uid, [])[-20:]))
+        calls += 1
+        if notes is None:
             break
-        if not fold_ok(cfg):
-            break
-        system, user = model_reply.build_fold_prompt(witty_messages.BRIEF if witty_messages else "", roster,
-                                                     db.memory(scope)["digest"],
-                                                     [row_line(r, own, me) for r in chunk])
-        raw = model_reply.ask(cfg, system, user, log=log, effort="low", max_tokens=8000, timeout=120.0)
-        if not raw or not raw.strip():
-            break
-        if witty_messages and witty_messages.forgotten(raw):   # keep the rest of the notes
-            raw = "\n".join(l for l in raw.splitlines() if not witty_messages.forgotten(l))
-        db.set_memory(scope, raw, [r["id"] for r in chunk])
-        done += 1
-        log(f"wbdb: folded {len(chunk)} message(s) into the notes ({len(raw)} chars)")
-    return done
+        db.set_profile(uid, notes, handle)
+        done_msgs += [r["id"] for r in rows]
+        done_pings += [p["message_id"] for p in pings if p["author_id"] == uid]
+    if msgs and learn_ok(cfg):
+        notes = _ask_notes(cfg, *model_reply.build_group_prompt(
+            brief, roster, db.profile("group")["notes"],
+            [channel_tag(r["channel_id"]) + row_line(r, own) for r in msgs][-400:]))
+        calls += 1
+        if notes is not None:
+            db.set_profile("group", notes)
+    if pings and learn_ok(cfg):
+        exchanges = [f"{p['author']}: {p['text']} -> you: {p['reply'] or '(no reply)'}{_reactions(p)}"
+                     for p in pings][-60:]
+        notes = _ask_notes(cfg, *model_reply.build_self_prompt(brief, db.profile("self")["notes"], exchanges))
+        calls += 1
+        if notes is not None:
+            db.set_profile("self", notes)
+    if learn_ok(cfg):
+        raw = model_reply.ask(cfg, *model_reply.build_lines_prompt(
+            brief, db.profile("self")["notes"], db.profile("group")["notes"]),
+            log=log, effort="low", max_tokens=2000, timeout=model_reply.SLOW_TIMEOUT)
+        calls += 1
+        for kind, texts in model_reply.parse_lines(raw).items():
+            texts = [t for t in texts if "{name}" in t and not is_forgotten(t)]
+            if texts:
+                db.set_lines(kind, texts)
+    db.mark_learned(done_msgs + [r["id"] for r in msgs if r["is_bot"]], done_pings)
+    db.prune()
+    log(f"wbdb: learned from {len(done_msgs)} message(s) and {len(done_pings)} ping(s) in {calls} call(s)")
+    return calls
 
 
-def snowflake_seconds(mid):
-    return ((int(mid) >> 22) + DISCORD_EPOCH_MS) / 1000
+def learn_due(db, now):
+    return now.hour >= LEARN_HOUR and not str(db.get_meta("last_learn") or "").startswith(now.date().isoformat())
 
 
-def backup_due(db, now):
-    return now.hour >= BACKUP_HOUR and not str(db.get_meta("last_backup") or "").startswith(now.date().isoformat())
+def load_seed(db):
+    """Load the private seed profiles once (a profile already there is kept)."""
+    try:
+        with open(SEED_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return 0
+    except (OSError, ValueError) as e:
+        log(f"wbdb: seed unreadable ({e})")
+        return 0
+    n = db.seed(data)
+    if n:
+        log(f"wbdb: seeded {n} profile(s) from {os.path.basename(SEED_PATH)}")
+    return n
 
 
 def memory_pass(cfg):
-    """One round of the memory loop: read new, backfill, fold, back up."""
+    """One round of the memory loop: seed, forget, read new, learn, back up."""
     db = memory_db()
     if not db or not BOT_TOKEN:
         return
+    load_seed(db)
     if witty_messages and (witty_messages.FORGET["terms"] or witty_messages.FORGET["user_ids"]):
-        gone = db.purge(witty_messages.FORGET["terms"], witty_messages.FORGET["user_ids"])
+        gone = db.purge(lambda t: is_forgotten(t), witty_messages.FORGET["user_ids"])
         if gone:
-            log(f"wbdb: purged {gone} message(s) on the forget list")
+            log(f"wbdb: purged {gone} row(s) on the forget list")
     with _ingest_lock:
         n = ingest(db, cfg)
-        backfill(db, cfg)
-    folded = fold(db, cfg)
     now = datetime.now(ZoneInfo(cfg["timezone"]))
-    if backup_due(db, now):
+    if learn_due(db, now):
+        try:
+            learn(db, cfg)
+        finally:
+            db.set_meta("last_learn", now.isoformat(timespec="seconds"))
         try:
             log(f"wbdb: backup {db.backup(WBDB_BACKUP_DIR, now.date().isoformat(), BACKUP_KEEP)}")
         except Exception as e:
             log(f"wbdb: backup failed: {e}")
-    if n or folded:
-        log(f"wbdb: +{n} message(s), {folded} fold(s)")
+    if n:
+        log(f"wbdb: +{n} message(s)")
 
 
 def memory_loop():
@@ -1206,42 +1241,23 @@ def memory_health(cfg):
     if not db:
         return {"enabled": True, "error": _wb["error"]}
     try:
-        st = db.stats(memory_scope(cfg))
-        return {"enabled": True, **{k: st[k] for k in ("messages", "unfolded", "digest_chars", "digest_updated_at",
-                                                         "last_ingest_at", "last_backup", "bytes", "note")},
-                "channels": len(st["channels"]), "unreadable": sorted(_unreadable),
-                "backfilled": all(c["backfilled"] for c in st["channels"]) if st["channels"] else False}
+        return {"enabled": True, **db.stats(), "unreadable": sorted(_unreadable)}
     except Exception as e:
         return {"enabled": True, "error": str(e)}
 
 
-def memory_context(cfg, channel_id, before_id, text):
-    """(digest, recent lines, related lines) for a ping, after a quick read of
-    anything new; None if memory is off or WBdb can't serve it."""
-    if not memory_on(cfg):
-        return None
-    db = memory_db()
-    if not db:
-        return None
-    s = model_reply.settings(cfg)
+def log_exchange(cfg, msg, reply_msg, content):
+    """Record a ping and WB's answer, so reactions to it can be counted."""
+    db = memory_db() if memory_on(cfg) else None
+    if not db or is_forgotten(msg.content or ""):
+        return
     try:
-        skipped = str(channel_id) in s["memory_skip_channels"]
-        if BOT_TOKEN and not skipped and _ingest_lock.acquire(timeout=5):
-            try:
-                ingest(db, cfg, channels=[str(channel_id)])
-            finally:
-                _ingest_lock.release()
-        own, me = bot_user_id(), (witty_messages.self_name() if witty_messages else "Weather Bot")
-        recent = db.recent([channel_id], s["memory_tail"], before_id=before_id)
-        ping = re.sub(r"<[@#][!&]?\d+>", " ", text or "")
-        if witty_messages:
-            ping = witty_messages.redact(ping).replace("[removed]", " ")
-        related = db.search(ping, s["memory_related"], exclude=[r["id"] for r in recent] + [int(before_id)])
-        return (db.memory(memory_scope(cfg))["digest"], [row_line(r, own, me) for r in recent],
-                [row_line(r, own, me) for r in related])
+        db.log_ping(msg.id, msg.channel.id, msg.author.id,
+                    handle_of(msg.author.id, "@" + str(msg.author.display_name)),
+                    chat_line(msg.author.id, msg.author.display_name, msg.content).split(": ", 1)[-1],
+                    getattr(reply_msg, "id", ""), content or "")
     except Exception as e:
-        log(f"wbdb: context failed ({e}); using live history")
-        return None
+        log(f"wbdb: ping log failed: {e}")
 
 
 def read_jsonl(path):
@@ -1429,53 +1445,91 @@ def run_gateway():
         if why:
             log(f"gateway: throttled ({why}) {msg.author} in #{msg.channel}")
             if why == "cooldown" and nag_ok(msg.author.id):   # one "slow down", then silence
+                line = limit_line(cfg, msg.author.id, "pester")
                 try:
-                    await msg.reply(limit_line(cfg, msg.author.id, "pester"))
+                    if line:
+                        await msg.reply(line)
                 except Exception as e:
                     log(f"gateway: pester reply failed: {e}")
             return
         try:
             loop = asyncio.get_running_loop()
-            source = "template"
+            kind = classify_ping(msg.content)
+            content, embed, source = None, None, "none"
             async with msg.channel.typing():
-                content, embed, kind = await loop.run_in_executor(
-                    None, build_reply, cfg, msg.author.id, msg.content)
+                if kind == "full":
+                    payload, _, _ = await loop.run_in_executor(None, build_payload, cfg)
+                    embed = payload["embeds"][0]
                 how = model_reply.decide(cfg, kind) if model_reply else None
                 if how == "model":
-                    me = witty_messages.self_name() if witty_messages else "Weather Bot"
-                    mem = await loop.run_in_executor(None, memory_context, cfg, str(msg.channel.id),
-                                                     msg.id, msg.content)
-                    digest, related = (mem[0], mem[2]) if mem else ("", [])
-                    recent = mem[1] if mem else []
+                    me = "WB"
+                    recent = []
                     n = model_reply.settings(cfg)["history"]
-                    if not recent and n:   # no memory of this channel: the last few messages, live
+                    if n:
                         async for m in msg.channel.history(limit=n, before=msg):
-                            if witty_messages and witty_messages.forgotten(
-                                    m.content, m.author.display_name, m.author.name, user_id=m.author.id):
+                            if is_forgotten(m.content, m.author.display_name, m.author.name, user_id=m.author.id):
                                 continue
                             recent.append(chat_line(m.author.id, m.author.display_name, m.content,
-                                                    m.author.id == client.user.id, me))
+                                                    m.author.id == client.user.id, me, m.author.bot))
                         recent.reverse()
-                    line = await loop.run_in_executor(None, model_line, cfg, msg.author.id,
-                                                      msg.content, kind, recent, digest, related)
-                    if line:
-                        content, source = line, "claude"
-                    elif model_reply.spent(cfg):   # this very call ran out of budget or credit
+                    replied_to = ""
+                    ref = getattr(getattr(msg, "reference", None), "resolved", None)
+                    if ref is not None and getattr(ref, "author", None) is not None and not is_forgotten(
+                            ref.content, user_id=ref.author.id):
+                        replied_to = chat_line(ref.author.id, ref.author.display_name, ref.content,
+                                               ref.author.id == client.user.id, me, ref.author.bot)
+                    mentioned = [u.id for u in msg.mentions if not u.bot]
+                    content = await loop.run_in_executor(
+                        None, model_answer, cfg, msg.author.id, msg.author.display_name, msg.content, kind,
+                        recent, replied_to, mentioned, str(client.user.id))
+                    source = "claude" if content else source
+                    if not content and model_reply.spent(cfg):   # this very call ran out of budget or credit
                         how = "limit"
                 if how == "limit":
                     content = await loop.run_in_executor(None, limit_line, cfg, msg.author.id)
-                    embed, source = None, "limit"
-            await msg.reply(content, embed=discord.Embed.from_dict(embed) if embed else None)
+                    source = "limit" if content else source
+                if not content and kind == "weather":   # numbers, never a canned joke
+                    content = await loop.run_in_executor(None, lambda: plain_weather(
+                        f"<@{msg.author.id}>", weather_facts(cfg, msg.author.id, msg.content)))
+                    source = "numbers" if content else source
+            if not content and not embed:
+                await msg.add_reaction("💤")   # WB can't think right now; says nothing it didn't write
+                log(f"gateway: no reply for {msg.author} in #{msg.channel} ({kind}); reacted")
+                return
+            sent = await msg.reply(content, embed=discord.Embed.from_dict(embed) if embed else None)
             log(f"gateway: answered {msg.author} in #{msg.channel} ({kind}, {source})")
-            if kind not in ("weather", "full"):
+            if source == "claude":
+                await loop.run_in_executor(None, log_exchange, cfg, msg, sent, content)
+            if kind == "chat":
                 inbox_add({"ts": datetime.now().isoformat(timespec="seconds"), "id": str(msg.id),
                            "channel_id": str(msg.channel.id), "channel": str(msg.channel),
                            "guild_id": str(getattr(msg.guild, "id", "")),
                            "author": str(msg.author), "author_id": str(msg.author.id),
-                           "text": msg.content, "kind": kind, "answered_with": content,
+                           "text": msg.content, "kind": kind, "answered_with": content or "",
                            "source": source})
         except Exception as e:
             log(f"gateway: reply failed: {e}")
+
+    async def on_reaction(payload, delta):
+        """Count reactions on WB's replies: the nightly learning reads them."""
+        if client.user is None or payload.user_id == client.user.id:
+            return
+        cfg = load_config()
+        db = memory_db() if memory_on(cfg) else None
+        if db:
+            try:
+                await asyncio.get_running_loop().run_in_executor(
+                    None, db.react, payload.message_id, str(payload.emoji), delta)
+            except Exception as e:
+                log(f"wbdb: reaction not recorded: {e}")
+
+    @client.event
+    async def on_raw_reaction_add(payload):
+        await on_reaction(payload, 1)
+
+    @client.event
+    async def on_raw_reaction_remove(payload):
+        await on_reaction(payload, -1)
 
     while True:
         try:
@@ -1523,12 +1577,11 @@ class Handler(BaseHTTPRequestHandler):
                              "inbox_pending": len(inbox_pending(INBOX_MAX)),
                              "claude": model_reply.status(cfg) if model_reply else None,
                              "wbdb": memory_health(cfg), **st})
-        elif path == "/memory":
+        elif path in ("/memory", "/profiles"):
             db = memory_db() if memory_on(cfg) else None
             if not db:
                 return self._send(200, {"enabled": memory_on(cfg), "error": _wb["error"]})
-            self._send(200, {"enabled": True, **db.stats(memory_scope(cfg)),
-                             "digest": db.memory(memory_scope(cfg))["digest"]})
+            self._send(200, {"enabled": True, **db.stats(), "profiles": db.profiles()})
         elif path == "/inbox":
             limit = urllib.parse.parse_qs(query).get("limit", ["50"])[0]
             limit = int(limit) if limit.isdigit() else 50
@@ -1648,19 +1701,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(502, {"error": str(e)})
             self._send(200, {"ok": True, "message_id": mid})
         elif path == "/memory/reset":
-            # {"everything": false} forgets the notes (messages get folded again);
-            # {"everything": true} also wipes the messages, which are re-read from Discord
-            try:
-                everything = bool(self._body().get("everything"))
-            except ValueError:
-                return self._send(400, {"error": "invalid JSON"})
-            cfg, db = load_config(), memory_db()
+            # forget everything WB learned; the seed profiles load again on the next pass
+            db = memory_db()
             if not db:
                 return self._send(503, {"error": _wb["error"] or "wbdb unavailable"})
             with _ingest_lock:
-                db.reset(memory_scope(cfg), everything)
-            log(f"wbdb: reset ({'everything' if everything else 'notes only'})")
-            self._send(200, {"reset": "everything" if everything else "notes"})
+                db.reset()
+                n = load_seed(db)
+            log(f"wbdb: reset; {n} seed profile(s) loaded")
+            self._send(200, {"reset": True, "seeded": n})
+        elif path == "/profiles":
+            # {"subject": "<user id>|group|self", "notes": "..."}: hand-edit one profile
+            try:
+                body = self._body()
+            except ValueError:
+                return self._send(400, {"error": "invalid JSON"})
+            subject, notes = str(body.get("subject") or ""), body.get("notes")
+            db = memory_db()
+            if not db:
+                return self._send(503, {"error": _wb["error"] or "wbdb unavailable"})
+            if not (subject in ("group", "self") or subject.isdigit()) or not isinstance(notes, str):
+                return self._send(400, {"error": "need subject (user id, group or self) and notes"})
+            db.set_profile(subject, notes, body.get("handle"), source="edited", limit=6000)
+            self._send(200, {"ok": True, "profile": db.profile(subject)})
         elif path == "/inbox/ack":
             try:
                 ids = self._body().get("ids") or []

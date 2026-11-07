@@ -39,18 +39,12 @@ webapp's Home-page Weather Bot card.
 
 ## Witty morning messages
 
-When `witty_enabled` is true (the default), the post includes a short Mr. Murf
-line after `message`. The refreshed catalogue has **84 ordinary lines** mixing
-friendly callouts, little jokes, and easy conversation starters, plus **68
-weather-event variants**. These are authored templates, not LLM prompts: stdlib
-only, no model/API costs and no reading the Discord chat.
-
-Ordinary days draw from the shuffled catalogue. A premise has a **45-post
-cooldown regardless of which friend's name is used**; it also appears at most
-once per cycle. Older template/name pair history is a secondary preference.
-With too few available templates the oldest premise is used. Empty
-`witty_names` still allows nameless lines and weather messages. Upgrading the
-catalogue retires pending old recipes automatically while preserving history.
+**No longer posted.** Every line WB says is written by the model (see
+*Answering pings*); the morning post carries the model's line under `message`,
+or no line at all. The template pool below is kept only for its weather
+history (`weather_days`), which feeds the morning line's "weather story"
+(streaks, swings), and for `GET /witty`. The rest of this section describes the
+pool as it was.
 
 **Weather takes priority across every configured location.** Only one topic
 leads the daily message, in this order (longer runs break priority ties):
@@ -138,39 +132,18 @@ first location in the list — fine while all locations share a metro area.
 
 ## Answering pings
 
-Most pings are not weather questions. A ping is first **classified** into one of
-these kinds, in this precedence order (the first kind with a matching pattern
-wins; `wild` is the catch-all):
+A ping (mention, the bot's role, or a reply to it) is one of three things:
 
-| Kind | Triggers (generic defaults in `witty_messages.DEFAULT_REPLY_PATTERNS`) | Answer |
+| Kind | When | Answer |
 |---|---|---|
-| `full` | full / report / briefing / everything | the whole embed |
-| `control` | thermostat, "turn it down", "make it stop raining", melting | line |
-| `command` | "every time you…", "from now on", "repeat after me" | line |
-| `sentience` | blink twice, held against, alive, live forever, trust me | line |
-| `rating` | "6 out of 10", "rate you" | line |
-| `complaint` | lied, liar, wrong, dissent | line |
-| `files` | the files, burned, "what do you know about me" | line |
-| `weather` | weather, forecast, rain, snow, temp…, or a configured town name | forecast (`town` / `all`) |
-| `outdoors` | camping, hike, trail, fire pit | line |
-| `gaming` | any gamers, where we dropping, lobby | line |
-| `lore` | percolator, scrolls, council, Mr. Murf | line |
-| `name` | clanker, "what do we call you" | line |
-| `thanks` | thanks, gm, hello | line |
-| `opinion` | "what do you think", "do you prefer", "who has the…", rank, best | line |
-| `wild` | anything else | line from the big unhinged pool |
+| `full` | "full report", "full briefing", "morning briefing" | the briefing card, with a model-written line |
+| `weather` | an explicit ask: "weather report", "tell me my weather", "what's the weather", "weather in Hicksville", a bare "weather?" | a model reply with that town's numbers (the town named, else the asker's home, else every town) |
+| `chat` | everything else, including a town name or "rain" on its own | a model reply with no forecast data |
 
-Specific kinds sit above `weather` on purpose, so "I'm melting, turn the
-thermostat down" is a control request, not a forecast. Lines come from the
-persona's `replies` (one list per kind; the public defaults are one plain line
-each) and rotate **without repeating** until a kind's list is exhausted (in
-memory; a restart reshuffles). Every line can use the asker's weather
-(`{town} {hi} {lo} {feels} {rain} {wind} {cond} {cond_lower} {emoji}`, from the
-asker's home town or the first configured town), `{name}` (the asker's mention),
-`{me}` (one self-name per message) and `{pick}` (a random *other* roster
-member's mention, drawn from the persona's `pings`). A persona may add triggers
-per kind with `"reply_patterns": {"lore": ["\\bgiacomo\\b"]}` (regex, case-
-insensitive; not for `wild`).
+There are no template answers. If the model can't be reached, a weather ask
+gets the plain numbers and anything else gets a 💤 reaction. Patterns live in
+`witty_messages.DEFAULT_REPLY_PATTERNS`; a persona can't widen the two forecast
+kinds.
 
 ### The considered-reply lane (inbox + say)
 
@@ -212,114 +185,91 @@ persona. `GET /health` reports `active_profile`, `guild_id` and `inbox_pending`.
 the *old* code (it falls back to the public defaults entirely), so ship the code
 first and `docker cp` the persona after the container is running the new build.
 
-### Model-written replies (`model_reply.py`, off by default)
+### WB: model-written replies and memory (`model_reply.py`, `wbdb.py`)
 
-The bot has two modes. **Weather mode** is the daily post plus an explicit ask:
-"tell me my weather", "weather report", "what's the weather", "weather in
-Hicksville", a bare "weather?", or "full report" for the briefing card. Naming a
-town, or words like "rain" and "hot", don't count. **Everything else** is chat
-with an unhinged AI, and those replies get no forecast data at all, from the
-model or from templates (lines using forecast slots are skipped).
+Every reply is one Messages API call to Claude Haiku 5.5. WB has no
+hand-written personality: it starts from a short seed (`model_reply.SEED_BRIEF`,
+or the persona's `brief` if one is set) and grows its own notes. The prompt
+holds, in order:
 
-A profile can let the bot ask Claude to answer whatever it was asked, in
-character, instead of drawing a template: the persona's `brief` (who the bot is,
-the voice, the roster, the off-limits list; up to 12,000 characters), the last
-`history` messages of the channel, the ping, for a weather ask the weather for
-the town it names (else the asker's home), and three template lines of the kind
-as a voice reference go to the Messages API; one reply comes back, is checked
-(users-only mentions from the roster, `@everyone`/`@here`/role pings refused,
-900 chars max) and posted. Any failure, timeout, refusal or empty reply falls
-back to the template line, so the bot never goes quiet because the model did.
-Only `full` skips the model and keeps its briefing card. The rules tell the
-model that jokes and absurd fake statistics are fine but made-up logs or records
-presented as real are not, and to riff instead of disclaiming.
+- system: the seed, the rules, the roster, WB's notes on itself, on the group,
+  and on the asker and anyone mentioned
+- user: the last `history` messages of the channel, WB's last 5 replies (so it
+  doesn't repeat itself), the weather numbers for a weather ask, the message
+  being replied to, and **the message itself, last**
+
+The rules say: answer what was said first, with the humor inside the answer;
+most replies need no callback; mention people only by roster handle; no weather
+without numbers; jokes are fine but made-up records presented as real are not;
+the off-limits list. The reply is checked (users-only mentions from the roster,
+`@everyone`/`@here`/role pings refused, 900 chars max) and posted.
 
 ```json
 "claude": {"enabled": true, "model": "claude-haiku-5-5", "effort": "medium",
-           "daily_cap": 150, "daily_tokens": 400000, "max_tokens": 2048,
-           "history": 10, "kinds": [],
+           "daily_cap": 150, "daily_tokens": 1500000, "max_tokens": 4096, "history": 15,
            "morning": true, "morning_effort": "medium", "morning_history": 150,
-           "memory": true, "memory_tail": 40, "memory_related": 30, "memory_backfill": 50000,
-           "memory_skip_channels": []}
+           "memory": true, "memory_skip_channels": []}
 ```
 
 `effort` is low/medium/high (thinking stays adaptive; `max_tokens` covers the
-thinking too, so keep it well above the reply). `kinds` empty = every kind.
+thinking too, so keep it well above the reply).
 
-**Limits, in character.** When today's budget is spent (`daily_cap` calls or
-`daily_tokens` tokens, local day; `daily_tokens: 0` = no token cap) or the API
-says the credit is gone or rate-limits it, the bot stops calling the model until
-tomorrow and answers with a `limit` line instead ("my daily allotment of words
-has been spent..."). Someone pinging again inside the 8 s cooldown gets one
-`pester` line ("one ping at a time, I am a weather bot, not a slot machine"),
-then silence for 10 minutes. Both pools live in `witty_messages.py` and a
-persona can replace them through `replies.limit` / `replies.pester`.
+**Limits.** When today's budget is spent (`daily_cap` calls or `daily_tokens`
+tokens, local day; `daily_tokens: 0` = no token cap) or the API says the credit
+is gone or rate-limits it, WB stops calling the model until tomorrow and posts
+one of the "out of words" lines it wrote the night before. Someone pinging again
+inside the 8 s cooldown gets one "slow down" line, then silence for 10 minutes.
+Before the first night's learning there are no such lines, and WB reacts 💤
+instead.
 
-**Morning line from the chat.** With `morning: true` the daily post's line under
-`@everyone` is written by the model instead of drawn from the witty pool. Before
-the post the bot reads, over Discord REST, every message in the post channel and
-`reply_channels` since the last *posted* morning line (up to `morning_history`,
-newest kept; the first run reads the last 24 h), and gives the model that chat,
-today's weather per town, the weather story (streaks, swings) and its last seven
-morning lines so it doesn't repeat itself. The per-channel cursor
-(`/data/chat_cursor.json`) only moves after the post lands, the day's line is
-kept as a draft (`/data/morning_draft.json`) so the 15-minute retries re-post the
-same text, and posted lines are logged in `/data/morning_lines.jsonl`. If the
-model is off, spent or fails, the witty template line is used as before and is
-left in the pool when the model line wins. Previews (`GET /preview`) never call
-the model. The bot needs Read Message History in those channels.
+**Morning line.** With `morning: true` the line under `@everyone` is written by
+the model from every message since the last posted morning line (REST, per
+channel cursor in `/data/chat_cursor.json`, moved only once a post lands),
+today's weather, the weather story and WB's notes. The day's line is kept as a
+draft so retries re-post it. No line if the model is off or fails.
 
-**Shared memory: WBdb (`wbdb.py`, `memory: true`).** With memory on, the bot
-keeps every message from the server's text channels in `/data/wbdb.sqlite`
-(SQLite, WAL, full-text index) on opti's ZFS pool (`red/docker`,
-auto-snapshotted every 15 min), minus `memory_skip_channels` and any channel
-that answers 403. It reads each channel forward every 15 minutes and the pinged
-one again right before a model reply, and pages back through history (5,000
-messages a pass, all channels together) until each channel's start or
-`memory_backfill` messages. Once history is in, messages are folded into the
-model's running notes about the group (the digest, about 3,000 words) as 40
-pile up or the oldest turns 6 hours old, 300 per call, at most 5 calls a pass.
-The digest only moves after a good answer, and folds stop while today's usage
-is within 50 calls or a third of `daily_tokens` of the cap, so a backlog never
-turns pings into limit lines (a big backfill digests over a few days; raise
-`daily_tokens` to speed it up). Ping replies get the digest, the channel's last
-`memory_tail` messages and the `memory_related` best full-text matches across
-all channels; the morning line reads every channel since its last post and gets
-the digest too.
+**Memory: WBdb (`memory: true`).** `/data/wb.sqlite` on opti's ZFS pool. WB reads
+every text channel in the server (minus `memory_skip_channels` and any that
+answer 403) forward from the moment it first sees each one; there is no history
+import. Every night after 3 AM it has the model update:
+
+- each person's notes from what they said that day, what they asked WB, and the
+  reactions to WB's answers (people with fewer than 3 messages and no pings are
+  skipped that night)
+- the group's notes (lore, running bits, plans, what they ask)
+- its own notes (the voice the group seems to like, what landed, what flopped)
+- its "out of words" and "slow down" lines, in its current voice
+
+The notes start from a private seed, `/data/wb_seed.json`
+(`{"group", "self", "people": {"<user id>": {"handle", "notes"}}}`, loaded once;
+built from `private/PROFILES.md`). Learning leaves 50 calls and a third of
+`daily_tokens` for pings, and only marks what it got through, so a cut-short
+night resumes the next. Learned messages are dropped after 30 days; the notes
+stay. Reactions on WB's replies are counted live.
 
 **Forgetting.** The private persona's `"forget": {"terms": [...], "user_ids":
 [...]}` lists what the bot must act as if it never saw. A message naming a term,
-or written by that user, is never stored and is purged if it already was; digest
-lines naming a term are dropped; a ping naming one reaches the model as
-`[removed]`; and a reply that names one is thrown out for a template line. Terms
-match whole words in any case, so a first name also catches other people with
-that name. The list stays in the persona because the repo is public. Backups
-taken before a term was added keep what they held until they age out (7 days).
+written by that user or @mentioning them is never stored, and is purged if it
+was; note lines and ready-made lines naming a term are dropped; a ping naming
+one reaches the model as `[removed]`; a reply that names one isn't sent. Terms
+match whole words in any case. The list stays in the persona because the repo
+is public.
 
-Reliability: one connection behind a lock, each batch in one transaction;
-`PRAGMA quick_check` at open, and a file that fails is renamed
-`wbdb.sqlite.corrupt-<time>` and rebuilt from Discord (only the digest is not
-re-readable). A nightly `VACUUM INTO` copy goes to `/backup`, which compose
-binds to `/srv/red/fs/ptm/wbdb/backup` (7 kept), so the weekly cold copy takes
-it. If WBdb can't serve a ping, the reply uses the live last `history`
-messages as before. `GET /memory` shows the counts and the digest,
-`POST /memory/reset` forgets the digest (`{"everything": true}` also wipes the
-messages and re-reads Discord), and `GET /health` carries a `wbdb` summary.
-Cost on Haiku 5.5: about $0.0008 a reply with memory, about $0.002 a fold.
+**Reliability.** One connection behind a lock, batches in one transaction,
+`PRAGMA quick_check` at open (a bad file is set aside and replaced by an empty
+one), and a nightly `VACUUM INTO` copy to `/backup`, which compose binds to
+`/srv/red/fs/ptm/wbdb/backup` (7 kept, `wb-<date>.sqlite`) so the weekly cold
+copy takes it. If WBdb can't serve a reply, the reply goes without notes.
 
-`claude` is a profile field, so it is
-switched on **per server**: `enabled: true` is rejected unless that profile (or
-the flat config) names a `guild_id`, and switching to a profile without a
-`claude` block turns it off. The key comes from `ANTHROPIC_API_KEY` in the
-container environment (the compose file passes it from the stack `.env`) or,
-failing that, `/data/anthropic.key`. `GET /health` reports `claude`:
-enabled, model, key source, caps, `morning`, today's calls and tokens, `spent`
-(why the budget is gone, or empty) and the last error.
-Usage is in `/data/claude_usage.json`, reset per local day. Replies carry
-`"source": "claude"` (or `"limit"`) in the inbox. Cost on Haiku 5.5 ($0.10 in /
-$0.50 out per million tokens): a reply is roughly 1.5k in / 400 out, about
-$0.0004, so a full 150-call day plus the morning line is about $0.06. The
-Max plan's monthly API credit covers that many times over; see
+`claude` is a profile field, so it is switched on **per server**: `enabled:
+true` is rejected unless that profile (or the flat config) names a `guild_id`,
+and switching to a profile without a `claude` block turns it off. The key comes
+from `ANTHROPIC_API_KEY` (the compose file passes it from the stack `.env`) or
+`/data/anthropic.key`. Usage is in `/data/claude_usage.json`, reset per local
+day. Cost on Haiku 5.5 ($0.10 in / $0.50 out per million tokens): a replay of 15
+real pings averaged about 3,300 input and 450 output tokens a reply, about
+$0.0005 each; the nightly learning is about 10 calls. The Max plan's monthly API
+credit covers that many times over; see
 https://platform.claude.com/docs/en/about-claude/api-credits-for-subscribers.
 
 Personal use only: this answers whoever pings it on the configured server, so
@@ -337,7 +287,10 @@ keep it on a server that is yours.
 | `GET /geocode?q=name` | Open-Meteo geocoding search (top 5) for adding locations |
 | `GET /witty` | witty pool status: remaining, cycle, next-up (generic), last posted |
 | `POST /witty/reroll` | rotate today's pick to the back of the cycle, return the new one |
-| `GET /inbox?limit=50` | pending non-weather pings and the line each got |
+| `GET /inbox?limit=50` | pending chat pings and the reply each got |
+| `GET /profiles` | WBdb counts and every profile (people, `group`, `self`) |
+| `PUT /profiles` | `{"subject", "notes", "handle"?}`: hand-edit one profile |
+| `POST /memory/reset` | forget everything WB learned; the seed loads again |
 | `POST /inbox/ack` | `{"ids": [...]}` — mark entries handled without replying |
 | `POST /say` | `{"content", "reply_to"?, "channel_id"?}` — post as Weather-Bot (reply if `reply_to`) |
 | `POST /profile` | `{"name"}` — switch to a configured server profile (= `PUT /config {"active_profile"}`) |

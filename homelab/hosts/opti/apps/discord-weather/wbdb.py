@@ -1,21 +1,29 @@
-"""WBdb: Weather Bot's memory of the chat.
+"""WBdb: what Weather Bot knows about the group, learned day by day.
 
-One SQLite file on the bot's data volume (/data/wbdb.sqlite, on opti's ZFS
-pool) holding every message the bot has read from its channels, a full-text
-index over them, a per-channel read position, and the running notes ("digest")
-the model keeps about the group. Discord stays the source of truth: the
-messages can always be re-read, so a file that fails its startup check is set
-aside and rebuilt rather than trusted. The digest is the only thing that can't
-be re-read, and the nightly backup (VACUUM INTO a dated copy) covers it.
+One SQLite file on the bot's data volume (/data/wb.sqlite, on opti's ZFS
+pool). It holds:
+  - messages: what was said in the server's channels since the bot started
+    reading, until the nightly learning has used them (then kept 30 days)
+  - profiles: WB's notes on each person, on the group, and on itself ("self"),
+    seeded once from a private seed file and rewritten nightly by the model
+  - pings: what people asked WB, what it answered, and the emoji reactions
+    that answer got, so the nightly learning knows what landed
+  - lines: short lines WB wrote ahead of time for when it can't call the model
+    (out of words for the day, someone pinging too fast)
+  - channels / meta: read positions and bookkeeping
 
-Stdlib only, one connection guarded by a lock: the bot has a handful of
-writers (the memory loop, a ping's refresh) and they are short.
+Discord stays the source of truth for messages; a file that fails its startup
+check is set aside and replaced by an empty one. The profiles are the part
+that can't be re-read, and the nightly backup (VACUUM INTO a dated copy)
+covers them. Stdlib only, one connection behind a lock.
 """
+import json
 import os
+import random
 import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -26,44 +34,42 @@ CREATE TABLE IF NOT EXISTS messages (
     is_bot     INTEGER NOT NULL DEFAULT 0,
     ts         TEXT NOT NULL,
     content    TEXT NOT NULL,         -- mentions already turned into handles
-    folded     INTEGER NOT NULL DEFAULT 0   -- already in the digest
+    learned    INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX IF NOT EXISTS messages_channel ON messages(channel_id, id);
+CREATE INDEX IF NOT EXISTS messages_learned ON messages(learned, id);
 CREATE INDEX IF NOT EXISTS messages_author ON messages(author_id, id);
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts
-    USING fts5(content, author, content='messages', content_rowid='id');
-CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, content, author) VALUES (new.id, new.content, new.author);
-END;
-CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, content, author) VALUES ('delete', old.id, old.content, old.author);
-END;
-CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, content, author) VALUES ('delete', old.id, old.content, old.author);
-    INSERT INTO messages_fts(rowid, content, author) VALUES (new.id, new.content, new.author);
-END;
 CREATE TABLE IF NOT EXISTS channels (
     channel_id TEXT PRIMARY KEY,
-    newest_id  INTEGER,               -- read forward from here
-    oldest_id  INTEGER,               -- backfill pages back from here
-    backfilled INTEGER NOT NULL DEFAULT 0
+    newest_id  INTEGER                -- read forward from here
 );
-CREATE TABLE IF NOT EXISTS memory (
-    scope          TEXT PRIMARY KEY,  -- the guild id
-    digest         TEXT NOT NULL DEFAULT '',
-    folded_through INTEGER NOT NULL DEFAULT 0,   -- newest message id in the digest
-    updated_at     TEXT
+CREATE TABLE IF NOT EXISTS profiles (
+    subject    TEXT PRIMARY KEY,      -- a Discord user id, "group" or "self"
+    handle     TEXT NOT NULL DEFAULT '',
+    notes      TEXT NOT NULL DEFAULT '',
+    updated_at TEXT,
+    source     TEXT NOT NULL DEFAULT 'learned'   -- seed | learned | edited
+);
+CREATE TABLE IF NOT EXISTS pings (
+    message_id TEXT PRIMARY KEY,      -- the person's message
+    channel_id TEXT NOT NULL,
+    author_id  TEXT NOT NULL,
+    author     TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    reply_id   TEXT,                  -- WB's answer
+    reply      TEXT,
+    ts         TEXT NOT NULL,
+    reactions  TEXT NOT NULL DEFAULT '{}',   -- {"emoji": count}
+    learned    INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS pings_reply ON pings(reply_id);
+CREATE TABLE IF NOT EXISTS lines (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,               -- limit | pester
+    text TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
-
-STOPWORDS = set("""
-the and you your for are was were what who why how when where this that with have has had
-not but can could would should will just like about from they them their there then than
-its it's i'm im you're youre dont don't does did get got out all any our ours his her she him
-weather bot wb hey yo lol lmao please tell know think say said one also really very much
-""".split())
-DIGEST_MAX = 24000   # characters; the prompt asks for less, this is the backstop
+KEEP_DAYS = 30
 
 
 def _now():
@@ -92,15 +98,13 @@ class WBDB:
 
     def _open(self):
         """Connect and check. A file that fails quick_check (or won't open) is
-        renamed aside and replaced by an empty one, which the bot refills from
-        Discord. Returns the connection."""
+        renamed aside and replaced by an empty one."""
         try:
             conn = self._connect()
             ok = conn.execute("PRAGMA quick_check").fetchone()[0]
             if ok != "ok":
                 raise sqlite3.DatabaseError(f"quick_check: {ok}")
             conn.executescript(SCHEMA)
-            self._migrate(conn)
             return conn
         except sqlite3.DatabaseError as e:
             try:
@@ -111,189 +115,190 @@ class WBDB:
             for suffix in ("", "-wal", "-shm"):
                 if os.path.exists(self.path + suffix):
                     os.replace(self.path + suffix, aside + suffix)
-            self.note = f"set aside {os.path.basename(aside)} ({e}); rebuilding from Discord"
+            self.note = f"set aside {os.path.basename(aside)} ({e}); starting empty"
             conn = self._connect()
             conn.executescript(SCHEMA)
-            self._migrate(conn)
             return conn
-
-    @staticmethod
-    def _migrate(conn):
-        """Bring an older file up to date. Before the folded flag, the digest
-        covered everything up to memory.folded_through."""
-        if "folded" not in [r["name"] for r in conn.execute("PRAGMA table_info(messages)")]:
-            conn.execute("ALTER TABLE messages ADD COLUMN folded INTEGER NOT NULL DEFAULT 0")
-            conn.execute("UPDATE messages SET folded = 1 WHERE id <= "
-                         "(SELECT COALESCE(MAX(folded_through), 0) FROM memory)")
-        conn.execute("CREATE INDEX IF NOT EXISTS messages_folded ON messages(folded, id)")
 
     def close(self):
         with self.lock:
             self.conn.close()
 
+    def _tx(self, statements):
+        """Run [(sql, args), ...] in one transaction."""
+        with self.lock:
+            self.conn.execute("BEGIN")
+            try:
+                for sql, args in statements:
+                    self.conn.execute(sql, args)
+                self.conn.execute("COMMIT")
+            except Exception:
+                self.conn.execute("ROLLBACK")
+                raise
+
     # -- messages --------------------------------------------------------------
     def add(self, rows):
-        """Insert or refresh (edited) messages in one transaction. Returns how
-        many were new."""
+        """Insert messages (already filtered) in one transaction; repeats are
+        ignored. Returns how many were new."""
         if not rows:
             return 0
         with self.lock:
             before = self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-            self.conn.execute("BEGIN")
-            try:
-                self.conn.executemany(
-                    "INSERT INTO messages (id, channel_id, author_id, author, is_bot, ts, content) "
-                    "VALUES (:id, :channel_id, :author_id, :author, :is_bot, :ts, :content) "
-                    "ON CONFLICT(id) DO UPDATE SET content = excluded.content "
-                    "WHERE content != excluded.content",
-                    [{**r, "id": int(r["id"]), "is_bot": int(bool(r.get("is_bot")))} for r in rows])
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
+            self._tx([("INSERT OR IGNORE INTO messages (id, channel_id, author_id, author, is_bot, ts, content) "
+                       "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                       (int(r["id"]), r["channel_id"], r["author_id"], r["author"], int(bool(r.get("is_bot"))),
+                        r["ts"], r["content"])) for r in rows])
             return self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0] - before
 
-    def count(self, channel_ids):
-        if not channel_ids:
-            return 0
-        marks = ",".join("?" * len(channel_ids))
+    def count(self, channel_ids=None):
         with self.lock:
+            if channel_ids is None:
+                return self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            marks = ",".join("?" * len(channel_ids)) or "''"
             return self.conn.execute(f"SELECT COUNT(*) FROM messages WHERE channel_id IN ({marks})",
                                      [str(c) for c in channel_ids]).fetchone()[0]
 
-    def recent(self, channel_ids, n, before_id=None):
-        """The last n messages in these channels (before a message id), oldest first."""
-        if not channel_ids or n <= 0:
-            return []
-        marks = ",".join("?" * len(channel_ids))
-        sql = f"SELECT * FROM messages WHERE channel_id IN ({marks})"
-        args = [str(c) for c in channel_ids]
-        if before_id:
-            sql += " AND id < ?"
-            args.append(int(before_id))
+    def unlearned(self, limit=5000):
+        """Messages the nightly learning hasn't used yet, oldest first."""
         with self.lock:
-            rows = self.conn.execute(sql + " ORDER BY id DESC LIMIT ?", args + [n]).fetchall()
-        return [dict(r) for r in reversed(rows)]
-
-    @staticmethod
-    def terms(text):
-        """Search words from a ping: 3+ letters, no stopwords, at most 8."""
-        out = []
-        for w in re.findall(r"[a-z0-9']{3,}", (text or "").lower()):
-            w = w.strip("'")
-            if len(w) >= 3 and w not in STOPWORDS and w not in out:
-                out.append(w)
-        return out[:8]
-
-    def search(self, text, n, exclude=()):
-        """Older messages most related to `text` (full-text, best first, then
-        returned oldest first), skipping ids already in the prompt."""
-        words = self.terms(text)
-        if not words or n <= 0:
-            return []
-        query = " OR ".join(f'"{w}"' for w in words)
-        skip = {int(i) for i in exclude}
-        with self.lock:
-            rows = self.conn.execute(
-                "SELECT m.* FROM messages_fts JOIN messages m ON m.id = messages_fts.rowid "
-                "WHERE messages_fts MATCH ? ORDER BY bm25(messages_fts) LIMIT ?",
-                (query, n + len(skip))).fetchall()
-        hits = [dict(r) for r in rows if r["id"] not in skip][:n]
-        return sorted(hits, key=lambda r: r["id"])
-
-    # -- read positions --------------------------------------------------------
-    def channel(self, channel_id):
-        with self.lock:
-            r = self.conn.execute("SELECT * FROM channels WHERE channel_id = ?", (str(channel_id),)).fetchone()
-        return dict(r) if r else {"channel_id": str(channel_id), "newest_id": None, "oldest_id": None,
-                                  "backfilled": 0}
-
-    def mark(self, channel_id, newest=None, oldest=None, backfilled=None):
-        """Move a channel's positions: newest only forward, oldest only back."""
-        with self.lock:
-            cur = self.channel(channel_id)
-            nw = max(filter(None, [cur["newest_id"], int(newest) if newest else None]), default=None)
-            od = min(filter(None, [cur["oldest_id"], int(oldest) if oldest else None]), default=None)
-            bf = cur["backfilled"] if backfilled is None else int(bool(backfilled))
-            self.conn.execute(
-                "INSERT INTO channels (channel_id, newest_id, oldest_id, backfilled) VALUES (?, ?, ?, ?) "
-                "ON CONFLICT(channel_id) DO UPDATE SET newest_id = excluded.newest_id, "
-                "oldest_id = excluded.oldest_id, backfilled = excluded.backfilled",
-                (str(channel_id), nw, od, bf))
-
-    # -- the digest ------------------------------------------------------------
-    def memory(self, scope):
-        with self.lock:
-            r = self.conn.execute("SELECT * FROM memory WHERE scope = ?", (str(scope),)).fetchone()
-        return dict(r) if r else {"scope": str(scope), "digest": "", "folded_through": 0, "updated_at": None}
-
-    def set_memory(self, scope, digest, ids=()):
-        """Save the digest and flag the messages it now covers, in one transaction."""
-        ids = [int(i) for i in ids]
-        with self.lock:
-            self.conn.execute("BEGIN")
-            try:
-                self.conn.execute(
-                    "INSERT INTO memory (scope, digest, folded_through, updated_at) VALUES (?, ?, ?, ?) "
-                    "ON CONFLICT(scope) DO UPDATE SET digest = excluded.digest, "
-                    "folded_through = MAX(folded_through, excluded.folded_through), "
-                    "updated_at = excluded.updated_at",
-                    (str(scope), (digest or "").strip()[:DIGEST_MAX], max(ids, default=0), _now()))
-                self.conn.executemany("UPDATE messages SET folded = 1 WHERE id = ?", [(i,) for i in ids])
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
-
-    def unfolded(self, limit):
-        """Messages not yet in the digest, oldest first. A flag, not a position:
-        history backfilled later is older than what's folded and still counts."""
-        with self.lock:
-            rows = self.conn.execute("SELECT * FROM messages WHERE folded = 0 ORDER BY id LIMIT ?",
+            rows = self.conn.execute("SELECT * FROM messages WHERE learned = 0 ORDER BY id LIMIT ?",
                                      (limit,)).fetchall()
         return [dict(r) for r in rows]
 
-    def count_unfolded(self):
-        with self.lock:
-            return self.conn.execute("SELECT COUNT(*) FROM messages WHERE folded = 0").fetchone()[0]
+    def mark_learned(self, message_ids=(), ping_ids=()):
+        self._tx([("UPDATE messages SET learned = 1 WHERE id = ?", (int(i),)) for i in message_ids] +
+                 [("UPDATE pings SET learned = 1 WHERE message_id = ?", (str(i),)) for i in ping_ids])
 
-    def purge(self, terms=(), user_ids=()):
-        """Delete messages naming a term or written by a user id, and drop the
-        lines of any digest that names a term. Returns messages removed."""
-        terms = [t for t in terms if t]
+    def prune(self, now=None):
+        """Drop learned messages older than KEEP_DAYS. Returns how many."""
+        cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=KEEP_DAYS)).isoformat()
         with self.lock:
-            before = self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-            self.conn.execute("BEGIN")
-            try:
-                if terms:
-                    query = " OR ".join('"' + t.replace('"', '') + '"' for t in terms)
-                    self.conn.execute("DELETE FROM messages WHERE id IN "
-                                      "(SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)", (query,))
-                    pattern = re.compile("|".join(re.escape(t) for t in terms), re.I)
-                    for r in self.conn.execute("SELECT scope, digest FROM memory").fetchall():
-                        kept = [l for l in r["digest"].splitlines() if not pattern.search(l)]
-                        if len(kept) != len(r["digest"].splitlines()):
-                            self.conn.execute("UPDATE memory SET digest = ? WHERE scope = ?",
-                                              ("\n".join(kept), r["scope"]))
-                for u in user_ids:
-                    self.conn.execute("DELETE FROM messages WHERE author_id = ?", (str(u),))
-                self.conn.execute("COMMIT")
-            except Exception:
-                self.conn.execute("ROLLBACK")
-                raise
-            return before - self.conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+            before = self.count()
+            self.conn.execute("DELETE FROM messages WHERE learned = 1 AND ts < ?", (cutoff,))
+            return before - self.count()
 
-    def reset(self, scope, everything=False):
-        """Forget the digest (the messages stay and get folded again), or with
-        everything=True wipe messages and positions too, so it re-reads Discord."""
+    # -- read positions --------------------------------------------------------
+    def newest(self, channel_id):
         with self.lock:
-            self.conn.execute("BEGIN")
-            self.conn.execute("DELETE FROM memory WHERE scope = ?", (str(scope),))
-            self.conn.execute("UPDATE messages SET folded = 0")
-            if everything:
-                self.conn.execute("DELETE FROM messages")
-                self.conn.execute("DELETE FROM channels")
-            self.conn.execute("COMMIT")
+            r = self.conn.execute("SELECT newest_id FROM channels WHERE channel_id = ?",
+                                  (str(channel_id),)).fetchone()
+        return r[0] if r else None
+
+    def mark(self, channel_id, newest):
+        """Move a channel's read position, forward only."""
+        with self.lock:
+            cur = self.newest(channel_id) or 0
+            self.conn.execute("INSERT INTO channels (channel_id, newest_id) VALUES (?, ?) "
+                              "ON CONFLICT(channel_id) DO UPDATE SET newest_id = excluded.newest_id",
+                              (str(channel_id), max(cur, int(newest))))
+
+    # -- profiles --------------------------------------------------------------
+    def profile(self, subject):
+        with self.lock:
+            r = self.conn.execute("SELECT * FROM profiles WHERE subject = ?", (str(subject),)).fetchone()
+        return dict(r) if r else {"subject": str(subject), "handle": "", "notes": "", "updated_at": None,
+                                  "source": ""}
+
+    def profiles(self):
+        with self.lock:
+            return [dict(r) for r in self.conn.execute("SELECT * FROM profiles ORDER BY subject")]
+
+    def set_profile(self, subject, notes, handle=None, source="learned", limit=2500):
+        cur = self.profile(subject)
+        with self.lock:
+            self.conn.execute(
+                "INSERT INTO profiles (subject, handle, notes, updated_at, source) VALUES (?, ?, ?, ?, ?) "
+                "ON CONFLICT(subject) DO UPDATE SET handle = excluded.handle, notes = excluded.notes, "
+                "updated_at = excluded.updated_at, source = excluded.source",
+                (str(subject), handle if handle is not None else cur["handle"], (notes or "").strip()[:limit],
+                 _now(), source))
+
+    def seed(self, data):
+        """Load seed profiles once: {"group": "...", "self": "...", "people":
+        {"<user id>": {"handle", "notes"}}}. Existing profiles are kept.
+        Returns how many were added."""
+        added = 0
+        entries = [("group", "", data.get("group")), ("self", "", data.get("self"))]
+        entries += [(uid, p.get("handle", ""), p.get("notes")) for uid, p in (data.get("people") or {}).items()]
+        for subject, handle, notes in entries:
+            if notes and not self.profile(subject)["notes"]:
+                self.set_profile(subject, notes, handle, source="seed", limit=6000)
+                added += 1
+        return added
+
+    # -- pings and reactions ----------------------------------------------------
+    def log_ping(self, message_id, channel_id, author_id, author, text, reply_id, reply):
+        with self.lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO pings (message_id, channel_id, author_id, author, text, reply_id, reply, ts) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (str(message_id), str(channel_id), str(author_id), author, text, str(reply_id or ""), reply, _now()))
+
+    def react(self, reply_id, emoji, delta=1):
+        """Count a reaction on one of WB's replies. False if it isn't one."""
+        with self.lock:
+            r = self.conn.execute("SELECT reactions FROM pings WHERE reply_id = ?", (str(reply_id),)).fetchone()
+            if not r:
+                return False
+            counts = json.loads(r[0] or "{}")
+            counts[emoji] = max(0, counts.get(emoji, 0) + delta)
+            counts = {k: v for k, v in counts.items() if v}
+            self.conn.execute("UPDATE pings SET reactions = ? WHERE reply_id = ?",
+                              (json.dumps(counts, ensure_ascii=False), str(reply_id)))
+            return True
+
+    def recent_replies(self, n=5, channel_id=None):
+        """WB's last n replies, oldest first."""
+        sql, args = "SELECT reply FROM pings WHERE reply IS NOT NULL AND reply != ''", []
+        if channel_id:
+            sql += " AND channel_id = ?"
+            args.append(str(channel_id))
+        with self.lock:
+            rows = self.conn.execute(sql + " ORDER BY ts DESC, rowid DESC LIMIT ?", args + [n]).fetchall()
+        return [r[0] for r in reversed(rows)]
+
+    def unlearned_pings(self):
+        with self.lock:
+            return [dict(r) for r in self.conn.execute("SELECT * FROM pings WHERE learned = 0 ORDER BY ts")]
+
+    # -- canned lines ------------------------------------------------------------
+    def set_lines(self, kind, texts):
+        self._tx([("DELETE FROM lines WHERE kind = ?", (kind,))] +
+                 [("INSERT INTO lines (kind, text) VALUES (?, ?)", (kind, t)) for t in texts])
+
+    def line(self, kind):
+        with self.lock:
+            rows = [r[0] for r in self.conn.execute("SELECT text FROM lines WHERE kind = ?", (kind,))]
+        return random.choice(rows) if rows else None
+
+    # -- forgetting ----------------------------------------------------------------
+    def purge(self, matches, user_ids=()):
+        """Delete everything that names someone on the forget list: messages and
+        pings whose text `matches(text)` or whose author is in user_ids, profile
+        lines that match, and canned lines that match. Returns rows removed."""
+        removed = 0
+        ids = {str(u) for u in user_ids}
+        with self.lock:
+            msgs = [r["id"] for r in self.conn.execute("SELECT id, author_id, author, content FROM messages")
+                    if r["author_id"] in ids or matches(r["content"]) or matches(r["author"])]
+            pings = [r["message_id"] for r in self.conn.execute("SELECT message_id, author_id, text, reply FROM pings")
+                     if r["author_id"] in ids or matches(r["text"]) or matches(r["reply"] or "")]
+            stmts = [("DELETE FROM messages WHERE id = ?", (i,)) for i in msgs]
+            stmts += [("DELETE FROM pings WHERE message_id = ?", (i,)) for i in pings]
+            stmts += [("DELETE FROM profiles WHERE subject = ?", (u,)) for u in ids]
+            for p in self.profiles():
+                kept = [l for l in p["notes"].splitlines() if not matches(l)]
+                if len(kept) != len(p["notes"].splitlines()):
+                    stmts.append(("UPDATE profiles SET notes = ? WHERE subject = ?", ("\n".join(kept), p["subject"])))
+            stmts += [("DELETE FROM lines WHERE id = ?", (r["id"],))
+                      for r in self.conn.execute("SELECT id, text FROM lines") if matches(r["text"])]
+            self._tx(stmts)
+            removed = len(msgs) + len(pings)
+        return removed
+
+    def reset(self):
+        """Forget everything (the seed loads again on the next pass)."""
+        self._tx([(f"DELETE FROM {t}", ()) for t in ("messages", "channels", "profiles", "pings", "lines", "meta")])
 
     # -- bookkeeping -----------------------------------------------------------
     def get_meta(self, key, default=None):
@@ -306,23 +311,25 @@ class WBDB:
             self.conn.execute("INSERT INTO meta (key, value) VALUES (?, ?) "
                               "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
 
-    def stats(self, scope=None):
+    def stats(self):
         with self.lock:
-            n, newest = self.conn.execute("SELECT COUNT(*), MAX(ts) FROM messages").fetchone()
-            chans = [dict(r) for r in self.conn.execute("SELECT * FROM channels ORDER BY channel_id")]
-        mem = self.memory(scope) if scope else {}
+            q = lambda sql: self.conn.execute(sql).fetchone()[0]
+            out = {"messages": q("SELECT COUNT(*) FROM messages"),
+                   "unlearned": q("SELECT COUNT(*) FROM messages WHERE learned = 0"),
+                   "profiles": q("SELECT COUNT(*) FROM profiles"),
+                   "pings": q("SELECT COUNT(*) FROM pings"),
+                   "lines": q("SELECT COUNT(*) FROM lines"),
+                   "channels": q("SELECT COUNT(*) FROM channels")}
         size = sum(os.path.getsize(self.path + s) for s in ("", "-wal") if os.path.exists(self.path + s))
-        return {"messages": n, "newest_message_at": newest, "channels": chans, "bytes": size,
-                "digest_chars": len(mem.get("digest") or ""), "digest_updated_at": mem.get("updated_at"),
-                "unfolded": self.count_unfolded(),
-                "last_ingest_at": self.get_meta("last_ingest_at"), "last_backup": self.get_meta("last_backup"),
+        return {**out, "bytes": size, "last_ingest_at": self.get_meta("last_ingest_at"),
+                "last_learn": self.get_meta("last_learn"), "last_backup": self.get_meta("last_backup"),
                 "note": self.note}
 
     def backup(self, dest_dir, day, keep=7):
-        """A consistent copy as dest_dir/wbdb-<day>.sqlite (VACUUM INTO works on
-        a live database), then prune to the newest `keep`. Returns the path."""
+        """A consistent copy as dest_dir/wb-<day>.sqlite (VACUUM INTO works on a
+        live database), then prune to the newest `keep`. Returns the path."""
         os.makedirs(dest_dir, exist_ok=True)
-        dest = os.path.join(dest_dir, f"wbdb-{day}.sqlite")
+        dest = os.path.join(dest_dir, f"wb-{day}.sqlite")
         if not os.path.exists(dest):
             tmp = dest + ".tmp"
             if os.path.exists(tmp):
@@ -330,7 +337,7 @@ class WBDB:
             with self.lock:
                 self.conn.execute("VACUUM INTO ?", (tmp,))
             os.replace(tmp, dest)
-        copies = sorted(f for f in os.listdir(dest_dir) if re.fullmatch(r"wbdb-\d{4}-\d\d-\d\d\.sqlite", f))
+        copies = sorted(f for f in os.listdir(dest_dir) if re.fullmatch(r"wb-\d{4}-\d\d-\d\d\.sqlite", f))
         for old in copies[:-keep]:
             os.remove(os.path.join(dest_dir, old))
         self.set_meta("last_backup", f"{day} {dest}")

@@ -107,9 +107,13 @@ class MorningTests(unittest.TestCase):
                                    msg(7, author=BOT_ID, text="Statement: no.", name="Weather-Bot"),
                                    msg(8, author="77", text="", name="Guest")],
                             "11": [msg(9, author="3", text="lol", name="Ant")]})
-        with patch.object(bot, "_discord_get", fake):
+        with patch.object(bot, "_discord_get", fake), \
+                patch.dict(bot._channels, {"names": {"10": "weather", "11": "gamers"}}):
             lines, newest = bot.chat_delta(self.cfg(reply_channels=["11"]), 150, now=1_800_000_000)
-        self.assertEqual(lines, ["@tomboe: rate the rain @antwah", "WB: Statement: no.", "@antwah: lol"])
+        # several channels: each line says where it was said, so the model keeps conversations apart
+        self.assertEqual(lines, ["[#weather] @tomboe: rate the rain @antwah", "[#weather] WB: Statement: no.",
+                                 "[#gamers] @antwah: lol"])
+        self.assertEqual(bot.channel_tag("123456789"), "[#channel-6789] ")
         self.assertEqual(newest, {"10": "8", "11": "9"})   # the blank one still moves the cursor
 
     def test_morning_line_writes_a_draft_and_reuses_it_on_retry(self):
