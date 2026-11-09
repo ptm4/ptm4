@@ -75,6 +75,11 @@ homelab/agentic/skills/dlss5-injector/
 
 .claude
 
+# Generated on opti nightly (gen-agentic-docs.py, ingest.py maintenance); opti's copy is the
+# source of truth and opti-deploy.yml's rsync excludes it. `probe.py --wire claude` pulls a
+# local copy. Untracked 2026-11 because a tracked copy went stale and each deploy reverted opti's.
+homelab/agentic/generated/
+
 # Agent bridge runtime state (Dungine): queue db, envelopes, artifacts, logs. Never commit.
 .agent-state/
 homelab/DND.vbeta/tools/pilot-scratch/

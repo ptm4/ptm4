@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Vaultwarden database dump nightly
+
+[Timer]
+# 01:15: clear of homelab-autoupdate (02:00) and homelab-autoreboot (03:00).
+OnCalendar=*-*-* 01:15:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

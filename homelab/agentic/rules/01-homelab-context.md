@@ -4,8 +4,10 @@ This file is auto-loaded every session. It exists so you never have to grep for 
 or "where does the repo live". If a fact you need is missing here, add it here.
 
 Deeper detail lives in `homelab/agentic/runbooks/`. Live per-host facts (containers, ports,
-mounts, timers) are regenerated nightly into `homelab/agentic/generated/` — prefer those over
-probing a host yourself.
+mounts, timers) are regenerated nightly on opti into `homelab/agentic/generated/` — prefer those
+over probing a host yourself. That folder is **not in git**: the local copy is only as fresh as
+the last `probe.py --wire claude` (check each file's `Generated:` line), while `hl_search_docs`
+always reads opti's copy.
 
 ## Hosts
 

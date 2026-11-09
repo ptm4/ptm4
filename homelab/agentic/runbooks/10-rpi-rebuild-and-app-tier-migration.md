@@ -8,8 +8,8 @@ requires a judgment call; where a choice existed it has already been made and is
 
 | Host | Hardware | OS | Role after this runbook |
 |---|---|---|---|
-| `rpi` 192.168.1.10, MAC `e4:5f:01:89:b6:4d` | Raspberry Pi 4, 4 GB | Ubuntu 24.04 (new) | **DNS + vault only**: Pi-hole, MariaDB, Vaultwarden, nginx-bitwarden |
-| `opti` 192.168.1.11 | Dell OptiPlex 7010 MT, i5-3570 4c/4t, 6 GB DDR3 → **32 GB**, ZFS pool `red` (3.6 TB), root on `sda` ST500DM002 (**264 reallocated sectors, 40 078 h — dying**) | Debian 12, ZFS 2.3.2, kernel 6.12, cgroup v2 | **Storage + control plane + app tier**: webapp, 5 Discord bots, hltv-api, notes, Dozzle, second Pi-hole. (Uptime Kuma landed here too, then moved on to noblenumbat 2026-09-10: opti's ufw dropped its bridge→host probes, and a monitor on opti can't report opti down.) |
+| `rpi` 192.168.1.10, MAC `e4:5f:01:89:b6:4d` | Raspberry Pi 4, 4 GB | Ubuntu 24.04 (new) | **DNS only**: Pi-hole + dozzle-agent. *(Planned as "DNS + vault"; the vault — MariaDB, Vaultwarden, nginx-bitwarden — moved to opti with the app tier on 2026-09-10 instead. Verified 2026-11-09.)* |
+| `opti` 192.168.1.11 | Dell OptiPlex 7010 MT, i5-3570 4c/4t, 6 GB DDR3 → **32 GB**, ZFS pool `red` (3.6 TB), root on `sda` ST500DM002 (**264 reallocated sectors, 40 078 h — dying**) | Debian 12, ZFS 2.3.2, kernel 6.12, cgroup v2 | **Storage + control plane + app tier**: Vaultwarden + MariaDB + nginx-bitwarden, webapp, 5 Discord bots, hltv-api, notes, Dozzle, second Pi-hole. (Uptime Kuma landed here too, then moved on to noblenumbat 2026-09-10: opti's ufw dropped its bridge→host probes, and a monitor on opti can't report opti down.) |
 | `noblenumbat` 192.168.1.6 | Latitude 7400, i7-8665U 4c/8t, 16 GB DDR4 (1 free SODIMM, max 32), NVMe 512 GB, **wired** via ASIX AX88179 USB3 GbE `enx207bd2626533` | Ubuntu 24.04 | unchanged (media). Holds the rescue copy. |
 
 - The network is entirely wired Ethernet. DHCP is served by the TP-Link Archer at 192.168.1.1
@@ -876,28 +876,50 @@ Router: in the Archer's DHCP server settings set primary DNS `192.168.1.10`, sec
 Record changes from now on are made on **both** Pi-holes (same `pihole-FTL --config dns.hosts`
 call on each). That is the whole sync procedure; a sync tool is deliberately not introduced.
 
+### 5.2a Vaultwarden dump and restore (on opti, in the repo — supersedes the old rpi dump)
+
+The rpi-side `homelab-vault-dump.sh` this section used to describe was **never built**, and
+it no longer could be: Vaultwarden moved to opti on 2026-09-10. Audit 2026-11-09 found no
+Vaultwarden dump anywhere. The replacement is infrastructure-as-code, deployed by
+`opti-deploy.yml` (nothing to run by hand):
+
+| Piece | Repo path |
+|---|---|
+| Script | `homelab/hosts/opti/bin/vaultwarden-dump.sh` (runs from the deployed snapshot) |
+| Unit | `homelab/hosts/opti/systemd/homelab-vault-dump.service` — root, oneshot, `OnFailure=hl-notify-failure@%n` → ntfy |
+| Timer | `homelab/hosts/opti/systemd/homelab-vault-dump.timer` — daily 01:15, `Persistent=true`; enabled in opti-deploy's "Verify timers" step |
+
+- **How it's consistent:** `mariadb-dump --single-transaction --routines --triggers` inside
+  `bitwarden-db`, using the container's own `MYSQL_USER`/`MYSQL_PASSWORD` through `MYSQL_PWD`.
+  Online, no lock, no Vaultwarden restart. The script fails (→ ntfy) if the dump lacks its
+  `-- Dump completed` trailer or the `ciphers` table, if `rsa_key.pem` is missing, or if the
+  archive fails `gzip -t`.
+- **What's in an archive:** `vaultwarden/vaultwarden.sql`, `rsa_key.pem`, and
+  `rsa_key.pub.pem` / `config.json` / `attachments/` / `sends/` when they exist, plus `SHA256SUMS`.
+- **Where:** `/srv/docker/backups/vaultwarden/vaultwarden-YYYY-MM-DD.tar.gz` on
+  `red/docker-apps`: deliberately **not** under the `\\opti\red` Samba share. Dir `root:root
+  0700`, files `0600`. **90-day retention** (~200 KB each); pruning runs only after the
+  day's archive is in place. zfs-auto-snapshot also covers the dataset.
+- **Same disk as the live data.** Off-disk/offsite copies were skipped by Peter's choice
+  (2026-11-09); this protects against corruption and bad edits, not losing the pool.
+
+Check it: `ssh opti 'systemctl list-timers homelab-vault-dump.timer --no-pager; sudo ls -la /srv/docker/backups/vaultwarden | tail -3; journalctl -u homelab-vault-dump -n 3 --no-pager'`.
+Run one now: `ssh opti 'sudo systemctl start homelab-vault-dump && journalctl -u homelab-vault-dump -n 2 --no-pager'`.
+
+**Restore** (live; stops the vault for under a minute):
+```bash
+ssh opti 'sudo mkdir -m 700 /tmp/vw && sudo tar -xzf /srv/docker/backups/vaultwarden/vaultwarden-<date>.tar.gz -C /tmp/vw && cd /tmp/vw/vaultwarden && sudo sha256sum -c SHA256SUMS'
+ssh opti 'docker stop bitwarden && sudo cat /tmp/vw/vaultwarden/vaultwarden.sql | docker exec -i bitwarden-db sh -c '"'"'MYSQL_PWD="$MYSQL_PASSWORD" exec mariadb -u"$MYSQL_USER" "$MYSQL_DATABASE"'"'"' && sudo cp /tmp/vw/vaultwarden/rsa_key.pem /srv/docker/compose/vaultwarden-data/ && docker start bitwarden && sudo rm -rf /tmp/vw'
+```
+The dump has `DROP TABLE IF EXISTS` before each table, so it replaces the live tables.
+**Restore test** without touching the live vault: load the archive into a throwaway
+`docker run --rm --network none mariadb:11` container, `CHECK TABLE` everything, compare
+per-table row counts with live, then delete the container.
+
 ### 5.2 Nightly backup of the Pi to the pool
 
-MariaDB dump on the Pi (consistent), then opti pulls `/srv` + the Pi-hole volume + the dump.
-On rpi:
-```bash
-ssh -i ~/.ssh/rpi ptm@192.168.1.10 bash -s <<'EOF'
-set -euo pipefail
-sudo tee /usr/local/bin/homelab-vault-dump.sh >/dev/null <<'SH'
-#!/bin/bash
-set -euo pipefail
-mkdir -p /srv/backups/mariadb
-set -a; . /srv/docker/compose/.env; set +a
-docker exec bitwarden-db mariadb-dump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction --routines "$MYSQL_DATABASE" | gzip > /srv/backups/mariadb/vaultwarden-$(date +%F).sql.gz
-find /srv/backups/mariadb -name '*.sql.gz' -mtime +14 -delete
-SH
-sudo chmod +x /usr/local/bin/homelab-vault-dump.sh
-printf '[Unit]\nDescription=Nightly Vaultwarden DB dump\n[Service]\nType=oneshot\nExecStart=/usr/local/bin/homelab-vault-dump.sh\n' | sudo tee /etc/systemd/system/homelab-vault-dump.service
-printf '[Unit]\nDescription=Nightly Vaultwarden DB dump\n[Timer]\nOnCalendar=*-*-* 01:15:00\nPersistent=true\n[Install]\nWantedBy=timers.target\n' | sudo tee /etc/systemd/system/homelab-vault-dump.timer
-sudo systemctl daemon-reload && sudo systemctl enable --now homelab-vault-dump.timer
-sudo /usr/local/bin/homelab-vault-dump.sh && ls -la /srv/backups/mariadb/
-EOF
-```
+*Not built (as of 2026-11-09). The Pi now holds only Pi-hole, so the vault-dump half of
+the original plan is gone (see 5.2a); `/srv/backups/mariadb` on rpi is an empty leftover.*
 On opti (pull with the collector key `~/.ssh/hl_agents`, already authorized on the Pi):
 ```bash
 ssh -i ~/.ssh/optiplex_omv ptm@192.168.1.11 bash -s <<'EOF'

@@ -10,8 +10,9 @@ each. This tree is the **authoritative source**; everything Claude Code actually
 - `skills/` — one folder per skill, each with `SKILL.md`. Materialized into
   `.claude/skills/`, the only place Claude Code discovers skills.
 - `runbooks/` — per-host / per-subsystem reference, read on demand.
-- `generated/` — **machine-written, do not hand-edit.** Refreshed nightly by the architecture
-  agent; anything you write here is overwritten.
+- `generated/` — **machine-written, do not hand-edit, not in git.** Regenerated nightly *on opti*
+  (the deploy rsync excludes it, so opti's copy is the source). A local copy is only as fresh
+  as the last `probe.py --wire claude`, which pulls it from opti.
 - `harness/` — how the *agent* runs (hooks, permissions, settings), as opposed to how the
   homelab runs. See `harness/README.md`.
 - `proposed/` — draft skills/rules awaiting promotion via `propose.py`.

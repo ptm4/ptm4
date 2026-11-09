@@ -1,0 +1,27 @@
+[Unit]
+# Nightly consistent dump of Vaultwarden's MariaDB + rsa_key.pem into
+# /srv/docker/backups/vaultwarden (red/docker-apps: not on the Samba share, covered by the
+# pool's daily ZFS snapshots). 90-day retention. Script and restore steps:
+# homelab/hosts/opti/bin/vaultwarden-dump.sh; runbook 10 "Vaultwarden dump and restore".
+#
+# Install on opti (the opti-deploy workflow does this on push):
+#   sudo cp homelab-vault-dump.service homelab-vault-dump.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now homelab-vault-dump.timer
+Description=Nightly Vaultwarden database dump
+After=docker.service zfs-mount.service
+Wants=docker.service
+Requires=zfs-mount.service
+OnFailure=hl-notify-failure@%n.service
+
+[Service]
+Type=oneshot
+# root: writes root-only archives and talks to the Docker socket
+User=root
+# guard against a boot race writing into an unmounted /srv/docker
+ExecStartPre=/usr/bin/mountpoint -q /srv/docker
+# bash explicitly: the deployed snapshot does not guarantee the exec bit from a Windows checkout
+ExecStart=/bin/bash /srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti/bin/vaultwarden-dump.sh
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+TimeoutStartSec=10min

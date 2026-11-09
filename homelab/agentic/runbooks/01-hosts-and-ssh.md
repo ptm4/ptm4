@@ -4,8 +4,9 @@
 > [`../rules/01-homelab-context.md`](../rules/01-homelab-context.md), which is auto-loaded every
 > session. This runbook is the deeper reference — read it when the summary isn't enough.
 >
-> Live per-host detail (containers, ports, mounts, timers) is regenerated nightly into
-> [`../generated/`](../generated/) by the architecture agent. Prefer that over re-probing.
+> Live per-host detail (containers, ports, mounts, timers) is regenerated nightly on opti into
+> `../generated/` (not in git; `probe.py --wire claude` pulls a local copy, and
+> `hl_search_docs` reads opti's). Prefer that over re-probing — after checking its `Generated:` line.
 
 ## Hosts
 

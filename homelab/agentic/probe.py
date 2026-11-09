@@ -264,8 +264,11 @@ def _claude_wire():
         "  skill, follow that SKILL.md. Discovery copies land in `.claude/skills/`.\n"
         "- **Runbooks** — `homelab/agentic/runbooks/*.md` are per-host/subsystem reference,\n"
         "  read on demand when the always-on context isn't enough.\n"
-        "- **Generated** — `homelab/agentic/generated/*.md` is refreshed nightly by the\n"
-        "  architecture agent. Prefer it over re-probing a host.\n"
+        "- **Generated** — `homelab/agentic/generated/*.md` is regenerated nightly *on opti*\n"
+        "  and is not in git. The local copy is only as fresh as the last\n"
+        "  `probe.py --wire claude` (check each file's `Generated:` line), or use the\n"
+        "  homelab MCP's `hl_search_docs`, which reads opti's copy. Prefer either over\n"
+        "  re-probing a host.\n"
         "- **Harness** — `homelab/agentic/harness/README.md` explains the hooks that inject\n"
         "  that context and enforce the standing rules.\n\n"
         "See `homelab/agentic/workspace.json` for the machine-readable manifest.\n"
@@ -342,7 +345,59 @@ def _claude_wire():
         os.replace(tmp, settings_path)
         changed.append(".claude/settings.json (hooks)")
 
+    # ── generated docs: pull opti's copy (not in git; see _pull_generated) ─────────
+    pulled = _pull_generated()
+    if pulled:
+        changed.append(pulled)
+
     return (bool(changed), "wired: " + ", ".join(changed) if changed else "already wired")
+
+
+# opti regenerates homelab/agentic/generated/*.md nightly (gen-agentic-docs.py at 00:20,
+# ingest.py's daily maintenance) into its deploy snapshot. That copy is the only source:
+# the folder is gitignored and opti-deploy.yml's rsync excludes it. Until 2026-11 it was
+# tracked, went stale in September, and every deploy copied the stale files back over
+# opti's fresh ones.
+OPTI_GENERATED_DIR = "/srv/red/fs/ptm/repo/ptm4/homelab/agentic/generated"
+
+
+def _pull_generated():
+    """Copy opti's generated/*.md into this working copy. Never fatal: returns a short
+    status string for the wire summary, or None when there was nothing to do."""
+    import io
+    import tarfile
+    if socket.gethostname().split(".")[0].lower() == "opti":
+        return None                      # opti's snapshot already IS the source
+    ssh = which("ssh")
+    if not ssh:
+        return "generated docs NOT refreshed (no ssh client)"
+    try:
+        out = subprocess.run(
+            [ssh, "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "opti",
+             f"tar -C {OPTI_GENERATED_DIR} -cf - ."],
+            capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return f"generated docs NOT refreshed (ssh opti failed: {e})"
+    if out.returncode != 0 or not out.stdout:
+        err = (out.stderr or b"").decode("utf-8", "replace").strip().splitlines()
+        return f"generated docs NOT refreshed (ssh opti: {err[-1] if err else 'exit ' + str(out.returncode)})"
+    dst = os.path.join(REPO_ROOT, AGENTIC_REL, "generated")
+    os.makedirs(dst, exist_ok=True)
+    names = []
+    with tarfile.open(fileobj=io.BytesIO(out.stdout)) as tar:
+        for m in tar.getmembers():
+            name = os.path.basename(m.name)
+            # flat *.md regular files only; never follow a path out of generated/
+            if not m.isfile() or not name.endswith(".md") or m.name.strip("./") != name:
+                continue
+            data = tar.extractfile(m).read()
+            tmp = os.path.join(dst, name + ".tmp")
+            with open(tmp, "wb") as f:
+                f.write(data)
+            os.replace(tmp, os.path.join(dst, name))
+            names.append(name)
+    return f"generated docs pulled from opti ({len(names)}: {', '.join(sorted(names))})" if names \
+        else "generated docs NOT refreshed (opti returned no .md files)"
 
 
 def _codex_detect():
