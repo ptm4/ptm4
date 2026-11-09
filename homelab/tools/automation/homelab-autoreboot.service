@@ -4,6 +4,12 @@
 # also copy homelab-autoreboot.sh to /usr/local/bin/ and chmod +x it.
 Description=Homelab conditional reboot (only if reboot-required)
 After=homelab-autoupdate.service
+# The script exits non-zero when a guard REFUSES the reboot (e.g. opti: no zfs module for
+# the next kernel). Without this the refusal just sat in the journal - from 2026-10-04 to
+# 2026-11-09 nobody knew. hl-notify-failure@ pushes it to ntfy, rate-limited once per 6h.
+# That template exists on opti only (opti-deploy.yml installs this unit there); on a host
+# without it systemd merely logs that the OnFailure job could not be queued.
+OnFailure=hl-notify-failure@%n.service
 
 [Service]
 Type=oneshot

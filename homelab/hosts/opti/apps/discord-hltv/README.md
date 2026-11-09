@@ -43,6 +43,14 @@ stopped loading on home Wi-Fi ("VPN or proxy … blocked"). Current limits:
 - No background warm timer (`HLTV_WARM_SECS=0`); scrapes happen at the digest's `post_times`
   and when a reader's cache is older than its `max_age` (dashboard and bot: 3600s).
 - At most one reader-triggered refresh per `HLTV_REFRESH_MIN_SECS` (1800s).
+- **Quiet hours** `HLTV_QUIET_HOURS` (default `00:30-07:00`, local TZ): reader-triggered
+  refreshes are skipped, so overnight the dashboards show the midnight digest's scrape until
+  the 07:00 digest refreshes it. Added 2026-11-09: Cloudflare challenged the first refresh
+  after ~01:00 ET three nights running (the Pertal poller's, at 01:09), and the resulting 6h
+  backoff made the 07:00 digest post stale data. Digests (`max_age=0`) are never gated.
+- Every scrape logs what started it (`blocking request` / `background refresh`), its duration
+  and match count, and a challenge logs the page and title — `docker logs hltv-api` answers
+  "what hit HLTV and when" without guessing.
 - `DETAIL_CAP` 12 match pages per scrape, 2s between page loads.
 - After any Cloudflare challenge, **no HLTV requests at all for 6h**
   (`HLTV_CHALLENGE_BACKOFF_SECS`), persisted in `/data/challenge_backoff_until` so a restart

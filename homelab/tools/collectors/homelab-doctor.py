@@ -410,6 +410,41 @@ def host_unmounted_datasets(host):
     return bad
 
 
+def host_zfs_next_kernel_gap(host):
+    """The kernel this host boots next, if it has NO zfs module — else None.
+
+    zfs is an out-of-tree DKMS module: it exists for a kernel only if that kernel's
+    headers were installed when it landed. If they weren't, nothing errors at upgrade
+    time; the gap shows up only at the next boot, as a pool that won't import. On opti
+    that is red, i.e. docker data, homelab.db and the \\\\opti\\red share.
+
+    Caught in the wild 2026-11-09: opti got linux-image 6.12.95 on 2026-10-04 with
+    no matching headers, and sat one power blip away from losing the pool for five
+    weeks. The autoreboot guard refused nightly but paged nobody. This check is the
+    standing alarm for it, independent of /var/run/reboot-required.
+
+    "Boots next" = newest kernel with a /boot/vmlinuz (GRUB_DEFAULT=0 on these hosts),
+    the same rule homelab-autoreboot.sh's guard uses. Hosts without ZFS return None.
+    """
+    script = (
+        "PATH=$PATH:/usr/sbin:/sbin; "
+        "command -v zpool >/dev/null 2>&1 && zpool list >/dev/null 2>&1 || exit 3; "
+        "k=$(for d in $(ls -1 /lib/modules); do if [ -e /boot/vmlinuz-$d ]; then echo $d; fi; done "
+        "| sort -V | tail -1); "
+        "[ -n \"$k\" ] || exit 3; "
+        "if modinfo -k \"$k\" zfs >/dev/null 2>&1 "
+        "|| ls /lib/modules/$k/updates/dkms/zfs.ko* >/dev/null 2>&1; "
+        "then echo \"ok $k\"; else echo \"missing $k\"; fi"
+    )
+    out, rc = run_on(host, ["sh", "-c", script], timeout=15)
+    if rc != 0:
+        return None  # no ZFS here, or the probe itself failed — not this check's call
+    fields = out.strip().split()
+    if len(fields) == 2 and fields[0] == "missing":
+        return fields[1]
+    return None
+
+
 def collect_host(host):
     """Per-host disk + docker + VPN watchdog over SSH. Returns (host_dict, findings)."""
     findings = []
@@ -428,6 +463,15 @@ def collect_host(host):
                          "message": (f"[{host.name}] ZFS dataset {ds['dataset']} is NOT mounted at "
                                      f"{ds['mountpoint']} — writes there are going to the "
                                      f"underlying disk, invisible to the share and to backups")})
+    # Critical: the next reboot (planned or a power blip) comes up without the pool.
+    gap_kernel = host_zfs_next_kernel_gap(host)
+    if gap_kernel:
+        findings.append({"severity": "critical",
+                         "message": (f"[{host.name}] next-boot kernel {gap_kernel} has no zfs "
+                                     f"module — a reboot or power blip comes up WITHOUT the "
+                                     f"ZFS pool. Install linux-headers-amd64 so DKMS builds it "
+                                     f"(opti-deploy.yml does), and do not reboot until "
+                                     f"`modinfo -k {gap_kernel} zfs` resolves")})
     autoupdate = host_autoupdate(host)
     if autoupdate is not None:
         autoupdate["hold"] = host_autoupdate_hold(host)

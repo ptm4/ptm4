@@ -454,8 +454,13 @@ Restore a file: right-click → Previous Versions on Windows, or copy from
 
 **DKMS caveat:** ZFS is out-of-tree (zfs-dkms 2.3.2, bookworm-backports — the base-repo
 2.1.11 does NOT build against kernel 6.12). `homelab-autoreboot.sh` refuses to reboot if
-the newest installed kernel has no zfs module built. Check after any manual
-`dist-upgrade`: `dkms status && modinfo -k $(ls /lib/modules | sort -V | tail -1) zfs`.
+the newest installed kernel has no zfs module built, and that refusal now pages ntfy
+(`OnFailure=hl-notify-failure@`); homelab-doctor also raises a critical finding whenever
+the next-boot kernel lacks zfs. DKMS can only build when headers are installed, so opti
+must carry the **`linux-headers-amd64` metapackage**, never just a versioned
+`linux-headers-6.12.x` (that gap left 6.12.95 without zfs from 2026-10-04 to 11-09);
+`opti-deploy.yml` installs it and fails the deploy if the module is missing. Check after any
+manual upgrade: `dkms status && modinfo -k $(ls /lib/modules | sort -V | tail -1) zfs`.
 
 ### Cold copy (`homelab-coldcopy`)
 

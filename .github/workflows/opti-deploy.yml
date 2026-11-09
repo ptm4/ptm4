@@ -29,11 +29,45 @@ on:
 jobs:
   deploy:
     runs-on: [self-hosted, opti]
-    timeout-minutes: 10
+    # 30, not 10: the headers step below may run a one-time zfs DKMS compile (a few minutes).
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # ZFS is out-of-tree (zfs-dkms), and DKMS can only build for a kernel whose headers
+      # are installed. Only the linux-headers-amd64 METApackage makes headers follow every
+      # new linux-image-amd64. Until 2026-11-09 opti had just the versioned
+      # linux-headers-6.12.94, so the 2026-10-04 upgrade to 6.12.95 got no zfs module and
+      # any reboot (or power blip) would have come up without pool red. This step makes
+      # the metapackage part of opti's definition, and fails the deploy loudly if the kernel
+      # GRUB boots next (GRUB_DEFAULT=0 = newest) still has no zfs module. A no-op once
+      # the metapackage is in. Runs before the snapshot sync so the doctor's
+      # "next kernel lacks zfs" check never sees a half-done deploy.
+      - name: Kernel headers track the kernel (zfs DKMS)
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }
+          if ! installed zfs-dkms; then
+            echo "zfs-dkms not installed - nothing to do"; exit 0
+          fi
+          if ! installed linux-headers-amd64; then
+            echo "Installing linux-headers-amd64; the DKMS hook builds zfs for the new kernel"
+            sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=300 \
+                 install -y -t bookworm-backports linux-headers-amd64
+          fi
+          # newest kernel that is actually bootable (has a vmlinuz) - leftover /lib/modules
+          # dirs from purged kernels must not count
+          next_kernel=$(for k in $(ls -1 /lib/modules); do if [ -e "/boot/vmlinuz-$k" ]; then echo "$k"; fi; done | sort -V | tail -1)
+          if ! /usr/sbin/modinfo -k "$next_kernel" zfs >/dev/null 2>&1; then
+            echo "::error::no zfs module for $next_kernel (the kernel opti boots next) - a reboot would come up without pool red"
+            sudo /usr/sbin/dkms status || true
+            exit 1
+          fi
+          echo "zfs module present for next-boot kernel $next_kernel"
 
       - name: Sync the homelab/ snapshot the dispatcher, homelab-db, and webapp read (plain directory, not a git repo)
         run: |

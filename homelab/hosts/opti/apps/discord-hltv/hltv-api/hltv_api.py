@@ -81,15 +81,44 @@ def backoff_until():
         return 0.0
 
 
-def start_backoff():
+def start_backoff(where=""):
     until = time.time() + CHALLENGE_BACKOFF_SECS
     try:
         with open(BACKOFF_PATH, "w") as f:
             f.write(str(until))
     except OSError:
         pass
-    log(f"Cloudflare challenge: no HLTV requests until "
+    log(f"Cloudflare challenge{' ' + where if where else ''}: no HLTV requests until "
         f"{datetime.fromtimestamp(until).isoformat(timespec='seconds')}")
+
+
+# Overnight, reader-triggered refreshes are skipped: readers get the midnight digest's
+# scrape until the 07:00 digest scrapes again. Nobody reads the dashboards at 3 AM, and
+# Cloudflare challenged the first refresh after ~01:00 ET every night of 2026-11-07..09
+# (the Pertal poller's, landing at 01:09 because the midnight scrape re-anchors the 1h
+# cache). That challenge's 6h backoff then made the 07:00 digest post stale data.
+# Only background refreshes are gated — a caller that asks to block (the digest's
+# max_age=0) still scrapes. "HH:MM-HH:MM" in local time (TZ); empty disables it.
+QUIET_HOURS = os.environ.get("HLTV_QUIET_HOURS", "00:30-07:00")
+QUIET_TZ = os.environ.get("TZ", "America/New_York")
+
+
+def _hhmm(s):
+    h, m = s.strip().split(":")
+    return int(h) * 60 + int(m)
+
+
+def in_quiet_hours(now=None):
+    if not QUIET_HOURS.strip():
+        return False
+    try:
+        start, end = (_hhmm(p) for p in QUIET_HOURS.split("-"))
+    except ValueError:
+        return False
+    now = now or datetime.now(ZoneInfo(QUIET_TZ))
+    cur = now.hour * 60 + now.minute
+    # a window may wrap midnight ("23:00-07:00")
+    return start <= cur < end if start <= end else (cur >= start or cur < end)
 
 
 def log(msg):
@@ -213,7 +242,7 @@ class Browser:
             title = (page.title() or "")
             if any(m in title.lower() for m in CHALLENGE_TITLES):
                 _state["challenge_detected"] = True
-                start_backoff()
+                start_backoff(f"on {path} (title {title!r})")
                 raise Challenged(f"Cloudflare challenge on {path} (title {title!r})")
             raise RuntimeError(f"{path}: {ready_sel} never appeared (title {title!r})")
         finally:
@@ -615,9 +644,13 @@ def get_day(date_str, tzname, max_age=0):
     hit = _day_cache.get(key)
     if hit and max_age and time.time() - hit["at"] <= max_age:
         return hit["payload"]
+    t0 = time.time()
     try:
         payload = scrape(lambda: scrape_day(date_str, tzname))
-    except Exception:
+        log(f"day scrape {date_str}: ok in {time.time() - t0:.0f}s, "
+            f"{len(payload['matches'])} matches")
+    except Exception as e:
+        log(f"day scrape {date_str}: failed after {time.time() - t0:.0f}s ({e})")
         # Serve the last good scrape of this day rather than nothing.
         try:
             with open(lastgood_path(date_str)) as f:
@@ -662,6 +695,8 @@ def _refresh_day_async(date_str, tzname):
     """
     key = (date_str, tzname)
     now = time.time()
+    if in_quiet_hours():
+        return
     with _refresh_lock:
         if key in _refreshing:
             return
@@ -672,6 +707,7 @@ def _refresh_day_async(date_str, tzname):
 
     def run():
         try:
+            log(f"day scrape {date_str}: background refresh (a reader's cache was stale)")
             in_browser(lambda: get_day(date_str, tzname, 0))
         except Exception as e:
             log(f"background day refresh failed: {e}")
@@ -782,6 +818,7 @@ class Handler(BaseHTTPRequestHandler):
                 # midnight digest, which has no last-good file for the new date yet.
                 # Only a caller that named a tolerance gets the non-blocking path.
                 if max_age <= 0 or one("blocking") in ("1", "true", "yes"):
+                    log(f"day scrape {date_str}: blocking request (max_age={max_age})")
                     return self._send(200, in_browser(
                         lambda: get_day(date_str, tzname, max_age)))
 
