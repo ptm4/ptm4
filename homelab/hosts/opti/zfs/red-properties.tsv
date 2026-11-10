@@ -1,0 +1,28 @@
+# ZFS properties for opti's pool `red`, applied by apply-zfs-properties.sh from
+# .github/workflows/opti-deploy.yml on every deploy. This file is the source of truth:
+# a `zfs set` by hand on opti is reverted by the next deploy (for properties listed here).
+#
+# Format: dataset<TAB>property<TAB>value  (tabs or spaces; # starts a comment)
+#   value `inherit` -> `zfs inherit` (removes a local setting). Deleting a line does NOT
+#   undo it on the host; change the value to `inherit` (or `none` for quota/reservation),
+#   deploy, then delete the line.
+#
+# Why each line (measured 2026-11-09, pool 3.62T at 76%, see README.md):
+
+# red/media is Movies + Shows (Sonarr/Radarr write here over SMB from noblenumbat) and Assets
+# (a copy of E:\Assets on ptm). 1.20T today. The quota caps it so the *arr stack can never
+# fill the pool: at 1.5T media plus today's red/fs the pool tops out near 85%. The doctor
+# warns at 90% of the quota (homelab-doctor.py QUOTA_WARN_PCT).
+red/media	quota	1.5T
+
+# Media is re-downloadable or mirrored, and *arr upgrades delete files, which snapshots would
+# then hold for up to 12 months (monthly keep=12). NOTE: zfs-auto-snapshot also stops PRUNING
+# a dataset once it is excluded, so snapshots taken before this was set never expire on their
+# own and must be destroyed by hand (a separate, approved step).
+red/media	com.sun:auto-snapshot	false
+
+# Guaranteed space for the app tier and homelab.db, so a full pool (a big copy into red/fs)
+# cannot stop the vault, bots, notes, docker or the homelab-db from writing.
+red/docker	reservation	20G
+red/docker-apps	reservation	20G
+red/opsdb	reservation	5G
