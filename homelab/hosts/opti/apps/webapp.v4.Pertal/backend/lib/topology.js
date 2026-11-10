@@ -5,7 +5,16 @@
 //
 // An edge is "broken" only if one end is actually DOWN (unreachable / not running) —
 // never merely because it has findings. opti with a disk warning still serves DNS.
+//
+// Source of truth for WHAT EXISTS is the live container inventory, not this file:
+// SERVICES below only groups and orders containers. Any container no service claims
+// still gets its own card (`auto: true`), so a new container can never silently go
+// missing from the diagram again (readarr, audiobookshelf and the cockpit gateways
+// once did). Auto cards take their label/sub/kind from the architecture map's
+// generated data.json when PERTAL_ARCH_DATA points at a readable copy, else the
+// container name.
 'use strict';
+const fs = require('node:fs');
 
 const EXTERNAL = [
   { id: 'internet', label: 'Internet', sub: 'WAN · hltv.org · Twitch', kind: 'external' },
@@ -29,6 +38,7 @@ const SERVICES = [
   { id: 'hltv', host: 'opti', label: 'hltv-api', sub: 'CS2 scraper', kind: 'apps', members: ['opti:hltv-api'] },
   { id: 'notes', host: 'opti', label: 'Notes', sub: 'notes-api', kind: 'apps', members: ['opti:notes-api'] },
   { id: 'dozzle', host: 'opti', label: 'Dozzle', sub: 'every container log', kind: 'infra', members: ['opti:dozzle'] },
+  { id: 'cockpit', host: 'opti', label: 'Cockpit gateways', sub: 'Console bridges', kind: 'infra', match: /^cockpit-/ },
 
   { id: 'jellyfin', host: 'noblenumbat', label: 'Jellyfin', sub: 'streaming · HW transcode', kind: 'media', members: ['noblenumbat:jellyfin'] },
   { id: 'arr', host: 'noblenumbat', label: '*arr stack', sub: '', kind: 'media',
@@ -37,6 +47,8 @@ const SERVICES = [
     members: ['noblenumbat:qbittorrent', 'noblenumbat:sabnzbd', 'noblenumbat:flaresolverr'] },
   { id: 'gluetun', host: 'noblenumbat', label: 'Gluetun', sub: 'VPN gateway', kind: 'network', members: ['noblenumbat:gluetun'] },
   { id: 'kavita', host: 'noblenumbat', label: 'Kavita', sub: 'comics & books', kind: 'media', members: ['noblenumbat:kavita'] },
+  { id: 'readarr', host: 'noblenumbat', label: 'Readarr', sub: 'books → Kavita', kind: 'media', members: ['noblenumbat:readarr'] },
+  { id: 'audiobookshelf', host: 'noblenumbat', label: 'Audiobookshelf', sub: 'audiobooks', kind: 'media', members: ['noblenumbat:audiobookshelf'] },
   { id: 'streams', host: 'noblenumbat', label: 'stream-station', sub: 'live streams → HLS', kind: 'media', members: ['noblenumbat:stream-station'] },
   { id: 'kuma', host: 'noblenumbat', label: 'Uptime Kuma', sub: 'watches from outside', kind: 'infra', members: ['noblenumbat:uptime-kuma'] },
   { id: 'ntfy', host: 'noblenumbat', label: 'ntfy', sub: 'phone push', kind: 'infra', members: ['noblenumbat:ntfy'] },
@@ -53,6 +65,8 @@ const EDGES = [
   { from: 'host:rpi', to: 'host:noblenumbat', label: 'DNS', kind: 'dns' },
   { from: 'samba', to: 'jellyfin', label: 'media library (CIFS)', kind: 'storage' },
   { from: 'samba', to: 'arr', label: 'imports into the library', kind: 'storage' },
+  { from: 'readarr', to: 'downloaders', label: 'grabs books', kind: 'media' },
+  { from: 'readarr', to: 'kavita', label: 'imports books', kind: 'media' },
   { from: 'seerr', to: 'arr', label: 'approved requests', kind: 'media' },
   { from: 'arr', to: 'downloaders', label: 'grabs releases', kind: 'media' },
   { from: 'downloaders', to: 'gluetun', label: 'shares its network', kind: 'vpn' },
@@ -67,7 +81,34 @@ const EDGES = [
 const RANK = { ok: 0, offline: 0, unknown: 1, warn: 2, crit: 3 };
 const worse = (a, b) => (RANK[b] > RANK[a] ? b : a);
 
-function buildTopology(resources) {
+// data.json labels for auto cards, keyed `host:container`. Re-read when the file changes
+// (the deploy rsyncs a fresh copy); any failure just means container-name labels.
+const DIAGRAM_KINDS = new Set(['network', 'storage', 'media', 'apps', 'infra']);
+const ARCH_KIND = { network: 'network', storage: 'storage', media: 'media', apps: 'apps', app: 'apps', bots: 'apps', automation: 'infra', observability: 'infra', monitoring: 'infra' };
+let archCache = { path: null, mtime: 0, map: new Map() };
+function archLabels(file = process.env.PERTAL_ARCH_DATA) {
+  if (!file) return new Map();
+  try {
+    const { mtimeMs } = fs.statSync(file);
+    if (archCache.path === file && archCache.mtime === mtimeMs) return archCache.map;
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const map = new Map();
+    for (const n of data.nodes || []) {
+      if (n.container && n.host) map.set(`${n.host}:${n.container}`, n);
+    }
+    archCache = { path: file, mtime: mtimeMs, map };
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+const autoKind = (r, node) => {
+  const k = node && ARCH_KIND[node.category];
+  if (k && DIAGRAM_KINDS.has(k)) return k;
+  return r.kind === 'infra' ? 'infra' : 'apps';
+};
+
+function buildTopology(resources, { archData } = {}) {
   const byId = new Map(resources.map((r) => [r.id, r]));
   const hostsOut = resources.filter((r) => r.type === 'host').map((h) => ({
     id: h.id, label: h.name, status: h.status, online: h.online, state_text: h.state_text,
@@ -80,13 +121,27 @@ function buildTopology(resources) {
   }));
   const hostById = new Map(hostsOut.map((h) => [h.id, h]));
 
+  const claimed = new Set();
+  const containerOf = (s) => (s.match
+    ? resources.filter((r) => r.type === 'container' && r.host === s.host && s.match.test(r.name))
+    : (s.members || []).map((id) => byId.get(id)).filter(Boolean));
+  for (const s of SERVICES) for (const m of containerOf(s)) claimed.add(m.id);
+
+  // Unclaimed containers become their own cards, after the curated ones on that host.
+  const arch = archLabels(archData);
+  const taken = new Set(SERVICES.map((s) => s.id));
+  const autos = resources.filter((r) => r.type === 'container' && !claimed.has(r.id)).map((r) => {
+    const node = arch.get(`${r.host}:${r.name}`);
+    const id = taken.has(r.name) ? `auto:${r.id}` : r.name;
+    taken.add(id);
+    return { id, host: r.host, label: node?.label || r.name, sub: node?.sublabel || '', kind: autoKind(r, node), members: [r.id], auto: true };
+  });
+
   const services = [];
-  for (const s of SERVICES) {
+  for (const s of [...SERVICES, ...autos]) {
     const host = hostById.get(s.host);
     if (!host) continue;
-    const members = s.match
-      ? resources.filter((r) => r.type === 'container' && r.host === s.host && s.match.test(r.name))
-      : (s.members || []).map((id) => byId.get(id)).filter(Boolean);
+    const members = containerOf(s);
     if (!s.hostLevel && !members.length) continue; // not deployed (e.g. Seerr before it exists)
     let status = 'ok';
     let down = false;
@@ -105,6 +160,7 @@ function buildTopology(resources) {
       count: members.length,
       resource: members.length === 1 ? members[0].id : s.hostLevel ? s.host : null,
       members: members.map((m) => ({ id: m.id, name: m.name, status: m.status })),
+      ...(s.auto ? { auto: true } : {}),
     });
   }
 
@@ -119,4 +175,4 @@ function buildTopology(resources) {
   return { external: EXTERNAL, router: ROUTER, hosts: hostsOut, services, edges, nodes: [...EXTERNAL, ROUTER] };
 }
 
-module.exports = { buildTopology, SERVICES, EDGES };
+module.exports = { buildTopology, archLabels, SERVICES, EDGES };

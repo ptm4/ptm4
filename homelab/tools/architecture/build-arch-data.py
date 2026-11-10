@@ -1011,7 +1011,6 @@ STORAGE = {
 
 AUTOMATION = [
     {"host": "opti", "unit": "homelab-docs.timer", "when": "daily ~05:16", "what": "Regenerates homelab docs"},
-    {"host": "opti", "unit": "opti-health-digest.timer", "when": "daily 06:30", "what": "Feeds the Discord health bot"},
     {"host": "opti", "unit": "hl-agent-dispatcher.service", "when": "always on", "what": "Agent control API on :9099"},
     {"host": "opti", "unit": "homelab-db.service", "when": "always on", "what": "homelab.db read-only API + MCP on :9100"},
     {"host": "opti", "unit": "homelab-db-ingest.timer", "when": "*:12,42", "what": "Folds reports, architecture data and docs into homelab.db"},

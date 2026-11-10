@@ -168,8 +168,12 @@ services:
       READARR_API_KEY: ${READARR_API_KEY:-}
       # Asset Library: the read-only asset server on the workstation (homelab/hosts/ptm/asset-server).
       ASSET_SERVER_URL: ${ASSET_SERVER_URL:-http://192.168.1.3:8767}
+      # Topology labels for containers no curated service claims (lib/topology.js). The
+      # architecture map's generated data.json, read from the deploy snapshot below.
+      PERTAL_ARCH_DATA: /workspace/homelab/hosts/opti/apps/webapp.v3.Fable/frontend-legacy/architecture/data.json
     volumes:
       - arch_data:/arch-data
+      - /srv/red/fs/ptm/repo/ptm4:/workspace:ro
     expose:
       - "3000"
     networks:

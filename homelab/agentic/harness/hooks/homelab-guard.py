@@ -137,7 +137,7 @@ RULES = [
         "webapp-deploy-dir", "deny", _webapp_deploy_dir,
         "/srv/docker/compose/webapp on opti is a deploy target, not source — the next CI run "
         "(opti-apps-deploy.yml) overwrites it. Edit homelab/hosts/opti/apps/webapp.v3.Fable/ "
-        "in the repo instead (the live app since 2026-09-10; v2.legacy is undeployed) and "
+        "in the repo instead (the live app since 2026-09-10) and "
         "tell Peter to push. Copying into this dir is allowed; editing in place is the trap.",
     ),
     (

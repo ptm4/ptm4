@@ -10,9 +10,8 @@ name: Deploy opti App Tier
 # folder keeps only its pihole compose, which rpi-deploy.yml owns.
 #
 # GO-LIVE 2026-09-10: the deployed webapp is now webapp.v3.Fable (Svelte 5), on
-# Peter's call. webapp.v2.legacy remains in the repo, undeployed and untouched —
-# rollback is `git revert` of the commit that flipped these paths, nothing on the
-# host to unpick. The smoke gate compares against v3's own committed baseline
+# Peter's call. webapp.v2.legacy was removed in Nov 2026 (tag webapp-v2-legacy-final);
+# nothing on the host to unpick. The smoke gate compares against v3's own committed baseline
 # (77 routes), which includes every v2-era route shape — the freeze is still held.
 
 on:
@@ -30,6 +29,7 @@ on:
       - "homelab/hosts/opti/apps/discord-jellyfin/**"
       - "homelab/hosts/opti/apps/discord-sports/**"
       - "homelab/hosts/opti/apps/discord-hltv/**"
+      - "homelab/tools/architecture/**"
       - ".github/workflows/opti-apps-deploy.yml"
   workflow_dispatch:
 
@@ -84,6 +84,16 @@ jobs:
           rsync -a --delete --exclude 'node_modules' \
             "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/webapp.v3.Fable/" /srv/docker/compose/webapp/
           cp "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/nginx-wg.conf" /srv/docker/compose/nginx-wg.conf.candidate
+
+      - name: Build the architecture map's data.json from source
+        # checks.yml only validates build-arch-data.py (--check writes nothing), so until
+        # 2026-11 source edits never reached the map: the deployed data.json was whatever
+        # was last committed by hand. Build it here instead, over the rsynced copy. The
+        # script validates before writing, so a broken map fails the deploy before any
+        # container is touched. The committed data.json is only the browser's fallback.
+        run: |
+          python3 "$GITHUB_WORKSPACE/homelab/tools/architecture/build-arch-data.py" \
+            --out /srv/docker/compose/webapp/frontend-legacy/architecture/data.json
 
       - name: Sync Cockpit gateway context
         run: |

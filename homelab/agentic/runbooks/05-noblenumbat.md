@@ -12,9 +12,10 @@ holds a copy of the repo. Earlier revisions of this runbook called it the primar
 said "edit there — the opti mount is stale"; that is wrong, and following it sends you to a
 path that does not exist.
 
-The working copy is `/home/ptm/opti/ptm/repo/ptm4` on **tux**, which is a CIFS mount of opti's
-pool — see [`01-hosts-and-ssh.md`](01-hosts-and-ssh.md). Deleting that clone is also what
-destroyed the only copy of several gitignored skills and rules.
+Deleting that clone is also what destroyed the only copy of several (then gitignored) skills
+and rules. For where the working copy lives now, see "Where the repo lives" in
+[`../rules/01-homelab-context.md`](../rules/01-homelab-context.md) — not restated here so it
+can't drift again.
 
 ## Known incident: cooling outage (2026-07-16)
 - **Symptom:** the whole host went unreachable.
@@ -87,7 +88,8 @@ curl -s http://192.168.1.6:8098/status | python3 -c "import json,sys; [print(s['
 ### Other things that bite
 
 - **Token mismatch → every start returns 401.** `HL_STREAM_TOKEN` in `/opt/yams/.env` must
-  equal the one in the rpi webapp's `/srv/docker/compose/.env`. Neither file is in git, and
+  equal the one in the webapp's `/srv/docker/compose/.env` on **opti** (the app tier moved
+  off rpi 2026-09-10). Neither file is in git, and
   the deploy workflows never touch `.env` — so a rebuilt host needs it re-added by hand.
 - **Nothing plays but `/status` says running** → check the video path separately from the
   control path. `curl -sk https://webapp.lan:8443/hls/slot1/index.m3u8` must return a

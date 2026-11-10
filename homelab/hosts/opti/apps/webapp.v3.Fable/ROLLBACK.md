@@ -1,5 +1,9 @@
 # Rolling back v3.Fable
 
+> **Nov 2026:** `webapp.v2.legacy/` is no longer in the tree. To roll back to it,
+> restore it first: `git checkout webapp-v2-legacy-final -- homelab/hosts/opti/apps/webapp.v2.legacy`,
+> then revert the flip commit as below.
+
 Written at go-live (2026-09-10), before it was needed, because a rollback plan
 authored mid-outage is a plan written by the least qualified person you will ever
 be. The premise of the whole scheme: **nothing on opti needs to be unpicked by

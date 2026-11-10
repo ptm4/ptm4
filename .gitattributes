@@ -1,0 +1,41 @@
+# Line endings: the repo stores LF, and the working copy holds LF too, on every OS.
+# This overrides core.autocrlf (Git for Windows sets it true system-wide), so a file
+# copied by hand from the Windows tree to a Linux host is byte-identical to what CI ships.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF on disk. cmd.exe misparses labels/GOTO in LF batch files.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+# PowerShell runs on Windows here (Task Scheduler, 5.1 and 7); CRLF matches Windows tooling.
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+
+# Binaries: never convert, never diff as text.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.webp   binary
+*.ico    binary
+*.icns   binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.tgz    binary
+*.7z     binary
+*.xlsx   binary
+*.docx   binary
+*.db     binary
+*.sqlite binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.exe    binary
+*.dll    binary
+*.lib    binary
+*.exp    binary
+*.ilk    binary
+*.pdb    binary
+*.obj    binary

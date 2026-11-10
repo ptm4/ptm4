@@ -13,8 +13,11 @@ into `.claude/` by `homelab/agentic/probe.py --wire claude`.
   skill, follow that SKILL.md. Discovery copies land in `.claude/skills/`.
 - **Runbooks** — `homelab/agentic/runbooks/*.md` are per-host/subsystem reference,
   read on demand when the always-on context isn't enough.
-- **Generated** — `homelab/agentic/generated/*.md` is refreshed nightly by the
-  architecture agent. Prefer it over re-probing a host.
+- **Generated** — `homelab/agentic/generated/*.md` is regenerated nightly *on opti*
+  and is not in git. The local copy is only as fresh as the last
+  `probe.py --wire claude` (check each file's `Generated:` line), or use the
+  homelab MCP's `hl_search_docs`, which reads opti's copy. Prefer either over
+  re-probing a host.
 - **Harness** — `homelab/agentic/harness/README.md` explains the hooks that inject
   that context and enforce the standing rules.
 

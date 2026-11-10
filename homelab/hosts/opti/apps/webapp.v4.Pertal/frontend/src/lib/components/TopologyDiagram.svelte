@@ -6,6 +6,7 @@
     ShieldCheck, Send, HardDrive, LayoutDashboard, KeyRound, Inbox, Bot, Crosshair,
     NotebookPen, ScrollText, Clapperboard, Library, Download, Shield, BookOpen, Radio, Activity,
     BellRing, Container, Cpu, Globe, MessageSquare, Lock, Router, Server, Smartphone, Tags,
+    SquareTerminal, BookMarked, Headphones,
   } from '@lucide/svelte';
   import { layoutTopology, HEADER, type LEdge, type Layout } from '$lib/topology-layout';
   import { pct } from '$lib/format';
@@ -21,6 +22,7 @@
     vault: KeyRound, seerr: Inbox, bots: Bot, hltv: Crosshair, notes: NotebookPen, dozzle: ScrollText,
     jellyfin: Clapperboard, arr: Library, downloaders: Download, gluetun: Shield, kavita: BookOpen,
     streams: Radio, kuma: Activity, ntfy: BellRing, portainer: Container, llama: Cpu,
+    cockpit: SquareTerminal, readarr: BookMarked, audiobookshelf: Headphones,
     internet: Globe, discord: MessageSquare, proton: Lock, router: Router,
   };
   const KIND: Record<string, { color: string; label: string; dur: string }> = {

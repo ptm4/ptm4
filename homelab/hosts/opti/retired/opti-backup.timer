@@ -1,0 +1,10 @@
+[Unit]
+Description=Run opti-backup nightly at 01:00
+
+[Timer]
+OnCalendar=*-*-* 01:00:00
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

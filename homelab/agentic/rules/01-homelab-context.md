@@ -100,7 +100,8 @@ will get a hard denial rather than a warning.
 - **Never edit `/srv/docker/compose/webapp/` on opti as the fix.** That is a deploy target, not
   the source — the next CI run (`opti-apps-deploy.yml`) reverts it. Edit
   `homelab/hosts/opti/apps/webapp.v3.Fable/` in the repo — the live app since 2026-09-10.
-  `webapp.v2.legacy/` and `webapp.v3.Astra/` are undeployed.
+  `webapp.v2.legacy/` and `webapp.v3.Astra/` were removed in Nov 2026 (git tags
+  `webapp-v2-legacy-final`, `webapp-v3-astra-final`).
 - **Never `git commit`, `amend`, `reset`, or push.** Peter commits his own work. Make the change
   and say what needs committing. (The `doc-builder` agent's post-commit docs commit is the one
   sanctioned exception — Peter set it up and it only runs after *his* commits.)

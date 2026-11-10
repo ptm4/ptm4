@@ -22,7 +22,7 @@ page**, and the first job is picking the right page.
 | **Source** | `homelab/hosts/opti/apps/webapp.v3.Fable/` (Svelte 5 + SvelteKit SPA, Fastify backend) — edit here |
 | **Deploy** | push to `main`; `.github/workflows/opti-apps-deploy.yml` builds the frontend and syncs to opti |
 | **Never** | edit `/srv/docker/compose/webapp/` on opti — the next run's `rsync --delete` reverts it |
-| **Not deployed** | `webapp.v2.legacy/` (the old React board app) and `webapp.v3.Astra/` — don't port widgets *into* them |
+| **Removed** | `webapp.v2.legacy/` and `webapp.v3.Astra/` (Nov 2026; git tags `webapp-v2-legacy-final`, `webapp-v3-astra-final`) |
 
 For a whole new page or an API route, see [`add-to-webapp`](../add-to-webapp/SKILL.md) — it
 also covers deploy, smoke contract, mounts and nginx in full. Peter commits and pushes; you don't.

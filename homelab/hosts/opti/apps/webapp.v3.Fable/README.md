@@ -4,16 +4,16 @@ The third generation of the homelab dashboard, built side by side with the live 
 
 | Folder (`homelab/hosts/opti/apps/`) | What it is |
 |---|---|
-| `webapp.v2.legacy/` | **The live site.** CI (`rpi-deploy.yml`) builds and deploys this to `/srv/docker/compose/webapp/` on rpi. Read-only reference for v3 work. |
-| `webapp.v3.Astra/` | A parallel v3 built by another agent. Not ours — never edit it. |
-| `webapp.v3.Fable/` | **This folder.** Not wired into CI until go-live is approved. |
+| `webapp.v2.legacy/` | Removed Nov 2026 — git tag `webapp-v2-legacy-final`. |
+| `webapp.v3.Astra/` | Removed Nov 2026 — git tag `webapp-v3-astra-final`. |
+| `webapp.v3.Fable/` | **This folder.** Live on `:8443` since 2026-09-10 until Pertal (`webapp.v4.Pertal/`) takes over. |
 
 Cross-agent coordination (claims, ports, issues) lives in `AgentComms.md` at the repo root.
 
 ## What changed from v2
 
 - **Frontend rewritten in Svelte 5 + SvelteKit** (static-adapter SPA). The React/Vite app is
-  gone from this folder; its reference copy is `webapp.v2.legacy/frontend/`.
+  gone from this folder; its reference copy is `webapp.v2.legacy/frontend/` at tag `webapp-v2-legacy-final`.
 - **Board engine is gridstack.js** (framework-agnostic, touch-first). Saved board documents
   from `/api/ui/boards/*` load unchanged — the client adapter maps the persisted
   `{i,x,y,w,h}` layouts onto gridstack nodes.

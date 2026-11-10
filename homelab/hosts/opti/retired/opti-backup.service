@@ -1,0 +1,9 @@
+[Unit]
+Description=opti nightly Borg backup to noblenumbat
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/opti-backup.sh
+TimeoutStartSec=4h

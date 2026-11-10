@@ -91,7 +91,41 @@ jobs:
           sudo cp "$GITHUB_WORKSPACE"/homelab/tools/automation/*.service \
                   "$GITHUB_WORKSPACE"/homelab/tools/automation/*.timer \
                   /etc/systemd/system/
+          # Drop-ins (<unit>.d/*.conf), e.g. docker.service.d/10-zfs.conf: Docker waits for the ZFS mounts.
+          for d in "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.d; do if [ -d "$d" ]; then sudo install -D -m644 -t "/etc/systemd/system/$(basename "$d")" "$d"/*.conf; fi; done
           sudo systemctl daemon-reload
+
+      # persistence-auditor auto-accepts a unit file only when its path AND full sha256 match
+      # this manifest, so units CI installed stop reading as "NEW persistence entry" forever
+      # (434 of 806 warnings in Oct-Nov 2026 were exactly that). Hashes come from the git
+      # checkout, not the installed copies; the file is root-owned 0644 outside the Samba
+      # share, and the auditor ignores it if anyone but root can write it. A unit edited by
+      # hand after a deploy no longer matches and is flagged as before.
+      - name: Record the unit files this deploy installed (persistence-auditor manifest)
+        run: |
+          set -euo pipefail
+          tmp=$(mktemp)
+          echo "# installed by opti-deploy.yml at $GITHUB_SHA on $(date -u +%FT%TZ)" > "$tmp"
+          for f in "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.service \
+                   "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.timer \
+                   "$GITHUB_WORKSPACE"/homelab/tools/automation/*.service \
+                   "$GITHUB_WORKSPACE"/homelab/tools/automation/*.timer; do
+            if [ -f "$f" ]; then echo "$(sha256sum "$f" | cut -d' ' -f1)  /etc/systemd/system/$(basename "$f")" >> "$tmp"; fi
+          done
+          for f in "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.d/*.conf; do
+            if [ -f "$f" ]; then echo "$(sha256sum "$f" | cut -d' ' -f1)  /etc/systemd/system/$(basename "$(dirname "$f")")/$(basename "$f")" >> "$tmp"; fi
+          done
+          sudo install -D -m 0644 -o root -g root "$tmp" /etc/homelab/deployed-units.sha256
+          rm -f "$tmp"
+          echo "$(grep -vc '^#' /etc/homelab/deployed-units.sha256) unit files recorded"
+
+      # The auditor's baseline used to live under HL_DATA_DIR on /srv/red/fs, which Samba
+      # exports as \\opti\red - anyone with share write access could edit it and accept
+      # their own persistence. /srv/red/opsdb is on the pool but not exported (it already
+      # holds homelab.db). ptm, not root: the collector runs as ptm and must write it.
+      - name: Persistence-auditor state dir (not on the Samba share)
+        run: |
+          sudo install -d -o ptm -g ptm -m 0700 /srv/red/opsdb/hl-agents-state /srv/red/opsdb/hl-agents-state/persistence
 
       - name: Restart the dispatcher (it runs from the synced snapshot)
         run: |

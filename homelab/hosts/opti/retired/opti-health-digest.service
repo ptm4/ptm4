@@ -1,0 +1,6 @@
+[Unit]
+Description=opti daily health digest
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/opti-health-digest.sh

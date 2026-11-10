@@ -134,7 +134,9 @@ tests it on every push. The `add-to-webapp` skill now documents Pertal (v3 = fix
    app opens and says "Can't reach opti" with a Kuma link. SSE self-heals: reconnects after a
    502 (deploys) and a 15s ping + 45s watchdog catches a proxy holding a dead stream open.
 7. Cutover: CI path filter → v4, nginx → v4; tag `webapp-v3-fable-final`; delete Fable after two
-   quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy. The skills already
+   quiet weeks. Harvest Astra first, then tag + delete Astra and v2.legacy (Nov 2026: Astra's
+   snapshot and guide ideas already live in Pertal; both tagged `webapp-v2-legacy-final` /
+   `webapp-v3-astra-final` and deleted). The skills already
    describe Pertal (2026-09-27) — at cutover just change `:8444` → `:8443` there and drop the
    v3 section / fold `add-webapp-widget` into `add-to-webapp`.
    Cutover gotchas already known:

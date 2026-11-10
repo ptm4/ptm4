@@ -5,17 +5,18 @@
 Termux), serving a local LLM over HTTP on the LAN. Private, offline, zero API cost.
 
 ## Endpoints
-- **Chat UI (use this): `http://192.168.1.10:3010`** — Open WebUI on rpi (streaming,
-  history; compose at `homelab/hosts/rpi/open-webui/`, deployed to
-  `/srv/docker/compose/open-webui/`). Two models: `homelab-grounded` (runbook-injected)
-  and `raw`. The compose disables title/tags/follow-up/autocomplete generation — each
-  would fire a hidden extra model call per message against the phone's single slot.
-  Memory-capped 1600m because rpi (4GB) is the DNS SPOF; ~950MB steady.
+- **No chat UI any more.** Open WebUI (formerly `http://192.168.1.10:3010` on rpi) was
+  retired with the 2026-09-10 rpi rebuild: its compose (`homelab/hosts/rpi/open-webui/`) was
+  removed from the repo in 5d9bda5 and no host runs it (verified 2026-11-09). rpi is DNS-only
+  now. Use llama-ctl `:8081` below or the webapp's ask. If it is ever brought back, keep
+  title/tags/follow-up/autocomplete generation disabled — each fires a hidden extra model
+  call per message against the phone's single slot.
 - `http://android.lan:8080` — llama-server, OpenAI-compatible (raw inference only).
   Health: `GET /health` → `{"status":"ok"}`.
 - `http://android.lan:8081` — `llama-ctl`: status/models/model-switch/`/ask`, plus
   OpenAI-compatible `/v1/models` + `/v1/chat/completions` (SSE streaming) that inject
-  the runbook grounding for model `homelab-grounded` — this is what Open WebUI talks to.
+  the runbook grounding for model `homelab-grounded` (any OpenAI-compatible client can use it;
+  Open WebUI did, until it was retired).
   Source tracked at `homelab/hosts/android/llamactl/` (server.py, askcore.py,
   llama-warmup) — deploy = `scp` to `~/llamactl/` (+ `$PREFIX/bin/` for llama-warmup) +
   `sv restart llama-ctl`. The phone copy is the live one.

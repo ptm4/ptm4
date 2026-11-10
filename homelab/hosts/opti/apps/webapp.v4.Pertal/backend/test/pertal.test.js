@@ -206,6 +206,30 @@ test('topology: a finding does not break an edge, a dead host does', async () =>
   await app.close();
 });
 
+test('topology: containers no service claims still get a card, labelled from data.json', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pertal-arch-'));
+  const file = path.join(dir, 'data.json');
+  fs.writeFileSync(file, JSON.stringify({ nodes: [{ id: 'x', host: 'opti', container: 'mystery-svc', label: 'Mystery', sublabel: 'from the map', category: 'media' }] }));
+  const prev = process.env.PERTAL_ARCH_DATA;
+  process.env.PERTAL_ARCH_DATA = file;
+  try {
+    const app = await appWith(fakeSnapshots({
+      'containers:opti': containers([running('webapp'), running('mystery-svc'), running('unknown-thing'), running('cockpit-opti')]),
+    }));
+    const topo = (await app.inject('/api/topology')).json();
+    const svc = (id) => topo.services.find((s) => s.id === id);
+    assert.strictEqual(svc('mystery-svc').label, 'Mystery', 'label comes from data.json');
+    assert.strictEqual(svc('mystery-svc').kind, 'media');
+    assert.strictEqual(svc('mystery-svc').auto, true);
+    assert.strictEqual(svc('unknown-thing').label, 'unknown-thing', 'no map entry: the container name');
+    assert.strictEqual(svc('cockpit').count, 1, 'cockpit gateways are a curated group');
+    assert.ok(!topo.services.some((s) => s.id === 'cockpit-opti'), 'a claimed container gets no auto card');
+    await app.close();
+  } finally {
+    if (prev === undefined) delete process.env.PERTAL_ARCH_DATA; else process.env.PERTAL_ARCH_DATA = prev;
+  }
+});
+
 test('metrics: last hour comes from the in-memory ring; bad input is a 4xx', async () => {
   const app = await appWith(fakeSnapshots());
   app.history.observe('opti', { t: 100, cpu_pct: 5, mem_pct: 40 });

@@ -6,15 +6,41 @@ missing items appended; playlists are rebuilt each run to preserve order.
 Movies not yet in Jellyfin (still downloading) are reported and skipped.
 
 Usage: python3 jellyfin-organize.py
+
+Auth: JELLYFIN_API_KEY env var, or a JELLYFIN_API_KEY=... line in
+~/.config/homelab/jellyfin-organize.env. Sent as the Authorization: MediaBrowser
+header, since Jellyfin here has legacy X-Emby-Token auth turned off.
+JELLYFIN_URL overrides the server address.
 """
 import json
+import os
 import re
 import sys
 import urllib.parse
 import urllib.request
 
-JELLYFIN = "http://192.168.1.6:8096"
-TOKEN = "e6b7535cffd349d09e6ba70b235c2f9b"
+JELLYFIN = os.environ.get("JELLYFIN_URL", "http://192.168.1.6:8096")
+ENV_FILE = os.path.expanduser("~/.config/homelab/jellyfin-organize.env")
+
+
+def load_token():
+    """JELLYFIN_API_KEY from the environment, else a KEY=VALUE line in ENV_FILE.
+
+    Never hardcode the key here: this repo is public.
+    """
+    tok = os.environ.get("JELLYFIN_API_KEY", "").strip()
+    if not tok and os.path.exists(ENV_FILE):
+        with open(ENV_FILE, encoding="utf-8") as f:
+            for line in f:
+                k, _, v = line.strip().partition("=")
+                if k.strip() == "JELLYFIN_API_KEY":
+                    tok = v.strip().strip('"').strip("'")
+    if not tok:
+        sys.exit(f"JELLYFIN_API_KEY not set (env var or {ENV_FILE})")
+    return tok
+
+
+TOKEN = None  # set in main() via load_token()
 
 # (title, year, tmdb_id_or_None) — tmdb matches first, then normalized title+year
 
@@ -172,7 +198,7 @@ def req(path, data=None, method="GET"):
     r = urllib.request.Request(
         JELLYFIN + path,
         data=json.dumps(data).encode() if data is not None else None,
-        headers={"X-Emby-Token": TOKEN, "Content-Type": "application/json"},
+        headers={"Authorization": f'MediaBrowser Token="{TOKEN}"', "Content-Type": "application/json"},
         method=method,
     )
     body = urllib.request.urlopen(r).read()
@@ -226,6 +252,8 @@ def collection_members(coll_id):
 
 
 def main():
+    global TOKEN
+    TOKEN = load_token()
     by_tmdb, by_title = build_index()
     admin_id = req("/Users")[0]["Id"]
 
