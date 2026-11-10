@@ -1148,6 +1148,12 @@ bad sectors from its spare pool. The leading indicators of imminent failure are
 and *cannot* fix. Both are zero. Growth has also been slow: 256 → 264 between June and
 September, roughly 8 sectors a quarter.
 
+**Reallocated trend since** (moved here from rule 01 on 2026-11-09): 256 Jun → 264 Jul 15 →
+272 Sep 14 → 288 Nov 9 (homelab-db `hardware-report`). The disk has been `sdb` since
+2026-09-10. On Nov 9, pending was 0 and overall health was PASSED. The hardware collector
+does not record uncorrectable, so check that with `smartctl -A`. Peter accepted this risk
+on 2026-09-27; rule 01 carries the criteria for when to mention it.
+
 **Escalate on these, in priority order:**
 
 1. **`Current_Pending_Sector` > 0 — order the replacement that day.** This is the real

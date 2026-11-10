@@ -907,15 +907,38 @@ def ingest_certificates(conn, run_id):
     return len(rows), warned
 
 
-def check_smart(conn, run_id):
-    """Reallocated and pending sectors are the precursor signal, not the temperature.
+# Rule 01 (Peter accepted opti's aging boot disk on 2026-09-27) says: mention the disk only
+# when pending or uncorrectable sectors go non-zero, reallocations jump by 20+ at once, or
+# SMART health fails. The machine-readable copy is the `opti-boot-disk-risk-accepted`
+# decision in homelab/agentic/incidents.json; these are the fallbacks if it is missing.
+SMART_DECISION_ID = "opti-boot-disk-risk-accepted"
+SMART_POLICY_DEFAULTS = {"pending_gt": 0, "uncorrectable_gt": 0, "reallocated_jump_gte": 20}
 
-    hardware-report has been recording these per disk all along and nothing was reading
-    them. A non-zero count is worth knowing about; a count that *grew* is the one that
-    means the drive is actively failing.
+
+def smart_policy():
+    policy = dict(SMART_POLICY_DEFAULTS)
+    try:
+        with open(os.path.join(REPO_ROOT, "homelab", "agentic", "incidents.json"),
+                  encoding="utf-8") as f:
+            registry = json.load(f)
+        for entry in registry.get("decisions") or []:
+            if entry.get("id") == SMART_DECISION_ID:
+                for k, v in (entry.get("alert_when") or {}).items():
+                    if k in policy and isinstance(v, (int, float)):
+                        policy[k] = v
+    except (OSError, ValueError):
+        pass
+    return policy
+
+
+def check_smart(conn, run_id):
+    """Reallocated, pending and uncorrectable sectors are the precursor signal, not the
+    temperature. hardware-report records them per disk; this turns them into findings.
+    (SMART overall-health failing pages critical from hardware-report itself.)
     """
     stamp = now_iso()
     flagged = 0
+    policy = smart_policy()
     # Metrics are keyed by device letter (smart_sdb_reallocated), and letters are NOT
     # stable: on 2026-09-10 opti's Seagate boot disk moved sda -> sdb and the Hitachi
     # sdb -> sda, so the naive "oldest vs newest" read as "grew from 3 to 272" and paged
@@ -924,14 +947,16 @@ def check_smart(conn, run_id):
     # allows, is a different physical disk — only readings since the last such break
     # belong to today's disk. (A counter that falls is the same signal, as a backstop.)
     #
-    # Severity: pending sectors, or reallocations that grew in the last 30 days, mean
-    # the drive is actively degrading (critical). Old, slow growth is a warn that still
-    # shows the full trend — 8 sectors every two months is not an emergency.
+    # Severity follows rule 01, not "it grew": steady creep (opti's Seagate adds ~8 at a
+    # time) is info — kept for history, never paged, not in hl_status. Critical when
+    # pending or uncorrectable go non-zero, or reallocations jump by reallocated_jump_gte
+    # between two readings in the last 30 days. A disk that went from 0 to non-zero in
+    # the last 30 days is a warn: new, worth a look, not an emergency.
     series, poh = {}, {}
     for r in conn.execute(
         """SELECT host, metric, at, value FROM collector_metrics
            WHERE metric LIKE 'smart%reallocated' OR metric LIKE 'smart%pending'
-              OR metric LIKE 'smart%power_on_hours'
+              OR metric LIKE 'smart%uncorrectable' OR metric LIKE 'smart%power_on_hours'
            ORDER BY host, metric, at"""
     ):
         if r["metric"].endswith("power_on_hours"):
@@ -968,16 +993,25 @@ def check_smart(conn, run_id):
             continue
         since, earliest = points[0]
         disk = dev
-        kind = "reallocated" if metric.endswith("reallocated") else "pending"
-        grew_recently = any(points[i][1] > points[i - 1][1] and points[i][0] >= recent_cutoff
-                            for i in range(1, len(points)))
-        if kind == "pending" or grew_recently:
+        kind = metric.rsplit("_", 1)[1]          # reallocated | pending | uncorrectable
+        steps = [(points[i][1] - points[i - 1][1], points[i][0]) for i in range(1, len(points))
+                 if points[i][1] > points[i - 1][1]]
+        recent = [d for d, at in steps if at >= recent_cutoff]
+        grew_recently = bool(recent)
+        if kind == "pending":
+            severity = "critical" if latest > policy["pending_gt"] else "info"
+        elif kind == "uncorrectable":
+            severity = "critical" if latest > policy["uncorrectable_gt"] else "info"
+        elif any(d >= policy["reallocated_jump_gte"] for d in recent):
             severity = "critical"
-        else:
+        elif earliest <= 0 and grew_recently:
             severity = "warn"
+        else:
+            severity = "info"
         if latest > earliest:
             detail = (f"{latest:.0f} (up from {earliest:.0f} since {str(since)[:10]}"
-                      + ("; grew in the last 30 days" if grew_recently else "") + ")")
+                      + (f"; largest step {max(recent):.0f} in the last 30 days" if recent else "")
+                      + ")")
         else:
             detail = f"{latest:.0f}, unchanged since {str(since)[:10]}"
         conn.execute(
@@ -1757,18 +1791,29 @@ def maintenance_due(conn):
 # ── cycle ───────────────────────────────────────────────────────────────────────────
 
 # ── phone alerts (ntfy) ─────────────────────────────────────────────────────────────
-# Each cycle computes the set of OPEN problems — the warn/critical findings of every
-# tool's latest run — and pushes only the difference from last cycle: new problems in
-# one grouped message, cleared ones in one quiet "resolved" message. The open set lives
-# in ingest_state, so an unchanged problem never re-pages however many cycles it lasts.
+# Routing convention (homelab/agentic/rules/alerting.md, approved 2026-11-10). Peter was
+# ignoring the phone because it was all noise: in Nov 2026 ntfy's 3-day cache held 60
+# pushes, every one the same VPN port-forward problem flapping as warn + "resolved".
 #
-# Everything critical pages. A warning pages only from the sources below; the rest
-# (pending apt updates, journald pattern counts, ...) stays visible in hl_status without
-# buzzing a phone every morning.
-ALERT_WARN_TOOLS = {"homelab-doctor"}
-ALERT_WARN_KINDS = {"freshness", "drift"}
-ALERT_WARN_PREFIXES = ("NEW persistence entry", "[bots]")
+#   critical -> pushed with sound (ntfy priority 4; 5 is kept for Kuma host/DNS down),
+#               once per open problem. Conditions from the 30-min tools must stay critical
+#               ~an hour first (ALERT_DAMP_MINUTES); daily tools and one-off events page
+#               on first sight. A key that already paged does not page again for 24h.
+#               Cleared for 2h -> one silent (priority 1) "resolved" note.
+#   warn     -> never pushed on its own: one silent daily digest (priority 2) at
+#               ALERT_DIGEST_LOCAL_TIME, new items first, plus the dashboard / hl_status.
+#   info     -> history only.
+#
+# An open problem is identified by tool|host|message, where the message is normalised:
+# anything after " | " is volatile detail, and digits, IPs and quoted values collapse.
+# So "pool at 91%" -> "pool at 92%" is the same problem, not a new one every cycle.
 ALERT_TOOL_MAX_AGE_DAYS = 3   # a tool that stopped running (leetify) can't hold alerts open
+ALERT_DAMP_MINUTES = 50       # ~two 30-min cycles before a condition pages
+ALERT_CLEAR_HOURS = 2         # clear this long before it counts as resolved
+ALERT_REPAGE_HOURS = 24       # a key that paged does not page again within this
+ALERT_FIRST_SIGHT_TOOLS = {"journald-hunter", "persistence-auditor", "hardware-report",
+                           "software-inventory"}   # daily, or event-style: no damping
+ALERT_DIGEST_LOCAL_TIME = (9, 30)
 
 OPEN_FINDINGS_SQL = """
 WITH latest AS (SELECT tool, MAX(julianday(run_at)) jd FROM agent_runs GROUP BY tool)
@@ -1781,66 +1826,160 @@ WHERE f.severity IN ('warn', 'critical')
 
 
 def _alert_key(row):
-    # Digits collapse so "pool at 91%" -> "pool at 92%" is the same open problem, not a
-    # new one every cycle.
-    return "|".join((row["tool"], row["host"], re.sub(r"\d+", "#", row["message"])[:200]))
+    msg = row["message"].split(" | ", 1)[0]
+    msg = re.sub(r"'[^']*'|\"[^\"]*\"", "'_'", msg)
+    msg = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "#ip", msg)
+    msg = re.sub(r"\d+", "#", msg)
+    return "|".join((row["tool"], row["host"], msg[:200]))
 
 
-def _should_page(row):
-    if row["severity"] == "critical":
-        return True
-    return (row["tool"] in ALERT_WARN_TOOLS or row["kind"] in ALERT_WARN_KINDS
-            or row["message"].startswith(ALERT_WARN_PREFIXES))
+def _alert_line(r):
+    return f"{'🔴' if r['severity'] == 'critical' else '🟡'} {r['message'][:180]}"
+
+
+def _parse_ts(value):
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def route_alerts(rows, state, now, local_now):
+    """Pure routing step: given this cycle's open warn/critical rows and the saved state,
+    return (pushes, new_state). Each push is notify() kwargs plus `kind` (page | resolved
+    | digest); push_alerts marks a page as sent only once ntfy accepted it."""
+    pushes = []
+    crit, warns = {}, {}
+    for r in rows:
+        (crit if r["severity"] == "critical" else warns)[_alert_key(r)] = r
+
+    tracked = {k: dict(e) for k, e in (state.get("critical") or {}).items() if isinstance(e, dict)}
+
+    to_page = []
+    for key, r in crit.items():
+        e = tracked.get(key) or {"first_seen": now.isoformat()}
+        if e.get("cleared_noted"):            # came back after a resolved note: new episode
+            e = {"first_seen": now.isoformat(), "paged_at": e.get("paged_at")}
+        e.update(tool=r["tool"], message=r["message"], last_seen=now.isoformat())
+        first = _parse_ts(e.get("first_seen")) or now
+        paged = _parse_ts(e.get("paged_at"))
+        recently_paged = bool(paged) and now - paged < timedelta(hours=ALERT_REPAGE_HOURS)
+        ready = (r["tool"] in ALERT_FIRST_SIGHT_TOOLS
+                 or now - first >= timedelta(minutes=ALERT_DAMP_MINUTES))
+        if ready and not e.get("open_paged"):
+            if recently_paged:
+                e["open_paged"] = True        # already told within 24h: track, stay quiet
+            else:
+                to_page.append((key, r))
+        tracked[key] = e
+
+    if to_page:
+        title = (to_page[0][1]["message"][:120] if len(to_page) == 1
+                 else f"{len(to_page)} homelab problems need you")
+        pushes.append({"kind": "page", "keys": [k for k, _ in to_page], "title": title,
+                       "message": "\n".join(_alert_line(r) for _, r in to_page),
+                       "priority": "high", "tags": ["rotating_light"]})
+
+    resolved_now = []
+    for key, e in list(tracked.items()):
+        if key in crit:
+            continue
+        last = _parse_ts(e.get("last_seen")) or now
+        if (now - last >= timedelta(hours=ALERT_CLEAR_HOURS) and e.get("open_paged")
+                and not e.get("cleared_noted")):
+            resolved_now.append(e)
+            e.update(cleared_noted=True, open_paged=False)
+        if now - last >= timedelta(hours=ALERT_REPAGE_HOURS):
+            del tracked[key]
+    if resolved_now:
+        pushes.append({"kind": "resolved", "title": f"{len(resolved_now)} homelab problem(s) resolved",
+                       "message": "\n".join(f"✅ {e['message'][:180]}" for e in resolved_now),
+                       "priority": "min", "tags": ["white_check_mark"]})
+
+    # One silent daily digest of everything still open, new items first.
+    digest_prev = state.get("digest") or {}
+    new_digest = digest_prev
+    today = local_now.date().isoformat()
+    if (local_now.hour, local_now.minute) >= ALERT_DIGEST_LOCAL_TIME and digest_prev.get("date") != today:
+        prev_keys = set(digest_prev.get("keys") or [])
+        open_all = {**warns, **crit}
+        fresh = [r for k, r in open_all.items() if k not in prev_keys]
+        older = [r for k, r in open_all.items() if k in prev_keys]
+        gone = [m for k, m in (digest_prev.get("messages") or {}).items() if k not in open_all]
+        lines = []
+        if fresh:
+            lines += [f"New since yesterday ({len(fresh)}):"] + [_alert_line(r) for r in fresh[:25]]
+        if older:
+            lines += [f"Still open ({len(older)}):"] + [_alert_line(r) for r in older[:25]]
+        if gone:
+            lines += [f"Cleared ({len(gone)}):"] + [f"✅ {m[:180]}" for m in gone[:15]]
+        title = (f"Homelab daily: {len(fresh)} new, {len(older)} still open"
+                 if open_all else "Homelab daily: nothing open")
+        pushes.append({"kind": "digest", "title": title,
+                       "message": "\n".join(lines) or "Nothing open.",
+                       "priority": "low", "tags": ["clipboard"]})
+        new_digest = {"date": today, "keys": sorted(open_all),
+                      "messages": {k: r["message"][:200] for k, r in open_all.items()}}
+
+    return pushes, {"version": 2, "critical": tracked, "digest": new_digest}
+
+
+def _load_alert_state(conn, now):
+    row = conn.execute("SELECT value FROM ingest_state WHERE key = 'alerts_open'").fetchone()
+    try:
+        state = json.loads(row[0]) if row else {}
+    except ValueError:
+        state = {}
+    if state.get("version") == 2:
+        return state
+    # v1 was {key: {tool, severity, message}} of whatever had paged. Carry its criticals
+    # over as already paged so the deploy itself doesn't page; warns no longer page at all.
+    crit = {}
+    for key, e in state.items():
+        if isinstance(e, dict) and e.get("severity") == "critical":
+            crit[_alert_key({"tool": e.get("tool", ""), "host": key.split("|")[1] if key.count("|") >= 2 else "",
+                             "message": e.get("message", "")})] = {
+                "tool": e.get("tool"), "message": e.get("message", ""),
+                "first_seen": now.isoformat(), "last_seen": now.isoformat(),
+                "paged_at": now.isoformat(), "open_paged": True}
+    return {"version": 2, "critical": crit, "digest": {}}
 
 
 def push_alerts(conn):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     from notify import notify  # homelab/tools/notify.py
 
+    now = datetime.now(timezone.utc)
     rows = [dict(r) for r in conn.execute(OPEN_FINDINGS_SQL, (ALERT_TOOL_MAX_AGE_DAYS,))]
-    current = {_alert_key(r): r for r in rows if _should_page(r)}
-    prior_row = conn.execute("SELECT value FROM ingest_state WHERE key = 'alerts_open'").fetchone()
-    first_run = prior_row is None
-    prior = json.loads(prior_row[0]) if prior_row else {}
+    state = _load_alert_state(conn, now)
+    pushes, new_state = route_alerts(rows, state, now, datetime.now().astimezone())
 
-    new = [current[k] for k in current if k not in prior]
-    resolved = [prior[k] for k in prior if k not in current]
-
-    def line(r):
-        return f"{'🔴' if r['severity'] == 'critical' else '🟡'} {r['message'][:180]}"
-
+    # A page or digest only counts as sent once ntfy took it, so an ntfy outage can't
+    # swallow a new problem; it is retried next cycle instead.
     sent_ok = True
-    if first_run:
-        sent_ok = notify(
-            "homelab alerts online",
-            (f"{len(current)} open issue(s) right now:\n" + "\n".join(line(r) for r in current.values()))
-            if current else "Nothing open. You'll hear from this when something breaks.",
-            priority="low", tags=["bell"])
-    else:
-        if new:
-            crit = any(r["severity"] == "critical" for r in new)
-            title = (new[0]["message"][:120] if len(new) == 1
-                     else f"{len(new)} new homelab issues")
-            sent_ok = notify(title, "\n".join(line(r) for r in new),
-                             priority="high" if crit else "default",
-                             tags=["rotating_light" if crit else "warning"])
-        if resolved:
-            notify(f"{len(resolved)} homelab issue(s) resolved",
-                   "\n".join(f"✅ {r['message'][:180]}" for r in resolved),
-                   priority="low", tags=["white_check_mark"])
+    for p in pushes:
+        ok = notify(p["title"], p["message"], priority=p["priority"], tags=p["tags"])
+        if p["kind"] == "page":
+            if ok:
+                for k in p["keys"]:
+                    new_state["critical"][k].update(paged_at=now.isoformat(), open_paged=True)
+            else:
+                sent_ok = False
+        elif p["kind"] == "digest" and not ok:
+            new_state["digest"] = state.get("digest") or {}
+            sent_ok = False
 
-    # Only advance the open set once the page actually went out — an ntfy outage must
-    # not swallow a new problem; it gets re-sent next cycle instead.
-    if sent_ok:
-        slim = {k: {"tool": r["tool"], "severity": r["severity"], "message": r["message"]}
-                for k, r in current.items()}
-        with db.writing(conn):
-            conn.execute(
-                "INSERT INTO ingest_state (key, value, updated_at) VALUES ('alerts_open', ?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-                (json.dumps(slim), now_iso()),
-            )
-    return f"{len(current)} open, {len(new)} new, {len(resolved)} resolved" + ("" if sent_ok else " (ntfy unreachable)")
+    with db.writing(conn):
+        conn.execute(
+            "INSERT INTO ingest_state (key, value, updated_at) VALUES ('alerts_open', ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+            (json.dumps(new_state), now_iso()),
+        )
+    counts = {k: sum(1 for p in pushes if p["kind"] == k) for k in ("page", "resolved", "digest")}
+    n_crit = sum(1 for r in rows if r["severity"] == "critical")
+    return (f"{n_crit} critical / {len(rows) - n_crit} warn open; pushed {counts['page']} page, "
+            f"{counts['resolved']} resolved, {counts['digest']} digest"
+            + ("" if sent_ok else " (ntfy unreachable)"))
 
 
 def heartbeat(stats):
@@ -2003,6 +2142,77 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
 
 # ── self-test ───────────────────────────────────────────────────────────────────────
 
+def _check_alert_routing():
+    """route_alerts against the Nov 2026 noise pattern. Pure: no ntfy, no database."""
+    problems = []
+    t0 = datetime(2026, 11, 7, 0, 12, tzinfo=timezone.utc)
+    early = datetime(2026, 11, 7, 6, 0)                  # local, before the digest time
+
+    def vpn(sev, mins, ip):
+        head = "port forwarding dead" + (" for over an hour; check the Proton/WireGuard config"
+                                         if sev == "critical" else "")
+        return {"tool": "homelab-doctor", "severity": sev, "host": "noblenumbat", "kind": "collector",
+                "message": f"[noblenumbat] VPN watchdog {sev}: {head} | port forwarding dead "
+                           f"{mins}min, still dead after restart 7min ago (pf='0' ip='{ip}')"}
+
+    def run(cycles, state=None, start=0):
+        state, pushes = state or {}, []
+        for i, rows in enumerate(cycles, start):
+            p, state = route_alerts(rows, state, t0 + timedelta(minutes=30 * i), early)
+            for x in p:                                   # what push_alerts does on success
+                if x["kind"] == "page":
+                    for k in x["keys"]:
+                        state["critical"][k].update(paged_at=(t0 + timedelta(minutes=30 * i)).isoformat(),
+                                                    open_paged=True)
+            pushes += p
+        return pushes, state
+
+    # 1) A warn that flaps on and off with changing minutes / IPs for a day: nothing pushes.
+    flap = [[vpn("warn", i % 40, f"185.107.44.{i}")] if i % 3 else [] for i in range(48)]
+    pushes, _ = run(flap)
+    if pushes:
+        problems.append(f"flapping warn pushed {len(pushes)} times")
+
+    # 2) The same critical, changing detail, for 3 cycles: one page, once, and no re-page
+    #    when it clears briefly and comes back within 24h.
+    crit = [[vpn("critical", 60 + i, f"46.29.25.{i}")] for i in range(3)] + [[]] + \
+           [[vpn("critical", 90 + i, "205.147.16.234")] for i in range(3)]
+    pushes, state = run(crit)
+    pages = [p for p in pushes if p["kind"] == "page"]
+    if len(pages) != 1:
+        problems.append(f"VPN critical paged {len(pages)} times, expected 1")
+    if pages and pages[0]["priority"] != "high":
+        problems.append("critical page should be ntfy priority high (4); 5 is Kuma's")
+
+    # 3) Clear for 2h+ after paging: one silent resolved note.
+    pushes, state = run([[]] * 6, state, start=len(crit))
+    res = [p for p in pushes if p["kind"] == "resolved"]
+    if len(res) != 1 or res[0]["priority"] != "min":
+        problems.append(f"resolved notes: {[(p['kind'], p['priority']) for p in pushes]}")
+
+    # 4) A daily tool's event pages on first sight (no 48h damping).
+    ev = {"tool": "journald-hunter", "severity": "critical", "host": "opti", "kind": "collector",
+          "message": "[opti] I/O error on sdc"}
+    p, _ = route_alerts([ev], {}, t0, early)
+    if not any(x["kind"] == "page" for x in p):
+        problems.append("daily-tool critical did not page on first sight")
+
+    # 5) Digest: once a day after the digest time, silent, new items first.
+    warn = vpn("warn", 5, "1.2.3.4")
+    after = datetime(2026, 11, 7, 9, 42)
+    p1, st = route_alerts([warn], {}, t0, after)
+    p2, st = route_alerts([warn], st, t0 + timedelta(minutes=30), after.replace(minute=59))
+    d1 = [x for x in p1 if x["kind"] == "digest"]
+    if len(d1) != 1 or d1[0]["priority"] != "low" or "New since yesterday (1)" not in d1[0]["message"]:
+        problems.append(f"digest wrong: {d1}")
+    if any(x["kind"] == "digest" for x in p2):
+        problems.append("digest sent twice in one day")
+    p3, _ = route_alerts([], st, t0 + timedelta(days=1), after + timedelta(days=1))
+    if not any(x["kind"] == "digest" and "Cleared (1)" in x["message"] for x in p3):
+        problems.append("next day's digest did not list the cleared item")
+    return problems
+
+
 def self_check():
     """Schema applies, registry is valid, and a fixture report ingests. No real I/O."""
     problems = validate_registry()
@@ -2053,6 +2263,36 @@ def self_check():
             ingest_report(conn, "/fixture.json", fixture)
         if conn.execute("SELECT COUNT(*) FROM findings").fetchone()[0] != 1:
             problems.append("re-ingesting a report duplicated its findings")
+
+        # SMART severities follow rule 01 / the opti-boot-disk-risk-accepted decision.
+        policy = smart_policy()
+        if policy.get("reallocated_jump_gte") != 20:
+            problems.append(f"smart policy not read from incidents.json: {policy}")
+        now = datetime.now(timezone.utc)
+        ago = lambda days: (now - timedelta(days=days)).isoformat()  # noqa: E731
+        smart_fixture = [
+            ("smart_sdb_reallocated", [(40, 264), (20, 272), (10, 280), (5, 288)]),  # creep
+            ("smart_sdc_reallocated", [(10, 272), (2, 300)]),                         # +28
+            ("smart_sdd_pending", [(1, 1)]),
+            ("smart_sde_uncorrectable", [(1, 2)]),
+            ("smart_sdf_reallocated", [(40, 0), (3, 8)]),                             # new
+        ]
+        with db.writing(conn):
+            for metric, pts in smart_fixture:
+                for days, value in pts:
+                    conn.execute("INSERT INTO collector_metrics (tool, host, metric, at, value) "
+                                 "VALUES ('fixture-report', 'opti', ?, ?, ?)", (metric, ago(days), value))
+            run_id = conn.execute("SELECT id FROM agent_runs LIMIT 1").fetchone()[0]
+            check_smart(conn, run_id)
+        got = {r["message"].split()[1]: r["severity"] for r in conn.execute(
+            "SELECT message, severity FROM findings WHERE tool = 'homelab-db' AND message LIKE '%SMART%'")}
+        want = {"sdb": "info", "sdc": "critical", "sdd": "critical", "sde": "critical", "sdf": "warn"}
+        if got != want:
+            problems.append(f"smart severities: expected {want}, got {got}")
+
+        # Alert routing (rules/alerting.md): replay a flapping VPN warn, a VPN critical, a
+        # daily-tool event and the digest through route_alerts.
+        problems += _check_alert_routing()
 
         title, chunks = chunk_markdown("# Title\n\nintro\n\n## One\n\nbody\n\n## Two\n\nmore\n")
         if title != "Title" or len(chunks) != 3:

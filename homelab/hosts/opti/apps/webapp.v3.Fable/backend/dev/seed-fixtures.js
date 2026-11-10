@@ -65,8 +65,7 @@ w(path.join(AGENT_LOGS, 'network-latest.json'), {
   status: 'ok', summary: 'all hosts reachable · gateway 1.2 ms', run_at: iso(20), findings: [],
   hosts: [{ host: 'rpi', metrics: { gateway_avg_ms: 1.2, internet_avg_ms: 14 } }, { host: 'opti', metrics: { gateway_avg_ms: 0.8 } }, { host: 'noblenumbat', metrics: { gateway_avg_ms: 2.1 } }],
 });
-w(path.join(AGENT_LOGS, 'coldcopy-latest.json'), { status: 'ok', summary: 'weekly cold copy finished — 41 GiB in 12m', run_at: iso(1200), findings: [] });
-w(path.join(AGENT_LOGS, 'agents-state.json'), { 'homelab-doctor': { enabled: true }, hardware: { enabled: true }, software: { enabled: true }, network: { enabled: true }, coldcopy: { enabled: true } });
+w(path.join(AGENT_LOGS, 'agents-state.json'), { 'homelab-doctor': { enabled: true }, hardware: { enabled: true }, software: { enabled: true }, network: { enabled: true } });
 
 w(path.join(REPORTS, 'journal-hunt-latest.json'), {
   status: 'warn', summary: '1 suspicious pattern in 24h of journals', run_at: iso(90),

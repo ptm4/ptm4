@@ -105,11 +105,36 @@ class ModelReplyTests(unittest.TestCase):
             mr.ask(self.on(), "s", "u", log=self.quiet)
         self.assertEqual(mr.decide(self.on(), "chat"), "limit")
         mr._limited.clear()
-        rate = RuntimeError("rate limited")
-        rate.status_code = 429
-        with patch.object(mr, "_create", side_effect=rate):
+        billing = RuntimeError("payment required")
+        billing.status_code = 402
+        with patch.object(mr, "_create", side_effect=billing):
             mr.ask(self.on(), "s", "u", log=self.quiet)
-        self.assertEqual(mr.spent(self.on()), "rate")
+        self.assertEqual(mr.spent(self.on()), "credit")
+
+    def test_rate_limits_and_overloads_never_latch_for_the_day(self):
+        self.key()
+        for status, text in ((429, "rate_limit_error: slow down"), (529, "overloaded_error"), (500, "api_error")):
+            err = RuntimeError(text)
+            err.status_code = status
+            with patch.object(mr, "_create", side_effect=err):
+                self.assertIsNone(mr.ask(self.on(), "s", "u", log=self.quiet), status)
+            self.assertEqual((mr.spent(self.on()), mr.decide(self.on(), "chat")), ("", "model"), status)
+        with patch.object(mr, "_create", return_value=response("back")):
+            self.assertEqual(mr.ask(self.on(), "s", "u", log=self.quiet), "back")   # the next call just works
+
+    def test_sdk_retries_are_short_for_pings_and_longer_for_background_jobs(self):
+        made = []
+
+        class FakeClient:
+            def __init__(self, **kw):
+                made.append(kw)
+                self.messages = SimpleNamespace(create=lambda **_: response())
+        with patch.object(mr, "anthropic", SimpleNamespace(Anthropic=FakeClient)):
+            mr.ask(self.on(), "s", "u", log=self.quiet)
+            mr.ask(self.on(), "s", "u", log=self.quiet, retries=mr.SLOW_RETRIES, timeout=mr.SLOW_TIMEOUT)
+        self.assertEqual([(m["max_retries"], m["timeout"]) for m in made],
+                         [(mr.RETRIES, mr.TIMEOUT), (mr.SLOW_RETRIES, mr.SLOW_TIMEOUT)])
+        self.assertGreaterEqual(mr.RETRIES, 1)
 
     def test_ask_returns_text_or_none_and_records(self):
         with patch.object(mr, "_create", return_value=response("  Fine.  ")):

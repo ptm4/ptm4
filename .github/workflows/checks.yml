@@ -51,6 +51,10 @@ jobs:
         # next :12 timer run. No LAN or filesystem access needed.
         run: python3 homelab/tools/homelab-db/ingest.py --check
 
+      - name: Persistence auditor self-test
+        # CI-manifest trust and acceptance, drift and run-to-run delta; no system access.
+        run: python3 homelab/tools/security/persistence-auditor.py --check
+
       # The checked webapp is v3.Fable — the deployed one since the 2026-09-10 go-live.
       # v2.legacy and v3.Astra were removed in Nov 2026 (tags webapp-v2-legacy-final,
       # webapp-v3-astra-final); neither was built here after go-live.

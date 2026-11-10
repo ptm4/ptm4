@@ -230,6 +230,33 @@ test('topology: containers no service claims still get a card, labelled from dat
   }
 });
 
+test('v3-compatible APIs: bot status, architecture data and Kuma parsing keep their shapes', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pertal-curated-'));
+  const file = path.join(dir, 'data.json');
+  fs.writeFileSync(file, JSON.stringify({ meta: {}, nodes: [{ id: 'n', host: 'nohost', container: 'c' }] }));
+  const prev = process.env.CURATED_ARCH_PATH;
+  process.env.CURATED_ARCH_PATH = file;
+  try {
+    const app = await appWith(fakeSnapshots());
+    const arch = await app.inject('/api/architecture/data');
+    assert.strictEqual(arch.statusCode, 200);
+    assert.ok(arch.json().live_merge?.drift, 'merged data carries live_merge.drift');
+    for (const bot of ['weather', 'sports', 'healthdigest', 'jellyfin', 'hltv']) {
+      const res = await app.inject(`/api/${bot}/status`);
+      assert.strictEqual(res.statusCode, 502, `${bot}: unreachable bot is a 502, not a crash`);
+      assert.match(res.json().error, new RegExp(`${bot} bot unreachable`));
+    }
+    assert.strictEqual((await app.inject('/api/sports/teams?league=nba')).statusCode, 400, 'missing ?q= is rejected before the bot');
+    await app.close();
+  } finally {
+    if (prev === undefined) delete process.env.CURATED_ARCH_PATH; else process.env.CURATED_ARCH_PATH = prev;
+  }
+  const { parseKuma } = require('../routes/compat');
+  const k = parseKuma('monitor_status{monitor_name="opti: Dashboard",monitor_type="http"} 1\nmonitor_response_time{monitor_name="opti: Dashboard",monitor_type="http"} 41.6\nmonitor_status{monitor_name="rpi: DNS",monitor_type="dns"} 0\n');
+  assert.deepStrictEqual([k.total, k.up, k.down], [2, 1, 1]);
+  assert.strictEqual(k.monitors[0].ms, 42);
+});
+
 test('metrics: last hour comes from the in-memory ring; bad input is a 4xx', async () => {
   const app = await appWith(fakeSnapshots());
   app.history.observe('opti', { t: 100, cpu_pct: 5, mem_pct: 40 });

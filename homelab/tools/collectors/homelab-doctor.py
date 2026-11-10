@@ -52,9 +52,24 @@ SERVICES = [
     ("Vaultwarden",    "https://bitwarden.rpi.lan/",             ("bitwarden.rpi.lan", 443)),
     ("Pi-hole admin",  "http://rpi.lan/admin/",                  None),
     ("Notes",          "http://opti.lan:3002/notes",             None),
+    # noblenumbat, by IP so a resolver hiccup can't fake an outage. Jellyfin = "is the
+    # media box up"; ntfy = "can the phone channel deliver" (when it can't, notify.py
+    # falls back to Discord). Added 2026-11-09 after three silent multi-day outages.
+    ("Jellyfin",       "http://192.168.1.6:8096/health",         None),
+    ("ntfy",           "http://192.168.1.6:2586/v1/health",      None),
 ]
 
 DISK_WARN_PCT = 90
+
+# Storage pool (opti's ZFS pool red, a single disk holding everything). ZFS slows down and
+# fragments well before 100%, and at 100% the app tier, vault and homelab.db stop writing,
+# so warn early and page hard at 90. The 80% warn goes to the daily digest; the 90%
+# critical pushes (rules/alerting.md, ingest.py push_alerts).
+POOL_WARN_PCT = 80
+POOL_CRIT_PCT = 90
+# A dataset with a quota (red/media, set in homelab/hosts/opti/zfs/red-properties.tsv) fails
+# writes with "Disk quota exceeded" at 100%; warn while there is still room to act.
+QUOTA_WARN_PCT = 90
 STALE_HOURS = 36
 
 # Reports on a slower-than-daily cadence get their own threshold; the flat 36h
@@ -86,6 +101,15 @@ POOL_PATH = "/srv/pool"
 # homelab-autoupdate.sh + homelab-autoreboot.sh both log here (see tools/automation)
 AUTOUPDATE_LOG = "/var/log/homelab-autoupdate.log"
 AUTOUPDATE_STALE_HOURS = 48
+
+# Pool health (zpool status). red is scrubbed at least monthly (zfs-scrub-monthly@red.timer),
+# so a finished scrub older than this means the schedule itself stopped.
+POOL_SCRUB_WARN_DAYS = 40
+
+# smartd runs as our own unit with our own config on opti (homelab/hosts/opti/smartd/),
+# not OMV's smartmontools.service. Hosts without the config skip the check.
+SMARTD_CONF = "/etc/homelab/smartd.conf"
+SMARTD_UNIT = "hl-smartd.service"
 
 
 def _unverified_ctx():
@@ -362,7 +386,15 @@ def vpn_findings(name, vpn):
     sev = {"warn": "warn", "critical": "critical"}.get(vpn.get("status"))
     if sev:
         acts = "; ".join(vpn.get("actions") or []) or "no detail"
-        findings.append({"severity": sev, "message": f"[{name}] VPN watchdog {vpn['status']}: {acts}"})
+        # Stable head, volatile detail after " | " (rules/alerting.md): the watchdog's
+        # actions carry minutes, IPs and which step it took, and that churn used to read
+        # as a new problem every 30 min (60 pushes in 3 days, Nov 2026).
+        head = ("port forwarding dead" if "port forwarding dead" in acts
+                else "VPN stack degraded")
+        if sev == "critical":
+            head += " for over an hour; check the Proton/WireGuard config"
+        findings.append({"severity": sev,
+                         "message": f"[{name}] VPN watchdog {vpn['status']}: {head} | {acts}"})
     try:
         ts = datetime.strptime(vpn["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
         age_min = (datetime.now(timezone.utc) - ts).total_seconds() / 60
@@ -410,6 +442,34 @@ def host_unmounted_datasets(host):
     return bad
 
 
+def host_dataset_quotas(host):
+    """ZFS datasets that carry a quota, with how full each is. [] where none / no ZFS.
+
+    `used` counts the dataset, its snapshots and children — the same thing `quota`
+    limits — so used/quota is exactly how close writes are to failing.
+    """
+    out, rc = run_on(host, ["zfs", "list", "-Hp", "-t", "filesystem", "-o", "name,used,quota"],
+                     timeout=15)
+    if rc != 0 or not out.strip():
+        return []
+    res = []
+    for line in out.strip().splitlines():
+        fields = line.split()
+        if len(fields) < 3:
+            continue
+        try:
+            used_b, quota_b = int(fields[1]), int(fields[2])
+        except ValueError:
+            continue
+        if quota_b <= 0:  # 0 = no quota
+            continue
+        res.append({"dataset": fields[0],
+                    "used_pct": round(used_b / quota_b * 100, 1),
+                    "used_gb": round(used_b / 1024 ** 3, 1),
+                    "quota_gb": round(quota_b / 1024 ** 3, 1)})
+    return res
+
+
 def host_zfs_next_kernel_gap(host):
     """The kernel this host boots next, if it has NO zfs module — else None.
 
@@ -445,6 +505,123 @@ def host_zfs_next_kernel_gap(host):
     return None
 
 
+def _int(v):
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _vdev_problems(vdevs, acc):
+    """Walk zpool status -j vdev tree; collect every vdev with errors or a bad state."""
+    for v in (vdevs or {}).values():
+        r, w, c = _int(v.get("read_errors")), _int(v.get("write_errors")), _int(v.get("checksum_errors"))
+        state = v.get("state") or "?"
+        if r or w or c or state not in ("ONLINE", "AVAIL"):
+            acc.append({"vdev": v.get("name") or "?", "state": state,
+                        "read": r, "write": w, "checksum": c})
+        _vdev_problems(v.get("vdevs"), acc)
+    return acc
+
+
+def pool_health_findings(hostname, status, now_epoch):
+    """Findings for one host's `zpool status -j --json-int` output (already parsed).
+
+    Pure function so it can be tested against hand-made DEGRADED / error samples without
+    touching the live pool. Returns (summary, findings); summary is {pool: {...}}.
+
+    Severity follows the alerting convention (critical = act within hours or data is at
+    risk; warn = daily digest). On red, a single disk with no second copy, any pool state
+    other than ONLINE, any read/write/checksum error, a permanent data error or a scrub
+    that found errors is critical: there is no redundancy to absorb the next one. A stale
+    scrub is warn. Messages carry no dates; ingest.py collapses digits into the alert key,
+    so counts may change without re-paging.
+    """
+    summary, findings = {}, []
+    for name, p in sorted((status.get("pools") or {}).items()):
+        state = p.get("state") or "?"
+        data_errors = _int(p.get("error_count"))
+        problems = _vdev_problems(p.get("vdevs"), [])
+        # The root vdev repeats the pool's own state; keep it only if nothing below explains it.
+        leaf = [x for x in problems if x["vdev"] != name] or problems
+        scan = p.get("scan_stats") or {}
+        scrub = None
+        if scan.get("function") == "SCRUB":
+            scrub = {"state": scan.get("state"), "end": _int(scan.get("end_time")) or None,
+                     "errors": _int(scan.get("errors"))}
+        summary[name] = {"state": state, "data_errors": data_errors,
+                         "vdev_problems": leaf, "scrub": scrub}
+        action = (f"Run `zpool status -v {name}` on {hostname}. Do not reboot, clear or "
+                  f"scrub; copy anything irreplaceable off the pool first")
+
+        if state != "ONLINE":
+            findings.append({"severity": "critical", "key": f"zfs-pool-state-{name}",
+                             "action": action,
+                             "message": (f"[{hostname}] ZFS pool {name} is {state}, not ONLINE — "
+                                         f"data on it is at risk")})
+        bad = [x for x in leaf if x["read"] or x["write"] or x["checksum"]]
+        if bad:
+            detail = "; ".join(f"{x['vdev']} {x['state']} read {x['read']} write {x['write']} "
+                               f"cksum {x['checksum']}" for x in bad)
+            findings.append({"severity": "critical", "key": f"zfs-pool-vdev-errors-{name}",
+                             "action": action,
+                             "message": f"[{hostname}] ZFS pool {name} has disk I/O errors: {detail}"})
+        if data_errors:
+            findings.append({"severity": "critical", "key": f"zfs-pool-data-errors-{name}",
+                             "action": action,
+                             "message": (f"[{hostname}] ZFS pool {name} reports {data_errors} "
+                                         f"permanent data error(s) — files are damaged")})
+        if scrub and scrub["state"] == "FINISHED" and scrub["errors"]:
+            findings.append({"severity": "critical", "key": f"zfs-pool-scrub-errors-{name}",
+                             "action": action,
+                             "message": (f"[{hostname}] last scrub of ZFS pool {name} found "
+                                         f"{scrub['errors']} error(s)")})
+        if scrub is None or (scrub["state"] == "FINISHED" and scrub["end"]
+                             and (now_epoch - scrub["end"]) / 86400 > POOL_SCRUB_WARN_DAYS):
+            age = ("no scrub on record" if scrub is None else
+                   f"last scrub finished {int((now_epoch - scrub['end']) / 86400)} days ago")
+            findings.append({"severity": "warn", "key": f"zfs-pool-scrub-stale-{name}",
+                             "action": f"Check zfs-scrub-monthly@{name}.timer on {hostname}",
+                             "message": f"[{hostname}] ZFS pool {name}: {age}"})
+    return summary, findings
+
+
+def host_pool_health(host):
+    """`zpool status` health for `host`: (summary, findings). (None, []) without ZFS.
+
+    Until 2026-11 nothing read pool health at all — the doctor only measured capacity and
+    ZED is not installed — so a DEGRADED pool or climbing checksum errors paged nobody.
+    `zpool status -j` (OpenZFS 2.3) works unprivileged and gives structured counts.
+    """
+    script = ("PATH=$PATH:/usr/sbin:/sbin; command -v zpool >/dev/null 2>&1 || exit 3; "
+              "zpool list -H >/dev/null 2>&1 || exit 3; zpool status -j --json-int")
+    out, rc = run_on(host, ["sh", "-c", script], timeout=20)
+    if rc == 3:
+        return None, []
+    try:
+        status = json.loads(out) if rc == 0 else None
+    except ValueError:
+        status = None
+    if not isinstance(status, dict):
+        # A pool we cannot read is itself a problem (hung pool, broken zfs userland).
+        return {"error": f"zpool status failed (rc {rc})"}, [{
+            "severity": "warn", "key": "zfs-pool-status-unreadable",
+            "action": f"Run `zpool status` on {host.name} by hand",
+            "message": f"[{host.name}] zpool status could not be read — pool health unknown"}]
+    return pool_health_findings(host.name, status, datetime.now(timezone.utc).timestamp())
+
+
+def host_smartd(host):
+    """State of hl-smartd on hosts that carry our smartd config; None elsewhere."""
+    script = (f"[ -f {SMARTD_CONF} ] || exit 3; "
+              f"systemctl is-active {SMARTD_UNIT} 2>/dev/null || true")
+    out, rc = run_on(host, ["sh", "-c", script], timeout=15)
+    if rc != 0:
+        return None  # no config here (3), or SSH itself failed — reported elsewhere
+    lines = (out or "").strip().splitlines()
+    return lines[-1] if lines else "unknown"
+
+
 def collect_host(host):
     """Per-host disk + docker + VPN watchdog over SSH. Returns (host_dict, findings)."""
     findings = []
@@ -452,9 +629,27 @@ def collect_host(host):
     if dpct is not None and dpct >= DISK_WARN_PCT:
         findings.append({"severity": "warn", "message": f"[{host.name}] Root disk {dpct}% full"})
     pool = host_pool_disk(host)
-    if pool is not None and pool["used_pct"] >= DISK_WARN_PCT:
-        findings.append({"severity": "warn",
-                         "message": f"[{host.name}] Pool {POOL_PATH} {pool['used_pct']}% full"})
+    if pool is not None:
+        pname = pool.get("pool_name", POOL_PATH)
+        # Warn and critical are worded differently on purpose: ingest.py keys open alerts
+        # with digits collapsed, so only the words tell a crossing of 90 from one of 80.
+        if pool["used_pct"] >= POOL_CRIT_PCT:
+            findings.append({"severity": "critical",
+                             "message": (f"[{host.name}] Storage pool {pname} is CRITICALLY full: "
+                                         f"{pool['used_pct']}% used, {pool['avail_gb']} GB free — "
+                                         f"free space now, before the app tier and homelab.db "
+                                         f"stop writing")})
+        elif pool["used_pct"] >= POOL_WARN_PCT:
+            findings.append({"severity": "warn",
+                             "message": (f"[{host.name}] Storage pool {pname} filling up: "
+                                         f"{pool['used_pct']}% used, {pool['avail_gb']} GB free")})
+    quotas = host_dataset_quotas(host)
+    for q in quotas:
+        if q["used_pct"] >= QUOTA_WARN_PCT:
+            findings.append({"severity": "warn",
+                             "message": (f"[{host.name}] ZFS dataset {q['dataset']} near its quota: "
+                                         f"{q['used_pct']}% of {q['quota_gb']} GB — writes into it "
+                                         f"fail with 'Disk quota exceeded' at 100%")})
     # Critical, not warn: an unmounted dataset means writes are silently landing on
     # the boot disk instead of the pool, and every symptom otherwise reads as normal.
     unmounted = host_unmounted_datasets(host)
@@ -472,6 +667,16 @@ def collect_host(host):
                                      f"ZFS pool. Install linux-headers-amd64 so DKMS builds it "
                                      f"(opti-deploy.yml does), and do not reboot until "
                                      f"`modinfo -k {gap_kernel} zfs` resolves")})
+    # Pool health (state, vdev I/O/checksum errors, data errors, scrub result).
+    pool_health, pool_health_f = host_pool_health(host)
+    findings += pool_health_f
+    # smartd is the realtime disk alarm; if it dies, disk failures page nobody.
+    smartd = host_smartd(host)
+    if smartd is not None and smartd != "active":
+        findings.append({"severity": "warn", "key": "smartd-not-running",
+                         "action": f"systemctl status {SMARTD_UNIT} on {host.name}",
+                         "message": (f"[{host.name}] {SMARTD_UNIT} is {smartd} — disk SMART "
+                                     f"failures will not push until it runs again")})
     autoupdate = host_autoupdate(host)
     if autoupdate is not None:
         autoupdate["hold"] = host_autoupdate_hold(host)
@@ -490,6 +695,12 @@ def collect_host(host):
         parts.append(f"disk {dpct}%")
     if pool is not None:
         parts.append(f"pool {pool['used_pct']}%")
+    for pname, ph in sorted((pool_health or {}).items()):
+        if isinstance(ph, dict):
+            scrub = ph.get("scrub") or {}
+            when = (datetime.fromtimestamp(scrub["end"], timezone.utc).strftime("%Y-%m-%d")
+                    if scrub.get("end") else "never")
+            parts.append(f"{pname} {ph['state']}, scrubbed {when}")
     if containers is not None:
         parts.append(f"{len(containers)} container(s)")
     if vpn is not None:
@@ -502,7 +713,9 @@ def collect_host(host):
     summary = ", ".join(parts) or "no disk/docker data"
     status = "warn" if findings else "ok"
     return ({"host": host.name, "status": status, "summary": summary,
-             "metrics": {"disk_used_pct": dpct, "pool": pool, "containers": containers,
+             "metrics": {"disk_used_pct": dpct, "pool": pool, "quotas": quotas,
+                         "containers": containers, "pool_health": pool_health,
+                         "smartd": smartd,
                          "vpn": vpn, "autoupdate": autoupdate}}, findings)
 
 
@@ -523,7 +736,10 @@ def build_log(services_state, host_dicts, stale, findings):
         L.append(f"- Root disk: {m.get('disk_used_pct') if m.get('disk_used_pct') is not None else '?'}%")
         pool = m.get("pool")
         if pool is not None:
-            L.append(f"- Pool {POOL_PATH}: {pool['used_pct']}% used ({pool['avail_gb']} GB free)")
+            L.append(f"- Pool {pool.get('pool_name', POOL_PATH)}: {pool['used_pct']}% used "
+                     f"({pool['avail_gb']} GB free)")
+        for q in m.get("quotas") or []:
+            L.append(f"- Dataset {q['dataset']}: {q['used_pct']}% of its {q['quota_gb']} GB quota")
         au = m.get("autoupdate")
         if au is not None:
             L.append(f"- Autoupdate: {au['result']} (last run {au.get('last_run') or '?'})"

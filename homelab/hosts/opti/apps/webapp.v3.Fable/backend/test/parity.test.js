@@ -44,6 +44,13 @@ fs.mkdirSync(doctorHist, { recursive: true });
 fs.writeFileSync(path.join(doctorHist, '2026-08-09.json'), JSON.stringify({
   hosts: [{ host: 'opti', metrics: { pool: { used_pct: 61.0, pool_name: 'red' }, disk_used_pct: 40 } }],
 }));
+// A retired producer's last report, left on disk as a record (the cold copy, retired
+// 2026-09-24). It must reach neither the runners list, the notifications inbox nor the
+// activity feed — the notifications test's exact count below depends on that.
+fs.writeFileSync(path.join(AGENT_LOGS, 'coldcopy-latest.json'), JSON.stringify({
+  status: 'critical', summary: 'could not mount /srv/attic', run_at: NOW,
+  findings: [{ severity: 'high', detail: 'could not mount /srv/attic' }],
+}));
 
 fs.writeFileSync(path.join(REPORTS, 'journal-hunt-latest.json'), JSON.stringify({
   status: 'ok', summary: 'nothing suspicious', run_at: NOW, findings: [],
@@ -128,6 +135,8 @@ test('GET /api/runners lists and sorts, excludes home-only', async () => {
   assert.equal(b.runners[0].name, 'homelab-doctor-latest');
   assert.equal(b.runners[0].label, 'Homelab Doctor');
   assert.ok(!b.runners.some((x) => x.home));
+  // retired producers stay off the list even though their last file is still on disk
+  assert.ok(!b.runners.some((x) => x.name === 'coldcopy-latest'));
 });
 
 test('GET /api/runners/:name/history reads dated snapshots', async () => {
@@ -210,6 +219,7 @@ test('GET /api/activity lifts [host] prefixes into fields', async () => {
   const ev = r.json().events.find((e) => e.source === 'homelab-doctor');
   assert.equal(ev.host, 'opti');
   assert.equal(ev.message, 'pool at 61%');
+  assert.ok(!r.json().events.some((e) => /coldcopy/.test(e.source || '')));
 });
 
 test('GET /api/trends reads dated doctor history', async () => {

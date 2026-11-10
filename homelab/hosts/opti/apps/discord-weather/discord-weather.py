@@ -932,7 +932,8 @@ def morning_line(cfg, observations, context, today):
     system, user = model_reply.build_morning_prompt(witty_messages.BRIEF, roster, chat, weather,
                                                     describe_event(context), recent, self_notes, group_notes)
     raw = model_reply.ask(cfg, system, user, log=log, effort=s["morning_effort"],
-                          timeout=model_reply.SLOW_TIMEOUT, max_tokens=max(s["max_tokens"], 2048))
+                          timeout=model_reply.SLOW_TIMEOUT, retries=model_reply.SLOW_RETRIES,
+                          max_tokens=max(s["max_tokens"], 2048))
     line = model_reply.clean_line(raw, witty_messages.PINGS.values(), model_reply.MORNING_MAX_CHARS) if raw else ""
     if not line or witty_messages.forgotten(line):
         return None, None
@@ -1099,7 +1100,7 @@ def learn_ok(cfg):
 
 def _ask_notes(cfg, system, user):
     raw = model_reply.ask(cfg, system, user, log=log, effort="low", max_tokens=3000,
-                          timeout=model_reply.SLOW_TIMEOUT)
+                          timeout=model_reply.SLOW_TIMEOUT, retries=model_reply.SLOW_RETRIES)
     if not raw:
         return None
     return "\n".join(l for l in raw.strip().splitlines() if not is_forgotten(l))
@@ -1164,7 +1165,8 @@ def learn(db, cfg):
     if learn_ok(cfg):
         raw = model_reply.ask(cfg, *model_reply.build_lines_prompt(
             brief, db.profile("self")["notes"], db.profile("group")["notes"]),
-            log=log, effort="low", max_tokens=2000, timeout=model_reply.SLOW_TIMEOUT)
+            log=log, effort="low", max_tokens=2000, timeout=model_reply.SLOW_TIMEOUT,
+            retries=model_reply.SLOW_RETRIES)
         calls += 1
         for kind, texts in model_reply.parse_lines(raw).items():
             texts = [t for t in texts if "{name}" in t and not is_forgotten(t)]

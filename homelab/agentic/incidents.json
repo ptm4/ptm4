@@ -36,6 +36,19 @@
       "source": "runbooks/05-noblenumbat.md"
     },
     {
+      "id": "nn-autoreboot-post-hang-2026-11",
+      "kind": "incident",
+      "date": "2026-11-04",
+      "hosts": ["noblenumbat", "opti"],
+      "title": "noblenumbat dark for days after its 03:00 auto-reboot, and nothing paged",
+      "symptom": "After homelab-autoreboot fired, noblenumbat (Jellyfin, *arr, Uptime Kuma, ntfy) stayed off the network 1-6 days (10-14, 10-21, 11-04; also 09-11, 09-25). No phone alert; Kuma showed 100%.",
+      "cause": "Every time the OS shut down cleanly (journal ends at systemd-shutdown) and the next kernel only started when Peter powered it on, so the hang is before Linux: most likely the Latitude 7400 POST (BIOS 1.6.1, WarningsAndErr=PromptWrnErr waits for F1 on any warning, e.g. a USB-C adapter warning). Alerts were lost because notify.py only targeted ntfy, which runs on noblenumbat: the doctor raised '[noblenumbat] unreachable' every cycle, every send failed, and the finding cleared before ntfy came back.",
+      "resolution": "2026-11-09: auto-reboot held on noblenumbat (noblenumbat-deploy.yml step, NN_AUTOREBOOT=off); BIOS WarningsAndErr set to ContWrnErr; notify.py falls back to a Discord webhook (HL_DISCORD_WEBHOOK) when ntfy fails; doctor probes Jellyfin and ntfy from opti as critical services. Re-enable auto-reboot only after a supervised reboot returns unattended.",
+      "status": "mitigated",
+      "tags": ["reboot", "outage", "bios", "alerting", "ntfy"],
+      "source": "runbooks/05-noblenumbat.md, tools/notify.py"
+    },
+    {
       "id": "agentic-dir-loss-2026-07-22",
       "kind": "incident",
       "date": "2026-07-22",
@@ -218,6 +231,22 @@
       "status": "standing",
       "tags": ["storage", "sqlite", "design"],
       "source": "runbooks/09-homelab-db.md"
+    },
+    {
+      "id": "opti-boot-disk-risk-accepted",
+      "kind": "decision",
+      "date": "2026-09-27",
+      "hosts": ["opti"],
+      "title": "opti's aging Seagate boot disk is a known, accepted risk",
+      "symptom": "SMART shows a non-zero, slowly growing reallocated-sector count on opti's Seagate ST500DM002 boot disk (serial Z6E9H7VE; device letter NOT stable, sdb since 2026-09-10), and 3 unchanged reallocated sectors on the Hitachi (sda since 2026-09-10).",
+      "cause": "A 40k+-hour drive. Reallocations creep in steps of ~8: 256 (Jun), 264 (Jul 15), 272 (Sep 14, the state accepted), 280 (Oct 5), 288 (Oct 13). Pending and uncorrectable 0, health PASSED (checked 2026-11-09). It holds only the OS: app data (red/docker-apps) and homelab.db are on the pool, so its death costs a reinstall, not data.",
+      "resolution": "Peter accepted the risk in Pertal on 2026-09-27. Do not raise the reallocated count, or the Hitachi's 3, in reports, reminders or audits. Alert only when a trigger in alert_when fires; homelab-db ingest.py check_smart reads alert_when from this entry, and hardware-report pages critical on a failed health check. Revisit if a trigger fires.",
+      "status": "standing",
+      "disk": {"host": "opti", "model": "ST500DM002-1BD142", "serial": "Z6E9H7VE", "role": "boot (OS only)"},
+      "accepted_state": {"as_of": "2026-09-14", "reallocated": 272, "pending": 0, "uncorrectable": 0, "health": "PASSED"},
+      "alert_when": {"pending_gt": 0, "uncorrectable_gt": 0, "reallocated_jump_gte": 20, "health_not": "PASSED"},
+      "tags": ["hardware", "smart", "disk", "accepted-risk", "alerting"],
+      "source": "rules/01-homelab-context.md, tools/homelab-db/ingest.py check_smart"
     }
   ]
 }

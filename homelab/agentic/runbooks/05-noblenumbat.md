@@ -24,6 +24,23 @@ can't drift again.
   thermal** first, not the media apps. Check physical cooling / ambient temp / fans before
   debugging software.
 
+## Unattended reboots are HELD here (2026-11-09)
+- **Why:** the 03:00 `homelab-autoreboot` left the box dark for 1-6 days on 09-11, 09-25,
+  10-14, 10-21 and 11-04. The OS shuts down cleanly each time; the next kernel only starts
+  when someone powers it on, so the hang is in firmware. Most likely cause: Latitude 7400
+  BIOS 1.6.1 (2019) with `WarningsAndErr=PromptWrnErr`, which stops POST on any warning
+  (adapter/dock warnings are on, power is USB-C) and waits for F1.
+- **State:** `noblenumbat-deploy.yml` keeps `homelab-autoreboot.timer` disabled
+  (`NN_AUTOREBOOT: "off"`). Auto-updates still install; a pending kernel reboot waits for a
+  hand reboot. BIOS `WarningsAndErr` set to `ContWrnErr`; read/set it from the OS at
+  `/sys/class/firmware-attributes/dell-wmi-sysman/attributes/WarningsAndErr/current_value`
+  (no BIOS password set), or F2 > POST Behavior > Warnings and Errors.
+- **To re-enable:** one supervised reboot with someone at the box. If it returns within ~5
+  min, flip `NN_AUTOREBOOT` to `"on"`. If it hangs, the screen names the POST warning.
+- **Alerting:** ntfy runs on this host, so it can't page about this host. `notify.py` falls
+  back to the `HL_DISCORD_WEBHOOK` Discord webhook (opti `/etc/hl-agents.env`) when ntfy
+  fails, and homelab-doctor probes Jellyfin and ntfy from opti as critical services.
+
 ## Adding media
 - Movies: use the `radarr-add` skill (adds to Radarr on noblenumbat, triggers a search).
 - TV/docuseries: use the `sonarr-add` skill.

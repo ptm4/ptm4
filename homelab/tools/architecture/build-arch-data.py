@@ -39,7 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 # When the facts below were last confirmed against the live hosts over SSH.
-PROBED_AT = "2026-09-27T00:00:00Z"
+PROBED_AT = "2026-11-09T23:30:00Z"
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_OUT = REPO_ROOT / "homelab/hosts/opti/apps/webapp.v3.Fable/frontend-legacy/architecture/data.json"
@@ -173,7 +173,7 @@ HOSTS = [
         "facts": [
             {"label": "CPU", "value": "Cortex-A72 · 4 cores"},
             {"label": "RAM", "value": "3.7 GiB · no swap"},
-            {"label": "Root disk", "value": "220 GB USB SSD (/dev/sda2) · ~4% used"},
+            {"label": "Root disk", "value": "220 GB USB SSD (/dev/sda2)"},
             {"label": "Network", "value": "eth0 wired · static lease"},
             {"label": "Containers", "value": "2"},
         ],
@@ -198,10 +198,10 @@ HOSTS = [
         "facts": [
             {"label": "CPU", "value": "Intel i5-3570 · 4 cores"},
             {"label": "RAM", "value": "31.3 GiB"},
-            {"label": "Root disk", "value": "500 GB ext4 (sdb, ST500DM002) · ~5% used"},
-            {"label": "Pool", "value": "3.6 TB ZFS (red) · 951 GB used (26%)"},
+            {"label": "Root disk", "value": "500 GB ext4 (sdb, ST500DM002)"},
+            {"label": "Pool", "value": "3.6 TB ZFS (red) · single vdev"},
             {"label": "Share config", "value": "/etc/homelab/samba-red.conf"},
-            {"label": "Containers", "value": "13 (app tier) + CI/control services"},
+            {"label": "Containers", "value": "18 (13 app tier + Pertal, Seerr, 3 Cockpit gateways) + CI/control services"},
         ],
         "notes": "Every other host mounts its Samba export, so it is the storage "
                  "single point of failure. Since the 2026-07-25 ZFS migration the live "
@@ -210,7 +210,8 @@ HOSTS = [
                  "control plane and the x86 CI runner. Since 2026-09-10 it also runs the "
                  "whole app tier (dashboard, Vaultwarden, notes, Dozzle hub, 5 Discord "
                  "bots) — so an opti outage now costs those services too, not just "
-                 "storage and control. Boot disk (sdb) has 272 reallocated sectors, "
+                 "storage and control. Also runs Pertal (dashboard v4, :8444), Seerr "
+                 "(media requests) and the three Cockpit console gateways. Boot disk (sdb) has 272 reallocated sectors, "
                  "creeping ~8 every two months; pending/uncorrectable both still 0. The "
                  "weekly attic cold copy was retired 2026-09-24, so pool red currently "
                  "has no second copy.",
@@ -224,16 +225,16 @@ HOSTS = [
         "zone": "servers",
         "role": "Media stack",
         "model": "Dell Latitude 7400",
-        "os": "Ubuntu 24.04.4 LTS",
-        "kernel": "7.0.0-28-generic",
+        "os": "Ubuntu 24.04.5 LTS",
+        "kernel": "7.0.0-42-generic",
         "arch": "x86_64",
         "facts": [
             {"label": "CPU", "value": "Intel i7-8665U · 8 threads"},
             {"label": "RAM", "value": "15 GiB"},
-            {"label": "Root disk", "value": "468 GB NVMe · 15% used"},
+            {"label": "Root disk", "value": "468 GB NVMe"},
             {"label": "GPU", "value": "UHD 620 · QuickSync VAAPI"},
             {"label": "Network", "value": "USB3 GbE adapter · wired (never Wi-Fi)"},
-            {"label": "Containers", "value": "17"},
+            {"label": "Containers", "value": "19"},
         ],
         "notes": "A laptop with sleep masked. Hardware-transcodes for Jellyfin via "
                  "/dev/dri/renderD128. Suffered a whole-host outage from a cooling "
@@ -253,11 +254,14 @@ HOSTS = [
         "os": "CachyOS (Linux 7.1.3)",
         "arch": "x86_64",
         "facts": [
-            {"label": "Repo", "value": "ptm4 via CIFS at ~/opti"},
+            {"label": "Repo", "value": "ptm4 at E:\\REPO\\ptm4 (Windows boot, ptm)"},
             {"label": "Agent", "value": "Claude Code runs here"},
         ],
-        "notes": "Edits the repo over the CIFS mount of opti's pool, so a write here "
-                 "lands directly on opti's disk. Not a server — nothing depends on it.",
+        "notes": "One workstation, dual-booted: tux (CachyOS) and ptm (Windows 11). The git "
+                 "working copy is a local disk on the Windows side, so edits reach the "
+                 "homelab only through git push and CI — opti's repo copy is a CI deploy "
+                 "snapshot, not a checkout. Not a server: only the optional Windows-side "
+                 "asset server (:8767) is consumed by anything.",
     },
     {
         "id": "android",
@@ -334,8 +338,9 @@ NODES = [
 
     # ── opti · network plane (app tier, since 2026-09-10) ────────────────────
     N("nginx-webapp", "nginx (webapp)", "opti", "network", "net",
-      sublabel="TLS :8443 → webapp / notes", container="nginx-webapp",
-      image="nginx:stable-alpine", ports=["192.168.1.11:8443→443"], kind="container",
+      sublabel="TLS :8443 → webapp / notes · :8444 → Pertal", container="nginx-webapp",
+      image="nginx:stable-alpine", ports=["192.168.1.11:8443→443", "192.168.1.11:8444"],
+      kind="container",
       notes="Terminates TLS for webapp.lan using a cert read directly off opti's local "
             "pool (bind mount, no CIFS now that it runs on opti). Raises "
             "proxy_read_timeout to 240s for /api/llama/ only — cold LLM prompts "
@@ -359,6 +364,22 @@ NODES = [
             "Reads agent-logs and security-reports directly off the local pool (bind "
             "mount, no CIFS since it moved here 2026-09-10) and proxies the bot control "
             "APIs, the opti dispatcher and the phone's LLM."),
+    N("pertal", "Pertal (dashboard v4)", "opti", "apps", "apps",
+      sublabel="Node :3000 · webapp.lan:8444", container="pertal",
+      image="compose-pertal (built from apps/webapp.v4.Pertal)", ports=["3000 (internal)"],
+      url="https://webapp.lan:8444/", kind="container",
+      notes="The v4 dashboard, live side by side with v3 until cutover (when it takes "
+            ":8443). Behind nginx-webapp's :8444 listener. Built and started last by "
+            "opti-apps-deploy.yml under the 'pertal' compose profile, so a failed Pertal "
+            "build never blocks a v3 deploy. Shares the arch_data volume with v3 and "
+            "fronts the Cockpit console gateways, Seerr requests and the Readarr books panel."),
+    N("seerr", "Seerr", "opti", "media", "apps",
+      sublabel="Media requests :5055", container="seerr",
+      image="seerr/seerr:v3.4.1", ports=["192.168.1.11:5055"], url="http://opti.lan:5055/",
+      kind="container",
+      notes="Jellyseerr's successor. Signs in with Jellyfin and hands approved requests to "
+            "Sonarr/Radarr on noblenumbat. Pertal's Requests page reads and approves via "
+            "SEERR_API_KEY. Image pinned deliberately — bump by hand."),
     N("notes-api", "Notes app", "opti", "apps", "apps",
       sublabel="Express + JSON store :3002", container="notes-api",
       image="compose-notes-api", ports=["192.168.1.11:3002"], kind="container",
@@ -412,7 +433,7 @@ NODES = [
 
     # ── opti · platform (app-tier docker engine) ─────────────────────────────
     N("opti-docker", "Docker engine", "opti", "infra", "control",
-      sublabel="13 containers · compose at /srv/docker/compose", kind="daemon"),
+      sublabel="18 containers · compose at /srv/docker/compose", kind="daemon"),
     N("uptime-kuma", "Uptime Kuma", "noblenumbat", "infra", "platform",
       sublabel="Synthetic monitors :3001", container="uptime-kuma",
       image="louislam/uptime-kuma:1", ports=["192.168.1.6:3001"],
@@ -431,10 +452,10 @@ NODES = [
     # ── opti · storage plane (ZFS since 2026-07-25; replaced the mergerfs pool) ──
     N("opti-sdc", "sdc · 4 TB WD Red Plus", "opti", "storage", "disks",
       sublabel="WD40EFZZ · ZFS vdev", kind="disk",
-      notes="The single vdev backing pool red. One disk = no redundancy; the attic cold "
-            "copy is the only second copy of this data."),
+      notes="The single vdev backing pool red. One disk = no redundancy, and since the "
+            "attic cold copy was retired 2026-09-24 there is no second copy of this data."),
     N("zfs-red", "ZFS pool · red", "opti", "storage", "disks",
-      sublabel="/srv/red · 3.6 TB · 26% used", kind="volume", critical=True,
+      sublabel="/srv/red · 3.6 TB · single vdev", kind="volume", critical=True,
       notes="Replaced the mergerfs pool on 2026-07-25. Datasets: red/fs (the Samba share "
             "root) and red/media. This is the homelab's primary dataset — media, repo, "
             "certs, agent logs, security reports all live here. Single-vdev: a scrub "
@@ -484,10 +505,26 @@ NODES = [
       notes="Serves the webapp's Data page and the `homelab` MCP tools a Claude Code "
             "session uses. Bearer token + Origin/Host validation; MCP pinned to spec "
             "2025-06-18."),
+    N("cockpit-opti", "Cockpit gateway · opti", "opti", "infra", "control",
+      sublabel="Root console, no login · /cp-opti", container="cockpit-opti",
+      image="compose-cockpit-opti (built from apps/cockpit-gw)", kind="container",
+      notes="SSH-to-bridge gateway for the Pertal Console: full root Cockpit on opti with "
+            "no login, reachable only from Pertal over the private cockpit_gw bridge "
+            "(172.30.90.0/24) — port 9090 is never published, and nginx returns 404 for "
+            "/cp-*. Bypasses Pertal jobs/audit and holds. See apps/cockpit-gw/README.md."),
+    N("cockpit-rpi", "Cockpit gateway · rpi", "opti", "infra", "control",
+      sublabel="Root console, no login · /cp-rpi", container="cockpit-rpi",
+      image="compose-cockpit-rpi (built from apps/cockpit-gw)", kind="container",
+      notes="Same gateway as cockpit-opti, targeting ptm@192.168.1.10. Runs on opti, not "
+            "on the rpi — the rpi stays a 2-container DNS appliance."),
+    N("cockpit-noblenumbat", "Cockpit gateway · noblenumbat", "opti", "infra", "control",
+      sublabel="Root console, no login · /cp-noblenumbat", container="cockpit-noblenumbat",
+      image="compose-cockpit-noblenumbat (built from apps/cockpit-gw)", kind="container",
+      notes="Same gateway as cockpit-opti, targeting ptm@192.168.1.6."),
     N("opti-runner", "Actions runner (x86)", "opti", "infra", "control",
       sublabel="self-hosted · runs the agent workflow", kind="service"),
     N("opti-timers", "systemd timers", "opti", "infra", "control",
-      sublabel="docs 05:16 · health-digest 06:30 · autoreboot · coldcopy Sun 04:00 · zfs-scrub monthly", kind="timer"),
+      sublabel="docs 05:16 · health-digest 06:30 · autoreboot · zfs scrub 2nd Sun (cron)", kind="timer"),
     N("opti-remote", "Remote access", "opti", "infra", "control",
       sublabel="sshd :22 · xrdp :3389", kind="service"),
 
@@ -535,6 +572,22 @@ NODES = [
             "segments through nginx. An idle reaper stops any slot whose playlist has not "
             "been fetched for 5 minutes, so nothing pulls a stream unattended. It is the "
             "only container in this stack with mem_limit/cpus caps."),
+    N("audiobookshelf", "Audiobookshelf", "noblenumbat", "media", "serve",
+      sublabel="Audiobooks + phone app :13378", container="audiobookshelf",
+      image="ghcr.io/advplyr/audiobookshelf:latest", ports=["13378→80"],
+      url="http://noblenumbat.lan:13378/", kind="container",
+      notes="Added 2026-10-03. Library is a hardlinked Author/Series/Vol tree under "
+            "audiobooks/library on noblenumbat's local NVMe (not opti's pool), so torrents "
+            "keep seeding from their own folders. Defined only in the on-host "
+            "/opt/yams/docker-compose.custom.yaml, not yet in the repo's compose."),
+    N("readarr", "Readarr (BookshelfNG)", "noblenumbat", "media", "arr",
+      sublabel="Book automation :8788", container="readarr",
+      image="ghcr.io/snapetech/bookshelfng:hardcover", ports=["8788→8787"], kind="container",
+      notes="BookshelfNG fork with native Hardcover metadata, added 2026-10-03. Imports into "
+            "/data/books — Kavita's Books library, on the local NVMe. Its own auto-search is "
+            "unreliable; working route is pushing real magnets via /api/v1/release/push. "
+            "Host port 8788 because 8787 is a host python3 service. Defined only in the "
+            "on-host /opt/yams/docker-compose.custom.yaml, not yet in the repo's compose."),
     N("sonarr", "Sonarr", "noblenumbat", "media", "arr",
       sublabel="TV automation :8989", container="sonarr", ports=["8989/tcp"], kind="container"),
     N("radarr", "Radarr", "noblenumbat", "media", "arr",
@@ -562,10 +615,10 @@ NODES = [
     N("portainer", "Portainer", "noblenumbat", "infra", "nn-platform",
       sublabel="Container UI :9000", container="portainer", ports=["9000/tcp"], kind="container"),
     N("dozzle-agent", "Dozzle agent", "noblenumbat", "infra", "nn-platform",
-      sublabel="Log stream for rpi's Dozzle :7007", container="dozzle-agent",
+      sublabel="Log stream for opti's Dozzle :7007", container="dozzle-agent",
       image="amir20/dozzle:latest", ports=["7007/tcp"], kind="container"),
     N("nn-docker", "Docker engine", "noblenumbat", "infra", "nn-platform",
-      sublabel="15 containers · YAMS compose", kind="daemon",
+      sublabel="19 containers · YAMS compose", kind="daemon",
       notes="Stack lives at /opt/yams/docker-compose.yaml. Watchtower was removed "
             "2026-07-25; image updates are now report-only (software-inventory) and "
             "applied deliberately via docker compose pull. Since 2026-08-07 the deploy "
@@ -594,7 +647,7 @@ NODES = [
 
     # ── clients ──────────────────────────────────────────────────────────────
     N("workstation", "tux workstation", "tux", "client", "clients",
-      sublabel="Editor + Claude Code · CIFS to opti", kind="device"),
+      sublabel="Editor + Claude Code · repo at E:\\REPO\\ptm4", kind="device"),
     N("browser", "Browsers & phones", "tux", "client", "clients",
       sublabel="Dashboard · Jellyfin · vault · notes", kind="device"),
     N("llama", "llama-server", "android", "apps", "clients",
@@ -631,7 +684,8 @@ EDGES = [
     E("e-gw-dhcp", "gateway", "other-clients", "DHCP lease · scope .2–.250 (router-served since Sept 2026)", "dns"),
 
     # opti web edge (app tier since 2026-09-10)
-    E("e-browser-nginx", "browser", "nginx-webapp", "HTTPS :8443 webapp.lan", "http"),
+    E("e-browser-nginx", "browser", "nginx-webapp", "HTTPS :8443 / :8444 webapp.lan", "http"),
+    E("e-nginx-pertal", "nginx-webapp", "pertal", "proxy :8444 → :3000 (Pertal)", "http"),
     E("e-nginx-webapp", "nginx-webapp", "webapp", "proxy → :3000", "http"),
     E("e-nginx-notes", "nginx-webapp", "notes-api", "proxy /notes → :3002", "http"),
     E("e-browser-notes", "browser", "notes-api", "direct :3002 (no cert prompt)", "http"),
@@ -649,6 +703,24 @@ EDGES = [
     E("e-webapp-dispatch", "webapp", "dispatcher", "enable/disable + run-now :9099", "control"),
     E("e-webapp-llama", "webapp", "llama", "chat + runbook Q&A :8080", "http"),
     E("e-webapp-agentlogs", "webapp", "agent-logs", "reads /agent-logs, /reports directly off the pool", "storage"),
+
+    # Pertal (v4) fan-out
+    E("e-pertal-hldb", "pertal", "homelab-db-server", "status, data + docs :9100", "http"),
+    E("e-pertal-seerr", "pertal", "seerr", "Requests page :5055", "http"),
+    E("e-pertal-readarr", "pertal", "readarr", "Books panel :8788", "http"),
+    E("e-pertal-streamstation", "pertal", "stream-station", "streams control :8098", "control"),
+    E("e-pertal-cp-opti", "pertal", "cockpit-opti", "Console · cockpit_gw bridge", "control"),
+    E("e-pertal-cp-rpi", "pertal", "cockpit-rpi", "Console · cockpit_gw bridge", "control"),
+    E("e-pertal-cp-nn", "pertal", "cockpit-noblenumbat", "Console · cockpit_gw bridge", "control"),
+    E("e-cp-opti-remote", "cockpit-opti", "opti-remote", "SSH as ptm → root Cockpit bridge", "control"),
+    E("e-cp-rpi-sshd", "cockpit-rpi", "rpi-sshd", "SSH as ptm → root Cockpit bridge", "control"),
+    E("e-cp-nn-remote", "cockpit-noblenumbat", "nn-remote", "SSH as ptm → root Cockpit bridge", "control"),
+
+    # Seerr (media requests)
+    E("e-browser-seerr", "browser", "seerr", "requests UI :5055", "http"),
+    E("e-seerr-jellyfin", "seerr", "jellyfin", "Jellyfin sign-in + library :8096", "http"),
+    E("e-seerr-sonarr", "seerr", "sonarr", "approved TV requests", "http"),
+    E("e-seerr-radarr", "seerr", "radarr", "approved movie requests", "http"),
 
     # bots outbound
     E("e-bots-discord", "bot-weather", "discord", "bot gateway", "http"),
@@ -692,13 +764,14 @@ EDGES = [
     E("e-agents-ntfy", "agents", "ntfy", "critical findings + resolved, via notify.py", "http"),
 
     # CI / deploy
-    E("e-ws-repo", "workstation", "samba", "edits the repo over CIFS", "storage"),
+    E("e-ws-repo", "workstation", "samba", "SMB \\\\opti\\red (files — not the repo)", "storage"),
     E("e-ws-github", "workstation", "github", "git push main", "ci"),
     E("e-github-rpirunner", "github", "rpi-runner", "outbound poll → job", "ci"),
     E("e-github-optirunner", "github", "opti-runner", "outbound poll → job", "ci"),
     E("e-rpirunner-docker", "rpi-runner", "rpi-docker", "compose pull + up -d (rpi's own 2-container stack)", "ci"),
-    E("e-optirunner-docker", "opti-runner", "opti-docker", "compose pull + up -d (13-container app tier)", "ci"),
+    E("e-optirunner-docker", "opti-runner", "opti-docker", "compose pull + up -d (opti app tier)", "ci"),
     E("e-optirunner-webapp", "opti-runner", "webapp", "builds the Vite frontend and restarts the container", "ci"),
+    E("e-optirunner-pertal", "opti-runner", "pertal", "builds + starts Pertal last (compose profile 'pertal')", "ci"),
 
     # noblenumbat media
     E("e-prowlarr-sonarr", "prowlarr", "sonarr", "indexer feed", "http"),
@@ -713,6 +786,10 @@ EDGES = [
     E("e-radarr-sab", "radarr", "sabnzbd", "sends NZBs", "http"),
     E("e-bazarr-sonarr", "bazarr", "sonarr", "reads series list", "http"),
     E("e-bazarr-radarr", "bazarr", "radarr", "reads movie list", "http"),
+    E("e-prowlarr-readarr", "prowlarr", "readarr", "indexer feed (only some indexers sync)", "http"),
+    E("e-readarr-qbt", "readarr", "qbittorrent", "sends torrents", "http"),
+    E("e-readarr-kavita", "readarr", "kavita", "imports into Kavita's Books library (/data/books)", "storage"),
+    E("e-browser-abs", "browser", "audiobookshelf", "listens :13378 (web + phone app)", "http"),
 
     # VPN namespace
     E("e-qbt-vpnnet", "qbittorrent", "nn-vpn-net", "network_mode: service:gluetun", "vpn"),
@@ -818,16 +895,14 @@ FLOWS = [
         "name": "Shipping a change to this dashboard",
         "summary": "How code on the workstation becomes a running container on opti — with no inbound port ever opened.",
         "steps": [
-            ("e-ws-repo", "Edit the repo on tux, over CIFS",
-             "The working copy at ~/opti/ptm/repo/ptm4 is a CIFS mount of opti's pool, so saving a file writes straight to opti's disk."),
-            ("e-ws-github", "git push to main",
-             "Pushing paths under homelab/hosts/opti/apps/webapp.v3.Fable/** is what triggers the deploy workflow for the live dashboard."),
+            ("e-ws-github", "Edit on the workstation, then git push to main",
+             "The working copy is E:\\REPO\\ptm4 on the workstation's own disk — nothing on opti is edited by hand. Pushing paths under homelab/hosts/opti/apps/webapp.v3.Fable/** is what triggers the deploy workflow for the live dashboard."),
             ("e-github-optirunner", "opti's own runner picks up the job",
              "The runner polls GitHub outbound over HTTPS, on opti itself. Nothing is exposed inbound — this is the only way external code enters the LAN."),
             ("e-optirunner-webapp", "The Vite frontend is built and shipped",
              "webapp.v3.Fable is built by CI and deployed straight into opti's compose stack — there is no live-on-copy path. A change reaches webapp.lan only once this workflow (opti-apps-deploy.yml) runs."),
             ("e-optirunner-docker", "compose pull + up -d reconciles the stack",
-             "Images are refreshed for the 13-container app tier and the stack reconciled, then the webapp container restarts to re-exec the Node process."),
+             "Images are refreshed for the app tier and the stack reconciled, then the webapp container restarts to re-exec the Node process. Pertal and the Cockpit gateways sit behind compose profiles and are started explicitly, last."),
         ],
     },
     {
@@ -911,7 +986,7 @@ FLOWS = [
             ("e-vaultnginx-vault", "Proxied to Vaultwarden",
              "Vaultwarden itself is never published to the host — only nginx can reach it, over the internal docker bridge."),
             ("e-vault-db", "Secrets are read from MariaDB",
-             "This dataset is the most backup-critical thing on the rpi."),
+             "This dataset is the most backup-critical thing in the homelab. It has lived on opti since 2026-09-10, on pool red."),
         ],
     },
 ]
@@ -938,7 +1013,7 @@ NETWORK = {
         {"name": "webapp.lan", "ip": "192.168.1.11", "note": "canonical dashboard hostname since 2026-09-10, when the app tier moved to opti"},
         {"name": "webapp.rpi.lan / webapp.rpi", "ip": "192.168.1.11", "note": "legacy alias/SAN — still resolves but should not be used in new work"},
         {"name": "bitwarden.rpi.lan / bitwarden.rpi", "ip": "192.168.1.11"},
-        {"name": "vpn.rpi.lan", "ip": "192.168.1.10", "note": "orphaned — WireGuard is decommissioned"},
+        {"name": "vpn.rpi.lan", "ip": "192.168.1.10", "note": "orphaned — the rpi's old WireGuard is decommissioned (the router runs WireGuard now)"},
         {"name": "opti.lan / opti", "ip": "192.168.1.11"},
         {"name": "noblenumbat.lan / noblenumbat", "ip": "192.168.1.6"},
         {"name": "jellyfin.lan / jellyfin", "ip": "192.168.1.6"},
@@ -957,9 +1032,10 @@ NETWORK = {
         {"host": "opti", "ip": "192.168.1.11", "mac": "34:17:eb:d1:eb:f8"},
     ],
     "notes": [
-        "There is no inbound path into this LAN. WireGuard and its peer-manager UI were "
-        "decommissioned; no wg0 interface and nothing on UDP 51820. Orphaned peer configs "
-        "still sit on the rpi's disk.",
+        "The one inbound path into this LAN is the router's own WireGuard server (UDP "
+        ":51820, tunnel 10.213.87.0/24). No homelab host runs wg — the rpi's old WireGuard "
+        "and its peer-manager UI were decommissioned, and orphaned peer configs still sit "
+        "on the rpi's disk.",
         "Remote access is LAN-only: SSH everywhere, RDP on opti (xrdp) and noblenumbat "
         "(gnome-remote-desktop).",
     ],
@@ -972,8 +1048,10 @@ STORAGE = {
     "pool": {
         "name": "zpool red → /srv/red (share root: red/fs → /srv/red/fs)",
         "size": "3.6 TB",
-        "used": "951 GB (26%)",
-        "free": "2.58 TB",
+        # The Storage tab renders these (and parses the % for its bar), so they stay
+        # curated. As of PROBED_AT: `zfs list red` → used 2.77T, avail 761G.
+        "used": "2.77 TB (76%)",
+        "free": "761 GB",
         "branches": [
             {"dev": "/dev/sdc (WD40EFZZ, 4 TB WD Red Plus)", "size": "3.6 TB", "fs": "ZFS",
              "note": "single vdev — no redundancy, and no second copy since the attic cold copy was retired 2026-09-24"},
@@ -986,7 +1064,7 @@ STORAGE = {
         {"path": "ptm/agent-logs", "purpose": "Agent JSON reports → webapp /agent-logs (local bind mount on opti)"},
         {"path": "ptm/security-reports", "purpose": "Security agent output → webapp /reports (local bind mount on opti)"},
         {"path": "ptm/certs", "purpose": "TLS certs for webapp.lan"},
-        {"path": "ptm/repo/ptm4", "purpose": "The repo itself — edited from tux, read by the webapp"},
+        {"path": "ptm/repo/ptm4", "purpose": "CI deploy snapshot of the repo (rsync, no .git) — opti's services run from it; never edited by hand"},
         {"path": "ptm/logging", "purpose": "Deploy logs written by the CI runners"},
     ],
     "consumers": [
@@ -994,7 +1072,7 @@ STORAGE = {
         {"host": "noblenumbat", "mount": "/mnt/opti-library", "proto": "CIFS 3.1.1", "what": "movies"},
         {"host": "noblenumbat", "mount": "/mnt/opti-shows", "proto": "CIFS 3.1.1", "what": "TV"},
         {"host": "noblenumbat", "mount": "/mnt/opti-media", "proto": "CIFS 3.1.1", "what": "import inbox"},
-        {"host": "tux", "mount": "~/opti", "proto": "CIFS 3.1.1", "what": "the whole share, for editing"},
+        {"host": "tux", "mount": "~/opti", "proto": "CIFS 3.1.1", "what": "the whole share, for files (the repo is edited locally, not here)"},
     ],
     "notes": [
         "The live share [red] is configured in /etc/homelab/samba-red.conf, hand-managed. "
@@ -1054,9 +1132,11 @@ OBSERVATIONS = [
     },
     {
         "severity": "good",
-        "title": "No inbound attack surface",
-        "detail": "WireGuard is decommissioned and nothing is port-forwarded. Both CI runners "
-                  "reach GitHub outbound-only, so deploys work without exposing anything.",
+        "title": "One inbound path, and it is on the router",
+        "detail": "The only thing reachable from outside is the router's WireGuard server "
+                  "(UDP :51820); no homelab host listens on the WAN and nothing else is "
+                  "port-forwarded. Both CI runners reach GitHub outbound-only, so deploys "
+                  "work without exposing anything.",
     },
     {
         "severity": "good",
@@ -1179,7 +1259,8 @@ def build():
     return {
         "meta": {
             "title": "Homelab architecture",
-            "subtitle": "Four hosts, 32 containers, one storage pool — and how they actually depend on each other.",
+            "subtitle": f"Four hosts, {sum(1 for n in NODES if n.get('container'))} containers, "
+                        "one storage pool — and how they actually depend on each other.",
             "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "probedAt": PROBED_AT,
             "generator": "homelab/tools/architecture/build-arch-data.py",

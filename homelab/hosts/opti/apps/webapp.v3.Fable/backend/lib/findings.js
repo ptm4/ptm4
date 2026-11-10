@@ -18,7 +18,7 @@ const MAX_ACKS = 500;
 
 const RUNNER_SOURCES = [
   'homelab-doctor-latest', 'hardware-latest', 'software-latest',
-  'network-latest', 'coldcopy-latest',
+  'network-latest',
 ];
 
 const readJson = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (_) { return null; } };

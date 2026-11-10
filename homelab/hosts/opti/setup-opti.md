@@ -73,6 +73,11 @@ sudo chmod 600 /etc/hl-agents.env
 mkdir -p /srv/dev-disk-by-uuid-C682C2DE82C2D1DB/fs/ptm/agent-logs
 ```
 
+Owner and mode of this file and opti's other secrets (compose `.env`, Vaultwarden key, TLS/CA
+keys) are kept in `homelab/hosts/opti/secret-perms.conf`; `opti-deploy.yml` re-applies them on
+every push, so after restoring a secret by hand the next deploy puts its mode right. Add new
+secret files there rather than chmod-ing them by hand.
+
 ## 3b. SSH key for multi-host collection
 
 The homelab agents (`hardware-report`, `software-inventory`, `network-report`, and

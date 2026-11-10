@@ -16,6 +16,17 @@ Categories:
 Writes <reports>/journal-hunt-latest.json. Reports dir from $HL_REPORTS_DIR
 (default: ../../../security-reports relative to this file).
 
+Journal access: an unprivileged user outside the systemd-journal / adm group sees only
+its own user journal (no kernel, no smartd). The hunter checks for that and reports a
+warn finding rather than silently scanning a fraction of the log. On opti the collector
+units grant it with SupplementaryGroups=systemd-journal.
+
+Self-matching: the homelab's own collectors log through journald too. Lines that are
+the hunter's/collectors' own output (ingest stats, cron/sudo PAM session lines) are
+skipped, and sudo audit lines ("... ; COMMAND=...") are checked against the security
+rules only — a command line naming smartctl is not a disk error. Tests:
+  python -m unittest discover -s homelab/tools/security -v
+
 Usage:
   python3 journald-hunter.py [--hours 24]
 """
@@ -46,11 +57,34 @@ PATTERNS = [
     ("service",  "warn",     re.compile(r"Failed with result|entered failed state|Failed to start|Main process exited.*status=[1-9]"), "systemd unit failure"),
     ("service",  "critical", re.compile(r"dumped core|systemd-coredump\[\d+\]|Process \d+ \(.+\) of user"), "Process core dump"),
     ("oom",      "critical", re.compile(r"Out of memory|oom[-_]kill|Killed process \d+|invoked oom-killer"), "Out-of-memory kill"),
-    ("storage",  "critical", re.compile(r"I/O error|EXT4-fs error|XFS.*error|Buffer I/O error|critical medium error|failed command| ataX?.*error", re.I), "Disk / filesystem error"),
-    ("storage",  "warn",     re.compile(r"SMART|reallocated sector|pending sector|offline uncorrectable", re.I), "SMART / disk-health warning"),
-    ("kernel",   "critical", re.compile(r"Hardware Error|Machine Check Exception|mce: \[Hardware Error\]|Uncorrected error|kernel BUG|BUG: |general protection fault|Call Trace"), "Kernel / hardware fault"),
-    ("kernel",   "warn",     re.compile(r"segfault|traps:|oops"), "Process crash (segfault/oops)"),
+    ("storage",  "critical", re.compile(r"I/O error|EXT4-fs error|XFS.*error|Buffer I/O error|critical medium error|failed command| ataX?.*error|^ata\d+(\.\d+)?:.*\berror", re.I), "Disk / filesystem error"),
+    # smartd's own wording only. A bare "SMART" also matched ingest's "smart_flags" stats
+    # line and sudo audit lines for smartctl; smartd's temperature/airflow/raw-read-rate
+    # attribute chatter is deliberately not listed.
+    ("storage",  "critical", re.compile(r"FAILED SMART self-check|Failed SMART (usage|prefailure) Attribute|self-assessment test result: FAILED", re.I), "SMART health failure"),
+    ("storage",  "warn",     re.compile(
+        r"Currently unreadable \(pending\) sectors|Offline uncorrectable sectors|ATA error count increased"
+        r"|Self-Test Log error count increased"
+        r"|SMART (Prefailure|Usage) Attribute: \d+ (Reallocated_Sector_Ct|Reallocated_Event_Count|Current_Pending_Sector|Offline_Uncorrectable|Reported_Uncorrect) changed"
+        r"|reallocated sector|pending sector|offline uncorrectable", re.I), "SMART / disk-health warning"),
+    # \bBUG: so sshd's "send DEBUG: Broken pipe" no longer reads as a kernel BUG.
+    ("kernel",   "critical", re.compile(r"Hardware Error|Machine Check Exception|mce: \[Hardware Error\]|Uncorrected error|kernel BUG|\bBUG: |general protection fault|Call Trace"), "Kernel / hardware fault"),
+    # The kernel prints "Oops:"; lowercase "oops" never matched a real one.
+    ("kernel",   "warn",     re.compile(r"segfault|traps:|\bOops\b"), "Process crash (segfault/oops)"),
 ]
+
+# Lines that are the homelab's own bookkeeping, never a finding:
+#  - ingest.py's per-cycle stats dict ("[ingest] {... smart_flags ...}")
+#  - PAM session lines for cron jobs and sudo: every collector's sudo and every root
+#    cron job opens one. sshd/su root sessions are still counted.
+SKIP_LINE = re.compile(r"^\[ingest\] \{|pam_unix\((cron|sudo|sudo-i):session\)")
+
+# sudo's audit line as journalctl -o cat prints it (no "sudo:" prefix):
+#   "    ptm : PWD=/home/ptm ; USER=root ; COMMAND=/usr/sbin/smartctl -H -A /dev/sda"
+# It records a command, not an event, so only the security rules apply to it.
+SUDO_AUDIT = re.compile(r"^\s*\S+ : (TTY=\S+ ; )?PWD=.* ; USER=\S+ ; .*COMMAND=")
+
+JOURNAL_GROUPS = ("systemd-journal", "adm", "wheel")
 
 SEV_ORDER = {"critical": 0, "warn": 1, "info": 2}
 STATUS_FROM_SEV = {"critical": "critical", "warn": "warn", "info": "ok"}
@@ -60,11 +94,41 @@ def have_journalctl():
     return shutil.which("journalctl") is not None
 
 
-def journal_lines(hours):
-    """Yield message strings from journald over the lookback window."""
+def journal_cmd(hours):
+    """argv for reading the journal; a remote read can prefix it (e.g. ["ssh", host])."""
+    return ["journalctl", "--no-pager", "--since", f"{hours} hours ago", "-o", "cat"]
+
+
+def journal_access():
+    """'full' if this process can read the system journal, else 'partial'.
+
+    Root, or membership of systemd-journal / adm / wheel (the groups journald's ACLs
+    grant), sees everything. Anyone else gets only their own user journal.
+    """
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is None:          # not a POSIX host; journald does not apply
+        return "full"
+    if geteuid() == 0:
+        return "full"
+    try:
+        import grp
+    except ImportError:
+        return "full"
+    gids = set(os.getgroups()) | {os.getegid()}
+    for name in JOURNAL_GROUPS:
+        try:
+            if grp.getgrnam(name).gr_gid in gids:
+                return "full"
+        except KeyError:
+            continue
+    return "partial"
+
+
+def journal_lines(hours, cmd=None):
+    """Return message strings from journald over the lookback window."""
     try:
         out = subprocess.run(
-            ["journalctl", "--no-pager", "--since", f"{hours} hours ago", "-o", "cat"],
+            cmd or journal_cmd(hours),
             capture_output=True, text=True, timeout=120,
         )
         if out.returncode == 0:
@@ -86,22 +150,55 @@ def file_lines(hours):
     return lines
 
 
+def read_lines(hours):
+    """(lines, used_fallback): journald if it yields anything, else the text logs."""
+    if have_journalctl():
+        lines = journal_lines(hours)
+        if lines:
+            return lines, False
+        # journalctl present but returned nothing (perms?) — try files
+        lines = file_lines(hours)
+        return lines, bool(lines)
+    return file_lines(hours), True
+
+
+def classify(line):
+    """The (category, severity, pattern, label) rule a line counts under, or None."""
+    if SKIP_LINE.search(line):
+        return None
+    audit = SUDO_AUDIT.match(line) is not None
+    for rule in PATTERNS:
+        if audit and rule[0] != "security":
+            continue
+        if rule[2].search(line):
+            return rule  # first matching pattern wins
+    return None
+
+
 def hunt(lines):
     cat_counts = Counter()
     # keep a few representative examples per (category,label) so the report isn't huge
     examples = {}
     worst_sev = "info"
     for line in lines:
-        for category, severity, pat, label in PATTERNS:
-            if pat.search(line):
-                key = (category, severity, label)
-                cat_counts[key] += 1
-                if key not in examples:
-                    examples[key] = line.strip()[:300]
-                if SEV_ORDER[severity] < SEV_ORDER[worst_sev]:
-                    worst_sev = severity
-                break  # first matching pattern wins
+        rule = classify(line)
+        if rule is None:
+            continue
+        category, severity, _pat, label = rule
+        key = (category, severity, label)
+        cat_counts[key] += 1
+        if key not in examples:
+            examples[key] = line.strip()[:300]
+        if SEV_ORDER[severity] < SEV_ORDER[worst_sev]:
+            worst_sev = severity
     return cat_counts, examples, worst_sev
+
+
+PARTIAL_READ_FINDING = {
+    "severity": "warn",
+    "message": "[hunter] Partial journal read — this user is not in systemd-journal/adm, "
+               "so kernel and smartd lines are not visible and disk errors cannot be seen",
+}
 
 
 def build_findings(cat_counts, examples):
@@ -122,18 +219,16 @@ def main():
 
     os.makedirs(REPORTS_DIR, exist_ok=True)
 
-    used_fallback = False
-    if have_journalctl():
-        lines = journal_lines(args.hours)
-        if not lines:  # journalctl present but returned nothing (perms?) — try files
-            lines = file_lines(args.hours)
-            used_fallback = bool(lines)
-    else:
-        lines = file_lines(args.hours)
-        used_fallback = True
+    lines, used_fallback = read_lines(args.hours)
+    access = "files" if used_fallback else journal_access()
 
     cat_counts, examples, worst_sev = hunt(lines)
     findings = build_findings(cat_counts, examples)
+    if access == "partial":
+        findings.append(dict(PARTIAL_READ_FINDING))
+        if SEV_ORDER["warn"] < SEV_ORDER[worst_sev]:
+            worst_sev = "warn"
+        findings.sort(key=lambda f: SEV_ORDER.get(f["severity"], 9))
 
     status = STATUS_FROM_SEV[worst_sev] if findings else "ok"
     by_cat = Counter()
@@ -146,6 +241,8 @@ def main():
         summary = f"{len(lines)} log lines scanned over {args.hours}h — no errors or flags"
     if used_fallback:
         summary += " (text-log fallback)"
+    elif access == "partial":
+        summary += " (partial journal: own user journal only)"
 
     report = {
         "tool": "journald-hunter",
@@ -155,6 +252,7 @@ def main():
         "findings": findings,
         "categories": dict(by_cat),
         "source": "auth/syslog files" if used_fallback else "journald",
+        "journal_access": access,
         "window_hours": args.hours,
     }
 

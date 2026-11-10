@@ -25,7 +25,7 @@ x-logging: &default-logging
 
 services:
   pihole:
-    image: pihole/pihole:latest
+    image: pihole/pihole:2026.07.2@sha256:f7d1be836e3bc608b56d82fc9904f5a831cdfbc0dc9c6d58f94e4c985c70038b
     container_name: pihole
     restart: unless-stopped
     logging: *default-logging
@@ -45,7 +45,7 @@ services:
   # Ships this host's container logs to the Dozzle instance on opti, so the
   # dashboard's #logs tab still shows rpi after the migration.
   dozzle-agent:
-    image: amir20/dozzle:latest
+    image: amir20/dozzle:v10.10.0@sha256:2875e3c1f31f2244ee99d6067b53852b30666b3e2fb293d179bc8be94b1da5eb
     container_name: dozzle-agent
     restart: unless-stopped
     logging: *default-logging

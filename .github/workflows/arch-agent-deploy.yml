@@ -1,0 +1,220 @@
+name: Deploy hl-arch-agent
+
+# Installs the per-host architecture agent (hl-arch-agent.py + the monitor.py it imports
+# + its unit) on opti, rpi and noblenumbat from the repo. Until 2026-11 these were hand-
+# copied to /usr/local/bin on each host, and a copy straight from the Windows working
+# copy (core.autocrlf=true) arrives with CRLF line endings. The runners check out the
+# LF blobs git stores, and the preflight below refuses a CR anyway.
+#
+# The `updaters` job does the same for homelab-autoupdate.sh / homelab-autoreboot.sh and
+# their units on rpi and noblenumbat. opti already gets those from opti-deploy.yml.
+#
+# Deliberately a workflow of its own, not steps in the per-host deploys:
+#   - noblenumbat-deploy.yml runs `docker compose up -d --remove-orphans` on every
+#     trigger, and rpi-deploy.yml pulls and recreates Pi-hole. An agent edit must
+#     trigger neither, so this file never touches docker, compose or Pi-hole, and its
+#     paths below do not overlap homelab/hosts/noblenumbat/** or rpi's compose file.
+#   - /etc/hl-arch-agent.env (per-host secrets, mode 600) is never written here.
+#
+# Each job compares the repo files against the installed ones and does nothing when they
+# match: no restart, no reload. On a change it keeps the previous copies in
+# /var/lib/hl-arch-agent/prev/, restarts the agent and smoke-tests /status; a failed smoke
+# test puts the previous copies back and fails the job. The hosts run one at a time and the
+# first failure stops the rest, so a bad agent can take down at most one host.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "homelab/tools/arch-agent/hl-arch-agent.py"
+      - "homelab/tools/arch-agent/monitor.py"
+      - "homelab/tools/arch-agent/hl-arch-agent.service"
+      - "homelab/tools/automation/**"
+      - ".github/workflows/arch-agent-deploy.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: arch-agent-deploy
+  cancel-in-progress: false
+
+jobs:
+  agent:
+    name: agent (${{ matrix.host }})
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include:
+          - host: rpi
+            runner: [self-hosted, ARM64]
+          - host: noblenumbat
+            runner: [self-hosted, noblenumbat]
+          - host: opti
+            runner: [self-hosted, opti]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    env:
+      SRC: homelab/tools/arch-agent
+      PREV: /var/lib/hl-arch-agent/prev
+      # name  installed path  mode
+      FILES: |
+        hl-arch-agent.py /usr/local/bin/hl-arch-agent.py 0755
+        monitor.py /usr/local/bin/monitor.py 0644
+        hl-arch-agent.service /etc/systemd/system/hl-arch-agent.service 0644
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner is on the expected host
+        run: |
+          [ "$(hostname)" = "${{ matrix.host }}" ] \
+            || { echo "::error::runner for ${{ matrix.host }} is on $(hostname)"; exit 1; }
+
+      - name: Preflight (LF endings, Python compiles with this host's python3)
+        run: |
+          set -euo pipefail
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if grep -q $'\r' "$SRC/$name"; then echo "::error::$SRC/$name has CR line endings"; exit 1; fi
+          done <<< "$FILES"
+          python3 -c 'import sys; [compile(open(f, encoding="utf-8").read(), f, "exec") for f in sys.argv[1:]]' \
+            "$SRC/hl-arch-agent.py" "$SRC/monitor.py"
+          echo "preflight OK"
+
+      - name: Install changed files
+        id: install
+        run: |
+          set -euo pipefail
+          changed=""; unit_changed=0
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if ! sudo cmp -s "$SRC/$name" "$dest"; then
+              changed="$changed $name"
+              case "$name" in *.service) unit_changed=1 ;; esac
+            fi
+          done <<< "$FILES"
+          if [ -z "$changed" ]; then
+            echo "no change on $(hostname) - agent left running untouched"
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "changed:$changed"
+          sudo install -d -o root -g root -m 0755 "$PREV"
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if [ -e "$dest" ]; then sudo cp -p "$dest" "$PREV/$name"; fi
+            sudo install -o root -g root -m "$mode" "$SRC/$name" "$dest"
+          done <<< "$FILES"
+          if [ "$unit_changed" = 1 ]; then sudo systemctl daemon-reload; fi
+          sudo systemctl restart hl-arch-agent
+          echo "changed=1" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke-test /status
+        if: steps.install.outputs.changed == '1'
+        run: |
+          set -uo pipefail
+          want_ver=$(sed -n 's/^AGENT_VERSION = "\(.*\)"$/\1/p' "$SRC/hl-arch-agent.py")
+          port=$(sudo sed -n 's/^HL_ARCH_AGENT_PORT=//p' /etc/hl-arch-agent.env 2>/dev/null | tr -d "\"' " | tail -1 || true)
+          port=${port:-8787}
+          # 127.0.0.1 first, then this host's own IPv4s, so the check still works if the
+          # agent is ever bound to the LAN address only.
+          addrs="127.0.0.1 $(hostname -I | tr ' ' '\n' | grep -E '^[0-9]+(\.[0-9]+){3}$' | tr '\n' ' ' || true)"
+          for i in $(seq 1 15); do
+            for ip in $addrs; do
+              if curl -fsS -m 3 "http://$ip:$port/status" 2>/dev/null \
+                 | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("host")==sys.argv[1] and d.get("agent_version")==sys.argv[2] else 1)' \
+                   "${{ matrix.host }}" "$want_ver"; then
+                systemctl is-active hl-arch-agent
+                echo "/status OK on $ip:$port: host=${{ matrix.host }} agent_version=$want_ver"
+                exit 0
+              fi
+            done
+            sleep 2
+          done
+          echo "::error::hl-arch-agent did not answer /status as host=${{ matrix.host }} version=$want_ver within 30s"
+          sudo journalctl -u hl-arch-agent -n 30 --no-pager
+          exit 1
+
+      - name: Roll back to the previous copies
+        if: failure() && steps.install.outputs.changed == '1'
+        run: |
+          set -uo pipefail
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if [ -e "$PREV/$name" ]; then sudo cp -p "$PREV/$name" "$dest"; fi
+          done <<< "$FILES"
+          sudo systemctl daemon-reload
+          sudo systemctl restart hl-arch-agent
+          sleep 3
+          systemctl is-active hl-arch-agent
+          echo "::warning::rolled back hl-arch-agent on ${{ matrix.host }} to the previously installed copies"
+
+  updaters:
+    # Installs only. Never enables, disables or starts a unit: rpi's homelab-autoupdate
+    # timer is off on purpose (the update hold), noblenumbat's is on, and that state
+    # belongs to the hosts, not to this deploy.
+    name: updaters (${{ matrix.host }})
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include:
+          - host: rpi
+            runner: [self-hosted, ARM64]
+          - host: noblenumbat
+            runner: [self-hosted, noblenumbat]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    env:
+      SRC: homelab/tools/automation
+      FILES: |
+        homelab-autoupdate.sh /usr/local/bin/homelab-autoupdate.sh 0755
+        homelab-autoreboot.sh /usr/local/bin/homelab-autoreboot.sh 0755
+        homelab-autoupdate.service /etc/systemd/system/homelab-autoupdate.service 0644
+        homelab-autoupdate.timer /etc/systemd/system/homelab-autoupdate.timer 0644
+        homelab-autoreboot.service /etc/systemd/system/homelab-autoreboot.service 0644
+        homelab-autoreboot.timer /etc/systemd/system/homelab-autoreboot.timer 0644
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Runner is on the expected host
+        run: |
+          [ "$(hostname)" = "${{ matrix.host }}" ] \
+            || { echo "::error::runner for ${{ matrix.host }} is on $(hostname)"; exit 1; }
+
+      - name: Preflight (LF endings, shell syntax)
+        run: |
+          set -euo pipefail
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if grep -q $'\r' "$SRC/$name"; then echo "::error::$SRC/$name has CR line endings"; exit 1; fi
+          done <<< "$FILES"
+          bash -n "$SRC/homelab-autoupdate.sh"
+          bash -n "$SRC/homelab-autoreboot.sh"
+          echo "preflight OK"
+
+      - name: Install changed files
+        run: |
+          set -euo pipefail
+          changed=""; unit_changed=0
+          while read -r name dest mode; do
+            [ -n "$name" ] || continue
+            if ! sudo cmp -s "$SRC/$name" "$dest"; then
+              changed="$changed $name"
+              sudo install -o root -g root -m "$mode" "$SRC/$name" "$dest"
+              case "$name" in *.service|*.timer) unit_changed=1 ;; esac
+            fi
+          done <<< "$FILES"
+          if [ -z "$changed" ]; then echo "no change on $(hostname)"; exit 0; fi
+          echo "installed:$changed"
+          if [ "$unit_changed" = 1 ]; then sudo systemctl daemon-reload; fi
+
+      - name: Show timer state (unchanged by this job)
+        run: |
+          for t in homelab-autoupdate.timer homelab-autoreboot.timer; do
+            echo "$t: $(systemctl is-enabled "$t" 2>&1) / $(systemctl is-active "$t" 2>&1)"
+          done
+          systemctl list-timers homelab-autoupdate.timer homelab-autoreboot.timer --all --no-legend --no-pager

@@ -170,7 +170,8 @@ class SupervisorTests(unittest.TestCase):
              patch.object(supervisor.signal, 'signal', register), \
              patch.object(supervisor.time, 'monotonic', lambda: clock[0]), \
              patch.object(supervisor.time, 'sleep', tick), \
-             patch.object(supervisor, 'healthy', healthy):
+             patch.object(supervisor, 'healthy', healthy), \
+             patch.object(supervisor, 'wait_for_target', return_value=True):
             if scenario == 'spawn':
                 with self.assertRaises(OSError): supervisor.run()
                 result = None
@@ -200,5 +201,59 @@ class SupervisorTests(unittest.TestCase):
         children[0].kill.assert_called_once()
         _, children, _ = self.simulate('spawn')
         children[0].terminate.assert_called_once()
+
+class WaitForTargetTests(unittest.TestCase):
+    def wait(self, answers, stop_after=None, remind=1800):
+        """Run wait_for_target on a fake clock; answers = successive probe results."""
+        clock, probes, slept = [0.0], list(answers), []
+        def sleep(seconds):
+            clock[0] += seconds
+            slept.append(clock[0])
+        stopping = lambda: stop_after is not None and clock[0] >= stop_after
+        err = io.StringIO()
+        with patch.object(supervisor, 'reachable', side_effect=lambda host: probes.pop(0)) as probe, \
+             patch.object(supervisor.time, 'monotonic', lambda: clock[0]), \
+             patch.object(supervisor.time, 'sleep', sleep), \
+             patch.object(supervisor.sys, 'stderr', err):
+            result = supervisor.wait_for_target('ptm@192.168.1.6', stopping, remind=remind)
+        return result, probe, clock[0], err.getvalue()
+
+    def test_reachable_target_passes_without_waiting_or_logging(self):
+        result, probe, elapsed, log = self.wait([True])
+        self.assertTrue(result)
+        probe.assert_called_once_with('192.168.1.6')
+        self.assertEqual((elapsed, log), (0, ''))
+
+    def test_backoff_doubles_to_cap_and_logs_once_then_recovery(self):
+        result, probe, elapsed, log = self.wait([False] * 6 + [True])
+        self.assertTrue(result)
+        self.assertEqual(probe.call_count, 7)
+        self.assertEqual(elapsed, 5 + 10 + 20 + 30 + 30 + 30)
+        self.assertEqual(log.count('unreachable; waiting'), 1)
+        self.assertIn('reachable after 125s', log)
+        self.assertNotIn('still unreachable', log)
+
+    def test_long_outage_reminds_periodically(self):
+        _, _, _, log = self.wait([False] * 12 + [True], remind=100)
+        self.assertEqual(log.count('still unreachable'), 2)
+
+    def test_stop_during_wait_returns_false_and_run_spawns_nothing(self):
+        result, _, elapsed, _ = self.wait([False] * 5, stop_after=7)
+        self.assertFalse(result)
+        self.assertLess(elapsed, 8)
+        popen = Mock()
+        with patch.object(supervisor, 'configuration', return_value=('ptm@192.168.1.6', '/cp-noblenumbat')), \
+             patch.object(supervisor.signal, 'signal'), \
+             patch.object(supervisor, 'wait_for_target', return_value=False), \
+             patch.object(supervisor.subprocess, 'Popen', popen):
+            self.assertEqual(supervisor.run(), 0)
+        popen.assert_not_called()
+
+    def test_reachable_probe_uses_bounded_tcp_connect(self):
+        with patch.object(supervisor.socket, 'create_connection') as connect:
+            self.assertTrue(supervisor.reachable('192.168.1.6'))
+            connect.assert_called_once_with(('192.168.1.6', 22), timeout=5)
+            connect.side_effect = OSError('No route to host')
+            self.assertFalse(supervisor.reachable('192.168.1.6'))
 
 if __name__ == '__main__': unittest.main()

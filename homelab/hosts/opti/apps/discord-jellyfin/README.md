@@ -11,7 +11,13 @@ scheduler, control API on internal :8080); only the domain logic differs.
 
 ## Data source
 
-Jellyfin on noblenumbat (`http://192.168.1.6:8096`), `X-Emby-Token` auth:
+Jellyfin on noblenumbat (`http://192.168.1.6:8096`), API key sent as
+`Authorization: MediaBrowser Token="<key>"`. Jellyfin there has
+`EnableLegacyAuthorization=false`, so the old `X-Emby-Token` header (and
+`?api_key=`) get **401 even with a valid key**; that broke this bot from
+2026-09-11 to 2026-11-09. A 401/403 is reported as "Jellyfin rejected the API
+key (HTTP 401)" and is not retried within a run; only connection errors and
+timeouts say "Jellyfin unreachable".
 `GET /Items?IncludeItemTypes=Movie,Episode&Recursive=true&SortBy=DateCreated…`,
 filtered client-side to items whose `DateCreated` falls in yesterday (bot's
 timezone). Movies list individually; episodes group by series ("3 episodes of
@@ -36,3 +42,7 @@ authoritative; rotate secrets from the webapp tab).
 `GET /health` · `GET /config` (secrets masked) · `PUT /config` ·
 `POST /send` (always posts) · `GET /preview` (payload + `has_items`, no post) ·
 `GET /check` (Jellyfin connection test → server name + version)
+
+## Tests
+
+Offline, no network: `python3 -m unittest -v test_jellyfin.py` from this folder.

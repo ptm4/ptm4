@@ -2,7 +2,7 @@
 // inventory push. Same bearer token (HL_ARCH_INGEST_TOKEN) and the same fragment files,
 // so the agents need no reconfiguration at cutover.
 'use strict';
-const { HOST_ID_RE, writeFragment } = require('../lib/fragments');
+const { HOST_ID_RE, writeFragment, buildMergedData } = require('../lib/fragments');
 
 const INGEST_TOKEN = process.env.HL_ARCH_INGEST_TOKEN || '';
 
@@ -23,5 +23,15 @@ module.exports = async function ingestRoutes(app) {
     const containers = (req.body?.docker?.containers || []).length;
     app.activity.add({ type: 'inventory', severity: 'ok', host, text: `${host} reported its inventory (${containers} containers)` });
     return { ok: true, host, containers, received_at: new Date().toISOString() };
+  });
+
+  // GET /api/architecture/data: curated map + live decoration (v3-compatible contract).
+  app.get('/data', async (req, reply) => {
+    try {
+      return buildMergedData();
+    } catch (err) {
+      req.log.warn({ err }, 'architecture merge failed');
+      return reply.code(500).send({ error: 'merge failed', detail: err.message });
+    }
   });
 };

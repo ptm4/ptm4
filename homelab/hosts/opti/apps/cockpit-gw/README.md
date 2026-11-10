@@ -24,7 +24,11 @@ is read-only. Host public keys come through already trusted workstation SSH alia
 not `ssh-keyscan`. Authorization preserves all other keys, rejects a conflicting
 entry and disables forwarding, PTY, user rc and agent forwarding with `restrict`.
 The gateway supervisor cleans both children on signals/failure, exits for Docker
-restart after either exits or two bounded manifest failures. HTTP 200 login HTML is
+restart after either exits or two bounded manifest failures. Before starting SSH it
+waits until the target's port 22 accepts a TCP connection (retry 5s doubling to 30s,
+one log line when waiting starts, a reminder every 30 minutes, one on recovery), so an
+offline host leaves its gateway running-but-unhealthy instead of restarting about once
+a minute for the whole outage (2026-11 noblenumbat outage: 3,107 restarts). HTTP 200 login HTML is
 unhealthy. Logout ends the shared bridge and temporarily interrupts all tabs on that
 host; the restarted gateway restores root access automatically.
 
@@ -102,8 +106,8 @@ Peter commits/pushes. CI syncs the gateway build context before validating compo
 with both `pertal` and `cockpit` profiles. `setup/nginx-preflight.sh` tests the staged
 candidate with the deployed nginx image, certificates and app network before copying
 into the deployed bind-mounted inode. Pertal builds/starts first; gateway builds and
-container starts then must pass. An offline host may leave its gateway unhealthy and
-restarting without failing deployment. Configuration/build/start failures fail CI.
+container starts then must pass. An offline host leaves its gateway unhealthy (waiting
+for SSH, not restarting) without failing deployment. Configuration/build/start failures fail CI.
 Each built image runs `--check-config` against its compose environment and key mount
 without opening SSH before starting, so invalid configuration fails even when hosts
 are offline.

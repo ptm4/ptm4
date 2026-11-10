@@ -39,6 +39,9 @@ DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "
 EFFORTS = ("low", "medium", "high")
 TIMEOUT = 25.0          # seconds; Discord shows "typing" meanwhile
 SLOW_TIMEOUT = 90.0     # morning line and nightly learning, off the hot path
+# SDK retries on 429, overload/5xx and connection errors, honoring retry-after.
+# A ping gets one quick retry; the jobs nobody is waiting on get more.
+RETRIES, SLOW_RETRIES = 1, 3
 MAX_CHARS = 900         # an answer, not an essay
 MORNING_MAX_CHARS = 400
 PROFILE_MAX = 2500      # characters kept per person / group / self profile
@@ -109,7 +112,7 @@ LEARN_RULES = (
 
 _lock = threading.Lock()
 _last_error = ""
-_limited = {}         # local date -> why the API said no more today ("credit", "rate")
+_limited = {}         # local date -> "credit" once the API says the account is out of credit
 
 
 def settings(cfg):
@@ -240,12 +243,13 @@ def spent(cfg):
 
 
 def _limit_reason(exc):
-    """'credit' or 'rate' if an API error means "no more today", else ''."""
+    """'credit' if the API says the account is out of credit (no more calls
+    until tomorrow), else ''. A 429 or an overload is transient: the SDK has
+    already retried it by the time it gets here, this one call fails, and the
+    next one tries again."""
     text = str(exc).lower()
-    if "credit balance" in text or "billing" in text:
+    if getattr(exc, "status_code", None) == 402 or "credit balance" in text or "billing" in text:
         return "credit"
-    if getattr(exc, "status_code", None) == 429 or "rate_limit" in text:
-        return "rate"
     return ""
 
 
@@ -393,7 +397,8 @@ def clean_line(text, allowed_ids=(), max_chars=MAX_CHARS):
 # -- the call -----------------------------------------------------------------
 def _create(s, system, user):
     """One Messages API call. Separated so tests can stub it."""
-    client = anthropic.Anthropic(api_key=_key(), timeout=s.get("timeout", TIMEOUT), max_retries=0)
+    client = anthropic.Anthropic(api_key=_key(), timeout=s.get("timeout", TIMEOUT),
+                                 max_retries=s.get("retries", RETRIES))
     return client.messages.create(
         model=s["model"], max_tokens=s["max_tokens"],
         output_config={"effort": s["effort"]},   # thinking stays adaptive
@@ -404,7 +409,7 @@ def _create(s, system, user):
 def ask(cfg, system, user, log=print, **over):
     """The model's text, or None. Records today's usage either way the call
     returns. `over` overrides settings for this one call (effort, timeout,
-    max_tokens for the morning line and learning)."""
+    retries, max_tokens for the morning line and learning)."""
     global _last_error
     s, tz = {**settings(cfg), **over}, cfg.get("timezone", "UTC")
     try:
@@ -412,7 +417,7 @@ def ask(cfg, system, user, log=print, **over):
     except Exception as e:  # auth, network, 4xx/5xx, timeout: all the same to the bot
         _last_error = f"{type(e).__name__}: {str(e)[:160]}"
         reason = _limit_reason(e)
-        if reason:   # out of credit or rate-limited: stop asking until tomorrow
+        if reason:   # out of credit: stop asking until tomorrow
             _limited[_today(tz)] = reason
         log(f"claude: call failed - {_last_error}" + (f" (limit: {reason})" if reason else ""))
         return None

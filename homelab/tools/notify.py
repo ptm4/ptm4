@@ -16,7 +16,13 @@ Server: ntfy on noblenumbat (http://192.168.1.6:2586) — off opti on purpose, s
 down" and "DNS is down" are both still deliverable. See
 homelab/hosts/noblenumbat/docker-compose.custom.yaml.
 
+But ntfy shares noblenumbat's fate: when noblenumbat itself is down (its auto-reboot
+hung at POST three times in Oct/Nov 2026 and nothing paged), every send fails. So if
+ntfy does not accept a message it goes to a Discord webhook instead (HL_DISCORD_WEBHOOK,
+set in /etc/hl-agents.env on opti; unset = no fallback, old behaviour).
+
 Env: HL_NTFY_URL (default http://192.168.1.6:2586), HL_NTFY_TOPIC (default homelab),
+     HL_DISCORD_WEBHOOK (fallback; secret, never logged),
      HL_DATA_DIR (where the dedup state lives; default /tmp).
 """
 
@@ -30,6 +36,7 @@ import urllib.request
 
 NTFY_URL = os.environ.get("HL_NTFY_URL", "http://192.168.1.6:2586").rstrip("/")
 TOPIC = os.environ.get("HL_NTFY_TOPIC", "homelab")
+DISCORD_WEBHOOK = os.environ.get("HL_DISCORD_WEBHOOK", "").strip()
 STATE_PATH = os.path.join(os.environ.get("HL_DATA_DIR") or "/tmp", "notify-dedup.json")
 
 PRIORITIES = {"min": 1, "low": 2, "default": 3, "high": 4, "urgent": 5, "max": 5}
@@ -54,10 +61,30 @@ def _save_state(state):
         pass
 
 
+def _post_discord(body):
+    """Fallback channel: post the alert to the HL_DISCORD_WEBHOOK Discord webhook.
+    False when unset or on any failure. Never logs the URL (it is the secret)."""
+    if not DISCORD_WEBHOOK:
+        return False
+    try:
+        text = f"**{body['title']}** (ntfy unreachable, priority {body['priority']})\n{body['message']}"
+        payload = {"content": text[:1990], "allowed_mentions": {"parse": []}}
+        req = urllib.request.Request(
+            DISCORD_WEBHOOK, data=json.dumps(payload).encode(), method="POST",
+            headers={"Content-Type": "application/json",
+                     "User-Agent": "DiscordBot (homelab-notify, 1.0)"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return 200 <= r.status < 300
+    except Exception as exc:  # noqa: BLE001
+        print(f"[notify] discord fallback failed: {type(exc).__name__}", file=sys.stderr)
+        return False
+
+
 def notify(title, message, priority="default", tags=None, topic=None, click=None,
            dedup_key=None, dedup_hours=6):
-    """Send one notification. Returns True if ntfy accepted it (or it was deduplicated
-    away), False on any failure. With dedup_key, the same key is sent at most once per
+    """Send one notification. Returns True if ntfy (or, when ntfy fails, the Discord
+    fallback) accepted it, or it was deduplicated away; False on any failure. With dedup_key, the same key is sent at most once per
     dedup_hours — a collector failing every 30 min pages once, not 12 times."""
     try:
         now = time.time()
@@ -76,12 +103,19 @@ def notify(title, message, priority="default", tags=None, topic=None, click=None
             body["tags"] = list(tags)
         if click:
             body["click"] = click
-        req = urllib.request.Request(
-            NTFY_URL, data=json.dumps(body).encode(), method="POST",
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=10) as r:
-            ok = 200 <= r.status < 300
+        ok = False
+        try:
+            req = urllib.request.Request(
+                NTFY_URL, data=json.dumps(body).encode(), method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                ok = 200 <= r.status < 300
+        except Exception as exc:  # noqa: BLE001
+            print(f"[notify] ntfy failed: {exc}", file=sys.stderr)
+        if not ok:
+            # ntfy lives on noblenumbat, so "noblenumbat is down" can't page through it.
+            ok = _post_discord(body)
         if ok and dedup_key:
             state = _load_state()
             # prune entries older than a week so the file can't grow forever

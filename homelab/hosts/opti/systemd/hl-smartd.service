@@ -1,0 +1,30 @@
+[Unit]
+# smartd with the homelab's own config (homelab/hosts/opti/smartd/smartd.conf ->
+# /etc/homelab/smartd.conf), instead of the stock smartmontools.service, which
+# OpenMediaVault owns: OMV rewrites /etc/smartd.conf and, with SMART disabled in its UI,
+# stops and disables smartmontools.service whenever it applies that config. Keep SMART
+# monitoring OFF in the OMV UI. Conflicts= guarantees only one smartd ever runs; if OMV
+# ever starts its own, this unit stops and homelab-doctor warns that hl-smartd is down.
+# Runbook: homelab/agentic/runbooks/12-opti-disk-alerting.md
+Description=SMART disk monitoring (homelab config)
+Documentation=man:smartd(8) man:smartd.conf(5)
+Conflicts=smartmontools.service
+After=local-fs.target
+
+[Service]
+Type=notify
+# HL_NTFY_* / HL_DISCORD_WEBHOOK for notify.py in the alert hook (smartd passes its
+# environment to -M exec children).
+EnvironmentFile=-/etc/hl-agents.env
+# notify.py's dedup state on the boot disk, not the pool: a failing pool disk must still page.
+Environment=HL_DATA_DIR=/var/lib/hl-smartd
+StateDirectory=hl-smartd
+ExecStart=/usr/sbin/smartd -n -c /etc/homelab/smartd.conf
+ExecReload=/bin/kill -HUP $MAINPID
+# smartd waits on disks that are spinning up; matches OMV's drop-in for the stock unit.
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target

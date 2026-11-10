@@ -124,17 +124,23 @@ def smart_health(host, dev):
     m = re.search(r"overall-health.*?:\s*(\S+)", out, re.I)
     if m:
         health = m.group(1)
-    realloc = pending = poh = temp = None
+    realloc = pending = poh = temp = uncorrectable = None
     for line in out.splitlines():
         if "Reallocated_Sector" in line:
             realloc = _last_int(line)
         elif "Pending_Sector" in line or "Current_Pending" in line:
             pending = _last_int(line)
+        elif "Offline_Uncorrectable" in line or "Reported_Uncorrect" in line:
+            # 198 and 187; rule 01 watches these with pending. Larger of the two.
+            v = _last_int(line)
+            if v is not None:
+                uncorrectable = max(uncorrectable or 0, v)
         elif "Power_On_Hours" in line:
             poh = _last_int(line)
         elif "Temperature_Celsius" in line or "Airflow_Temperature" in line:
             temp = _last_int(line)
     return {"health": health, "reallocated": realloc, "pending": pending,
+            "uncorrectable": uncorrectable,
             "power_on_hours": poh, "temp_c": temp}
 
 

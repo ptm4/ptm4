@@ -113,6 +113,8 @@ async function buildApp(opts = {}) {
   await app.register(require('./routes/assets'), { prefix: '/api/assets' });
   await app.register(require('./routes/events'), { prefix: '/api/events' });
   await app.register(require('./routes/ingest'), { prefix: '/api/architecture' });
+  await app.register(require('./routes/bots')); // /api/bots + v3-compatible /api/<bot>/*
+  await app.register(require('./routes/compat')); // v3-compatible /api/uptime, /api/pihole/*
   await app.register(require('./plugins/static'));
 
   app.addHook('onReady', async () => {

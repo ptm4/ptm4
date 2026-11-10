@@ -95,6 +95,42 @@ jobs:
           for d in "$GITHUB_WORKSPACE"/homelab/hosts/opti/systemd/*.d; do if [ -d "$d" ]; then sudo install -D -m644 -t "/etc/systemd/system/$(basename "$d")" "$d"/*.conf; fi; done
           sudo systemctl daemon-reload
 
+      # One automatic upgrade path only: homelab-autoupdate (honors the dashboard hold).
+      # Turns Debian's unattended-upgrades off, overriding OMV's 98openmediavault-periodic-custom.
+      - name: Install apt policy (unattended-upgrades off)
+        run: |
+          sudo install -m 0644 "$GITHUB_WORKSPACE/homelab/hosts/opti/apt/99homelab-no-unattended-upgrade" /etc/apt/apt.conf.d/
+          apt-config dump | grep -qx 'APT::Periodic::Unattended-Upgrade "0";'
+
+      # smartd as code (2026-11-09). OMV owns /etc/smartd.conf and, with SMART off in its UI,
+      # stops smartmontools.service whenever it applies that config, so smartd runs as our own
+      # hl-smartd.service (installed above; Conflicts= the stock unit) reading
+      # /etc/homelab/smartd.conf. notify.py gets a boot-disk copy so a failing POOL disk can
+      # still page. The config is validated before anything is installed: a bad one fails this
+      # step and leaves the running smartd alone. Editing hl-smartd.service itself needs a
+      # manual `systemctl restart hl-smartd` (this step only reloads on config changes).
+      # Runbook: homelab/agentic/runbooks/12-opti-disk-alerting.md
+      - name: Install smartd config + alert hook (hl-smartd)
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/homelab/hosts/opti/smartd"
+          sudo /usr/sbin/smartd -q showtests -c "$src/smartd.conf" >/dev/null
+          changed=0
+          cmp -s "$src/smartd.conf" /etc/homelab/smartd.conf 2>/dev/null || changed=1
+          sudo install -D -m 0644 -o root -g root "$src/smartd.conf" /etc/homelab/smartd.conf
+          sudo install -m 0755 -o root -g root "$src/hl-smartd-alert.sh" /usr/local/bin/hl-smartd-alert.sh
+          sudo install -D -m 0644 -o root -g root "$GITHUB_WORKSPACE/homelab/tools/notify.py" /usr/local/lib/homelab/notify.py
+          sudo systemctl disable smartmontools.service 2>/dev/null || true
+          sudo systemctl enable hl-smartd.service
+          if ! systemctl is-active --quiet hl-smartd.service; then
+            sudo systemctl start hl-smartd.service
+          elif [ "$changed" = 1 ]; then
+            sudo systemctl reload hl-smartd.service
+          fi
+          sleep 3
+          systemctl is-active hl-smartd.service
+          if systemctl is-active --quiet smartmontools.service; then echo "::error::stock smartmontools.service is still running next to hl-smartd"; exit 1; fi
+
       # persistence-auditor auto-accepts a unit file only when its path AND full sha256 match
       # this manifest, so units CI installed stop reading as "NEW persistence entry" forever
       # (434 of 806 warnings in Oct-Nov 2026 were exactly that). Hashes come from the git
@@ -127,11 +163,45 @@ jobs:
         run: |
           sudo install -d -o ptm -g ptm -m 0700 /srv/red/opsdb/hl-agents-state /srv/red/opsdb/hl-agents-state/persistence
 
+      # Secrets are never in the repo, but their owner/mode is (audit 2026-11-09: hl-agents.env,
+      # the compose .env, the Vaultwarden key and the TLS keys were 777/664, inherited from the
+      # old Pi). Before the restarts on purpose, so a too-tight entry fails this deploy loudly.
+      - name: Enforce secret file permissions
+        run: sudo bash "$GITHUB_WORKSPACE/homelab/tools/automation/enforce-secret-perms.sh" "$GITHUB_WORKSPACE/homelab/hosts/opti/secret-perms.conf"
+
       - name: Restart the dispatcher (it runs from the synced snapshot)
         run: |
           sudo systemctl restart hl-agent-dispatcher
           sleep 2
           systemctl is-active hl-agent-dispatcher
+
+      # Until 2026-11-09 opti's hl-arch-agent was copied to /usr/local/bin by hand (rpi and
+      # noblenumbat still are). Restarts only when a file changed or the listener is not on
+      # the address its drop-in (systemd/hl-arch-agent.service.d/10-bind.conf) asks for.
+      - name: Install hl-arch-agent (opti)
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/homelab/tools/arch-agent"
+          changed=0
+          for f in hl-arch-agent.py monitor.py; do
+            if ! cmp -s "$src/$f" "/usr/local/bin/$f"; then sudo install -m 0755 "$src/$f" "/usr/local/bin/$f"; changed=1; fi
+          done
+          want=$(sed -n 's/^Environment=HL_ARCH_AGENT_BIND=//p' "$GITHUB_WORKSPACE/homelab/hosts/opti/systemd/hl-arch-agent.service.d/10-bind.conf")
+          ss -ltnH 'sport = :8787' | grep -qF "${want}:8787" || changed=1
+          if [ "$changed" = 1 ]; then sudo systemctl restart hl-arch-agent; sleep 3; fi
+          systemctl is-active hl-arch-agent
+          ss -ltnH 'sport = :8787' | grep -F "${want}:8787"
+
+      # LLMNR off (audit S-4). Restarts resolved only when the drop-in changed.
+      - name: Install systemd-resolved drop-ins
+        run: |
+          set -euo pipefail
+          for f in "$GITHUB_WORKSPACE"/homelab/hosts/opti/resolved.conf.d/*.conf; do
+            dst="/etc/systemd/resolved.conf.d/$(basename "$f")"
+            if ! cmp -s "$f" "$dst"; then sudo install -D -m 0644 "$f" "$dst"; sudo systemctl restart systemd-resolved; sleep 2; fi
+          done
+          systemctl is-active systemd-resolved
+          if ss -lnH 'sport = :5355' | grep -q .; then echo "::error::LLMNR still listening on 5355"; exit 1; fi
 
       - name: Restart homelab-db services (they also run from the synced snapshot)
         run: |
@@ -142,9 +212,15 @@ jobs:
       - name: Verify timers
         run: |
           sudo systemctl enable --now homelab-docs.timer homelab-agentic-docs.timer homelab-autoupdate.timer homelab-autoreboot.timer homelab-db-ingest.timer homelab-vault-dump.timer
-          # Cold copy retired 2026-09-24 (attic disks removed); this deploy used to re-enable it,
-          # so it failed every Sunday with a critical page. Keep it off until a new second disk exists.
+          # Cold copy retired 2026-09-24 (attic disks removed). Prune what earlier deploys installed;
+          # the unit files stay in git under homelab/hosts/opti/retired/.
           sudo systemctl disable --now homelab-coldcopy.timer 2>/dev/null || true
+          sudo rm -f /etc/systemd/system/homelab-coldcopy.service /etc/systemd/system/homelab-coldcopy.timer /usr/local/bin/homelab-coldcopy.sh
+          sudo systemctl daemon-reload
+          # Pool red is scrubbed once a month by Debian's /etc/cron.d/zfsutils-linux (2nd Sunday;
+          # its scrub resumes after a reboot). The packaged timer was a second, hand-enabled scrub
+          # whose ExecStop pauses the scrub on shutdown. Stops only the timer, never a running scrub.
+          sudo systemctl disable --now zfs-scrub-monthly@red.timer 2>/dev/null || true
           systemctl list-timers homelab-docs.timer homelab-agentic-docs.timer homelab-db-ingest.timer homelab-vault-dump.timer --no-legend --no-pager
 
       # Collectors run on systemd timers since 2026-09-24 (they were a GitHub cron in
@@ -160,3 +236,14 @@ jobs:
           for a in $DAILY;    do units="$units hl-collector-daily@$a.timer"; done
           sudo systemctl enable --now $units
           systemctl list-timers 'hl-collector-*' --no-legend --no-pager
+
+      # Quotas, reservations and snapshot opt-outs for pool red live in the repo (audit H-3,
+      # 2026-11-09). The script only sets/inherits properties where the live value differs -
+      # it never creates or destroys anything. Last on purpose: a failure here (missing
+      # dataset, quota below current use) must not block the restarts above.
+      - name: ZFS dataset properties (pool red)
+        run: |
+          sudo bash "$GITHUB_WORKSPACE/homelab/hosts/opti/zfs/apply-zfs-properties.sh" \
+                    "$GITHUB_WORKSPACE/homelab/hosts/opti/zfs/red-properties.tsv"
+          sudo zfs get -H -o name,property,value,source quota,reservation,com.sun:auto-snapshot \
+               red/media red/docker red/docker-apps red/opsdb

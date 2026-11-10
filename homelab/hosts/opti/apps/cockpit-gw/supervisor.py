@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -28,6 +29,43 @@ def configuration():
     os.environ['XDG_CONFIG_DIRS'] = '/etc/pertal-cockpit'
     return target, root
 
+def reachable(host, port=22):
+    try:
+        socket.create_connection((host, port), timeout=5).close()
+        return True
+    except OSError:
+        return False
+
+def wait_for_target(target, stopping, first=5, cap=30, remind=1800):
+    """Wait quietly, with capped backoff, until the target's SSH port answers.
+
+    An offline host used to make ssh fail in seconds, exit the container and
+    restart it about once a minute for the whole outage. Returns False if a
+    stop signal arrives while waiting.
+    """
+    host = target.rsplit('@', 1)[1]
+    delay, started, reminded = first, None, None
+    while not stopping():
+        if reachable(host):
+            if started is not None:
+                print(f'gateway: {host}:22 reachable after '
+                      f'{int(time.monotonic() - started)}s', file=sys.stderr)
+            return True
+        now = time.monotonic()
+        if started is None:
+            started = reminded = now
+            print(f'gateway: {host}:22 unreachable; waiting (retry {first}s..{cap}s)',
+                  file=sys.stderr)
+        elif now - reminded >= remind:
+            reminded = now
+            print(f'gateway: {host}:22 still unreachable after {int(now - started)}s',
+                  file=sys.stderr)
+        deadline = now + delay
+        while not stopping() and time.monotonic() < deadline:
+            time.sleep(0.25)
+        delay = min(delay * 2, cap)
+    return False
+
 def run():
     target, root = configuration()
     stopping = False
@@ -36,6 +74,8 @@ def run():
         stopping = True
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
+    if not wait_for_target(target, lambda: stopping):
+        return 0
     children = []
     failed = False
     try:

@@ -107,6 +107,49 @@ services:
       default:
         ipv4_address: 172.60.0.23
 
+  # Readarr (BookshelfNG fork, native Hardcover metadata via HARDCOVER_API_KEY in .env;
+  # pennydreadful's bookinfo proxy hung on every lookup): book search/import.
+  # Imports into /data/books, which Kavita serves. Wire Prowlarr + qBittorrent/SABnzbd in its UI.
+  # Host port 8788 (8787 is taken by a host python3 service).
+  readarr:
+    image: ghcr.io/snapetech/bookshelfng:hardcover
+    container_name: readarr
+    environment:
+      - HARDCOVER=true
+      - HARDCOVER_API_KEY=${HARDCOVER_API_KEY}
+      - PUID=${PUID}
+      - PGID=${PGID}
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${MEDIA_DIRECTORY}:/data
+      - ${INSTALL_DIRECTORY}/config/readarr:/config
+    ports:
+      - 8788:8787
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.60.0.24
+
+  # Audiobookshelf: audiobook server + Android/iOS app with progress sync (added 2026-10-03).
+  # Library is a hardlinked Author/Series/Vol N - Title tree under audiobooks/library, so
+  # torrents keep seeding from audiobooks/<torrent> while ABS sees one folder per book.
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    environment:
+      - TZ=America/New_York
+    user: "${PUID}:${PGID}"
+    volumes:
+      - ${MEDIA_DIRECTORY}/audiobooks/library:/audiobooks
+      - ${INSTALL_DIRECTORY}/config/audiobookshelf/config:/config
+      - ${INSTALL_DIRECTORY}/config/audiobookshelf/metadata:/metadata
+    ports:
+      - 13378:80
+    restart: unless-stopped
+    networks:
+      default:
+        ipv4_address: 172.60.0.25
+
   # Uptime Kuma: synthetic monitors for the whole fleet (moved here from opti 2026-09-10).
   # It lives off opti so it watches opti — storage, dashboard, vault, bots — from outside;
   # on opti, an opti outage took Kuma down with it and the Discord alert never fired.

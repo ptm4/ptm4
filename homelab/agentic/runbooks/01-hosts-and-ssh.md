@@ -128,7 +128,12 @@ NTFS, not a network share (see the `tux / ptm` entry above). opti's
 push), not a git checkout — never edit it directly; a change to opti's services goes live only
 when Peter pushes. Earlier revisions of this runbook described `/home/ptm/opti/ptm/repo/ptm4`
 on tux (a CIFS mount of opti's pool) as the primary working copy — that's stale, from before the
-repo moved to the Windows-side NTFS disk (2026-09-08).
+repo moved to the Windows-side NTFS disk (2026-09-08). That mount was backed by opti's pool
+checkout, which Peter moved to `/srv/red/fs/ptm/old repo location/ptm4` on opti (main @
+f4175b2, **98 uncommitted modified files — never `rm -rf` or reset it**; Peter reconciles it by
+hand). Sessions that treated the pool copy as the working copy, or the tux CIFS mount as an
+edit path, were both wrong. opti's deploy snapshot was restored and running again as of
+2026-09-24 (runbook 10 §0.1 has the history).
 
 **The `noblenumbat:~/code/ptm4` clone was deleted (2026-07-22).** Revisions of this runbook
 before 2026-07-25 called it the primary copy and told you to edit there instead of the "stale

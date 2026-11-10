@@ -51,10 +51,3 @@ by hand.
 
 If a file doesn't fit an existing subfolder, create the right one here rather than dropping
 it in `.claude/`, the repo root, or a per-host directory.
-
-## Rule: use skills for host access
-
-When a task names a homelab host (`opti`, `rpi`, `noblenumbat`, `android`) and acting on it
-needs real shell access, use the [`homelab-ssh`](../skills/homelab-ssh/SKILL.md) skill rather
-than hand-rolling `ssh` — it points at the current alias/key convention, so commands don't go
-stale when keys or config change. See also `homelab-ssh-autotrigger.md`.

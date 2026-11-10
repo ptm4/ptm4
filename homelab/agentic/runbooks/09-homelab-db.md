@@ -160,6 +160,9 @@ curl -s -H "Authorization: Bearer $HL_DB_TOKEN" http://192.168.1.11:9100/api/sta
 - **MCP tools missing in a session** — `HL_DB_TOKEN` is probably not exported in the shell
   that launched Claude Code; every call 401s. Check with `python3 homelab/agentic/probe.py`,
   which reports `claude_mcp` including whether the token is set and whether `:9100` answers.
+  On `ptm` the token is a Windows *user* environment variable (set 2026-09-24), so the app
+  must be restarted to see a change. Older server builds answered a missing token with
+  "400 Bad request syntax" instead of 401.
 - **`hl_status` looks stale** — the ingest timer runs at `*:12,42`; check
   `systemctl list-timers homelab-db-ingest.timer`. `hl_dataplane` names which feed is stale
   and how old it is; `SELECT id, last_error FROM datasets WHERE last_error IS NOT NULL`

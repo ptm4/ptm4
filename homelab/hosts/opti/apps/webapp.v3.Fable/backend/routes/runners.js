@@ -1,4 +1,4 @@
-// The scheduled runners (homelab-doctor, hardware, software, network, coldcopy…) —
+// The scheduled runners (homelab-doctor, hardware, software, network…) —
 // surfaced on the Reports page. "Runner" = a scheduled collector producing reports;
 // "agent" = a per-host installed service (see routes/agents.js). Dispatcher agent keys
 // (agents-state.json, agent-dispatcher.py) are deliberately NOT renamed — that's
@@ -15,18 +15,18 @@ const CATALOG = {
   'hardware-latest':       { label: 'Hardware Report',  agent: 'hardware-report',    cadence_h: 24, order: 1 },
   'software-latest':       { label: 'Software Inventory',agent: 'software-inventory', cadence_h: 24, order: 2 },
   'network-latest':        { label: 'Network',          agent: 'network-report',     cadence_h: 1,  order: 3 },
-  // Weekly cold-copy refresh of the ZFS pool onto the retired sda+sdb mergerfs pool.
-  // cadence_h 168 => the stale badge appears after two missed weeks.
-  // Disabled 2026-09-10 — the attic disk is ~97% full and there is no room for the
-  // weekly copy. `manual: true` is what actually suppresses the overdue check (see
-  // the `stale` expression below); cadence_h must NOT simply be nulled, because
-  // `ageH > null * 2` is `ageH > 0`, which marks it stale the instant it is written —
-  // the exact opposite of the intent. The entry stays so past reports stay readable.
-  'coldcopy-latest':       { label: 'Cold Copy Backup (disabled)', agent: 'coldcopy',   cadence_h: 168, manual: true, order: 4 },
   // Written by the discord-hltv bot, not a dispatcher agent — no run-now button and no
-  // stale badge (manual).
+  // stale badge (manual). For a manual entry keep a real cadence_h: `ageH > null * 2`
+  // is `ageH > 0`, so nulling it would mark the card stale the instant it is written.
   'hltv-watchlist':        { label: 'HLTV Watchlist',   agent: null,                 cadence_h: 168, manual: true, order: 5 },
 };
+
+// Reports whose producer is gone but whose last file is deliberately left on disk as a
+// record. The list below shows every *.json in agent-logs, falling back to a bare,
+// stale card for unknown names, so dropping the CATALOG entry alone would bring the
+// card back unlabeled. Old files stay readable via /:name, /:name/history, /:name/report.
+//   coldcopy-latest — weekly attic cold copy, retired 2026-09-24 (unit removed from opti).
+const RETIRED = new Set(['coldcopy-latest']);
 
 function describe(filename) {
   const name = filename.replace('.json', '');
@@ -79,7 +79,8 @@ module.exports = async function runnersRoutes(app) {
     }
     let files;
     try {
-      files = fs.readdirSync(AGENT_LOGS_DIR).filter(f => f.endsWith('.json') && f !== 'agents-state.json');
+      files = fs.readdirSync(AGENT_LOGS_DIR).filter(f => f.endsWith('.json') && f !== 'agents-state.json'
+        && !RETIRED.has(f.replace(/\.json$/, '')));
     } catch (e) {
       return reply.code(500).send({ error: 'Cannot read agent logs directory' });
     }

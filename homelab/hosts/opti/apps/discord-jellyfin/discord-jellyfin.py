@@ -5,7 +5,9 @@ Discord channel webhook as an embed, with an HTTP control API for the rpi
 webapp's "Jellyfin Bot" tab. Clone of discord-weather's scaffolding; only the
 domain logic differs.
 
-Queries the Jellyfin server on noblenumbat (X-Emby-Token auth) for items whose
+Queries the Jellyfin server on noblenumbat (API key sent as
+`Authorization: MediaBrowser Token="…"`; Jellyfin has legacy auth, i.e. the
+X-Emby-Token header, turned off) for items whose
 DateCreated falls in yesterday (bot's timezone): movies listed individually,
 episodes grouped by series.
 
@@ -24,6 +26,7 @@ import re
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -123,6 +126,15 @@ def mask_webhook(url):
 
 
 # ── HTTP helper ───────────────────────────────────────────────────────────────
+class AuthRejected(RuntimeError):
+    """The server answered 401/403: it is up, but refused the credentials.
+    Never retried — the same key will be refused again."""
+
+    def __init__(self, url, code):
+        super().__init__(f"{url.split('?')[0]} rejected the credentials (HTTP {code})")
+        self.code = code
+
+
 def http_json(url, body=None, tries=3, headers=None, timeout=30):
     for attempt in range(tries):
         req = urllib.request.Request(
@@ -135,6 +147,12 @@ def http_json(url, body=None, tries=3, headers=None, timeout=30):
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 raw = r.read()
                 return r.status, (json.loads(raw) if raw.strip() else None)
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise AuthRejected(url, e.code) from e
+            if attempt == tries - 1:
+                raise RuntimeError(f"{url.split('?')[0]} failed: {e}") from e
+            time.sleep(5)
         except Exception as e:
             if attempt == tries - 1:
                 raise RuntimeError(f"{url.split('?')[0]} failed: {e}") from e
@@ -142,11 +160,27 @@ def http_json(url, body=None, tries=3, headers=None, timeout=30):
 
 
 # ── jellyfin ──────────────────────────────────────────────────────────────────
+class JellyfinAuthError(RuntimeError):
+    """Jellyfin is reachable but rejected the API key (HTTP 401/403)."""
+
+
+def jf_auth_headers(api_key):
+    # The Authorization header is the only form Jellyfin accepts once
+    # EnableLegacyAuthorization is off (as it is on noblenumbat since 2026-09-10);
+    # X-Emby-Token / api_key= then get 401 even with a valid key.
+    return {"Authorization": f'MediaBrowser Token="{api_key}"'}
+
+
 def jf_get(cfg, path_qs, timeout=20):
     if not cfg.get("api_key"):
-        raise RuntimeError("api_key not set — mint one in the Jellyfin dashboard")
-    _, d = http_json(f"{cfg['jellyfin_url'].rstrip('/')}{path_qs}",
-                     headers={"X-Emby-Token": cfg["api_key"]}, tries=2, timeout=timeout)
+        raise JellyfinAuthError("api_key not set — mint one in the Jellyfin dashboard")
+    try:
+        _, d = http_json(f"{cfg['jellyfin_url'].rstrip('/')}{path_qs}",
+                         headers=jf_auth_headers(cfg["api_key"]), tries=2, timeout=timeout)
+    except AuthRejected as e:
+        raise JellyfinAuthError(
+            f"Jellyfin rejected the API key (HTTP {e.code}) — check the key in the "
+            "Jellyfin Bot tab") from e
     return d
 
 
@@ -196,17 +230,31 @@ def sxxeyy(ep):
 def build_payload(cfg):
     """Fetch yesterday's arrivals and build the webhook payload.
     Returns (payload, failed_sections, has_items)."""
+    payload, failed, has_items, _ = build_report(cfg)
+    return payload, failed, has_items
+
+
+def build_report(cfg):
+    """build_payload plus fail_detail: a one-line reason when the fetch failed
+    ("Jellyfin rejected the API key (HTTP 401) — …" vs "Jellyfin unreachable — …"),
+    else None."""
     tz = ZoneInfo(cfg["timezone"])
     yesterday = datetime.now(tz) - timedelta(days=1)
     date_str = yesterday.strftime("%A, %B %d").replace(" 0", " ")
 
     failed = []
+    fail_detail = None
     movies, episodes = [], []
     try:
         movies, episodes = fetch_arrivals(cfg)
+    except JellyfinAuthError as e:
+        log(f"arrivals fetch failed: {e}")
+        failed.append("Jellyfin")
+        fail_detail = str(e)
     except Exception as e:
         log(f"arrivals fetch failed: {e}")
         failed.append("Jellyfin")
+        fail_detail = f"Jellyfin unreachable — {e}"
 
     budget = cfg["max_items"]
     fields = []
@@ -240,7 +288,8 @@ def build_payload(cfg):
 
     has_items = bool(movies or episodes)
     if failed:
-        desc = "⚠️ Jellyfin unreachable — no arrivals data"
+        reason = fail_detail.split(" — ")[0] if fail_detail else "Jellyfin unreachable"
+        desc = f"⚠️ {reason} — no arrivals data"
     elif not has_items:
         desc = "Nothing new landed yesterday."
     else:
@@ -265,7 +314,7 @@ def build_payload(cfg):
     }
     if cfg.get("message"):
         payload["content"] = cfg["message"]
-    return payload, failed, has_items
+    return payload, failed, has_items, fail_detail
 
 
 def post_webhook(url, payload):
@@ -277,9 +326,9 @@ def post_webhook(url, payload):
 def post_report(cfg, force=False):
     """Build and post the report. Returns (ok, detail). Scheduled runs
     (force=False) skip empty days unless post_when_empty; Send-now always posts."""
-    payload, failed, has_items = build_payload(cfg)
+    payload, failed, has_items, fail_detail = build_report(cfg)
     if failed:
-        return False, "Jellyfin unreachable"
+        return False, fail_detail or "Jellyfin unreachable"
     if not force and not has_items and not cfg.get("post_when_empty"):
         return True, "skipped — nothing new yesterday"
     url = cfg.get("webhook_url")

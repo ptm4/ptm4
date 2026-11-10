@@ -97,6 +97,23 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl enable --now media-import.timer vpn-stack-heal.timer bb-kavita-sync.timer
 
+      - name: Hold unattended reboots on this host
+        # Keep this AFTER any step that installs/enables homelab-autoreboot.timer.
+        # The 03:00 auto-reboot left noblenumbat dark for 1-6 days on 10-14, 10-21 and
+        # 11-04 (and earlier): the OS shuts down cleanly, then the Latitude's POST stops
+        # and waits for F1 (BIOS WarningsAndErr was PromptWrnErr). Auto-updates still
+        # install; a pending reboot waits for Peter. Flip to "on" only after a supervised
+        # reboot comes back unattended. See runbooks/05-noblenumbat.md.
+        env:
+          NN_AUTOREBOOT: "off"
+        run: |
+          if [ "$NN_AUTOREBOOT" = on ]; then
+            sudo systemctl enable --now homelab-autoreboot.timer
+          else
+            sudo systemctl disable --now homelab-autoreboot.timer 2>/dev/null || true
+          fi
+          echo "homelab-autoreboot.timer: $(systemctl is-enabled homelab-autoreboot.timer 2>/dev/null; true)"
+
       - name: Verify
         working-directory: /opt/yams
         run: |

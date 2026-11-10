@@ -1,0 +1,19 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Image bumps for the pinned compose files arrive as PRs; merging one deploys via the normal workflow. Scope is deliberately narrow: docker-compose only, opti + rpi only. noblenumbat stays out until its host-only services are in the repo (a push there runs --remove-orphans).",
+  "extends": ["config:recommended"],
+  "enabledManagers": ["docker-compose"],
+  "includePaths": ["homelab/hosts/opti/**", "homelab/hosts/rpi/**"],
+  "pinDigests": true,
+  "timezone": "America/New_York",
+  "schedule": ["before 6am on saturday"],
+  "prConcurrentLimit": 5,
+  "labels": ["image-bump"],
+  "packageRules": [
+    {
+      "description": "Vault DB: stay on the 11.8 LTS line; a major/minor jump is a deliberate migration, not a bump.",
+      "matchPackageNames": ["mariadb"],
+      "allowedVersions": "/^11\\.8\\./"
+    }
+  ]
+}

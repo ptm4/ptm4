@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-11-09T23:53:53Z",
+  "generated_at": "2026-11-10T00:18:53Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.lan and referenceable by agents.",
   "workspace": {
@@ -141,9 +141,9 @@
         "title": "Homelab context — read nothing else first"
       },
       {
-        "file": "homelab-ssh-autotrigger.md",
-        "path": "homelab/agentic/rules/homelab-ssh-autotrigger.md",
-        "title": "Rule: reach homelab hosts through the skill, not ad-hoc ssh"
+        "file": "alerting.md",
+        "path": "homelab/agentic/rules/alerting.md",
+        "title": "Rule: alert severity and routing"
       }
     ],
     "runbooks": [

@@ -80,6 +80,7 @@ Env (set in /etc/hl-arch-agent.env, EnvironmentFile= in the unit):
   HL_ARCH_INGEST_URL     default https://webapp.rpi.lan:8443/api/architecture/ingest
   HL_ARCH_AGENT_TOKEN    optional bearer token, must match the webapp's HL_ARCH_INGEST_TOKEN
   HL_ARCH_AGENT_PORT     default 8787
+  HL_ARCH_AGENT_BIND     default 0.0.0.0; opti sets 192.168.1.11 (hosts/opti/systemd/hl-arch-agent.service.d)
   HL_ARCH_AGENT_STATE    default /var/lib/hl-arch-agent/state.json
   HL_ARCH_RUN_HOUR       default 0 (local 00:00)
 
@@ -116,6 +117,7 @@ HOST = os.environ.get("HL_ARCH_AGENT_HOST", "")
 INGEST_URL = os.environ.get("HL_ARCH_INGEST_URL", "https://webapp.rpi.lan:8443/api/architecture/ingest")
 TOKEN = os.environ.get("HL_ARCH_AGENT_TOKEN", "")
 PORT = int(os.environ.get("HL_ARCH_AGENT_PORT", "8787"))
+BIND = os.environ.get("HL_ARCH_AGENT_BIND", "0.0.0.0")
 STATE_PATH = os.environ.get("HL_ARCH_AGENT_STATE", "/var/lib/hl-arch-agent/state.json")
 RUN_HOUR = int(os.environ.get("HL_ARCH_RUN_HOUR", "0"))
 
@@ -1424,8 +1426,8 @@ def main():
     sched = threading.Thread(target=scheduler_loop, args=(stop_event,), daemon=True)
     sched.start()
 
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"hl-arch-agent {AGENT_VERSION} for host={HOST!r} listening on :{PORT} "
+    server = ThreadingHTTPServer((BIND, PORT), Handler)
+    print(f"hl-arch-agent {AGENT_VERSION} for host={HOST!r} listening on {BIND}:{PORT} "
          f"(next scheduled run {next_run_at().isoformat()})", flush=True)
     try:
         server.serve_forever()

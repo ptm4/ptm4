@@ -16,6 +16,9 @@ Requires=zfs-mount.service
 ExecStartPre=/usr/bin/mountpoint -q /srv/red
 Type=simple
 User=ptm
+# LAN address only, not 0.0.0.0 (audit S-4, 2026-11-09). Every client - the webapp and
+# discord-healthdigest containers, opti's collectors - uses http://192.168.1.11:9099.
+Environment=HL_BIND=192.168.1.11
 # '-' prefix: missing env file is non-fatal (agent uses relative-path defaults until created)
 EnvironmentFile=-/etc/hl-agents.env
 WorkingDirectory=/srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti

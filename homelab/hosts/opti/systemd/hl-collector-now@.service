@@ -11,6 +11,8 @@ OnFailure=hl-notify-failure@%n.service
 [Service]
 Type=oneshot
 User=ptm
+# Full journal read for journald-hunter; keep in step with hl-collector@.service.
+SupplementaryGroups=systemd-journal
 EnvironmentFile=-/etc/hl-agents.env
 ExecStartPre=/usr/bin/mountpoint -q /srv/red
 ExecStart=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti/agent-dispatcher.py --run %i

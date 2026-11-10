@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Collectors section — the scheduled runners (doctor, hardware, software, network,
-  // coldcopy) off /api/runners, with enable/run controls, latest-report viewer and
+  // Collectors section — the scheduled runners (doctor, hardware, software, network)
+  // off /api/runners, with enable/run controls, latest-report viewer and
   // per-run history. Moved verbatim from the old routes/reports/+page.svelte body
   // when Reports absorbed Security into one filterable page (2026-09-10).
   import { createQuery } from '@tanstack/svelte-query';

@@ -10,6 +10,7 @@ export const NAV: NavItem[] = [
   { href: '/activity', label: 'Activity', icon: 'activity', ready: true },
   { href: '/logs', label: 'Logs', icon: 'scroll-text', ready: true },
   { href: '/console', label: 'Console', icon: 'terminal', ready: true },
+  { href: '/bots', label: 'Bots', icon: 'bot', ready: true },
   { href: '/streams', label: 'Streams', icon: 'radio', ready: true },
   { href: '/downloads', label: 'Downloads', icon: 'download', ready: true },
   { href: '/requests', label: 'Requests', icon: 'inbox', ready: true },

@@ -15,6 +15,8 @@ on:
     branches: [main]
     paths:
       - "homelab/hosts/rpi/docker-compose.yml"
+      - "homelab/hosts/rpi/secret-perms.conf"
+      - "homelab/tools/automation/enforce-secret-perms.sh"
       - ".github/workflows/rpi-deploy.yml"
   workflow_dispatch:
 
@@ -26,6 +28,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Owner/mode of the Pi's secret files is in the repo (audit 2026-11-09: .env was 777).
+      # ptm, not root: the compose commands below read .env as the runner user.
+      - name: Enforce secret file permissions
+        run: sudo bash "$GITHUB_WORKSPACE/homelab/tools/automation/enforce-secret-perms.sh" "$GITHUB_WORKSPACE/homelab/hosts/rpi/secret-perms.conf"
 
       - name: Copy compose file
         run: cp "$GITHUB_WORKSPACE/homelab/hosts/rpi/docker-compose.yml" /srv/docker/compose/docker-compose.yml

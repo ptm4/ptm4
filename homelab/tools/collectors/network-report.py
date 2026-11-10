@@ -37,7 +37,7 @@ EXPECTED_PORTS = {22, 53, 67, 80, 443, 445, 3000, 3002, 8443, 9099,
 # the dozzle-agent that replaced them there. Every entry below was confirmed against
 # `ss -ltn` on the host, not inferred from where a service used to live.
 PER_HOST_EXPECTED_PORTS = {
-    "opti": {139, 3389, 3350, 5355, 5357,    # smb, xrdp, xrdp-sesman (loopback), llmnr, wsdd
+    "opti": {139, 3389, 3350, 5357,          # smb, xrdp, xrdp-sesman (loopback), wsdd; LLMNR 5355 off since S-4
              9090,                            # Cockpit admin UI (2026-08-02 control-hub work)
              9999,                            # Dozzle hub — moved here 2026-09-09 (Kuma went on to nn 09-10)
              9100},                           # homelab-db (queryable index + MCP)

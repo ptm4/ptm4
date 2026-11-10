@@ -55,7 +55,7 @@ function parseTimerRaw(raw) {
 // ── /activity helpers ────────────────────────────────────────────────────────
 const RUNNER_SOURCES = [
   'homelab-doctor-latest', 'hardware-latest', 'software-latest',
-  'network-latest', 'coldcopy-latest',
+  'network-latest',
 ];
 
 function sevRank(s) {
@@ -256,13 +256,6 @@ module.exports = async function dashboardRoutes(app) {
             ts: au.last_run, source: 'autoupdate', severity: 'warn', host: h.host,
             message: `unattended-upgrades: ${au.result}${au.detail ? ' — ' + au.detail : ''}`,
           });
-        });
-      }
-      if (name === 'coldcopy-latest' && rep.status) {
-        push({
-          ts, source: 'coldcopy',
-          severity: rep.status === 'ok' ? 'info' : 'warn',
-          host: 'opti', message: rep.summary || `backup ${rep.status}`,
         });
       }
     }

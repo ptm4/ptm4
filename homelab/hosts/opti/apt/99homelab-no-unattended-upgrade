@@ -1,0 +1,12 @@
+// Managed by the ptm4 repo: installed by .github/workflows/opti-deploy.yml. Do not edit on opti.
+//
+// opti has exactly one automatic upgrade path: homelab-autoupdate.timer (02:00,
+// homelab/tools/automation/homelab-autoupdate.sh). It honors the dashboard's Maintenance
+// hold (/etc/homelab/autoupdate.disabled). Debian's unattended-upgrades does not, so with
+// it on, "held" did not mean held (audit 2026-11-09, finding H-2).
+//
+// OMV's "install security updates automatically" toggle writes
+// 98openmediavault-periodic-custom with Unattended-Upgrade "1". This file sorts after it,
+// so it wins even if that toggle is turned back on. apt-daily still refreshes package
+// lists and downloads, so pending-update reports stay accurate.
+APT::Periodic::Unattended-Upgrade "0";

@@ -72,12 +72,13 @@ SCHEDULED_AGENTS = {
     "hardware-report", "software-inventory",                  # daily
 }
 
-# Agents that are systemd units rather than python scripts. These need root (mount/remount,
-# rsync onto the NTFS branch), which this daemon deliberately does not have — so Run-now
-# starts the unit via passwordless sudo instead, taking the identical path the timer takes.
+# Agents that are systemd units rather than python scripts. A unit can run as root, which
+# this daemon deliberately does not — so Run-now starts the unit via passwordless sudo
+# instead, taking the identical path its timer takes.
 # Same allowlist rule as AGENTS: a fixed dict, never a name from the request.
+# ("coldcopy" -> homelab-coldcopy.service was removed with the attic cold copy, retired
+# 2026-09-24; its unit is gone from opti, copies in homelab/hosts/opti/retired/.)
 UNIT_AGENTS = {
-    "coldcopy": "homelab-coldcopy.service",
     # Added 2026-09-10 so the webapp's Refresh button can finish what it starts.
     # Re-running the collectors only updates the report FILES; until they are folded
     # into homelab.db the Database and Docs views still answer from the previous run,
