@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "kind": "agentic-workspace-manifest",
-  "generated_at": "2026-11-10T00:18:53Z",
+  "generated_at": "2026-11-10T00:20:37Z",
   "generated_by": "homelab/agentic/gen-workspace.py",
   "purpose": "Portable, tool-agnostic description of this workspace so any coding agent (Claude Code, Codex, Cursor, ...) can pick up the same skills, rules, and runbooks. Displayed at webapp.lan and referenceable by agents.",
   "workspace": {
@@ -201,6 +201,11 @@
         "file": "11-dungine-agent-collaboration.md",
         "path": "homelab/agentic/runbooks/11-dungine-agent-collaboration.md",
         "title": "11 — Dungine agent collaboration bridge (Astra ↔ Fable)"
+      },
+      {
+        "file": "12-opti-disk-alerting.md",
+        "path": "homelab/agentic/runbooks/12-opti-disk-alerting.md",
+        "title": "12 — opti disk and pool alerting"
       }
     ],
     "harness": [

@@ -25,7 +25,8 @@ const LINK_GROUPS = [
   { group: 'Apps', links: [
     { label: 'Vaultwarden', url: 'https://bitwarden.rpi.lan/#/vault', icon: 'vaultwarden.svg', check: ['https://bitwarden.rpi.lan', 'https://nginx-bitwarden'] },
     { label: 'Vaultwarden admin', url: 'https://bitwarden.rpi.lan/admin/users/overview', icon: 'vaultwarden.svg' },
-    { label: 'Notes', url: 'https://webapp.lan:8443/notes/', icon: 'generic.svg' },
+    // Same origin as Pertal (nginx serves /notes on its port), so it survives the cutover.
+    { label: 'Notes', url: '/notes/', icon: 'generic.svg' },
   ]},
   { group: 'Media', links: [
     { label: 'Jellyfin', url: 'http://jellyfin.lan:8096/', icon: 'jellyfin.svg', check: 'http://jellyfin.lan:8096' },

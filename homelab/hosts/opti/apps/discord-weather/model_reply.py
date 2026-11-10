@@ -18,7 +18,8 @@ import json
 import os
 import re
 import threading
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 try:
@@ -35,7 +36,8 @@ USAGE_PATH = os.path.join(DATA_DIR, "claude_usage.json")
 DEFAULTS = {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 150,
             "daily_tokens": 400000, "max_tokens": 4096, "history": 15,
             "morning": False, "morning_effort": "medium", "morning_history": 150,
-            "memory": False, "memory_skip_channels": []}
+            "memory": False, "memory_skip_channels": [],
+            "learn_model": "claude-haiku-5-5", "learn_batch": False}
 EFFORTS = ("low", "medium", "high")
 TIMEOUT = 25.0          # seconds; Discord shows "typing" meanwhile
 SLOW_TIMEOUT = 90.0     # morning line and nightly learning, off the hot path
@@ -110,6 +112,13 @@ LEARN_RULES = (
     "money, partners and family, sexuality, ethnicity, politics or addresses. Refer to "
     "people only by @handle. Plain notes, no preamble, at most {words} words.")
 
+# $ per million tokens (input, output) on the Claude API; cache reads bill 0.1x
+# input, 5-minute cache writes 1.25x, and the Batch API half of everything.
+PRICES = {"claude-haiku-5-5": (0.10, 0.50), "claude-sonnet-5-5": (2.00, 10.00)}
+# Set by the bot: called as CALL_HOOK(cfg, row) once per API call, success or
+# not, with the row shape wbdb.WBDB.log_call stores. Never allowed to break a call.
+CALL_HOOK = None
+
 _lock = threading.Lock()
 _last_error = ""
 _limited = {}         # local date -> "credit" once the API says the account is out of credit
@@ -130,8 +139,11 @@ def validate(cfg):
     s = {**DEFAULTS, **c}
     if not isinstance(s["enabled"], bool):
         return "claude.enabled must be true/false"
-    if not (isinstance(s["model"], str) and re.fullmatch(MODEL_RE, s["model"])):
-        return "claude.model must be a model id"
+    for k in ("model", "learn_model"):
+        if not (isinstance(s[k], str) and re.fullmatch(MODEL_RE, s[k])):
+            return f"claude.{k} must be a model id"
+    if not isinstance(s["learn_batch"], bool):
+        return "claude.learn_batch must be true/false"
     for k in ("effort", "morning_effort"):
         if s[k] not in EFFORTS:
             return f"claude.{k} must be one of {', '.join(EFFORTS)}"
@@ -201,6 +213,33 @@ def _record(tz, input_tokens, output_tokens):
         except OSError:
             pass
         return u
+
+
+def cost(model, input_tokens=0, output_tokens=0, cache_read=0, cache_write=0, batch=False):
+    """Estimated $ for one call, or None for a model without a price here."""
+    if model not in PRICES:
+        return None
+    pin, pout = PRICES[model]
+    usd = (input_tokens * pin + cache_read * pin * 0.1 + cache_write * pin * 1.25 + output_tokens * pout) / 1e6
+    return round(usd * (0.5 if batch else 1), 6)
+
+
+def report(cfg, job, model, status, usage=None, latency_ms=None, batch=False):
+    """Hand one call's numbers to CALL_HOOK (the WBdb usage log)."""
+    if not CALL_HOOK:
+        return
+    def g(k):
+        return int(getattr(usage, k, 0) or 0) if usage is not None else 0
+    row = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "job": job, "model": model,
+           "status": status, "input_tokens": g("input_tokens"), "output_tokens": g("output_tokens"),
+           "cache_read": g("cache_read_input_tokens"), "cache_write": g("cache_creation_input_tokens"),
+           "latency_ms": latency_ms, "batch": int(bool(batch))}
+    row["cost_usd"] = cost(model, row["input_tokens"], row["output_tokens"], row["cache_read"],
+                           row["cache_write"], batch)
+    try:
+        CALL_HOOK(cfg, row)
+    except Exception:
+        pass
 
 
 def status(cfg):
@@ -395,10 +434,13 @@ def clean_line(text, allowed_ids=(), max_chars=MAX_CHARS):
 
 
 # -- the call -----------------------------------------------------------------
+def _client(timeout=TIMEOUT, retries=RETRIES):
+    return anthropic.Anthropic(api_key=_key(), timeout=timeout, max_retries=retries)
+
+
 def _create(s, system, user):
     """One Messages API call. Separated so tests can stub it."""
-    client = anthropic.Anthropic(api_key=_key(), timeout=s.get("timeout", TIMEOUT),
-                                 max_retries=s.get("retries", RETRIES))
+    client = _client(s.get("timeout", TIMEOUT), s.get("retries", RETRIES))
     return client.messages.create(
         model=s["model"], max_tokens=s["max_tokens"],
         output_config={"effort": s["effort"]},   # thinking stays adaptive
@@ -406,12 +448,17 @@ def _create(s, system, user):
         messages=[{"role": "user", "content": user}])
 
 
-def ask(cfg, system, user, log=print, **over):
+def ask(cfg, system, user, log=print, job="other", **over):
     """The model's text, or None. Records today's usage either way the call
-    returns. `over` overrides settings for this one call (effort, timeout,
-    retries, max_tokens for the morning line and learning)."""
+    returns, and reports the call to the usage log under `job`. `over`
+    overrides settings for this one call (effort, timeout, retries, max_tokens
+    for the morning line and learning)."""
     global _last_error
     s, tz = {**settings(cfg), **over}, cfg.get("timezone", "UTC")
+    started = time.monotonic()
+
+    def ms():
+        return int((time.monotonic() - started) * 1000)
     try:
         resp = _create(s, system, user)
     except Exception as e:  # auth, network, 4xx/5xx, timeout: all the same to the bot
@@ -420,17 +467,66 @@ def ask(cfg, system, user, log=print, **over):
         if reason:   # out of credit: stop asking until tomorrow
             _limited[_today(tz)] = reason
         log(f"claude: call failed - {_last_error}" + (f" (limit: {reason})" if reason else ""))
+        report(cfg, job, s["model"], f"error:{getattr(e, 'status_code', None) or type(e).__name__}", None, ms())
         return None
     u = getattr(resp, "usage", None)
     _record(tz, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
     if getattr(resp, "stop_reason", "") == "refusal":
         _last_error = "refusal"
         log("claude: refusal")
+        report(cfg, job, s["model"], "refusal", u, ms())
         return None
     text = "".join(b.text for b in getattr(resp, "content", []) if getattr(b, "type", "") == "text")
     if not text.strip():   # e.g. max_tokens spent on thinking: nothing to say
         _last_error = f"empty reply (stop_reason {getattr(resp, 'stop_reason', '?')})"
         log(f"claude: {_last_error}")
+        report(cfg, job, s["model"], "empty", u, ms())
         return None
     _last_error = ""
+    report(cfg, job, s["model"], "ok", u, ms())
     return text
+
+
+# -- the Message Batches API (nightly notes, optional) ------------------------
+# Half price, usually done within the hour, at most 24 h. Each wrapper is one
+# SDK call, separated so tests can stub them.
+def batch_request(custom_id, model, system, user, max_tokens, effort="medium"):
+    """One entry for batch_submit: the same body ask() would send."""
+    return {"custom_id": custom_id,
+            "params": {"model": model, "max_tokens": max_tokens, "output_config": {"effort": effort},
+                       "system": system, "messages": [{"role": "user", "content": user}]}}
+
+
+def batch_submit(requests):
+    """Submit requests; returns the batch id."""
+    return _client(SLOW_TIMEOUT, SLOW_RETRIES).messages.batches.create(requests=requests).id
+
+
+def batch_status(batch_id):
+    """'in_progress', 'canceling' or 'ended'."""
+    return _client(SLOW_TIMEOUT, SLOW_RETRIES).messages.batches.retrieve(batch_id).processing_status
+
+
+def batch_cancel(batch_id):
+    _client(SLOW_TIMEOUT, SLOW_RETRIES).messages.batches.cancel(batch_id)
+
+
+def batch_results(batch_id):
+    """[(custom_id, outcome, message-or-None)], outcome being 'succeeded',
+    'errored', 'canceled' or 'expired'."""
+    return [(r.custom_id, r.result.type, getattr(r.result, "message", None))
+            for r in _client(SLOW_TIMEOUT, SLOW_RETRIES).messages.batches.results(batch_id)]
+
+
+def batch_text(cfg, job, message):
+    """A batch result's text, or None (refusal, empty), recorded in today's
+    usage and the usage log at batch prices like any other call."""
+    u = getattr(message, "usage", None)
+    _record(cfg.get("timezone", "UTC"), getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
+    model = getattr(message, "model", "") or settings(cfg)["learn_model"]
+    if getattr(message, "stop_reason", "") == "refusal":
+        report(cfg, job, model, "refusal", u, None, batch=True)
+        return None
+    text = "".join(b.text for b in getattr(message, "content", []) if getattr(b, "type", "") == "text")
+    report(cfg, job, model, "ok" if text.strip() else "empty", u, None, batch=True)
+    return text if text.strip() else None

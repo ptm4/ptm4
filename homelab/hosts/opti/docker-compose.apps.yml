@@ -183,8 +183,12 @@ services:
     expose:
       - "3000"
     networks:
-      - internal
-      - cockpit_gw
+      # Default route via `internal`: opti's ufw lets 172.18.0.0/16 (not the cockpit_gw
+      # subnet) reach the host's arch agent on :8787. Without the priority Docker may
+      # pick cockpit_gw as the gateway and every opti agent call times out (2026-11-10).
+      internal:
+        gw_priority: 1
+      cockpit_gw: {}
 
   nginx-webapp:
     image: nginx:1.30.6-alpine@sha256:583b7f2fce1cdb8da5ad5c39ebd3c33b98b87d493190e548bdee1fa8c619c311
@@ -279,7 +283,11 @@ services:
       retries: 3
 
   discord-sports:
-    build: ./discord-sports
+    build:
+      context: ./discord-sports
+      # shared bot scaffolding (apps/_botkit); the Dockerfile COPYs --from=botkit
+      additional_contexts:
+        botkit: ./_botkit
     container_name: discord-sports
     restart: unless-stopped
     logging: *default-logging

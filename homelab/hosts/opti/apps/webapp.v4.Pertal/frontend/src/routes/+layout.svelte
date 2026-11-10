@@ -49,7 +49,7 @@
   <nav class="rail" aria-label="Main">
     {#each NAV as n (n.href)}
       {#if n.ready}
-        <a href={n.href} class:active={isActive(n.href)} aria-current={isActive(n.href) ? 'page' : undefined}>
+        <a href={n.href} class:active={!n.external && isActive(n.href)} aria-current={!n.external && isActive(n.href) ? 'page' : undefined} data-sveltekit-reload={n.external ? '' : undefined}>
           <Icon name={n.icon} size={16} />
           <span>{n.label}</span>
           {#if n.href === '/' && attention}<span class="count">{attention}</span>{/if}

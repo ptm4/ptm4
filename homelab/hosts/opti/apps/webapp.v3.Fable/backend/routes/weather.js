@@ -19,6 +19,8 @@ const ROUTES = [
   { method: 'post', path: '/inbox/ack',  bot: 'POST', botPath: '/inbox/ack' },
   { method: 'post', path: '/say',        bot: 'POST', botPath: '/say',     timeout: 15000 },
   { method: 'post', path: '/profile',    bot: 'POST', botPath: '/profile' },
+  // per-day Claude usage, numbers only; homelab-db's wb-usage feed reads this
+  { method: 'get', path: '/calls/daily', bot: 'GET',  botPath: '/calls/daily' },
 ];
 
 module.exports = async function weatherRoutes(app) {

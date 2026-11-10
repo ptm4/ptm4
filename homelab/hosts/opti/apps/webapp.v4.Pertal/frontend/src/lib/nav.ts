@@ -1,7 +1,8 @@
 // Drawer / rail entries, in the order they appear. `ready: false` marks v4 pages still
 // being built — shown (last, greyed) so the shape of the finished app is visible.
 // The Launchpad is not here: it lives behind the Apps button in the top bar.
-export interface NavItem { href: string; label: string; icon: string; ready: boolean }
+// `external`: served by nginx next to Pertal, not a Pertal page, so the link reloads the page.
+export interface NavItem { href: string; label: string; icon: string; ready: boolean; external?: boolean }
 
 export const NAV: NavItem[] = [
   { href: '/', label: 'Status', icon: 'gauge', ready: true },
@@ -15,6 +16,7 @@ export const NAV: NavItem[] = [
   { href: '/downloads', label: 'Downloads', icon: 'download', ready: true },
   { href: '/requests', label: 'Requests', icon: 'inbox', ready: true },
   { href: '/assets', label: 'Asset Library', icon: 'library', ready: true },
+  { href: '/notes/', label: 'Notes', icon: 'notebook-pen', ready: true, external: true },
   { href: '/reports', label: 'Reports', icon: 'file-chart-column', ready: true },
   { href: '/settings', label: 'Settings', icon: 'settings', ready: true },
 ];

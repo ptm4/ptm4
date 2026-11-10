@@ -102,8 +102,9 @@ POOL_PATH = "/srv/pool"
 AUTOUPDATE_LOG = "/var/log/homelab-autoupdate.log"
 AUTOUPDATE_STALE_HOURS = 48
 
-# Pool health (zpool status). red is scrubbed at least monthly (zfs-scrub-monthly@red.timer),
-# so a finished scrub older than this means the schedule itself stopped.
+# Pool health (zpool status). red is scrubbed monthly by Debian's /etc/cron.d/zfsutils-linux
+# (2nd Sunday; at most 35 days apart), so a finished scrub older than this means the
+# schedule itself stopped.
 POOL_SCRUB_WARN_DAYS = 40
 
 # smartd runs as our own unit with our own config on opti (homelab/hosts/opti/smartd/),
@@ -534,8 +535,8 @@ def pool_health_findings(hostname, status, now_epoch):
     risk; warn = daily digest). On red, a single disk with no second copy, any pool state
     other than ONLINE, any read/write/checksum error, a permanent data error or a scrub
     that found errors is critical: there is no redundancy to absorb the next one. A stale
-    scrub is warn. Messages carry no dates; ingest.py collapses digits into the alert key,
-    so counts may change without re-paging.
+    scrub is warn. Message shape per rules/alerting.md: the stable problem plus what to do
+    BEFORE " | ", the counts after it, so the open-problem key does not change as counts do.
     """
     summary, findings = {}, []
     for name, p in sorted((status.get("pools") or {}).items()):
@@ -551,38 +552,37 @@ def pool_health_findings(hostname, status, now_epoch):
                      "errors": _int(scan.get("errors"))}
         summary[name] = {"state": state, "data_errors": data_errors,
                          "vdev_problems": leaf, "scrub": scrub}
-        action = (f"Run `zpool status -v {name}` on {hostname}. Do not reboot, clear or "
-                  f"scrub; copy anything irreplaceable off the pool first")
+        act = (f"run `zpool status -v {name}`, do not reboot, clear or scrub, and copy "
+               f"anything irreplaceable off the pool")
 
         if state != "ONLINE":
-            findings.append({"severity": "critical", "key": f"zfs-pool-state-{name}",
-                             "action": action,
-                             "message": (f"[{hostname}] ZFS pool {name} is {state}, not ONLINE — "
-                                         f"data on it is at risk")})
+            findings.append({"severity": "critical",
+                             "message": (f"[{hostname}] ZFS pool {name} is {state}, not ONLINE; "
+                                         f"{act} | data on it is at risk")})
         bad = [x for x in leaf if x["read"] or x["write"] or x["checksum"]]
         if bad:
             detail = "; ".join(f"{x['vdev']} {x['state']} read {x['read']} write {x['write']} "
                                f"cksum {x['checksum']}" for x in bad)
-            findings.append({"severity": "critical", "key": f"zfs-pool-vdev-errors-{name}",
-                             "action": action,
-                             "message": f"[{hostname}] ZFS pool {name} has disk I/O errors: {detail}"})
+            findings.append({"severity": "critical",
+                             "message": (f"[{hostname}] ZFS pool {name} has disk read/write/"
+                                         f"checksum errors; {act} | {detail}")})
         if data_errors:
-            findings.append({"severity": "critical", "key": f"zfs-pool-data-errors-{name}",
-                             "action": action,
-                             "message": (f"[{hostname}] ZFS pool {name} reports {data_errors} "
-                                         f"permanent data error(s) — files are damaged")})
+            findings.append({"severity": "critical",
+                             "message": (f"[{hostname}] ZFS pool {name} has permanent data errors "
+                                         f"(damaged files); `zpool status -v {name}` lists them, "
+                                         f"copy what you can off the pool | "
+                                         f"{data_errors} error(s)")})
         if scrub and scrub["state"] == "FINISHED" and scrub["errors"]:
-            findings.append({"severity": "critical", "key": f"zfs-pool-scrub-errors-{name}",
-                             "action": action,
-                             "message": (f"[{hostname}] last scrub of ZFS pool {name} found "
-                                         f"{scrub['errors']} error(s)")})
+            findings.append({"severity": "critical",
+                             "message": (f"[{hostname}] last scrub of ZFS pool {name} found errors; "
+                                         f"{act} | {scrub['errors']} error(s)")})
         if scrub is None or (scrub["state"] == "FINISHED" and scrub["end"]
                              and (now_epoch - scrub["end"]) / 86400 > POOL_SCRUB_WARN_DAYS):
             age = ("no scrub on record" if scrub is None else
                    f"last scrub finished {int((now_epoch - scrub['end']) / 86400)} days ago")
-            findings.append({"severity": "warn", "key": f"zfs-pool-scrub-stale-{name}",
-                             "action": f"Check zfs-scrub-monthly@{name}.timer on {hostname}",
-                             "message": f"[{hostname}] ZFS pool {name}: {age}"})
+            findings.append({"severity": "warn",
+                             "message": (f"[{hostname}] ZFS pool {name} has no recent scrub; check "
+                                         f"/etc/cron.d/zfsutils-linux on {hostname} | {age}")})
     return summary, findings
 
 
@@ -605,9 +605,9 @@ def host_pool_health(host):
     if not isinstance(status, dict):
         # A pool we cannot read is itself a problem (hung pool, broken zfs userland).
         return {"error": f"zpool status failed (rc {rc})"}, [{
-            "severity": "warn", "key": "zfs-pool-status-unreadable",
-            "action": f"Run `zpool status` on {host.name} by hand",
-            "message": f"[{host.name}] zpool status could not be read — pool health unknown"}]
+            "severity": "warn",
+            "message": (f"[{host.name}] zpool status could not be read, pool health unknown; "
+                        f"run `zpool status` by hand | rc {rc}")}]
     return pool_health_findings(host.name, status, datetime.now(timezone.utc).timestamp())
 
 
@@ -673,10 +673,10 @@ def collect_host(host):
     # smartd is the realtime disk alarm; if it dies, disk failures page nobody.
     smartd = host_smartd(host)
     if smartd is not None and smartd != "active":
-        findings.append({"severity": "warn", "key": "smartd-not-running",
-                         "action": f"systemctl status {SMARTD_UNIT} on {host.name}",
-                         "message": (f"[{host.name}] {SMARTD_UNIT} is {smartd} — disk SMART "
-                                     f"failures will not push until it runs again")})
+        findings.append({"severity": "warn",
+                         "message": (f"[{host.name}] {SMARTD_UNIT} is not running, so disk SMART "
+                                     f"failures will not push; check `systemctl status {SMARTD_UNIT}` "
+                                     f"(and that SMART is still off in the OMV UI) | state {smartd}")})
     autoupdate = host_autoupdate(host)
     if autoupdate is not None:
         autoupdate["hold"] = host_autoupdate_hold(host)

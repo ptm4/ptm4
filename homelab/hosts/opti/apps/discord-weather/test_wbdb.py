@@ -61,7 +61,9 @@ class WBDBTests(unittest.TestCase):
                         patch.object(mr, "USAGE_PATH", str(folder / "usage.json")),
                         patch.object(mr, "KEY_PATH", str(folder / "key")),
                         patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-test"}),
-                        patch.object(mr, "anthropic", object())]
+                        patch.object(mr, "anthropic", object()),
+                        # each test file loads its own copy of the bot; log calls into this one
+                        patch.object(mr, "CALL_HOOK", bot.record_call)]
         for p in self.patches:
             p.start()
         bot._self_id.clear()
@@ -137,6 +139,9 @@ class WBDBTests(unittest.TestCase):
         copy = wbdb.WBDB(str(dest / "wb-2026-11-03.sqlite"))
         self.addCleanup(copy.close)
         self.assertEqual(copy.profile("2")["notes"], "keep me")
+        busy, _, _ = db.checkpoint()
+        self.assertEqual(busy, 0)
+        self.assertEqual(os.path.getsize(db.path + "-wal"), 0)                  # truncated after the checkpoint
 
     def test_concurrent_writers_do_not_collide(self):
         db = self.db()
@@ -332,6 +337,131 @@ class WBDBTests(unittest.TestCase):
             self.assertNotIn("Weather numbers", ask.call_args.args[2])
             bot.model_answer(self.cfg(), "2", "Tom", "tell me my weather", "weather", [])
             self.assertIn("Bellerose: high 61", ask.call_args.args[2])
+
+    # -- nightly notes through the Batch API ----------------------------------------
+    def batch_day(self):
+        db = self.db()
+        db.add([self.row(i, f"tom {i}") for i in range(1, 6)] + [self.row(10, "once", "@antwah", "3")] +
+               [self.row(20, "bot post", "@WB", BOT_ID, is_bot=True)])
+        db.log_ping(30, "10", "2", "@tomboe", "rate my car", 31, "solid 6")
+        return db, self.cfg(learn_batch=True, learn_model="claude-sonnet-5-5")
+
+    @staticmethod
+    def message(text, stop="end_turn"):
+        from types import SimpleNamespace as NS
+        return NS(model="claude-sonnet-5-5", stop_reason=stop, content=[NS(type="text", text=text)],
+                  usage=NS(input_tokens=2000, output_tokens=500, cache_read_input_tokens=0,
+                           cache_creation_input_tokens=0))
+
+    def test_batch_submit_sends_every_job_on_the_learn_model_and_marks_nothing_yet(self):
+        db, cfg = self.batch_day()
+        with patch.object(mr, "batch_submit", return_value="msgbatch_1") as submit:
+            self.assertEqual(bot.learn_submit(db, cfg), 4)                    # tom, group, self, lines
+        reqs = submit.call_args.args[0]
+        self.assertEqual(sorted(r["custom_id"] for r in reqs), ["group", "lines", "p-2", "self"])
+        self.assertEqual({r["params"]["model"] for r in reqs}, {"claude-sonnet-5-5"})
+        self.assertEqual([r["id"] for r in db.unlearned()], [1, 2, 3, 4, 5])  # quiet @antwah and the bot: free
+        self.assertEqual(json.loads(db.get_meta("learn_batch"))["id"], "msgbatch_1")
+        with patch.object(mr, "batch_status", return_value="in_progress"):
+            self.assertEqual(bot.learn_collect(db, cfg, datetime(2026, 11, 10, 4, 0)), "waiting")
+
+    def test_batch_results_are_saved_and_failures_run_on_the_regular_path(self):
+        db, cfg = self.batch_day()
+        with patch.object(mr, "batch_submit", return_value="msgbatch_1"):
+            bot.learn_submit(db, cfg)
+        results = [("p-2", "succeeded", self.message("@tomboe: says tom a lot")),
+                   ("group", "errored", None),
+                   ("self", "succeeded", self.message("x", stop="refusal")),
+                   ("lines", "succeeded", self.message("LIMIT:\nbye {name}\nPESTER:\nslow {name}"))]
+        with patch.object(mr, "batch_status", return_value="ended"), \
+                patch.object(mr, "batch_results", return_value=results), \
+                patch.object(mr, "ask", return_value="regular-path notes") as ask:
+            self.assertEqual(bot.learn_collect(db, cfg, datetime(2026, 11, 10, 4, 0)), "done")
+        self.assertEqual(db.profile("2")["notes"], "@tomboe: says tom a lot")
+        self.assertEqual(sorted(c.kwargs["job"] for c in ask.call_args_list), ["learn_group", "learn_self"])
+        self.assertEqual((db.profile("group")["notes"], db.profile("self")["notes"]),
+                         ("regular-path notes", "regular-path notes"))
+        self.assertEqual(db.line("limit"), "bye {name}")
+        self.assertEqual((db.unlearned(), db.get_meta("learn_batch")), ([], ""))
+        batch_rows = [r for r in db.recent_calls() if r["batch"]]
+        self.assertEqual(len(batch_rows), 3)
+        self.assertAlmostEqual(batch_rows[0]["cost_usd"], 0.0045)            # (2000 x $2 + 500 x $10) / M, halved
+
+    def test_batch_still_running_at_the_deadline_is_canceled_and_done_the_regular_way(self):
+        db, cfg = self.batch_day()
+        with patch.object(mr, "batch_submit", return_value="msgbatch_1"):
+            bot.learn_submit(db, cfg)
+        with patch.object(mr, "batch_status", return_value="in_progress"), \
+                patch.object(mr, "batch_cancel") as cancel, \
+                patch.object(mr, "batch_results", side_effect=AssertionError("not read while running")), \
+                patch.object(mr, "ask", return_value="@tomboe: late notes") as ask:
+            self.assertEqual(bot.learn_collect(db, cfg, datetime(2026, 11, 10, 6, 30)), "done")
+        cancel.assert_called_once_with("msgbatch_1")
+        self.assertEqual(ask.call_count, 4)
+        self.assertEqual(db.profile("2")["notes"], "@tomboe: late notes")
+        self.assertEqual(bot.learn_collect(db, cfg), "none")
+
+    def test_batch_submit_failure_falls_back_to_tonights_regular_learning(self):
+        db, cfg = self.batch_day()
+        with patch.object(mr, "batch_submit", side_effect=RuntimeError("batches down")), \
+                patch.object(mr, "ask", return_value="notes") as ask:
+            bot.learn_submit(db, cfg)
+        self.assertGreater(ask.call_count, 0)
+        self.assertEqual(db.get_meta("learn_batch"), None)
+        self.assertIsNone(mr.validate(self.cfg(learn_batch=True, learn_model="claude-sonnet-5-5")))
+        self.assertIsNotNone(mr.validate(self.cfg(learn_batch="yes")))
+        self.assertFalse(mr.DEFAULTS["learn_batch"])                          # ships switched off
+
+    # -- usage log -----------------------------------------------------------------
+    def test_every_call_is_logged_with_job_tokens_cost_and_status(self):
+        from types import SimpleNamespace as NS
+        ok = NS(usage=NS(input_tokens=3000, output_tokens=400, cache_read_input_tokens=0,
+                         cache_creation_input_tokens=0), stop_reason="end_turn", content=[NS(type="text", text="Hi!")])
+        with patch.object(mr, "_create", return_value=ok):
+            bot.model_answer(self.cfg(), "2", "Tom", "hello", "chat", [])
+        rate = RuntimeError("rate limited")
+        rate.status_code = 429
+        with patch.object(mr, "_create", side_effect=rate):
+            mr.ask(self.cfg(), "s", "u", log=lambda *_: None, job="morning")
+        with patch.object(mr, "_create", return_value=ok):
+            mr.ask(self.cfg(memory=False), "s", "u", log=lambda *_: None, job="chat")   # memory off: not logged
+        rows = list(reversed(self.db().recent_calls()))
+        self.assertEqual([(r["job"], r["status"], r["model"]) for r in rows],
+                         [("chat", "ok", "claude-haiku-5-5"), ("morning", "error:429", "claude-haiku-5-5")])
+        self.assertEqual((rows[0]["input_tokens"], rows[0]["output_tokens"]), (3000, 400))
+        self.assertAlmostEqual(rows[0]["cost_usd"], 0.0005)                    # 3000 x $0.10 + 400 x $0.50 per M
+        self.assertIsNotNone(rows[0]["latency_ms"])
+        summary = self.db().call_summary()
+        self.assertEqual(sorted((r["job"], r["calls"], r["failures"]) for r in summary),
+                         [("chat", 1, 0), ("morning", 1, 1)])
+
+    def test_daily_numbers_for_homelab_db_carry_no_text(self):
+        db = self.db()
+        day = datetime.now(timezone.utc).date().isoformat()
+        for ms, status in ((100, "ok"), (300, "ok"), (2000, "error:529")):
+            db.log_call({"ts": f"{day}T12:00:00+00:00", "job": "chat", "model": "claude-haiku-5-5",
+                         "status": status, "input_tokens": 1000, "output_tokens": 100, "latency_ms": ms,
+                         "cost_usd": 0.00015})
+        db.log_ping(1, "10", "2", "@tomboe", "secret question", 2, "secret answer")
+        rows = db.daily()
+        self.assertEqual(len(rows), 1)
+        r = rows[0]
+        self.assertEqual((r["day"], r["calls"], r["failures"], r["input_tokens"], r["pings"], r["p95_ms"]),
+                         (day, 3, 1, 3000, 1, 2000))
+        self.assertAlmostEqual(r["cost_usd"], 0.00045)
+        self.assertNotIn("secret", json.dumps(rows))
+
+    def test_cost_estimates_and_old_call_rows_are_pruned(self):
+        self.assertEqual(mr.cost("claude-haiku-5-5", 1_000_000, 0), 0.1)
+        self.assertEqual(mr.cost("claude-sonnet-5-5", 1_000_000, 1_000_000, batch=True), 6.0)
+        self.assertEqual(mr.cost("claude-sonnet-5-5", 0, 0, cache_read=1_000_000), 0.2)
+        self.assertIsNone(mr.cost("some-other-model", 10, 10))
+        db = self.db()
+        old = (datetime.now(timezone.utc) - timedelta(days=100)).isoformat()
+        db.log_call({"ts": old, "job": "chat", "model": "m", "status": "ok"})
+        db.log_call({"ts": datetime.now(timezone.utc).isoformat(), "job": "chat", "model": "m", "status": "ok"})
+        db.prune()
+        self.assertEqual(len(db.recent_calls()), 1)
 
     # -- forgetting ----------------------------------------------------------------
     def forget(self):

@@ -299,6 +299,13 @@ test('weather geocode / sports teams param validation', async () => {
   assert.equal((await app.inject({ method: 'GET', url: '/api/sports/teams?q=x' })).statusCode, 400);
 });
 
+test('weather calls/daily is proxied (homelab-db wb-usage feed)', async () => {
+  // no bot in the test run: a registered route answers 502 "unreachable", never 404
+  const r = await app.inject({ method: 'GET', url: '/api/weather/calls/daily' });
+  assert.equal(r.statusCode, 502);
+  assert.match(r.json().error, /weather bot unreachable/);
+});
+
 test('streams POSTs refuse to run without HL_STREAM_TOKEN', async () => {
   const r = await app.inject({ method: 'POST', url: '/api/streams/start', payload: {} });
   assert.equal(r.statusCode, 500);

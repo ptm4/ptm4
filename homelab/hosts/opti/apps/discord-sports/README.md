@@ -6,8 +6,14 @@ webhook as an embed, and exposes a control API used by the rpi webapp's
 enable/disable, test send and preview are all managed from there, not by
 editing files.
 
-Clone of `../discord-weather` (same scaffolding: volume config, catch-up
-scheduler, control API on internal :8080); only the domain logic differs.
+The scaffolding (volume config, catch-up scheduler, control API on internal
+:8080, post-with-retry) comes from [`../_botkit`](../_botkit/README.md) since
+2026-11-10; this bot is only the ESPN fetch, the embed and `/teams`. The image
+build pulls the kit in as a second build context (see the compose
+`additional_contexts` on this service).
+
+Tests (offline): `python3 -m unittest -v test_sports_contract.py` pins the
+control API the dashboards read; CI runs it.
 
 ## Data source
 

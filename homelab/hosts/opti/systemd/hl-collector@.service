@@ -23,6 +23,9 @@ User=ptm
 # the same mechanism hl-notify-failure@.service uses. rpi/noblenumbat need nothing: ptm is
 # in adm there, which the journal ACL already grants read.
 SupplementaryGroups=systemd-journal
+# journald-hunter fleet mode: read these hosts' journals (remote ones over SSH via
+# _hosts.py, nothing installed on them). Other collectors ignore it.
+Environment=HL_JOURNAL_HOSTS=opti,rpi,noblenumbat
 EnvironmentFile=-/etc/hl-agents.env
 ExecCondition=/usr/bin/python3 /srv/red/fs/ptm/repo/ptm4/homelab/hosts/opti/agent-dispatcher.py --is-enabled %i
 ExecStartPre=/usr/bin/mountpoint -q /srv/red

@@ -118,13 +118,17 @@ Taste-test: `python3 witty_messages.py 30` or `--all` for every ordinary line.
 Run offline regression tests (no web requests or Discord sends):
 
 ```sh
-python3 -m unittest discover -s homelab/hosts/rpi/discord-weather -p 'test_*.py' -v
+python3 -m unittest discover -s homelab/hosts/opti/apps/discord-weather -p 'test_*.py' -v
 ```
 
 Run from the repo root with Python 3.12+ and timezone data (the Docker image
-already installs `tzdata`). The standard rpi deployment workflow copies this
-folder, builds the image including `weather_context.py`, and restarts the bot
-after the changes are committed and pushed. Persistent volume state is retained.
+already installs `tzdata`). CI runs the same suite on every push (`checks.yml`,
+"Weather bot (WB) tests"). The "Deploy opti App Tier" workflow copies this
+folder, builds the image and restarts the bot after the changes are committed
+and pushed. Persistent volume state is retained. On Windows, one witty-pool test
+(`test_generic_cooldown_across_cycles_names_and_restarts`) can fail at random
+when antivirus briefly locks the pool file during its 300 rapid rewrites; it
+passes on Linux.
 
 Layout: locations render as a 2-per-row grid (inline fields + invisible
 spacer fields). Sunrise/sunset appear once in the header, taken from the
@@ -258,8 +262,24 @@ is public.
 **Reliability.** One connection behind a lock, batches in one transaction,
 `PRAGMA quick_check` at open (a bad file is set aside and replaced by an empty
 one), and a nightly `VACUUM INTO` copy to `/backup`, which compose binds to
-`/srv/red/fs/ptm/wbdb/backup` (7 kept, `wb-<date>.sqlite`) so the weekly cold
-copy takes it. If WBdb can't serve a reply, the reply goes without notes.
+`/srv/red/fs/ptm/wbdb/backup` (7 kept, `wb-<date>.sqlite`). That folder is on the
+same pool as the live file: the weekly cold copy was retired on 2026-09-24, so
+there is **no second copy** of WB's notes anywhere. After the backup, a
+`PRAGMA wal_checkpoint(TRUNCATE)` folds the day's write-ahead log into the main
+file. If WBdb can't serve a reply, the reply goes without notes.
+
+**Usage log.** Every Claude call is a row in WBdb's `calls` table: time, job
+(`chat`, `weather`, `full`, `morning`, `learn_person`, `learn_group`,
+`learn_self`, `lines`), model, status (`ok`, `refusal`, `empty`,
+`error:<status>`), input/output/cached tokens, latency, and an estimated cost
+from `model_reply.PRICES`. Rows are kept 90 days. `GET /calls?days=14` gives
+per-day, per-job totals plus the latest 50 calls.
+
+**Rate limits and outages.** The SDK retries a 429, an overload or a dropped
+connection, waiting what the API's `retry-after` says: once for a reply, three
+times for the morning line and the nightly notes. If a reply still fails, WB
+reacts 💤 and the next ping tries again. Only an out-of-credit answer from the
+API (or the daily caps) stops it until tomorrow.
 
 `claude` is a profile field, so it is switched on **per server**: `enabled:
 true` is rejected unless that profile (or the flat config) names a `guild_id`,

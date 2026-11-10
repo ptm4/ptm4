@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 discord-sports — daily scores & schedule for your teams posted to a Discord
-channel webhook as an embed, with an HTTP control API for the rpi webapp's
-"Sports Bot" tab. Clone of discord-weather's scaffolding; only the domain
-logic differs.
+channel webhook as an embed, with an HTTP control API for the webapp's
+"Sports Bot" tab. The scaffolding (config store, daily scheduler, control API,
+post-with-retry) comes from ../_botkit; this file is only the domain logic.
 
 Data: ESPN's public site API (keyless, unofficial — parsed defensively):
 yesterday's result + today's game per configured team, one scoreboard fetch
@@ -18,25 +18,20 @@ Modes:
   --once      build + post the report now, then exit
   --dry-run   build + print the payload, no post, then exit
 """
-import json
 import os
-import re
 import sys
-import threading
-import time
 import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
-DATA_DIR = os.environ.get("DATA_DIR", "/data")
-CONFIG_PATH = os.path.join(DATA_DIR, "config.json")
-LAST_POST_PATH = os.path.join(DATA_DIR, "last_post")
-API_PORT = 8080
+# In the image _botkit sits next to this file (/app/_botkit); in the repo it is one up.
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from _botkit import Bot, http_json, log, post_webhook  # noqa: E402
 
 ESPN_BASE = "https://site.api.espn.com/apis/site/v2/sports"
 EMBED_COLOR = 0xE67E22  # orange
+# Discord's Cloudflare 403s urllib's default UA; ESPN 403s custom ones (see _botkit/net.py).
+DISCORD_UA = "discord-sports (rpi homelab)"
 
 # league slug → sport slug (ESPN URL path is /sports/{sport}/{league}/…).
 # NBA only by design; add e.g. "nfl": "football" here (and in the frontend's
@@ -58,57 +53,7 @@ DEFAULT_CONFIG = {
 }
 
 
-def log(msg):
-    print(f"{datetime.now().isoformat(timespec='seconds')} {msg}", flush=True)
-
-
-# ── config store ──────────────────────────────────────────────────────────────
-_lock = threading.Lock()
-_wake = threading.Event()   # poked on config change so the scheduler recomputes
-_status = {"last_post_at": None, "last_status": None, "next_post_at": None}
-
-
-def load_config():
-    try:
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
-    except (OSError, ValueError):
-        cfg = dict(DEFAULT_CONFIG)
-        cfg["webhook_url"] = os.environ.get("DISCORD_WEBHOOK_URL_SPORTS", "")
-        save_config(cfg)
-        log(f"seeded default config at {CONFIG_PATH}")
-    # env webhook as fallback if config never got one
-    if not cfg.get("webhook_url"):
-        cfg["webhook_url"] = os.environ.get("DISCORD_WEBHOOK_URL_SPORTS", "")
-    # configs written before a key existed pick up its default
-    for k, v in DEFAULT_CONFIG.items():
-        cfg.setdefault(k, v)
-    return cfg
-
-
-def save_config(cfg):
-    os.makedirs(DATA_DIR, exist_ok=True)
-    tmp = CONFIG_PATH + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cfg, f, indent=2)
-    os.replace(tmp, CONFIG_PATH)
-
-
-def validate_config(cfg):
-    """Returns an error string, or None if cfg is a valid full config."""
-    if not isinstance(cfg, dict):
-        return "config must be an object"
-    if not isinstance(cfg.get("enabled"), bool):
-        return "enabled must be true/false"
-    if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", str(cfg.get("post_time", ""))):
-        return "post_time must be HH:MM (24h)"
-    msg = cfg.get("message", "")
-    if not isinstance(msg, str) or len(msg) > 2000:
-        return "message must be text, max 2000 characters"
-    try:
-        ZoneInfo(str(cfg.get("timezone")))
-    except Exception:
-        return f"unknown timezone {cfg.get('timezone')!r}"
+def validate_teams(cfg):
     teams = cfg.get("teams")
     if not isinstance(teams, list):
         return "teams must be a list"
@@ -116,40 +61,10 @@ def validate_config(cfg):
         if not (isinstance(t, dict) and t.get("id") and t.get("name")
                 and t.get("league") in LEAGUES):
             return f"each team needs league ({'/'.join(LEAGUES)}), id, name"
-    url = cfg.get("webhook_url", "")
-    if url and not url.startswith("https://discord.com/api/webhooks/"):
-        return "webhook_url must start with https://discord.com/api/webhooks/"
     return None
 
 
-def mask_webhook(url):
-    return f"https://discord.com/api/webhooks/…{url[-6:]}" if url else ""
-
-
-# ── HTTP + ESPN ───────────────────────────────────────────────────────────────
-def http_json(url, body=None, tries=3, timeout=30, ua=None):
-    # User-Agent is per-request because the two endpoints disagree (both verified
-    # 2026-08-07): ESPN's edge 403s custom/browser-spoofed UAs but allows urllib's
-    # default, while Discord's Cloudflare 403s default Python-urllib but allows our
-    # custom string. Callers hitting Discord pass ua=; ESPN callers pass nothing.
-    for attempt in range(tries):
-        headers = {"Content-Type": "application/json"}
-        if ua:
-            headers["User-Agent"] = ua
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body).encode() if body is not None else None,
-            headers=headers)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                raw = r.read()
-                return r.status, (json.loads(raw) if raw.strip() else None)
-        except Exception as e:
-            if attempt == tries - 1:
-                raise RuntimeError(f"{url.split('?')[0]} failed: {e}") from e
-            time.sleep(5)
-
-
+# ── ESPN ──────────────────────────────────────────────────────────────────────
 def fetch_scoreboard(league, yyyymmdd):
     sport = LEAGUES[league]
     _, d = http_json(f"{ESPN_BASE}/{sport}/{league}/scoreboard?dates={yyyymmdd}",
@@ -273,236 +188,66 @@ def build_payload(cfg):
     return payload, failed
 
 
-def post_webhook(url, payload):
-    status, _ = http_json(url, body=payload, ua="discord-sports (rpi homelab)")
-    if not 200 <= status < 300:
-        raise RuntimeError(f"webhook returned HTTP {status}")
+def preview(cfg):
+    payload, failed = build_payload(cfg)
+    return {"payload": payload, "failed": failed}
 
 
-def post_report(cfg):
-    """Build and post the report. Returns (ok, detail)."""
+def post_report(cfg, force=False):
+    """Build and post the report. Returns (ok, detail). Every run posts, so the
+    scheduled and Send-now paths are the same (force is unused)."""
     payload, failed = build_payload(cfg)
     url = cfg.get("webhook_url")
     if not url:
         return False, "DISCORD_WEBHOOK_URL_SPORTS / webhook_url not set"
     try:
-        post_webhook(url, payload)
+        post_webhook(url, payload, ua=DISCORD_UA)
     except RuntimeError as e:
         return False, str(e)
     detail = "posted" + (f" (no data for: {', '.join(failed)})" if failed else "")
     return True, detail
 
 
-# ── scheduler ─────────────────────────────────────────────────────────────────
-def read_last_post():
+# ── control API extra: team search ────────────────────────────────────────────
+def teams_route(cfg, query):
+    """GET /teams?league=nba&q=knicks — the tab's team picker."""
+    qs = urllib.parse.parse_qs(query)
+    league = (qs.get("league", [""])[0] or "").strip().lower()
+    q = (qs.get("q", [""])[0] or "").strip().lower()
+    if league not in LEAGUES:
+        return 400, {"error": f"league must be one of {'/'.join(LEAGUES)}"}
+    if not q:
+        return 400, {"error": "missing ?q="}
     try:
-        with open(LAST_POST_PATH) as f:
-            return f.read().strip()
-    except OSError:
-        return ""
+        _, d = http_json(f"{ESPN_BASE}/{LEAGUES[league]}/{league}/teams", tries=2, timeout=20)
+        teams = ((d or {}).get("sports") or [{}])[0].get("leagues", [{}])[0].get("teams", [])
+        results = []
+        for t in teams:
+            tt = t.get("team") or {}
+            hay = f"{tt.get('displayName', '')} {tt.get('abbreviation', '')}".lower()
+            if q in hay:
+                results.append({"league": league, "sport": LEAGUES[league],
+                                "id": str(tt.get("id", "")),
+                                "abbrev": tt.get("abbreviation", ""),
+                                "name": tt.get("displayName", "")})
+        return 200, {"results": results[:10]}
+    except Exception as e:
+        return 502, {"error": str(e)}
 
 
-def write_last_post(date_str):
-    tmp = LAST_POST_PATH + ".tmp"
-    with open(tmp, "w") as f:
-        f.write(date_str)
-    os.replace(tmp, LAST_POST_PATH)
-
-
-def next_post_dt(cfg, now):
-    """Next scheduled datetime strictly after `now` (tz-aware)."""
-    hh, mm = map(int, cfg["post_time"].split(":"))
-    candidate = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    if candidate <= now:
-        candidate += timedelta(days=1)
-    return candidate
-
-
-def scheduled_post(cfg, today_str):
-    _retry.update(date=today_str, at=datetime.now(ZoneInfo(cfg["timezone"])))
-    ok, detail = post_report(cfg)
-    with _lock:
-        _status["last_post_at"] = datetime.now(ZoneInfo(cfg["timezone"])).isoformat(timespec="seconds")
-        _status["last_status"] = detail if ok else f"failed: {detail}"
-    if ok:
-        write_last_post(today_str)
-    log(f"daily post: {'ok — ' + detail if ok else 'FAILED — ' + detail}")
-
-
-RETRY_INTERVAL = 900  # a failed daily post is re-attempted every 15 min until it lands
-_retry = {"date": None, "at": None}
-
-
-def scheduler_loop():
-    while True:
-        cfg = load_config()
-        tz = ZoneInfo(cfg["timezone"])
-        now = datetime.now(tz)
-        today = now.date().isoformat()
-
-        if not cfg["enabled"]:
-            with _lock:
-                _status["next_post_at"] = None
-            _wake.wait(timeout=3600)
-            _wake.clear()
-            continue
-
-        # catch-up / retry: today's post is due but hasn't landed yet
-        hh, mm = map(int, cfg["post_time"].split(":"))
-        todays_slot = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        if now >= todays_slot and read_last_post() != today:
-            if _retry["date"] == today:
-                since = (now - _retry["at"]).total_seconds()
-                if since < RETRY_INTERVAL:  # pace re-attempts after a failure
-                    next_try = _retry["at"] + timedelta(seconds=RETRY_INTERVAL)
-                    with _lock:
-                        _status["next_post_at"] = next_try.isoformat(timespec="seconds")
-                    if _wake.wait(timeout=RETRY_INTERVAL - since):
-                        _wake.clear()
-                    continue
-                log(f"retrying today's post (last attempt {round(since / 60)} min ago)")
-            else:
-                log(f"catch-up: {today} {cfg['post_time']} is due, posting now")
-            scheduled_post(cfg, today)
-            continue
-
-        nxt = next_post_dt(cfg, now)
-        with _lock:
-            _status["next_post_at"] = nxt.isoformat(timespec="seconds")
-        wait = (nxt - now).total_seconds()
-        if _wake.wait(timeout=min(wait, 3600)):
-            _wake.clear()
-            continue  # config changed — recompute
-        if datetime.now(tz) >= nxt:
-            scheduled_post(load_config(), nxt.date().isoformat())
-
-
-# ── control API ───────────────────────────────────────────────────────────────
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):  # route access logs through our logger
-        log(f"api {self.command} {self.path} — {args[0] if args else ''}")
-
-    def _send(self, code, obj):
-        body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        return json.loads(self.rfile.read(n)) if n else {}
-
-    def do_GET(self):
-        path, _, query = self.path.partition("?")
-        cfg = load_config()
-        if path == "/health":
-            with _lock:
-                st = dict(_status)
-            self._send(200, {"ok": True, "enabled": cfg["enabled"],
-                             "post_time": cfg["post_time"], "timezone": cfg["timezone"], **st})
-        elif path == "/config":
-            pub = dict(cfg)
-            pub["webhook_url"] = mask_webhook(cfg.get("webhook_url", ""))
-            pub["webhook_configured"] = bool(cfg.get("webhook_url"))
-            self._send(200, pub)
-        elif path == "/preview":
-            try:
-                payload, failed = build_payload(cfg)
-                self._send(200, {"payload": payload, "failed": failed})
-            except Exception as e:
-                self._send(502, {"error": str(e)})
-        elif path == "/teams":
-            qs = urllib.parse.parse_qs(query)
-            league = (qs.get("league", [""])[0] or "").strip().lower()
-            q = (qs.get("q", [""])[0] or "").strip().lower()
-            if league not in LEAGUES:
-                return self._send(400, {"error": f"league must be one of {'/'.join(LEAGUES)}"})
-            if not q:
-                return self._send(400, {"error": "missing ?q="})
-            try:
-                _, d = http_json(f"{ESPN_BASE}/{LEAGUES[league]}/{league}/teams", tries=2, timeout=20)
-                teams = ((d or {}).get("sports") or [{}])[0].get("leagues", [{}])[0].get("teams", [])
-                results = []
-                for t in teams:
-                    tt = t.get("team") or {}
-                    hay = f"{tt.get('displayName', '')} {tt.get('abbreviation', '')}".lower()
-                    if q in hay:
-                        results.append({"league": league, "sport": LEAGUES[league],
-                                        "id": str(tt.get("id", "")),
-                                        "abbrev": tt.get("abbreviation", ""),
-                                        "name": tt.get("displayName", "")})
-                self._send(200, {"results": results[:10]})
-            except Exception as e:
-                self._send(502, {"error": str(e)})
-        else:
-            self._send(404, {"error": "not found"})
-
-    def do_PUT(self):
-        if self.path.partition("?")[0] != "/config":
-            return self._send(404, {"error": "not found"})
-        try:
-            incoming = self._body()
-        except ValueError:
-            return self._send(400, {"error": "invalid JSON"})
-        current = load_config()
-        merged = {**current, **{k: v for k, v in incoming.items()
-                                if k in ("enabled", "post_time", "timezone", "teams", "webhook_url", "message")}}
-        # masked/blank webhook in the payload means "keep the current one"
-        wh = incoming.get("webhook_url", "")
-        if not wh or "…" in wh:
-            merged["webhook_url"] = current.get("webhook_url", "")
-        err = validate_config(merged)
-        if err:
-            return self._send(400, {"error": err})
-        with _lock:
-            save_config(merged)
-        _wake.set()  # reschedule immediately
-        log(f"config updated: enabled={merged['enabled']} post_time={merged['post_time']} "
-            f"teams={[t['name'] for t in merged['teams']]}")
-        pub = dict(merged)
-        pub["webhook_url"] = mask_webhook(merged.get("webhook_url", ""))
-        pub["webhook_configured"] = bool(merged.get("webhook_url"))
-        self._send(200, pub)
-
-    def do_POST(self):
-        if self.path.partition("?")[0] != "/send":
-            return self._send(404, {"error": "not found"})
-        cfg = load_config()
-        ok, detail = post_report(cfg)
-        with _lock:
-            _status["last_post_at"] = datetime.now(ZoneInfo(cfg["timezone"])).isoformat(timespec="seconds")
-            _status["last_status"] = f"manual: {detail}" if ok else f"manual failed: {detail}"
-        log(f"manual send: {'ok — ' + detail if ok else 'FAILED — ' + detail}")
-        self._send(200 if ok else 502, {"ok": ok, "detail": detail})
-
-
-def main(argv):
-    if "--dry-run" in argv or "--once" in argv:
-        try:
-            cfg = load_config()
-        except OSError:  # DATA_DIR not writable (e.g. running outside the container)
-            cfg = {**DEFAULT_CONFIG, "webhook_url": os.environ.get("DISCORD_WEBHOOK_URL_SPORTS", "")}
-        if "--dry-run" in argv:
-            payload, failed = build_payload(cfg)
-            print(json.dumps(payload, indent=2, ensure_ascii=False))
-            if failed:
-                print(f"WARNING: no data for {failed}", file=sys.stderr)
-                return 1
-            return 0
-        ok, detail = post_report(cfg)
-        print(detail)
-        return 0 if ok else 1
-
-    # daemon: control API thread + scheduler in main thread
-    server = ThreadingHTTPServer(("0.0.0.0", API_PORT), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    log(f"control API listening on :{API_PORT}")
-    load_config()  # seed on first boot
-    scheduler_loop()
-    return 0
-
+bot = Bot(
+    name="discord-sports",
+    defaults=DEFAULT_CONFIG,
+    env={"webhook_url": "DISCORD_WEBHOOK_URL_SPORTS"},
+    extra_keys=("teams",),
+    validate=validate_teams,
+    post_report=post_report,
+    preview=preview,
+    routes={"/teams": teams_route},
+    describe=lambda cfg: f"teams={[t['name'] for t in cfg['teams']]}",
+)
+Handler = bot.Handler
+load_config = bot.load_config
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(bot.main(sys.argv[1:]))

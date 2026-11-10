@@ -42,6 +42,12 @@ jobs:
         working-directory: homelab/hosts/opti/apps/cockpit-gw
         run: python3 -m unittest -v test_gateway.py
 
+      - name: Weather bot (WB) tests
+        # stdlib only, offline: Discord and the Claude API are stubbed, so no
+        # secrets, no LAN and no anthropic/discord.py install are needed
+        working-directory: homelab/hosts/opti/apps/discord-weather
+        run: python3 -m unittest discover -p 'test_*.py'
+
       - name: Architecture data validates
         run: python3 homelab/tools/architecture/build-arch-data.py --check
 
@@ -54,6 +60,15 @@ jobs:
       - name: Persistence auditor self-test
         # CI-manifest trust and acceptance, drift and run-to-run delta; no system access.
         run: python3 homelab/tools/security/persistence-auditor.py --check
+
+      - name: Shared bot kit (_botkit) tests
+        working-directory: homelab/hosts/opti/apps/_botkit
+        run: python3 -m unittest -v test_botkit.py
+
+      - name: Sports bot control-API contract
+        # the /health, /config, /preview, /send, /teams shapes the dashboards read; offline
+        working-directory: homelab/hosts/opti/apps/discord-sports
+        run: python3 -m unittest -v test_sports_contract.py
 
       # The checked webapp is v3.Fable — the deployed one since the 2026-09-10 go-live.
       # v2.legacy and v3.Astra were removed in Nov 2026 (tags webapp-v2-legacy-final,

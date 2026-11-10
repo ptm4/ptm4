@@ -89,7 +89,8 @@ DEFAULT_CONFIG = {
     "claude": {"enabled": False, "model": "claude-haiku-5-5", "effort": "medium", "daily_cap": 150,
                "daily_tokens": 400000, "max_tokens": 4096, "history": 15,
                "morning": False, "morning_effort": "medium", "morning_history": 150,
-               "memory": False, "memory_skip_channels": []},
+               "memory": False, "memory_skip_channels": [],
+               "learn_model": "claude-haiku-5-5", "learn_batch": False},
     "locations": [
         {"name": "Bellerose, NY", "lat": 40.7328, "lon": -73.7178},
         {"name": "Kew Gardens, NY", "lat": 40.7143, "lon": -73.8310},
@@ -749,7 +750,7 @@ def model_answer(cfg, user_id, author_name, text, kind, recent, replied_to="", m
     system, user = model_reply.build_chat_prompt(
         witty_messages.BRIEF, roster, recent, asker, message, self_notes, group_notes, people,
         replied_to, own_recent, facts)
-    raw = model_reply.ask(cfg, system, user, log=log)
+    raw = model_reply.ask(cfg, system, user, log=log, job=kind)
     line = model_reply.clean_line(raw, witty_messages.PINGS.values()) if raw else ""
     if line and witty_messages.forgotten(line):
         log("claude: reply named a forgotten term; not sending it")
@@ -931,7 +932,7 @@ def morning_line(cfg, observations, context, today):
     self_notes, group_notes = memory_notes(cfg)
     system, user = model_reply.build_morning_prompt(witty_messages.BRIEF, roster, chat, weather,
                                                     describe_event(context), recent, self_notes, group_notes)
-    raw = model_reply.ask(cfg, system, user, log=log, effort=s["morning_effort"],
+    raw = model_reply.ask(cfg, system, user, log=log, job="morning", effort=s["morning_effort"],
                           timeout=model_reply.SLOW_TIMEOUT, retries=model_reply.SLOW_RETRIES,
                           max_tokens=max(s["max_tokens"], 2048))
     line = model_reply.clean_line(raw, witty_messages.PINGS.values(), model_reply.MORNING_MAX_CHARS) if raw else ""
@@ -1098,8 +1099,8 @@ def learn_ok(cfg):
     return not s["daily_tokens"] or tokens < s["daily_tokens"] - s["daily_tokens"] // 3
 
 
-def _ask_notes(cfg, system, user):
-    raw = model_reply.ask(cfg, system, user, log=log, effort="low", max_tokens=3000,
+def _ask_notes(cfg, system, user, job):
+    raw = model_reply.ask(cfg, system, user, log=log, job=job, effort="low", max_tokens=3000,
                           timeout=model_reply.SLOW_TIMEOUT, retries=model_reply.SLOW_RETRIES)
     if not raw:
         return None
@@ -1141,7 +1142,7 @@ def learn(db, cfg):
         prof = db.profile(uid)
         handle = handle_of(uid, rows[-1]["author"] if rows else prof["handle"] or "@someone")
         notes = _ask_notes(cfg, *model_reply.build_person_prompt(
-            brief, handle, prof["notes"], [row_line(r, own) for r in rows][-300:], asks.get(uid, [])[-20:]))
+            brief, handle, prof["notes"], [row_line(r, own) for r in rows][-300:], asks.get(uid, [])[-20:]), job="learn_person")
         calls += 1
         if notes is None:
             break
@@ -1151,21 +1152,21 @@ def learn(db, cfg):
     if msgs and learn_ok(cfg):
         notes = _ask_notes(cfg, *model_reply.build_group_prompt(
             brief, roster, db.profile("group")["notes"],
-            [channel_tag(r["channel_id"]) + row_line(r, own) for r in msgs][-400:]))
+            [channel_tag(r["channel_id"]) + row_line(r, own) for r in msgs][-400:]), job="learn_group")
         calls += 1
         if notes is not None:
             db.set_profile("group", notes)
     if pings and learn_ok(cfg):
         exchanges = [f"{p['author']}: {p['text']} -> you: {p['reply'] or '(no reply)'}{_reactions(p)}"
                      for p in pings][-60:]
-        notes = _ask_notes(cfg, *model_reply.build_self_prompt(brief, db.profile("self")["notes"], exchanges))
+        notes = _ask_notes(cfg, *model_reply.build_self_prompt(brief, db.profile("self")["notes"], exchanges), job="learn_self")
         calls += 1
         if notes is not None:
             db.set_profile("self", notes)
     if learn_ok(cfg):
         raw = model_reply.ask(cfg, *model_reply.build_lines_prompt(
             brief, db.profile("self")["notes"], db.profile("group")["notes"]),
-            log=log, effort="low", max_tokens=2000, timeout=model_reply.SLOW_TIMEOUT,
+            log=log, job="lines", effort="low", max_tokens=2000, timeout=model_reply.SLOW_TIMEOUT,
             retries=model_reply.SLOW_RETRIES)
         calls += 1
         for kind, texts in model_reply.parse_lines(raw).items():
@@ -1176,6 +1177,147 @@ def learn(db, cfg):
     db.prune()
     log(f"wbdb: learned from {len(done_msgs)} message(s) and {len(done_pings)} ping(s) in {calls} call(s)")
     return calls
+
+
+# ── nightly notes through the Message Batches API (learn_batch: true) ───────────
+# The same notes jobs as learn(), sent as one batch on learn_model (half price,
+# usually back within the hour). memory_pass submits at LEARN_HOUR and collects
+# on later passes. The morning post never waits: until results land WB uses the
+# notes it has. Any job that errors, expires, is refused or is still pending at
+# BATCH_DEADLINE (local) runs on the regular path (ask(), the chat model)
+# instead. Messages and pings are marked learned only once their notes are saved.
+BATCH_DEADLINE = (6, 30)
+BATCH_MAX_AGE = 4 * 3600
+
+
+def learn_jobs(db, cfg):
+    """Tonight's notes jobs, same selection and prompts as learn(), as
+    {custom_id: {"job", "subject", "handle", "system", "user", "max_tokens", "msgs", "pings"}},
+    plus the ids learned with no call (quiet people, WB's own posts)."""
+    msgs = db.unlearned(5000)
+    pings = db.unlearned_pings()
+    brief = witty_messages.BRIEF if witty_messages else ""
+    roster = sorted(n for n in (witty_messages.PINGS if witty_messages else {}) if n.startswith("@"))
+    own = bot_user_id()
+    by_person, asks = {}, {}
+    for r in msgs:
+        if not r["is_bot"]:
+            by_person.setdefault(r["author_id"], []).append(r)
+    for p in pings:
+        asks.setdefault(p["author_id"], []).append(f"{p['text']} -> {p['reply'] or '(no reply)'}{_reactions(p)}")
+    jobs, free = {}, [r["id"] for r in msgs if r["is_bot"]]
+    for uid in sorted(set(by_person) | set(asks), key=lambda u: -len(by_person.get(u, []))):
+        rows = by_person.get(uid, [])
+        if len(rows) < LEARN_MIN_MESSAGES and uid not in asks:
+            free += [r["id"] for r in rows]
+            continue
+        prof = db.profile(uid)
+        handle = handle_of(uid, rows[-1]["author"] if rows else prof["handle"] or "@someone")
+        system, user = model_reply.build_person_prompt(
+            brief, handle, prof["notes"], [row_line(r, own) for r in rows][-300:], asks.get(uid, [])[-20:])
+        jobs[f"p-{uid}"] = {"job": "learn_person", "subject": uid, "handle": handle, "system": system,
+                            "user": user, "max_tokens": 3000, "msgs": [r["id"] for r in rows],
+                            "pings": [p["message_id"] for p in pings if p["author_id"] == uid]}
+    if msgs:
+        system, user = model_reply.build_group_prompt(
+            brief, roster, db.profile("group")["notes"],
+            [channel_tag(r["channel_id"]) + row_line(r, own) for r in msgs][-400:])
+        jobs["group"] = {"job": "learn_group", "subject": "group", "system": system, "user": user,
+                         "max_tokens": 3000, "msgs": [], "pings": []}
+    if pings:
+        exchanges = [f"{p['author']}: {p['text']} -> you: {p['reply'] or '(no reply)'}{_reactions(p)}"
+                     for p in pings][-60:]
+        system, user = model_reply.build_self_prompt(brief, db.profile("self")["notes"], exchanges)
+        jobs["self"] = {"job": "learn_self", "subject": "self", "system": system, "user": user,
+                        "max_tokens": 3000, "msgs": [], "pings": []}
+    system, user = model_reply.build_lines_prompt(brief, db.profile("self")["notes"], db.profile("group")["notes"])
+    jobs["lines"] = {"job": "lines", "subject": "lines", "system": system, "user": user,
+                     "max_tokens": 2000, "msgs": [], "pings": []}
+    return jobs, free
+
+
+def apply_learned(db, job, text):
+    """Save one job's answer: a profile, or the ready-made lines."""
+    if job["job"] == "lines":
+        for kind, texts in model_reply.parse_lines(text).items():
+            texts = [t for t in texts if "{name}" in t and not is_forgotten(t)]
+            if texts:
+                db.set_lines(kind, texts)
+        return
+    notes = "\n".join(l for l in text.strip().splitlines() if not is_forgotten(l))
+    db.set_profile(job["subject"], notes, job.get("handle"))
+    db.mark_learned(job["msgs"], job["pings"])
+
+
+def learn_submit(db, cfg):
+    """Send tonight's notes jobs as one batch. Returns how many were sent."""
+    if not learn_ok(cfg):
+        return 0
+    jobs, free = learn_jobs(db, cfg)
+    db.mark_learned(free)
+    s = model_reply.settings(cfg)
+    try:
+        batch_id = model_reply.batch_submit([model_reply.batch_request(
+            cid, s["learn_model"], j["system"], j["user"], j["max_tokens"]) for cid, j in jobs.items()])
+    except Exception as e:   # the batch endpoint is down: learn the regular way tonight
+        log(f"wbdb: batch submit failed ({e}); learning without it")
+        return learn(db, cfg)
+    db.set_meta("learn_batch", json.dumps({"id": batch_id, "submitted": time.time(), "jobs": jobs}))
+    log(f"wbdb: submitted {len(jobs)} notes job(s) as batch {batch_id} on {s['learn_model']}")
+    return len(jobs)
+
+
+def learn_collect(db, cfg, now=None):
+    """Check on a submitted batch: save what came back, run what didn't on the
+    regular path once the batch has ended or passed its deadline. Returns
+    "none", "waiting" or "done"."""
+    pending = json.loads(db.get_meta("learn_batch") or "null")
+    if not pending:
+        return "none"
+    now = now or datetime.now(ZoneInfo(cfg["timezone"]))
+    late = ((now.hour, now.minute) >= BATCH_DEADLINE and now.hour < LEARN_HOUR + 12) or \
+        time.time() - pending["submitted"] > BATCH_MAX_AGE
+    try:
+        state = model_reply.batch_status(pending["id"])
+    except Exception as e:
+        if not late:
+            log(f"wbdb: batch status unavailable ({e}); will check again")
+            return "waiting"
+        state = "unknown"
+    if state != "ended" and not late:
+        return "waiting"
+    done = set()
+    if state != "ended":
+        try:
+            model_reply.batch_cancel(pending["id"])
+        except Exception as e:
+            log(f"wbdb: batch cancel failed: {e}")
+    try:
+        results = model_reply.batch_results(pending["id"]) if state in ("ended", "canceling") else []
+    except Exception as e:
+        log(f"wbdb: batch results unavailable ({e})")
+        results = []
+    for cid, outcome, message in results:
+        job = pending["jobs"].get(cid)
+        if job and outcome == "succeeded":
+            text = model_reply.batch_text(cfg, job["job"], message)
+            if text:
+                apply_learned(db, job, text)
+                done.add(cid)
+    fallback = [cid for cid in pending["jobs"] if cid not in done]
+    for cid in fallback:   # errored, expired, refused, canceled: the regular path
+        job = pending["jobs"][cid]
+        if not learn_ok(cfg):
+            break
+        text = model_reply.ask(cfg, job["system"], job["user"], log=log, job=job["job"], effort="low",
+                               max_tokens=job["max_tokens"], timeout=model_reply.SLOW_TIMEOUT,
+                               retries=model_reply.SLOW_RETRIES)
+        if text:
+            apply_learned(db, job, text)
+    db.set_meta("learn_batch", "")
+    db.prune()
+    log(f"wbdb: batch {pending['id']} {state}: {len(done)} from the batch, {len(fallback)} on the regular path")
+    return "done"
 
 
 def learn_due(db, now):
@@ -1211,15 +1353,23 @@ def memory_pass(cfg):
     with _ingest_lock:
         n = ingest(db, cfg)
     now = datetime.now(ZoneInfo(cfg["timezone"]))
+    learn_collect(db, cfg, now)   # a batch from an earlier pass, if one is out
     if learn_due(db, now):
         try:
-            learn(db, cfg)
+            if model_reply.settings(cfg)["learn_batch"]:
+                learn_submit(db, cfg)
+            else:
+                learn(db, cfg)
         finally:
             db.set_meta("last_learn", now.isoformat(timespec="seconds"))
         try:
             log(f"wbdb: backup {db.backup(WBDB_BACKUP_DIR, now.date().isoformat(), BACKUP_KEEP)}")
         except Exception as e:
             log(f"wbdb: backup failed: {e}")
+        try:   # fold the day's write-ahead log into the main file and shrink it
+            log(f"wbdb: checkpoint {db.checkpoint()}")
+        except Exception as e:
+            log(f"wbdb: checkpoint failed: {e}")
     if n:
         log(f"wbdb: +{n} message(s)")
 
@@ -1233,6 +1383,17 @@ def memory_loop():
             except Exception as e:
                 log(f"wbdb: pass failed: {e}")
         time.sleep(INGEST_EVERY)
+
+
+def record_call(cfg, row):
+    """model_reply.CALL_HOOK: one usage-log row per API call, when memory is on."""
+    db = memory_db() if memory_on(cfg) else None
+    if db:
+        db.log_call(row)
+
+
+if model_reply:
+    model_reply.CALL_HOOK = record_call
 
 
 def memory_health(cfg):
@@ -1579,6 +1740,20 @@ class Handler(BaseHTTPRequestHandler):
                              "inbox_pending": len(inbox_pending(INBOX_MAX)),
                              "claude": model_reply.status(cfg) if model_reply else None,
                              "wbdb": memory_health(cfg), **st})
+        elif path == "/calls/daily":
+            # per-day numbers for homelab-db's wb-usage feed: no chat text, ever
+            db = memory_db() if memory_on(cfg) else None
+            days = urllib.parse.parse_qs(query).get("days", ["14"])[0]
+            self._send(200, {"enabled": bool(db), "tz": "UTC",
+                             "days": db.daily(int(days) if days.isdigit() else 14) if db else []})
+        elif path == "/calls":
+            # the usage log: per-day, per-job totals plus the latest calls
+            db = memory_db() if memory_on(cfg) else None
+            if not db:
+                return self._send(200, {"enabled": memory_on(cfg), "error": _wb["error"]})
+            days = urllib.parse.parse_qs(query).get("days", ["14"])[0]
+            self._send(200, {"enabled": True, "summary": db.call_summary(int(days) if days.isdigit() else 14),
+                             "recent": db.recent_calls(50)})
         elif path in ("/memory", "/profiles"):
             db = memory_db() if memory_on(cfg) else None
             if not db:

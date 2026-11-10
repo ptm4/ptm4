@@ -29,6 +29,7 @@ on:
       - "homelab/hosts/opti/apps/discord-jellyfin/**"
       - "homelab/hosts/opti/apps/discord-sports/**"
       - "homelab/hosts/opti/apps/discord-hltv/**"
+      - "homelab/hosts/opti/apps/_botkit/**"
       - "homelab/tools/architecture/**"
       - ".github/workflows/opti-apps-deploy.yml"
   workflow_dispatch:
@@ -114,6 +115,10 @@ jobs:
             mkdir -p "/srv/docker/compose/$bot"
             cp -r "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/$bot/." "/srv/docker/compose/$bot/"
           done
+          # shared scaffolding the migrated bots build against (compose additional_contexts)
+          mkdir -p /srv/docker/compose/_botkit
+          rsync -a --delete --exclude '__pycache__' \
+            "$GITHUB_WORKSPACE/homelab/hosts/opti/apps/_botkit/" /srv/docker/compose/_botkit/
 
       - name: Validate compose before touching containers
         working-directory: /srv/docker/compose

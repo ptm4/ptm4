@@ -187,10 +187,31 @@ def _add_price_history(conn):
     """)
 
 
+def _add_wb_daily(conn):
+    """Weather Bot's Claude usage, one row per UTC day (ingest_wb_daily). Numbers only:
+    the bot's chat never leaves the bot."""
+    conn.executescript("""
+    CREATE TABLE IF NOT EXISTS wb_daily (
+        day           TEXT PRIMARY KEY,   -- UTC date
+        calls         INTEGER NOT NULL,
+        failures      INTEGER NOT NULL,
+        input_tokens  INTEGER NOT NULL,
+        output_tokens INTEGER NOT NULL,
+        cache_read    INTEGER NOT NULL,
+        cost_usd      REAL,               -- estimate from the bot's price table
+        avg_ms        INTEGER,
+        p95_ms        INTEGER,
+        pings         INTEGER NOT NULL,   -- messages WB answered with the model
+        updated_at    TEXT NOT NULL
+    ) WITHOUT ROWID;
+    """)
+
+
 MIGRATIONS = [
     (1, _apply_schema),
     (2, _add_expansion_tables),
     (3, _add_price_history),
+    (4, _add_wb_daily),
 ]
 
 SCHEMA_VERSION = MIGRATIONS[-1][0]

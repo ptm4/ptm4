@@ -25,7 +25,9 @@ page again within 24 h.
 **Writing a finding that may alert:**
 
 - Emit a finding (`severity`, `message`) and let ingest route it. **Never call `notify()`
-  for a finding**; the unit `OnFailure=` hook (`hl-notify-failure@`) is the one exception.
+  for a finding.** Two exceptions push directly: the unit `OnFailure=` hook
+  (`hl-notify-failure@`), and smartd's `-M exec` hook `/usr/local/bin/hl-smartd-alert.sh`
+  (priority 4, event-driven, runs from the boot disk so a failing pool disk can still page).
 - The open-problem key is `tool|host|message`, with the message normalised: everything
   after **` | `** is ignored, and digits, IPv4 addresses and quoted values collapse. So put
   volatile detail (minutes, IPs, which step ran) **after ` | `**, and keep the part before

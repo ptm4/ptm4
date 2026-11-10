@@ -145,7 +145,7 @@ DATASETS = [
     {"id": "security-tools", "label": "Security auditors", "producer": "homelab/tools/security/*.py",
      "producer_host": "opti", "source": "systemd hl-collector-daily@.timer", "format": "python",
      "cadence_hours": 24, "stage": "producer", "consumers": "security-reports",
-     "notes": "journald-hunter + persistence-auditor, daily 09:00 UTC, local to opti (no fan-out)."},
+     "notes": "journald-hunter + persistence-auditor, daily 09:00 UTC. journald-hunter fans out to rpi and noblenumbat (per-host `hosts` blocks); persistence-auditor is local to opti."},
     {"id": "arch-agents", "label": "hl-arch-agent fleet", "producer": "homelab/tools/arch-agent/hl-arch-agent.py",
      "producer_host": "opti, rpi, noblenumbat", "source": ":8787 (push at 00:00 local)", "format": "http",
      "cadence_hours": 24, "stage": "producer", "consumers": "arch fragments, vitals",
@@ -195,6 +195,11 @@ DATASETS = [
      "cadence_hours": 0.5, "stage": "producer", "consumers": "findings",
      "notes": "A dead daily bot is silent, and silence looks exactly like a quiet day. A bot whose "
               "status route fails, or whose last attempt failed, is a finding too."},
+    {"id": "wb-usage", "label": "Weather Bot Claude usage", "producer": "discord-weather (WBdb calls table)",
+     "producer_host": "opti", "source": "GET /api/weather/calls/daily (via webapp)", "format": "http",
+     "cadence_hours": 0.5, "stage": "store", "consumers": "wb_daily",
+     "notes": "Daily totals only (calls, failures, tokens, estimated $, latency, pings answered); "
+              "the bot's chat text never leaves the bot. Empty while WB's memory is off."},
     {"id": "dhcp-leases", "label": "LAN device inventory", "producer": "Pi-hole FTL network table",
      "producer_host": "rpi", "source": "pihole:/etc/pihole/pihole-FTL.db network tables (over SSH)", "format": "sqlite",
      "cadence_hours": 0.5, "stage": "store", "consumers": "net_devices, change_events",
@@ -1295,6 +1300,34 @@ def ingest_bot_health(conn, run_id):
     return checked, stale
 
 
+WB_DAILY_COLS = ("calls", "failures", "input_tokens", "output_tokens", "cache_read", "cost_usd",
+                 "avg_ms", "p95_ms", "pings")
+
+
+def ingest_wb_daily(conn):
+    """Weather Bot's per-day Claude usage into wb_daily (upsert; the bot keeps 90 days,
+    this keeps everything). Returns days written."""
+    data, error = fetch_webapp("/weather/calls/daily?days=14", timeout=10)
+    if error:
+        mark_dataset(conn, "wb-usage", error=f"weather bot calls/daily unreachable: {error[:200]}")
+        return 0
+    days = (data or {}).get("days") or []
+    stamp = now_iso()
+    for d in days:
+        if not str(d.get("day") or "")[:10]:
+            continue
+        conn.execute(
+            f"""INSERT INTO wb_daily (day, {', '.join(WB_DAILY_COLS)}, updated_at)
+               VALUES (?, {', '.join('?' * len(WB_DAILY_COLS))}, ?)
+               ON CONFLICT(day) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in WB_DAILY_COLS)},
+                                             updated_at = excluded.updated_at""",
+            [str(d["day"])[:10]] + [d.get(c) if c in ("cost_usd", "avg_ms", "p95_ms") else int(d.get(c) or 0)
+                                    for c in WB_DAILY_COLS] + [stamp],
+        )
+    mark_dataset(conn, "wb-usage", source_at=stamp, rows=len(days))
+    return len(days)
+
+
 # Pi-hole FTL's device table: one row per MAC (network) with every address it has used
 # (network_addresses), each with the last time rpi's ARP cache / a DNS query saw it.
 # Newest address first, so the first IPv4 per MAC is its current one.
@@ -2104,6 +2137,7 @@ def run_cycle(conn, backfill=False, force_maintenance=False, verbose=True):
         r = step("bot-health", ingest_bot_health, conn, run_id, dataset="bot-health")
         if r:
             stats["bots_silent"] = f"{r[1]}/{r[0]}"
+        stats["wb_days"] = step("wb-usage", ingest_wb_daily, conn, dataset="wb-usage")
 
         mark_dataset(conn, "homelab-db", source_at=now_iso(),
                      error=("steps crashed: " + ", ".join(sorted(step_errors)))

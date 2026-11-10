@@ -67,9 +67,25 @@ CREATE TABLE IF NOT EXISTS lines (
     kind TEXT NOT NULL,               -- limit | pester
     text TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS calls (            -- one row per Claude API call
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts            TEXT NOT NULL,          -- UTC
+    job           TEXT NOT NULL,          -- chat | weather | full | morning | learn_person | ...
+    model         TEXT NOT NULL,
+    status        TEXT NOT NULL,          -- ok | refusal | empty | error:<status>
+    input_tokens  INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read    INTEGER NOT NULL DEFAULT 0,
+    cache_write   INTEGER NOT NULL DEFAULT 0,
+    latency_ms    INTEGER,
+    batch         INTEGER NOT NULL DEFAULT 0,
+    cost_usd      REAL
+);
+CREATE INDEX IF NOT EXISTS calls_ts ON calls(ts);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 KEEP_DAYS = 30
+CALLS_KEEP_DAYS = 90
 
 
 def _now():
@@ -170,12 +186,69 @@ class WBDB:
                  [("UPDATE pings SET learned = 1 WHERE message_id = ?", (str(i),)) for i in ping_ids])
 
     def prune(self, now=None):
-        """Drop learned messages older than KEEP_DAYS. Returns how many."""
-        cutoff = ((now or datetime.now(timezone.utc)) - timedelta(days=KEEP_DAYS)).isoformat()
+        """Drop learned messages older than KEEP_DAYS and call rows older than
+        CALLS_KEEP_DAYS. Returns how many messages went."""
+        now = now or datetime.now(timezone.utc)
         with self.lock:
             before = self.count()
-            self.conn.execute("DELETE FROM messages WHERE learned = 1 AND ts < ?", (cutoff,))
+            self.conn.execute("DELETE FROM messages WHERE learned = 1 AND ts < ?",
+                              ((now - timedelta(days=KEEP_DAYS)).isoformat(),))
+            self.conn.execute("DELETE FROM calls WHERE ts < ?",
+                              ((now - timedelta(days=CALLS_KEEP_DAYS)).isoformat(),))
             return before - self.count()
+
+    # -- usage log -------------------------------------------------------------
+    CALL_COLS = ("ts", "job", "model", "status", "input_tokens", "output_tokens", "cache_read",
+                 "cache_write", "latency_ms", "batch", "cost_usd")
+
+    def log_call(self, row):
+        """Store one API call (see model_reply.report for the shape)."""
+        with self.lock:
+            self.conn.execute(f"INSERT INTO calls ({', '.join(self.CALL_COLS)}) "
+                              f"VALUES ({', '.join('?' * len(self.CALL_COLS))})",
+                              [row.get(c) if c in ("latency_ms", "cost_usd") or c in ("ts", "job", "model", "status")
+                               else int(row.get(c) or 0) for c in self.CALL_COLS])
+
+    def daily(self, days=14, now=None):
+        """One row per UTC day for homelab-db: calls, failures, tokens, $,
+        latency (mean, p95) and pings answered. Numbers only, no chat text."""
+        since = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
+        out = {}
+        with self.lock:
+            for r in self.conn.execute(
+                    "SELECT substr(ts, 1, 10) AS day, COUNT(*) AS calls, SUM(status != 'ok') AS failures, "
+                    "SUM(input_tokens) AS input_tokens, SUM(output_tokens) AS output_tokens, "
+                    "SUM(cache_read) AS cache_read, ROUND(SUM(COALESCE(cost_usd, 0)), 6) AS cost_usd, "
+                    "CAST(AVG(latency_ms) AS INTEGER) AS avg_ms FROM calls WHERE ts >= ? GROUP BY day",
+                    (since,)):
+                out[r["day"]] = {**dict(r), "p95_ms": None, "pings": 0}
+            for day, lats in self.conn.execute(
+                    "SELECT substr(ts, 1, 10), GROUP_CONCAT(latency_ms) FROM calls "
+                    "WHERE ts >= ? AND latency_ms IS NOT NULL GROUP BY 1", (since,)):
+                vals = sorted(int(v) for v in (lats or "").split(",") if v)
+                if day in out and vals:
+                    out[day]["p95_ms"] = vals[min(len(vals) - 1, int(len(vals) * 0.95))]
+            for day, n in self.conn.execute(
+                    "SELECT substr(ts, 1, 10), COUNT(*) FROM pings WHERE ts >= ? GROUP BY 1", (since,)):
+                out.setdefault(day, {"day": day, "calls": 0, "failures": 0, "input_tokens": 0,
+                                     "output_tokens": 0, "cache_read": 0, "cost_usd": 0.0,
+                                     "avg_ms": None, "p95_ms": None})["pings"] = n
+        return [out[d] for d in sorted(out)]
+
+    def recent_calls(self, n=50):
+        with self.lock:
+            return [dict(r) for r in self.conn.execute("SELECT * FROM calls ORDER BY id DESC LIMIT ?", (n,))]
+
+    def call_summary(self, days=14, now=None):
+        """Per day (UTC) and job: calls, failures, tokens, $ and mean latency."""
+        since = ((now or datetime.now(timezone.utc)) - timedelta(days=days)).isoformat()
+        with self.lock:
+            return [dict(r) for r in self.conn.execute(
+                "SELECT substr(ts, 1, 10) AS day, job, COUNT(*) AS calls, "
+                "SUM(status != 'ok') AS failures, SUM(input_tokens) AS input_tokens, "
+                "SUM(output_tokens) AS output_tokens, SUM(cache_read) AS cache_read, "
+                "ROUND(SUM(COALESCE(cost_usd, 0)), 6) AS cost_usd, CAST(AVG(latency_ms) AS INTEGER) AS avg_ms "
+                "FROM calls WHERE ts >= ? GROUP BY day, job ORDER BY day DESC, job", (since,))]
 
     # -- read positions --------------------------------------------------------
     def newest(self, channel_id):
@@ -324,6 +397,12 @@ class WBDB:
         return {**out, "bytes": size, "last_ingest_at": self.get_meta("last_ingest_at"),
                 "last_learn": self.get_meta("last_learn"), "last_backup": self.get_meta("last_backup"),
                 "note": self.note}
+
+    def checkpoint(self):
+        """Write the WAL back into the main file and truncate it. Returns
+        (busy, wal pages, pages moved); busy=1 means a reader held it open."""
+        with self.lock:
+            return tuple(self.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone())
 
     def backup(self, dest_dir, day, keep=7):
         """A consistent copy as dest_dir/wb-<day>.sqlite (VACUUM INTO works on a
